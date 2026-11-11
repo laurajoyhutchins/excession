@@ -300,6 +300,9 @@ def execute(repo: Path, manifest: dict[str, Any], directory: Path, timeout: int)
         status, out, err = p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
         status, out, err = 124, b"", b"timeout"
+    # Native code may have created or modified files even when it exits zero.
+    # Reject evidence if the reconstructed source is no longer exactly pinned.
+    audit(repo, manifest, directory)
     result = {"schema": RECEIPT, "view_id": manifest["view_id"], "commit": manifest["commit"],
               "entry": manifest["entry"], "python": sys.version.split()[0],
               "exit_code": status, "stdout_sha256": digest(out), "stderr_sha256": digest(err),

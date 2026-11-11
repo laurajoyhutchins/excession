@@ -131,7 +131,10 @@ fn executable(name: &str) -> Result<PathBuf> {
     for directory in env::split_paths(&path) {
         let candidate = directory.join(name);
         if candidate.is_file() {
-            return candidate.canonicalize().map_err(|e| format!("{name}: {e}"));
+            // Preserve argv[0]: rustup dispatches based on the invoked shim
+            // name ("rustc"), not its resolved binary name ("rustup").
+            // Canonicalizing the path changes compiler behavior.
+            return Ok(candidate);
         }
     }
     refuse(format!("native resolver requires installed {name}"))
@@ -460,7 +463,13 @@ mod tests {
             b"package test\n"
         );
         audit_snapshot(&restored, &entries).unwrap();
-        fs::write(restored.join("main.go"), "changed").unwrap();
+        // Staged files are read-only. Override this protection only in the
+        // adversarial test to simulate a hostile compiler process.
+        let source = restored.join("main.go");
+        let mut permissions = fs::metadata(&source).unwrap().permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(&source, permissions).unwrap();
+        fs::write(&source, "changed").unwrap();
         assert!(audit_snapshot(&restored, &entries).is_err());
     }
 }

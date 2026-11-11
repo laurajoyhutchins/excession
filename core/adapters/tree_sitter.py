@@ -130,8 +130,11 @@ def main():
             "tree-sitter-language-pack is not installed; "
             "install the pinned optional parser package and prefetch grammars"
         ) from exc
+    from importlib.metadata import version
     items = json.load(sys.stdin)
-    print(json.dumps(parse_items(items, pack), sort_keys=True, separators=(",", ":"),
+    result = {"parser_version": version("tree-sitter-language-pack"),
+              "sources": parse_items(items, pack)}
+    print(json.dumps(result, sort_keys=True, separators=(",", ":"),
                      ensure_ascii=False))
 
 

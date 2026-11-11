@@ -65,55 +65,28 @@ configuration. This is trusted-local execution, **not a sandbox**; database
 creation and untrusted builds require their own isolation. The executable
 neither downloads scanners nor asserts that a finding is exploitable.
 
-## Executable slices and integration evidence
+## Language-neutral evidence contracts
 
-The Python adapter can derive a bounded static import closure from a clean,
-pinned SHA-1 Git checkout and materialize only those exact source blobs while
-retaining their original package layout. It can execute a trusted entrypoint
-and conservatively compare historical evidence with a later integrated revision.
-A source match is **not** proof that the merged program passed its tests.
-
-On supported Linux machines, `--isolated-linux` runs the slice inside an
-unprivileged, fail-closed namespace worker with read-only source, limited
-resources, and no network namespace access. This does not authenticate a
-remote worker, and the receipts remain unsigned.
+Excession now compares **declared input identities** for Go, JavaScript,
+TypeScript, Rust, and other languages using the same Git-backed Rust core.
+It records source/target commit identities, selected blobs, roles, and declared
+environment assumptions; cross-revision comparisons are independently audited
+from SQLite. This is *not* dependency-closure completeness or test-result reuse.
 
 ```sh
-python3 tools/excession_slice.py plan "$REPO" tests/check.py > /tmp/slice.json
-python3 tools/excession_slice.py materialize "$REPO" /tmp/slice.json /tmp/excession-slice
-python3 tools/excession_slice.py run "$REPO" /tmp/slice.json /tmp/excession-slice \
-  --trusted-local --isolated-linux > /tmp/slice-receipt.json
-excession slice ingest --repo "$REPO" --manifest /tmp/slice.json \
-  --receipt /tmp/slice-receipt.json --db /tmp/slice-evidence.sqlite
-excession slice audit --repo "$REPO" --manifest /tmp/slice.json \
-  --receipt /tmp/slice-receipt.json --db /tmp/slice-evidence.sqlite
+excession evidence contract-plan --repo "$REPO" --rev "$COMMIT" \
+  --declaration /tmp/inputs.json > /tmp/contract.json
+excession evidence contract-compare --repo "$REPO" \
+  --source-contract /tmp/source.json --target-contract /tmp/target.json \
+  --db /tmp/evidence.sqlite
+excession evidence contract-audit --repo "$REPO" \
+  --source-contract /tmp/source.json --target-contract /tmp/target.json \
+  --db /tmp/evidence.sqlite
 ```
 
-Rust independently checks the Git object identities, declared blob bytes,
-manifest and receipt checksums, and SQLite rows. It does **not** independently
-establish import-closure completeness or remotely attest to execution.
-See [executable slices](docs/EXECUTABLE_SLICES.md).
-
-## Historical evidence transport
-
-Excession treats commits as repository states, not agent outputs. The same
-source-backed observation can be compared against any retained revision,
-including an old branch, divergent commit or merge. Historical plans use Git
-objects directly without checking out the commit:
-
-```sh
-python3 tools/excession_slice.py plan "$REPO" tests/check.py --revision "$OLD_COMMIT" --history > /tmp/old-slice.json
-python3 tools/excession_slice.py plan "$REPO" tests/check.py --revision "$NEW_COMMIT" --history > /tmp/new-slice.json
-excession evidence transport --repo "$REPO" --source-manifest /tmp/old-slice.json \
-  --target-manifest /tmp/new-slice.json --receipt /tmp/old-receipt.json --db /tmp/evidence.sqlite
-excession evidence transport-audit --repo "$REPO" --source-manifest /tmp/old-slice.json \
-  --target-manifest /tmp/new-slice.json --receipt /tmp/old-receipt.json --db /tmp/evidence.sqlite
-```
-
-The source receipt must have been ingested and audited with `excession slice
-ingest|audit`. `excession evidence trace` reconstructs all direct transport
-edges for a receipt from Git and SQLite. A source match never becomes target
-behavioral verification. See [historical evidence transport](docs/EVIDENCE_HISTORY.md).
+See [language-neutral input contracts](docs/INPUT_CONTRACTS.md) for the schema,
+limits, and real Go/JavaScript historical tests. The earlier Python slice
+transport remains intact and shares the same changed-path comparison primitive.
 
 ## Research compatibility
 

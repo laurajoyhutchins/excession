@@ -1,6 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 use excession::evidence_query;
+use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
@@ -329,6 +330,34 @@ fn execute(args: &[String]) -> Result<Response> {
     };
     let opt = &parsed.options;
     match parsed.path.as_slice() {
+        [top, sub] if top == "semantic" => match sub.as_str() {
+            "scan" => {
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(semantic_contract::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
+                )?))
+            }
+            "audit" => {
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(semantic_contract::audit_scan(
+                    opt.path("repo"),
+                    &roots,
+                    opt.path("report"),
+                )?))
+            }
+            "resolve" => Ok(json(semantic_contract::resolve(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+            )?)),
+            "export" => Ok(json(semantic_contract::export(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+                opt.path("resolution-report"),
+            )?)),
+            _ => refuse(format!("unknown semantic command {sub}")),
+        },
         [top, sub] if top == "syntax" => match sub.as_str() {
             "scan" => {
 

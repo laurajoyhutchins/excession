@@ -1,0 +1,28 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Rust and integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Format
+        run: cargo +1.99.1 fmt --manifest-path core/Cargo.toml -- --check
+      - name: Clippy
+        run: cargo +1.99.1 clippy --offline --manifest-path core/Cargo.toml --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo +1.99.1 test --offline --manifest-path core/Cargo.toml
+      - name: Python integration tests
+        run: python3 -m unittest discover -s tests -v

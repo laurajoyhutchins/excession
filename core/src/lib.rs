@@ -9,6 +9,7 @@ pub mod configured_store;
 pub mod contracts;
 pub mod digest;
 pub mod doctor;
+pub mod discovery;
 pub mod effects;
 pub mod evidence_query;
 pub mod git;

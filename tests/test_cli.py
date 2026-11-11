@@ -79,8 +79,10 @@ class DedicatedCLI(unittest.TestCase):
         self.assertIn("Excession", cmd(BIN, "--help").stdout.decode())
         self.assertIn("Excession", cmd(BIN, "view", "--help").stdout.decode())
         self.assertTrue(cmd(BIN, "--version").stdout.decode().startswith("excession "))
-        self.assertIn(b"excession research carry", cmd(BIN, "research", "--help").stdout)
-        self.assertIn(b"excession research project", cmd(BIN, "research").stdout)
+        root_help = cmd(BIN, "--help").stdout
+        self.assertNotIn(b"research", root_help)
+        self.assertIn(b"benchmark", root_help)
+        self.assertIn(b"inspect", root_help)
         for argv in [
             ["view", "deps", "--db", str(self.db)],
             ["view", "deps", "--db", str(self.db), "--db", "duplicate"],
@@ -93,10 +95,8 @@ class DedicatedCLI(unittest.TestCase):
             self.assertEqual(bad.stdout, b"", argv)
             self.assertIn(b"REFUSED:", bad.stderr)
 
-    def test_dependency_plan_matches_research_protocol_and_replays(self):
+    def test_dependency_plan_replays_without_legacy_commands(self):
         result, file = self.plan()
-        old = data(BIN, "research", "view-plan-deps", self.db, "h11", "HEAD", "h11._connection")
-        self.assertEqual(result, old)
         self.assertEqual(result["source_commit"], self.commit)
         replay = data(BIN, "view", "replay", "deps", "--db", self.db, "--name", "h11", "--rev", "HEAD", "--seed", "h11._connection", "--manifest", file)
         self.assertEqual(replay["view_id"], result["view_id"])
@@ -104,17 +104,16 @@ class DedicatedCLI(unittest.TestCase):
         bad = cmd(BIN, "view", "replay", "deps", "--db", self.db, "--name", "h11", "--rev", "HEAD", "--seed", "h11._connection", "--manifest", file, check=False)
         self.assertNotEqual(bad.returncode, 0)
 
-    def test_one_crate_one_binary_and_research_dispatch(self):
+    def test_one_crate_one_binary_and_removed_legacy_dispatch(self):
         import tomllib
         cargo = tomllib.loads((ROOT / "core/Cargo.toml").read_text())
         self.assertEqual(cargo["package"]["name"], "excession")
         self.assertEqual(cargo["lib"]["name"], "excession")
         self.assertEqual([target["name"] for target in cargo["bin"]], ["excession"])
-        evidence = self.work / "canonical.json"
-        evidence.write_text('{"x":1}')
-        result = cmd(BIN, "research", "json-check", evidence)
-        self.assertRegex(result.stdout.decode(), r"^canonical_sha256=[0-9a-f]{64}\n$")
-        self.assertNotEqual(cmd(BIN, "relgit", check=False).returncode, 0)
+        retired = cmd(BIN, "research", check=False)
+        self.assertNotEqual(retired.returncode, 0)
+        self.assertEqual(retired.stdout, b"")
+        self.assertIn(b"REFUSED:", retired.stderr)
 
     def test_virtual_navigation_and_exact_bytes(self):
         plan, manifest = self.plan()

@@ -44,7 +44,7 @@ outside the analyzed Git worktree.
 
 With Rust 1.99.1, Python 3.13.5, Git and system SQLite/OpenSSL available:
 
-\`\`\`sh
+```sh
 cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
 python3 -m pip install tree-sitter-language-pack==1.25.0
 python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "python", "javascript", "typescript", "go", "c", "java"])'
@@ -58,18 +58,18 @@ python3 tools/self_analysis.py \
   --rev HEAD \
   --base-rev HEAD^
 git worktree remove "$SOURCE"
-\`\`\`
+```
 
-The script also accepts \`--roots\` to narrow a scan if the 500-file,
+The script also accepts `--roots` to narrow a scan if the 500-file,
 16 MiB aggregate, or 512 KiB per-source syntax limits are exceeded.
 This changes the observed scope, so compare only receipts with equivalent
 scopes. Source commit and Git tree identity are recorded in every report.
 
 Run the independent driver tests without parsers or Rust:
 
-\`\`\`sh
+```sh
 python3 -m unittest discover -s tests -p 'test_self_analysis.py' -v
-\`\`\`
+```
 
 ## Success criterion for the next iteration
 

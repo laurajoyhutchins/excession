@@ -5,12 +5,46 @@ use crate::{Result, refuse};
 use std::collections::BTreeMap;
 const MAX_NODES: usize = 30_000;
 const MAX_EDGES: usize = 80_000;
+/// Cross-language semantic vocabulary. Native kinds are preserved verbatim,
+/// including unknown kinds, so a new adapter never silently implies a stronger
+/// relationship than its evidence establishes.
+pub fn role(kind: &str) -> &'static str {
+    match kind {
+        "configured-target" => "target",
+        "configured-artifact" | "kbuild-archive" | "kbuild-object" => "artifact",
+        "git-source" | "kbuild-source" => "source",
+        "compiler-translation-unit" => "analysis",
+        "tu-declaration" => "symbol",
+        "tu-call-site" => "reference",
+        "observed-input" => "input",
+        "kbuild-command-record" => "observation",
+        "kbuild-compile-action" => "action",
+        "kbuild-config" => "configuration",
+        _ => "unknown",
+    }
+}
+pub fn relation(kind: &str) -> &'static str {
+    match kind {
+        "DEPENDS_ON_TARGET" => "depends_on",
+        "TARGET_SOURCE" => "uses",
+        "PRODUCES_ARTIFACT" => "produces",
+        "OBSERVED_AS_TU" => "analyzed_as",
+        "PREPROCESSOR_INPUT" | "COMPILES_SOURCE" => "reads",
+        "DECLARES" => "declares",
+        "CONTAINS_CALL" | "CONTAINS_OBJECT" => "contains",
+        "MAY_REFER_TO" => "may_refer_to",
+        "CONFIGURATION_SNAPSHOT" => "observed_with",
+        "HAS_BUILD_RECORD" | "RECORDS_COMPILER_COMMAND" => "has_evidence",
+        _ => "unknown",
+    }
+}
 pub fn push_node(nodes: &mut BTreeMap<String, Value>, id: String, kind: &str, payload: Value) -> Result<()> {
     if nodes.len() >= MAX_NODES && !nodes.contains_key(&id) {
         return refuse("configured graph node budget exceeded");
     }
     let item = obj(&[
-        ("id", Value::string(&id)), ("kind", Value::string(kind)), ("payload", payload)
+        ("id", Value::string(&id)), ("kind", Value::string(kind)),
+        ("role", Value::string(role(kind))), ("payload", payload)
     ]);
     if let Some(existing) = nodes.insert(id, item.clone()) && existing != item {
         return refuse("conflicting entity identity");
@@ -22,8 +56,8 @@ pub fn push_edge(edges: &mut BTreeMap<String, Value>, from: &str, to: &str,
     if edges.len() >= MAX_EDGES { return refuse("configured graph edge budget exceeded"); }
     let item = obj(&[
         ("from", Value::string(from)), ("to", Value::string(to)),
-        ("kind", Value::string(kind)), ("status", Value::string(status)),
-        ("evidence", Value::string(evidence)),
+        ("kind", Value::string(kind)), ("relation", Value::string(relation(kind))),
+        ("status", Value::string(status)), ("evidence", Value::string(evidence)),
     ]);
     edges.insert(item.sha256(), item);
     Ok(())

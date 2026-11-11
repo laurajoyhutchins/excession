@@ -150,10 +150,16 @@ mod tests {
                 .expect("schema");
             db.execute(
                 "INSERT INTO sample(id, description, raw) VALUES (?1, ?2, ?3)",
-                &[Param::Integer(42), Param::Text("quoted ' literal"), Param::Text("raw text")],
-            ).expect("bound insert");
+                &[
+                    Param::Integer(42),
+                    Param::Text("quoted ' literal"),
+                    Param::Text("raw text"),
+                ],
+            )
+            .expect("bound insert");
             assert_eq!(
-                db.query("SELECT id, description, raw, NULL FROM sample", &[]).unwrap(),
+                db.query("SELECT id, description, raw, NULL FROM sample", &[])
+                    .unwrap(),
                 vec![vec![
                     Some("42".to_owned()),
                     Some("quoted ' literal".to_owned()),
@@ -167,11 +173,15 @@ mod tests {
                     &[Param::Integer(43), Param::Text("committed")],
                 )?;
                 Ok(())
-            }).expect("commit");
-            assert!(db.transaction::<()>(|db| {
-                db.execute("INSERT INTO sample(id) VALUES (?)", &[Param::Integer(44)])?;
-                refuse("intentional rollback")
-            }).is_err());
+            })
+            .expect("commit");
+            assert!(
+                db.transaction::<()>(|db| {
+                    db.execute("INSERT INTO sample(id) VALUES (?)", &[Param::Integer(44)])?;
+                    refuse("intentional rollback")
+                })
+                .is_err()
+            );
             assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
             assert!(db.execute("SELECT * FROM sample", &[]).is_err());
         }
@@ -181,7 +191,11 @@ mod tests {
         assert!(header.starts_with(b"SQLite format 3\0"));
         {
             let db = Db::open(&file).expect("reopen");
-            assert_eq!(db.scalar("SELECT description FROM sample WHERE id=43", &[]).unwrap(), "committed");
+            assert_eq!(
+                db.scalar("SELECT description FROM sample WHERE id=43", &[])
+                    .unwrap(),
+                "committed"
+            );
             assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
         }
         let _ = std::fs::remove_file(file);

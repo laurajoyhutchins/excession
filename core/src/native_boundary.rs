@@ -3,7 +3,7 @@
 //! were observed, or that two executions are equivalent.
 use crate::git;
 use crate::json::{self, Value, obj};
-use crate::{Result, preflight, refuse, syntax_resolution};
+use crate::{Result, native_discovery, preflight, refuse, syntax_resolution};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -156,11 +156,10 @@ fn report(
     root: &Path,
     syntax_file: &Path,
     candidates_file: &Path,
-    declaration_file: &Path,
+    declaration: &Value,
 ) -> Result<Value> {
     // Check declared shapes and identities before invoking Tree-sitter.
-    let declaration = read(declaration_file)?;
-    declaration_preflight(&declaration)?;
+    declaration_preflight(declaration)?;
     let syntax = read(syntax_file)?;
     preflight::syntax(&syntax)?;
     let candidates = read(candidates_file)?;
@@ -304,7 +303,8 @@ pub fn compare(
     candidates_file: &Path,
     declaration_file: &Path,
 ) -> Result<Value> {
-    report(root, syntax_file, candidates_file, declaration_file)
+    let declaration = read(declaration_file)?;
+    report(root, syntax_file, candidates_file, &declaration)
 }
 
 pub fn audit(
@@ -315,13 +315,91 @@ pub fn audit(
     saved: &Path,
 ) -> Result<Value> {
     let original = read(saved)?;
-    let regenerated = report(root, syntax_file, candidates_file, declaration_file)?;
+    let declaration = read(declaration_file)?;
+    let regenerated = report(root, syntax_file, candidates_file, &declaration)?;
     if original.canonical() != regenerated.canonical() {
         return refuse("native boundary audit differs from reconstructed report");
     }
     Ok(obj(&[
         ("status", Value::string("DECLARATION_AND_GIT_REPLAY_MATCH")),
         ("boundary_id", regenerated.get("boundary_id")?.clone()),
+    ]))
+}
+
+/// An opt-in, locally executed language compiler resolver. The Rust authority
+/// stages and verifies a pinned Git snapshot; the comparison is performed
+/// directly on the returned declaration, without an editable intermediate file.
+///
+/// This is trusted-local execution, not a sandbox or independent attestation.
+pub fn discover_and_compare(
+    root: &Path,
+    syntax_file: &Path,
+    candidates_file: &Path,
+    entry: &str,
+    language: &str,
+    trusted: bool,
+) -> Result<Value> {
+    if !trusted {
+        return refuse("native compiler execution requires --trusted-local true");
+    }
+    git::validate_path(entry)?;
+    // Fail cheap: neither malformed evidence nor wrong revision may reach a
+    // compiler. These are structural checks, not source authentication.
+    let syntax_report = read(syntax_file)?;
+    preflight::syntax(&syntax_report)?;
+    let resolution_report = read(candidates_file)?;
+    preflight::resolution(&resolution_report)?;
+    let commit = git::oid(syntax_report.get("source_commit")?.str()?)?;
+    if resolution_report.get("source_commit")?.str()? != commit
+        || resolution_report.get("source_tree")?.str()?
+            != syntax_report.get("source_tree")?.str()?
+        || resolution_report.get("syntax_report_id")?.str()?
+            != syntax_report.get("report_id")?.str()?
+    {
+        return refuse("native execution refused: mismatched syntax/resolution identities");
+    }
+    let entry_in_scan = syntax_report
+        .get("sources")?
+        .array_ref()?
+        .iter()
+        .any(|source| {
+            source.get("source_path").ok().and_then(|v| v.str().ok()) == Some(entry)
+                && source
+                    .get("language")
+                    .ok()
+                    .and_then(|v| v.str().ok())
+                    .is_some_and(|observed| language_matches(language, observed))
+                && source.get("status").ok().and_then(|v| v.str().ok()) == Some("PARSED")
+        });
+    if !entry_in_scan {
+        return refuse(
+            "native execution refused: subject not successfully parsed in selected scope",
+        );
+    }
+    git::clean(root)?;
+    if git::rev(root, &format!("{commit}^{{tree}}"))? != syntax_report.get("source_tree")?.str()? {
+        return refuse("native execution refused: Git tree does not match syntax report");
+    }
+    let native = native_discovery::discover(root, &commit, entry, language, true)?;
+    let declaration = native.get("declaration")?;
+    declaration_preflight(declaration)?;
+    if declaration.get("subject")?.str()? != entry
+        || declaration.get("language")?.str()? != language
+        || native.get("stats")?.get("commit")?.str()? != commit
+    {
+        return refuse("native resolver returned a different subject, language or revision");
+    }
+    let boundary = report(root, syntax_file, candidates_file, declaration)?;
+    Ok(obj(&[
+        ("schema", Value::string("excession.native-syntax-inline.v1")),
+        (
+            "status",
+            Value::string("LOCAL_NATIVE_DISCOVERY_AND_BOUNDARY_CHECK"),
+        ),
+        ("execution", Value::string("TRUSTED_LOCAL_NOT_ATTESTED")),
+        ("declaration", declaration.clone()),
+        ("stats", native.get("stats")?.clone()),
+        ("boundary", boundary),
     ]))
 }
 

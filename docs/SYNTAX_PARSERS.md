@@ -17,9 +17,9 @@ The parser package is optional and must be installed into the Python environment
 used by the Excession executable:
 
 ```sh
-python3 -m pip install --require-hashes --only-binary=:all: -r requirements/locks/syntax-linux-cp313-x86_64.txt
-python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust","go","c","java","python","javascript","typescript"])'
-python3 tools/grammar_artifacts.py verify
+mise run syntax-setup
+# Or without mise, install requirements/syntax.txt and prefetch grammars
+# through the tree-sitter-language-pack API in a trusted setup step.
 ```
 
 Prefetch happens in a **trusted setup step**, before analysis. Scans never
@@ -204,13 +204,53 @@ Do not treat this report as independent worker attestation, a verified
 behavioral guarantee, or permission to skip tests. Any compiler-backed
 promotion needs authenticated runtime evidence in a later contract.
 
+## Execute native discovery and compare immediately
+
+`native-run` is the integrated, opt-in path. Rust stages bounded Git
+source blobs and invokes the existing language-native adapters; the produced
+`excession.input-declaration.v1` is passed **in memory** to the boundary
+checker, with no intermediate user-editable declaration file.
+
+```sh
+excession syntax native-run --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --entry src/main.rs --language rust \
+  --trusted-local true > /tmp/native-run.json
+```
+
+The command accepts `go`, `javascript`, `typescript`, and `rust`.
+It first rejects malformed syntax/resolution reports, mismatched revisions,
+out-of-scope subjects, dirty checkouts, and incorrect Git trees. Only then
+does it reconstruct the pinned snapshot and execute the compiler-backed
+resolver. The returned JSON carries `declaration`, `stats` and `boundary`,
+which includes Git blob identities and any scope differences. The optional
+Tree-sitter grammars must be installed ahead of time for full replay.
+
+The reusable Rust authority and narrow Python language adapters originated
+from the ongoing [Rust-native discovery PR #32](https://github.com/laurajoyhutchins/excession/pull/32).
+This command does not import the remainder of that PR's stacked historical
+transport and evidence machinery.
+
+**Trust boundary:** `--trusted-local true` is mandatory because compiler
+parsers operate on untrusted source and this is not process isolation.
+The result says `TRUSTED_LOCAL_NOT_ATTESTED`: it records a locally observed
+compiler invocation and toolchain metadata, **not** an independently attested
+remote execution or complete runtime dependency set. Its static-versus-native
+comparison is still a scoped hypothesis, never permission to skip tests.
+
+To audit its stable boundary separately, extract the `declaration` and
+`boundary` members into individual JSON files and use `native-audit`.
+The `stats.elapsed_ns` timing is deliberately not a reproducible identity.
+
 ## Safety and reproducibility
 
 The adapter runs trusted, locally installed parser binaries and grammars, but
 does not run source under examination. Do not load an unreviewed grammar
-artifact on a shared privileged host. The package version alone is not a
-cryptographic grammar binary attestation. For an independently reproducible
-environment, pin downloaded parser artifacts and their hashes externally.
+artifact on a shared privileged host. The package version records the parser
+distribution, not independently authenticated grammar source code. Source
+authentication still comes from Excession's Git-bound replay and audit;
+do not mistake a successful parse for evidence completeness.
 
 Run unit tests without optional grammars:
 

@@ -55,3 +55,51 @@ jobs:
           path: ${{ runner.temp }}/validity/
           if-no-files-found: warn
           retention-days: 30
+
+  codeql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Initialize CodeQL Go database
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-extended
+          build-mode: none
+      - name: Analyze with CodeQL and retain SARIF locally
+        uses: github/codeql-action/analyze@v3
+        with:
+          upload: false
+          output: ${{ runner.temp }}/codeql-results
+      - name: Build Excession and assess original CodeQL SARIF
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/codeql-validity"
+          mkdir -p "$OUT"
+          find "$RUNNER_TEMP/codeql-results" -type f -name '*.sarif' -print
+          SARIF=$(find "$RUNNER_TEMP/codeql-results" -type f -name '*.sarif' | head -n 1)
+          test -n "$SARIF"
+          cp "$SARIF" "$OUT/codeql.sarif"
+          cargo build --locked --manifest-path core/Cargo.toml --bin excession
+          EX="$PWD/core/target/debug/excession"
+          "$EX" security ingest --repo "$PWD" --report "$OUT/codeql.sarif" --db "$OUT/findings.sqlite" --engine codeql > "$OUT/ingest.json"
+          "$EX" security audit --repo "$PWD" --report "$OUT/codeql.sarif" --db "$OUT/findings.sqlite" --engine codeql > "$OUT/audit.json"
+          RUN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$OUT/ingest.json")
+          python3 tools/assess_security_findings.py --repo "$PWD" --db "$OUT/findings.sqlite" --run-id "$RUN_ID" --report "$OUT/codeql.sarif" --ground-truth "$PWD/benchmarks/security-validity/ground-truth.json" --excession "$EX" --trusted-local true > "$OUT/validity.json"
+          python3 -m json.tool "$OUT/validity.json"
+          git rev-parse HEAD > "$OUT/commit.txt"
+      - name: Retain CodeQL reports and adjudication
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-validity-evidence
+          path: ${{ runner.temp }}/codeql-validity/
+          if-no-files-found: warn
+          retention-days: 30

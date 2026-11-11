@@ -133,6 +133,50 @@ class GraphAndManifestUnitTests(unittest.TestCase):
         self.assertGreaterEqual(timing["wall_ms"], 25)
 
 
+
+class SimplerToolProtocolTests(unittest.TestCase):
+    def test_native_graph_is_distinct_arm(self) -> None:
+        self.assertEqual(set(paired.ARMS), {"graph", "rust_graph", "view"})
+        counts = paired.output_counts({"source_paths": ["p/a.py"]}, "rust_graph", "focus")
+        self.assertEqual(counts["emitted_references"], 1)
+
+    def test_exact_lookup_filters_path_noise(self) -> None:
+        sys.path.insert(0, str(ROOT / "benchmarks"))
+        try:
+            import locate
+            result = locate.normalize(
+                b"h11/_events.py\nh11/_headers.py\n", "git", ROOT,
+                "_headers.py", "pinned", "h11._headers",
+            )
+            self.assertEqual(result, ["h11/_headers.py"])
+        finally:
+            sys.path.remove(str(ROOT / "benchmarks"))
+
+    def test_lsp_text_controls_preserve_positions(self) -> None:
+        sys.path.insert(0, str(ROOT / "benchmarks"))
+        try:
+            import symbol_compare
+            commit = "a" * 40
+            contents = (
+                b"1:int compute(int x) { return x; }\n"
+                b"2:int main() { return compute(3); }\n"
+            )
+            self.assertEqual(
+                symbol_compare.text_locations(contents, "rg", commit),
+                [(0, 4), (1, 20)],
+            )
+            contents = (
+                f"{commit}:benchmarks/fixtures/c-symbol/example.c:1:int compute(int x) {{ return x; }}\n"
+                f"{commit}:benchmarks/fixtures/c-symbol/example.c:2:int main() {{ return compute(3); }}\n"
+            ).encode()
+            self.assertEqual(
+                symbol_compare.text_locations(contents, "git_grep", commit),
+                [(0, 4), (1, 20)],
+            )
+        finally:
+            sys.path.remove(str(ROOT / "benchmarks"))
+
+
 class RealExcessionSmoke(unittest.TestCase):
     """Runs the actual binary when built; never substitutes a fake view provider."""
 

@@ -1,9 +1,9 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
+use excession::doctor;
 use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
-use excession::doctor;
 use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
     refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,

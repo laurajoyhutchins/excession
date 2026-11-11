@@ -55,10 +55,12 @@ whether the index describes all language-level relations.
 - **Partial evidence controls already present:** `experiments/checked_tree_ab.py`
   compares authenticated before/after outputs and selected tamper refusals;
   `experiments/real_fixtures.py` independently checks Git source bindings.
-- **Not yet implemented as an equivalent-guarantee cross-tool comparison:**
-  tamper detection against an independent Git/SQLite auditor;
-  true cached incremental view maintenance; independent real-repository
-  relationship completeness; portable peak memory measurement.
+- **Independent full indexed-query replay implemented:**
+  `experiments/independent_audit.py` compares a separate Git/SQLite verifier
+  against native replay for intact and corrupted h11 evidence.
+- **Still incomplete:** true cached incremental view maintenance,
+  complete real-repository runtime relationships, portable peak memory
+  measurement, and comprehensive adversarial coverage beyond the bounded cases.
 
 The first experiment does not prove that Excession reuses computation between
 queries. It only records a workload where such reuse could be observed. Evidence
@@ -79,3 +81,16 @@ passed/failed check consistency. The report ID digests canonical JSON contents
 excluding itself and is **not** a signature. An independently authored oracle
 and a shared-index comparison must never be conflated. Validation cannot
 establish the semantic truth of supplied source or claims.
+
+## Independent full-query audit control
+
+`experiments/independent_audit.py` is a second, separately implemented
+Git/SQLite verifier. It parses a view manifest strictly, re-enumerates the
+complete pinned Git tree, compares every indexed tree row, authenticates
+module path/mode/blob claims, recomputes dependency reachability and roles,
+and verifies the full canonical commitment. Its behavior is compared
+against `excession view replay deps` on matching evidence and
+corrupted manifests/records. This establishes source-bound **indexed query
+replay**, not semantic edge truth, independent code execution, or a
+cryptographically signed worker identity. Both trust Git; Python's
+interpreter startup is a measurement confound.

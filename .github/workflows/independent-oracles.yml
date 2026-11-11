@@ -1,0 +1,40 @@
+name: Independent Git/SQLite query replay audit
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/experiments/independent_audit.py'
+      - 'tests/test_independent_audit.py'
+      - '.github/workflows/independent-oracles.yml'
+      - 'core/src/projection.rs'
+      - 'core/src/index.rs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Restore pinned Rust
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Build genuine Excession
+        run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Test independent Git and SQLite oracle
+        run: python3 -m unittest discover -s tests -p test_independent_audit.py -v
+      - name: Audit intact and corrupted indexed queries with both methods
+        run: |
+          python3 benchmarks/experiments/independent_audit.py benchmark \
+            --bin core/target/debug/excession \
+            --out "$RUNNER_TEMP/replay" --repetitions 2
+          cat "$RUNNER_TEMP/replay/summary.json"
+      - name: Retain source and corruption receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: independent-indexed-query-replay
+          path: ${{ runner.temp }}/replay/
+          if-no-files-found: warn

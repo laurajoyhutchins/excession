@@ -1,15 +1,16 @@
 # Excession
 
-**Explore a codebase through its relationships, without changing its source tree.**
+**Git-grounded, auditable code intelligence.**
 
-Excession indexes a pinned Git revision, connects source files to recorded
-dependencies and analysis results, and builds focused views of a repository.
-You can browse those views, investigate refactoring candidates, and replay
-reports against the underlying Git objects.
+Excession turns a pinned Git revision into a queryable picture of a codebase:
+source files, observed relationships, analysis results, and focused repository
+views. It makes those observations inspectable and replayable against the
+underlying Git objects.
 
-The core is a Rust CLI backed by Git and SQLite. Language-specific work is
-delegated to established parsers, indexers, compilers, and scanners where
-possible.
+Its Rust CLI and SQLite evidence store preserve where an observation came
+from and what supports it. Language-specific analysis comes from established
+parsers, indexers, compilers, and scanners where possible, rather than
+reimplementing their work.
 
 ## Try it
 
@@ -115,6 +116,18 @@ command. See the [architecture](docs/ARCHITECTURE.md),
 [repository views](docs/REPOSITORY_VIEWS.md), and
 [evidence contract](docs/EVIDENCE_QUERY.md) for precise boundaries.
 
+## Research direction
+
+Vulnerability discovery is a possible application of this code-intelligence
+layer, not the product's starting claim. Excession can already bind scanner
+results to Git and audit their recorded evidence. Whether combining source
+relationships, revision history, static analysis, and runtime tests discovers
+additional real vulnerabilities is a separate hypothesis that needs controlled
+experiments and comparison against existing tools.
+
+The [architecture and security evaluation protocol](docs/ARCHITECTURE.md)
+distinguishes implemented evidence handling from that research.
+
 ## Develop
 
 ```sh
@@ -139,5 +152,5 @@ Benchmarks and their measurement contracts live in
 - [Composable views](docs/COMPOSABLE_VIEWS.md)
 - [Syntax parsing and native comparison](docs/SYNTAX_PARSERS.md)
 - [Semantic contracts](docs/SEMANTIC_CONTRACTS.md)
-- [Security architecture and evaluation protocol](docs/ARCHITECTURE.md)
+- [Architecture, evidence model, and security research](docs/ARCHITECTURE.md)
 - [Third-party source licenses](THIRD_PARTY.md)

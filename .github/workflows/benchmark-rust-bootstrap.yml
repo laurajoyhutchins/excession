@@ -24,6 +24,7 @@ jobs:
         run: rustup toolchain install 1.99.1 --profile minimal
       - name: Lock dependencies and format Rust sources
         run: |
+          rustup component add --toolchain 1.99.1 rustfmt
           cargo +1.99.1 generate-lockfile --manifest-path core/Cargo.toml
           cargo +1.99.1 fmt --manifest-path core/Cargo.toml
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml

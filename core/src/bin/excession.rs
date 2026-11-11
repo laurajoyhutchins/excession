@@ -1,7 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, index, projection, refuse, security_ingest, views};
+use excession::{Result, git, index, projection, refuse, security_ingest, slice_evidence, views};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -27,6 +27,7 @@ Usage:
   excession view replay deps|security|compose|select|mount [same options, plus --manifest or --output]
   excession browse --repo REPO --manifest JSON [--max-bytes 8192]
   excession security ingest|audit --repo REPO --report JSON --db DB --engine codeql|semgrep
+  excession slice ingest|audit --repo REPO --manifest JSON --receipt JSON --db DB
   excession security scan --repo REPO --report NEW_JSON --db DB --engine codeql|semgrep
       --config LOCAL_RULES --trusted-local true [--scanner EXECUTABLE]
       [--codeql-db PREBUILT_DB] [--timeout-seconds 300]
@@ -417,14 +418,14 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse"
+                    "view" | "security" | "slice" | "inspect" | "index" | "browse"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
         }
         [top, sub, a]
             if a == "--help"
-                && matches!(top.as_str(), "view" | "security" | "inspect")
+                && matches!(top.as_str(), "view" | "security" | "slice" | "inspect")
                 && !sub.is_empty() =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -482,6 +483,20 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.path("report"),
                 &db,
                 opt.get("engine"),
+                sub == "audit",
+            )?))
+        }
+        [top, sub, rest @ ..] if top == "slice" => {
+            if !matches!(sub.as_str(), "ingest" | "audit") {
+                return refuse(format!("unknown slice command {sub}"));
+            }
+            let opt = Options::parse(rest, &["repo", "manifest", "receipt", "db"], &[])?;
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(slice_evidence::evidence(
+                opt.path("repo"),
+                opt.path("manifest"),
+                opt.path("receipt"),
+                &db,
                 sub == "audit",
             )?))
         }

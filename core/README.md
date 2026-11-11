@@ -26,6 +26,11 @@ cargo clippy --offline --manifest-path core/Cargo.toml --all-targets -- -D warni
 python3 -m unittest discover -s tests -v
 ```
 
+To collect CI-compatible JUnit XML, run `make junit` from the repository root
+with `cargo-nextest` 0.9.151 and `pytest` 9.0.2 installed. The reports are
+written to `core/target/nextest/ci/junit.xml` and
+`test-results/python.xml`; the tests and assertions are unchanged.
+
 Historical differential checks remain available from inside `core/`:
 
 ```sh

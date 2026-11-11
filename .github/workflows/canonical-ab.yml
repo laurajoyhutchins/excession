@@ -1,0 +1,45 @@
+name: Canonical JSON A/B
+
+on:
+  pull_request:
+    paths:
+      - core/src/json.rs
+      - core/src/projection.rs
+      - benchmarks/canonical_ab.py
+      - .github/workflows/canonical-ab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Install pinned Rust compiler
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Restore baseline source
+        run: git worktree add --detach "$RUNNER_TEMP/excession-canonical-before" 2a7080f3404b42a9f90357e91d1a40af1ead7e3e
+      - name: Compile two native release binaries
+        run: |
+          cargo +1.99.1 build --offline --release --manifest-path "$RUNNER_TEMP/excession-canonical-before/core/Cargo.toml"
+          cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
+      - name: Verify canonical bytes and compare measured cost
+        run: |
+          python3 benchmarks/canonical_ab.py \
+            "$RUNNER_TEMP/excession-canonical-before/core/target/release/excession" \
+            core/target/release/excession canonical-ab.json
+      - name: Retain per-query canonicalization receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-json-ab
+          path: canonical-ab.json
+          if-no-files-found: warn

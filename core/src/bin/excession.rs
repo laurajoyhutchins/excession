@@ -436,7 +436,11 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
             let roots = opt.get("roots").split(',').collect::<Vec<_>>();
-            Ok(json(kernel::scan(opt.path("repo"), opt.get_or("rev", "HEAD"), &roots)?))
+            Ok(json(kernel::scan(
+                opt.path("repo"),
+                opt.get_or("rev", "HEAD"),
+                &roots,
+            )?))
         }
         [top, tail @ ..] if top == "research" => {
             research::run(tail)?;

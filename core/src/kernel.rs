@@ -19,7 +19,9 @@ fn eligible(path: &str) -> bool {
 }
 
 fn within(path: &str, roots: &[&str]) -> bool {
-    roots.iter().any(|root| path == *root || path.starts_with(&format!("{root}/")))
+    roots
+        .iter()
+        .any(|root| path == *root || path.starts_with(&format!("{root}/")))
 }
 
 fn checked_fact(f: &Value, max_line: usize) -> Result<()> {
@@ -30,16 +32,28 @@ fn checked_fact(f: &Value, max_line: usize) -> Result<()> {
     let kind = f.get("kind")?.str()?;
     if !matches!(
         kind,
-        "c_include" | "c_export" | "c_macro" | "build_object"
-            | "build_include" | "kconfig_symbol" | "kconfig_depends"
-            | "kconfig_select" | "kconfig_imply" | "kconfig_default" | "kconfig_source"
+        "c_include"
+            | "c_export"
+            | "c_macro"
+            | "build_object"
+            | "build_include"
+            | "kconfig_symbol"
+            | "kconfig_depends"
+            | "kconfig_select"
+            | "kconfig_imply"
+            | "kconfig_default"
+            | "kconfig_source"
     ) {
         return refuse("unknown kernel fact type");
     }
     if !matches!(
         f.get("status")?.str()?,
-        "DECLARED" | "LEXICAL_CANDIDATE" | "UNRESOLVED_INCLUDE"
-            | "UNRESOLVED_CONFIG" | "UNRESOLVED_SOURCE" | "UNRESOLVED_MAKE"
+        "DECLARED"
+            | "LEXICAL_CANDIDATE"
+            | "UNRESOLVED_INCLUDE"
+            | "UNRESOLVED_CONFIG"
+            | "UNRESOLVED_SOURCE"
+            | "UNRESOLVED_MAKE"
     ) {
         return refuse("unknown kernel fact status");
     }
@@ -82,7 +96,9 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
         })
         .collect();
     if selected.is_empty() || selected.len() > MAX_FILES {
-        return refuse(format!("kernel scan needs 1..{MAX_FILES} eligible tracked files"));
+        return refuse(format!(
+            "kernel scan needs 1..{MAX_FILES} eligible tracked files"
+        ));
     }
     let mut reader = git::BlobReader::open(repo)?;
     let mut results = Vec::with_capacity(selected.len());
@@ -94,7 +110,9 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
         let mut line_counts = Vec::with_capacity(chunk.len());
         for entry in chunk {
             let bytes = reader.read(&entry.oid)?;
-            bytes_seen = bytes_seen.checked_add(bytes.len()).ok_or("kernel source size overflow")?;
+            bytes_seen = bytes_seen
+                .checked_add(bytes.len())
+                .ok_or("kernel source size overflow")?;
             if bytes.len() > MAX_FILE_BYTES || bytes_seen > MAX_INPUT_BYTES {
                 return refuse("kernel scan exceeded source byte budget");
             }
@@ -122,7 +140,8 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
             }
             for value in diagnostics {
                 let line = value.get("line")?.integer()?;
-                if value.entries()?.len() != 2 || line < 1
+                if value.entries()?.len() != 2
+                    || line < 1
                     || usize::try_from(line).map_err(|_| "negative diagnostic line")? > line_count
                     || value.get("reason")?.str()?.len() > 512
                 {
@@ -148,7 +167,10 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
         ("schema", Value::string("excession.kernel-syntax.v1")),
         ("source_commit", Value::string(commit)),
         ("source_tree", Value::string(tree)),
-        ("roots", Value::array(roots.iter().map(|s| Value::string(*s)))),
+        (
+            "roots",
+            Value::array(roots.iter().map(|s| Value::string(*s))),
+        ),
         ("source_count", Value::number(results.len())),
         ("fact_count", Value::number(fact_count)),
         ("diagnostic_count", Value::number(diagnostic_count)),
@@ -187,7 +209,10 @@ mod tests {
         assert!(checked_fact(&good, 1).is_ok());
         assert!(checked_fact(&good, 0).is_err());
         let mut wrong = good.clone();
-        wrong.entries_mut().unwrap().insert("status".into(), Value::string("VERIFIED"));
+        wrong
+            .entries_mut()
+            .unwrap()
+            .insert("status".into(), Value::string("VERIFIED"));
         assert!(checked_fact(&wrong, 5).is_err());
     }
 }

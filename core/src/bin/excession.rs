@@ -12,8 +12,6 @@ use std::path::Path;
 
 #[path = "excession/cli.rs"]
 mod cli;
-#[path = "excession/research.rs"]
-mod research;
 #[path = "excession/scan.rs"]
 mod scan;
 use cli::{Options, ParseOutcome};
@@ -325,14 +323,6 @@ fn browse(repo: &Path, manifest: &Path, max: usize) -> Result<()> {
 }
 
 fn execute(args: &[String]) -> Result<Response> {
-    // Historical positional experiments remain an explicitly scoped protocol.
-    // They do not create a second option grammar for normal CLI commands.
-    if let [top, rest @ ..] = args
-        && top == "research"
-    {
-        research::run(rest)?;
-        return Ok(Response::Bytes(Vec::new()));
-    }
     let parsed = match cli::parse(args)? {
         ParseOutcome::Help(message) => return Ok(Response::Message(message)),
         ParseOutcome::Command(parsed) => parsed,
@@ -584,14 +574,7 @@ mod tests {
         .is_err());
         assert!(execute(&strings(&["index", "--reppo", "a"])).is_err());
         assert!(execute(&strings(&["index", "--repo", "--db", "x"])).is_err());
-
-    }
-    #[test]
-    fn historical_research_still_accepts_positional_help() {
-        assert!(matches!(
-            execute(&strings(&["research", "--help"])),
-            Ok(Response::Bytes(bytes)) if bytes.is_empty()
-        ));
+        assert!(execute(&strings(&["research"])).is_err());
     }
     #[test]
     fn command_help_and_failure_are_ordinary_results() {

@@ -41,7 +41,7 @@ def imports(node, source_name, source_path, available):
         parts = choice.split('.')
         matched = ['.'.join(parts[:i]) for i in range(1, len(parts)+1) if '.'.join(parts[:i]) in available]
         if matched:
-            target = max(matched, key=len)
+            target = available[max(matched, key=len)]
             edge = {'target':target, 'line':node.lineno, 'syntax':syntax}
             if edge not in out: out.append(edge)
     return out
@@ -108,8 +108,19 @@ def main():
     for item in items:
         if not isinstance(item,dict) or set(item)!= {'name','path','content'}: raise ValueError('invalid input record')
         if not all(isinstance(v,str) for v in item.values()): raise ValueError('invalid input types')
-    available={item['name'] for item in items}
+    available={item['name']: item['name'] for item in items}
     if len(available)!=len(items):raise ValueError('duplicate logical module names')
+    # A conventional src/ directory is a search root, not part of an
+    # importable package name. Preserve existing SQL identifiers while making
+    # absolute "import package.module" and relative "from . import module"
+    # resolve to the same pinned source module. Refuse ambiguous aliases.
+    for item in items:
+        path, indexed = item['path'], item['name']
+        if path.startswith('src/') and indexed.startswith('src.'):
+            alias = indexed[len('src.'):]
+            if alias in available and available[alias] != indexed:
+                raise ValueError('ambiguous src/ import name: ' + alias)
+            available[alias] = indexed
     result=[parse_item(item,available) for item in items]
     print(json.dumps(result,sort_keys=True,separators=(',',':'),ensure_ascii=False))
 

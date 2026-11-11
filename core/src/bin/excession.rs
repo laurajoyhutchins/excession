@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, native_boundary, preflight, projection, refuse,
+    Result, git, graph_baseline, index, native_boundary, preflight, projection, refactor, refuse,
     security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
@@ -48,6 +48,8 @@ Usage:
   excession inspect dependencies|manifest --db DB --name NAME --rev REV
   excession inspect impact --db DB --name NAME --rev REV --seed MODULE
   excession inspect review --db DB --name NAME --old REV --new REV
+  excession refactor suggest --db DB --name NAME --rev REV
+  excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
   excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
@@ -459,14 +461,17 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "syntax"
+                    "view" | "security" | "inspect" | "index" | "browse" | "syntax" | "refactor"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
         }
         [top, sub, a]
             if a == "--help"
-                && matches!(top.as_str(), "view" | "security" | "inspect" | "syntax")
+                && matches!(
+                    top.as_str(),
+                    "view" | "security" | "inspect" | "syntax" | "refactor"
+                )
                 && !sub.is_empty() =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -502,7 +507,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 Ok(json(native_boundary::preflight_file(opt.path("declaration"))?))
             }
             "native-compare" => {
-                let opt = Options::parse(tail, &["repo", "syntax-report", "resolution-report", "declaration"], &[])?;
+                let opt = Options::parse(
+                    tail, &["repo", "syntax-report", "resolution-report", "declaration"], &[]
+                )?;
                 Ok(json(native_boundary::compare(
                     opt.path("repo"),
                     opt.path("syntax-report"),
@@ -511,7 +518,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             "native-audit" => {
-                let opt = Options::parse(tail, &["repo", "syntax-report", "resolution-report", "declaration", "report"], &[])?;
+                let opt = Options::parse(
+                    tail, &["repo", "syntax-report", "resolution-report", "declaration", "report"], &[]
+                )?;
                 Ok(json(native_boundary::audit(
                     opt.path("repo"),
                     opt.path("syntax-report"),
@@ -588,6 +597,26 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("engine"),
                 sub == "audit",
             )?))
+        }
+        [top, sub, rest @ ..] if top == "refactor" => {
+            if !matches!(sub.as_str(), "suggest" | "audit") {
+                return refuse(format!("unknown refactor command {sub}"));
+            }
+            let opt = Options::parse(
+                rest,
+                if sub == "audit" {
+                    &["db", "name", "rev", "report"]
+                } else {
+                    &["db", "name", "rev"]
+                },
+                &[],
+            )?;
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(if sub == "audit" {
+                refactor::audit(&db, opt.get("name"), opt.get("rev"), opt.path("report"))?
+            } else {
+                refactor::suggest(&db, opt.get("name"), opt.get("rev"))?
+            }))
         }
         [top, sub, rest @ ..] if top == "inspect" => inspect_cmd(sub, rest),
         [top, sub, rest @ ..] if top == "view" && sub == "replay" => {

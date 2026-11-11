@@ -15,7 +15,7 @@ queries and Git revisions, while preserving a stated verification guarantee?**
 | [Observable protocol](protocol.md) | Defined | Equal information contracts, independent oracle and four cost axes |
 | [Relational experiments](experiments/README.md) | Executable | Source-written oracle, multi-revision retrieval, size/fanout/revision variation |
 | [Checked-tree A/B](experiments/checked_tree_ab.py) | Existing | Reusable source-binding checks with adversarial refusal parity |
-| [Real repository fixtures](experiments/real_fixtures.py) | Existing | Pinned upstream Git object validation; not an independent semantic dependency oracle |
+| [Real repository fixtures](experiments/real_fixtures.py) | Existing | Pinned Git objects and independent bounded import-edge oracle; dynamic imports unsupported |
 | [Single-query microbenchmarks](micro/README.md) | Existing, preserved | Git, ripgrep, clangd, graph-only and view phase diagnostics |
 | [Historical reports](results/) | Retained | Original measured results and GitHub Actions artifact pointers |
 

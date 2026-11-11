@@ -1,0 +1,189 @@
+{
+  "version": "1.0.0",
+  "apiVersion": "v3.2.0",
+  "kind": "DataContract",
+  "id": "excession_evidence_query_v1",
+  "name": "Excession typed source evidence query",
+  "status": "active",
+  "domain": "source-analysis",
+  "description": {
+    "purpose": "Expose one pinned Git source's independently replayed static import candidates, unverified compiler-declared source inputs, and observed runtime module loads as separate evidence categories.",
+    "limitations": "No universal dependency completeness, compiler execution attestation, runtime mediation, independent worker signatures, safe test omission or direct semantic edge inference from compiler input membership."
+  },
+  "schema": [
+    {
+      "name": "evidence_query",
+      "logicalType": "object",
+      "physicalType": "application/json",
+      "description": "One read-only query with source-bound static candidates, optional native declarations and optional runtime witnesses.",
+      "properties": [
+        {
+          "name": "schema",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "query_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "source_commit",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "source_tree",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "focus",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "static_replay",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "static_resolution_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "static_candidates",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "unresolved_imports",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "source_gaps",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "compiler_inputs",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "compiler_receipt",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "runtime_witnesses",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "runtime_gaps",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "runtime_receipt",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "counts",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "limits",
+          "logicalType": "array",
+          "required": true,
+          "description": "Required non-completeness and non-attestation constraints"
+        }
+      ],
+      "quality": [
+        {
+          "name": "closed_evidence_schema",
+          "type": "text",
+          "dimension": "conformity",
+          "severity": "error",
+          "description": "Validate all source-specific evidence variants against the strict versioned evidence-query JSON Schema."
+        },
+        {
+          "name": "canonical_query_id_and_counts",
+          "type": "text",
+          "dimension": "consistency",
+          "severity": "error",
+          "description": "Recompute query_id, compare array counts, enforce null receipt coupling and typed evidence provenance."
+        },
+        {
+          "name": "independent_source_replay",
+          "type": "text",
+          "dimension": "accuracy",
+          "severity": "error",
+          "description": "Only the Rust source-replaying query can authenticate Git source relationships; schema validation alone cannot do so."
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "jsonSchemaPath",
+      "value": "contracts/evidence/evidence-query.v1.schema.json"
+    },
+    {
+      "property": "sourceObjectFormat",
+      "value": "git-sha1"
+    },
+    {
+      "property": "relatedSemanticContract",
+      "value": "contracts/semantic/semantic-observations.v1.schema.json"
+    },
+    {
+      "property": "completenessPolicy",
+      "value": "absent-evidence-is-not-negative-evidence"
+    }
+  ],
+  "team": {
+    "id": "excession_maintainers",
+    "name": "Excession maintainers",
+    "description": "Public contract maintenance and acceptance"
+  },
+  "context": {
+    "instructions": "Consume each evidence family according to its own provenance. Static import candidates may be normalized to semantic-observations.v1 CANDIDATE/UNRESOLVED records, but compiler declarations and runtime witnesses must never be retyped as those records.",
+    "verifiedStatements": [
+      {
+        "id": "static_meaning",
+        "question": "What do static candidates establish?",
+        "answer": "The replayed syntax resolver nominated a source-path relationship under supported rules, not complete behavior."
+      },
+      {
+        "id": "compiler_meaning",
+        "question": "What does a compiler input establish?",
+        "answer": "An unattested native declaration names a Git-tracked source input; it does not attest compiler execution or establish a direct import."
+      },
+      {
+        "id": "runtime_meaning",
+        "question": "What does a runtime witness establish?",
+        "answer": "A self-hashed receipt records a module observed in one execution; it does not prove all other possible dependencies."
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no_type_promotion",
+        "constraint": "Do not promote a candidate to a compiler-confirmed or runtime-attested relation; never convert a declared compiler input into a direct import edge."
+      },
+      {
+        "id": "no_unsupported_completeness",
+        "constraint": "Empty arrays, absent optional receipts and no explicit gaps do not establish complete runtime or build dependency discovery or authorize test omission."
+      },
+      {
+        "id": "no_digest_attestation",
+        "constraint": "A canonical unkeyed digest and a Git blob match are not signatures proving a tool actually executed."
+      }
+    ]
+  }
+}

@@ -339,6 +339,44 @@ fn execute(args: &[String]) -> Result<Response> {
     };
     let opt = &parsed.options;
     match parsed.path.as_slice() {
+        [top, sub] if top == "concepts" => {
+            let batch = excession::concepts_normalize::normalize_file(
+                opt.path("repo"),
+                opt.path("report"),
+            )?;
+            match sub.as_str() {
+                "normalize" => Ok(json(batch)),
+                "preview" => Ok(json(excession::concepts_compile::compile(&batch)?)),
+                "compile" => {
+                    let model = excession::concepts_compile::compile(&batch)?;
+                    let manifest = excession::concepts_compile::manifest(&batch, &model)?;
+                    let db = Db::open(opt.path("db"))?;
+                    excession::concepts_store::publish(&db, &model, &manifest)?;
+                    Ok(json(manifest))
+                }
+                "audit" => {
+                    let model = excession::concepts_compile::compile(&batch)?;
+                    let manifest = excession::concepts_compile::manifest(&batch, &model)?;
+                    let id = opt.get("snapshot");
+                    let db = Db::open(opt.path("db"))?;
+                    let (saved, receipt) = excession::concepts_store::audit(&db, id)?;
+                    if saved != model || receipt != manifest {
+                        return refuse(
+                            "semantic snapshot differs from rechecked source-bound candidate inputs",
+                        );
+                    }
+                    Ok(json(excession::json::obj(&[
+                        ("snapshot_id", excession::json::Value::string(id)),
+                        (
+                            "status",
+                            excession::json::Value::string("SOURCE_BINDINGS_RECHECKED"),
+                        ),
+                        ("producer_reexecuted", excession::json::Value::Bool(false)),
+                    ])))
+                }
+                _ => refuse(format!("unknown concepts subcommand {sub}")),
+            }
+        }
         [top, sub] if top == "semantic" => match sub.as_str() {
             "scan" => {
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();

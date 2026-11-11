@@ -302,13 +302,31 @@ pub fn discover(
     revision: &str,
     entry: &str,
     language: &str,
+    import_roots: Option<&str>,
     trusted: bool,
 ) -> Result<Value> {
     if !trusted {
         return refuse("native compiler invocation requires --trusted-local true");
     }
-    if !matches!(language, "go" | "javascript" | "typescript" | "rust") {
+    if !matches!(
+        language,
+        "go" | "javascript" | "typescript" | "rust" | "python"
+    ) {
         return refuse("unsupported native language");
+    }
+    if (language == "python") != import_roots.is_some() {
+        return refuse("Python requires --import-roots; other languages do not accept it");
+    }
+    let roots = import_roots.unwrap_or("");
+    if language == "python" {
+        if roots.is_empty() || roots.len() > 512 || roots.split(',').count() > 16 {
+            return refuse("invalid bounded Python import root list");
+        }
+        for part in roots.split(',') {
+            if part != "." {
+                git::validate_path(part)?;
+            }
+        }
     }
     git::verify_repo(repo)?;
     git::validate_path(entry)?;
@@ -324,6 +342,7 @@ pub fn discover(
     let (tool, version_flag) = match language {
         "go" => ("go", "version"),
         "rust" => ("rustc", "--version"),
+        "python" => ("python3", "--version"),
         _ => ("node", "--version"),
     };
     let pinned_rustc = if language == "rust" {
@@ -342,6 +361,7 @@ pub fn discover(
         .map_err(|e| format!("write embedded TypeScript helper: {e}"))?;
     let mut cmd = Command::new(executable("python3")?);
     cmd.arg("-I")
+        .arg("-S")
         .arg("-B")
         .arg("-c")
         .arg(RESOLVER)
@@ -349,13 +369,14 @@ pub fn discover(
         .arg(entry)
         .arg(language)
         .arg(&helper)
+        .arg(roots)
         .current_dir(&root);
     if let Some(ref compiler) = pinned_rustc {
         cmd.env("EXCESSION_NATIVE_RUSTC", compiler);
     }
     let raw = run_bounded(cmd, "language-native resolver")?;
     let found = json::parse(&raw)?;
-    if found.entries()?.len() != 3 {
+    if found.entries()?.len() != if language == "python" { 4 } else { 3 } {
         return refuse("unexpected language resolver output fields");
     }
     let mut selected = BTreeMap::<String, &'static str>::new();
@@ -379,6 +400,51 @@ pub fn discover(
     if size > MAX_INPUT_BYTES {
         return refuse("native input set exceeds 32 MiB");
     }
+    let observations = if language == "python" {
+        let observations = found.get("observations")?.array_ref()?;
+        if observations.len() > 2048 {
+            return refuse("Python observations exceed bounded site count");
+        }
+        for observation in observations {
+            if observation.entries()?.len() != 6 {
+                return refuse("invalid Python observation fields");
+            }
+            let path = observation.get("source")?.str()?;
+            if !selected.contains_key(path) || path.len() > 4096 {
+                return refuse("Python observation source absent from authenticated inputs");
+            }
+            let line = observation.get("line")?.integer()?;
+            if line < 1 {
+                return refuse("invalid Python observation line");
+            }
+            let specifier = observation.get("specifier")?.str()?;
+            let reason = observation.get("reason")?.str()?;
+            if specifier.is_empty() || specifier.len() > 512 || reason.len() > 512 {
+                return refuse("invalid Python observation text");
+            }
+            if !matches!(
+                observation.get("status")?.str()?,
+                "RESOLVED" | "CANDIDATE" | "UNRESOLVED" | "UNSUPPORTED"
+            ) {
+                return refuse("invalid Python observation status");
+            }
+            let targets = observation.get("targets")?.array_ref()?;
+            if targets.len() > MAX_INPUT_FILES {
+                return refuse("Python observation targets exceed bound");
+            }
+            let mut previous = "";
+            for target in targets {
+                let target = target.str()?;
+                if target <= previous || !selected.contains_key(target) {
+                    return refuse("Python observation target not declared or unsorted");
+                }
+                previous = target;
+            }
+        }
+        Some(Value::array(observations.to_vec()))
+    } else {
+        None
+    };
     let mut values = assumptions(found.get("assumptions")?)?;
     for (key, value) in [
         (
@@ -423,14 +489,31 @@ pub fn discover(
         ("assumptions", Value::Object(values)),
     ]);
     let stats = obj(&[
-        ("commit", Value::string(commit)),
+        ("commit", Value::string(&commit)),
         ("staged_files", Value::number(staged_files)),
         ("staged_bytes", Value::number(staged_bytes)),
         ("declared_files", Value::number(selected.len())),
         ("declared_bytes", Value::number(size)),
         ("elapsed_ns", Value::number(t0.elapsed().as_nanos())),
     ]);
-    Ok(obj(&[("declaration", declaration), ("stats", stats)]))
+    let mut result = obj(&[("declaration", declaration), ("stats", stats)]);
+    if let Some(observations) = observations {
+        let mut resolution = obj(&[
+            ("schema", Value::string("excession.python-resolution.v1")),
+            ("source_commit", Value::string(&commit)),
+            ("subject", Value::string(entry)),
+            ("import_roots", Value::string(roots)),
+            ("observations", observations),
+        ]);
+        let report_id = resolution.sha256();
+        resolution
+            .entries_mut()?
+            .insert("report_id".into(), Value::string(report_id));
+        result
+            .entries_mut()?
+            .insert("resolution".into(), resolution);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -438,8 +521,8 @@ mod tests {
     use super::*;
     #[test]
     fn unknown_and_untrusted_fail_closed() {
-        assert!(discover(Path::new("/tmp"), "HEAD", "main.go", "go", false).is_err());
-        assert!(discover(Path::new("/tmp"), "HEAD", "main.go", "unsafe", true).is_err());
+        assert!(discover(Path::new("/tmp"), "HEAD", "main.go", "go", None, false).is_err());
+        assert!(discover(Path::new("/tmp"), "HEAD", "main.go", "unsafe", None, true).is_err());
     }
     #[test]
     fn language_assumption_keys_are_bounded() {

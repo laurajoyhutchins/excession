@@ -81,7 +81,7 @@ class SyntaxResolutionCLI(unittest.TestCase):
             ("src/go/main.go", "src/gohelper/helper.go"),
             ("src/main.rs", "src/widget.rs"),
         ]:
-            self.assertIn((source, target), edges)
+            self.assertIn((source, target), edges, msg=json.dumps({"imports": [(x["source_path"], x["language"], x["status"], x["imports"]) for x in json.loads(self.syntax_path.read_text())["sources"]], "unresolved": report["unresolved_imports"], "edges": report["candidate_edges"]}, sort_keys=True))
         self.assertNotIn(("src/go/main.go", "src/gohelper/helper_test.go"), edges)
         self.assertFalse(any(x["source_path"] == "src/ambiguous_user.ts"
                              for x in report["candidate_edges"]))

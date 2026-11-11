@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/product/change-inventory.v1.schema.json",
+  "title": "Excession proposed change-inventory.v1.schema.json",
+  "description": "Draft public product wire, not proof of correctness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "report_id",
+    "base_commit",
+    "base_tree",
+    "head_commit",
+    "head_tree",
+    "changes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.change-inventory.v1"
+    },
+    "report_id": {
+      "$ref": "common.v1.schema.json#/$defs/sha256"
+    },
+    "base_commit": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "base_tree": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "head_commit": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "head_tree": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "changes": {
+      "type": "array",
+      "maxItems": 200000,
+      "items": {
+        "$ref": "#/$defs/change"
+      }
+    }
+  },
+  "$defs": {
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "change_id",
+        "kind",
+        "before",
+        "after"
+      ],
+      "properties": {
+        "change_id": {
+          "$ref": "common.v1.schema.json#/$defs/sha256"
+        },
+        "kind": {
+          "enum": [
+            "ADDED",
+            "DELETED",
+            "MODIFIED",
+            "MODE_CHANGED",
+            "RENAMED_CANDIDATE"
+          ]
+        },
+        "before": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.v1.schema.json#/$defs/source_ref"
+            }
+          ]
+        },
+        "after": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "common.v1.schema.json#/$defs/source_ref"
+            }
+          ]
+        },
+        "rename_basis": {
+          "enum": [
+            "SAME_BLOB",
+            "DIFF_HEURISTIC",
+            "NONE"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "ADDED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "before": {
+                "type": "null"
+              },
+              "after": {
+                "$ref": "common.v1.schema.json#/$defs/source_ref"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "DELETED"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "before": {
+                "$ref": "common.v1.schema.json#/$defs/source_ref"
+              },
+              "after": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "RENAMED_CANDIDATE"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "rename_basis"
+            ],
+            "properties": {
+              "before": {
+                "$ref": "common.v1.schema.json#/$defs/source_ref"
+              },
+              "after": {
+                "$ref": "common.v1.schema.json#/$defs/source_ref"
+              },
+              "rename_basis": {
+                "enum": [
+                  "SAME_BLOB",
+                  "DIFF_HEURISTIC"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

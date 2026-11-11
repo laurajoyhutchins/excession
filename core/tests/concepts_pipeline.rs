@@ -91,7 +91,10 @@ impl Fixture {
                         ("language", Value::string("python")),
                     ]),
                 ),
-                ("specifier", Value::string(format!(".{}", to.trim_end_matches(".py")))),
+                (
+                    "specifier",
+                    Value::string(format!(".{}", to.trim_end_matches(".py"))),
+                ),
                 (
                     "assessment",
                     obj(&[
@@ -103,10 +106,7 @@ impl Fixture {
                 ("condition_evaluation", Value::string("NOT_EVALUATED")),
                 (
                     "target",
-                    obj(&[
-                        ("path", Value::string(to)),
-                        ("blob", Value::string(target)),
-                    ]),
+                    obj(&[("path", Value::string(to)), ("blob", Value::string(target))]),
                 ),
             ]),
             "observation_id",
@@ -122,7 +122,10 @@ impl Fixture {
         observations.sort_by_key(Value::canonical);
         let report = concepts::seal(
             obj(&[
-                ("schema", Value::string("excession.semantic-observations.v1")),
+                (
+                    "schema",
+                    Value::string("excession.semantic-observations.v1"),
+                ),
                 ("source_commit", Value::string(&self.commit)),
                 ("source_tree", Value::string(&self.tree)),
                 ("syntax_report_id", Value::string("a".repeat(64))),
@@ -168,7 +171,10 @@ fn reciprocal_candidates_compile_as_partial_not_verified() {
         "PARTIAL_CANDIDATES_ONLY"
     );
     let preview = fixture.invoke("preview", &[]);
-    assert_eq!(preview.get("concepts").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(
+        preview.get("concepts").unwrap().array_ref().unwrap().len(),
+        1
+    );
     let claims = preview.get("claims").unwrap().array_ref().unwrap();
     assert_eq!(claims.len(), 3);
     for claim in claims {
@@ -217,10 +223,30 @@ fn one_way_import_does_not_create_architectural_concept() {
     let fixture = Fixture::new();
     fixture.report(false);
     let preview = fixture.invoke("preview", &[]);
-    assert!(preview.get("concepts").unwrap().array_ref().unwrap().is_empty());
-    assert!(preview.get("claims").unwrap().array_ref().unwrap().is_empty());
+    assert!(
+        preview
+            .get("concepts")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        preview
+            .get("claims")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
-        preview.get("coverage").unwrap().get("status").unwrap().str().unwrap(),
+        preview
+            .get("coverage")
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
         "PARTIAL"
     );
 }

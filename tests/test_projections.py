@@ -496,21 +496,21 @@ class ProjectionIntegration(unittest.TestCase):
     def test_virtual_browser_navigates_without_materialization(self):
         _, manifest = self.plan_deps()
         commands = "ls\ncd views\nls\ncd 00-focus\npwd\nls\nquit\n"
-        completed = subprocess.run([
-            "python3", ROOT / "tools/view_browser.py", self.source, manifest,
-            "--rust", BIN,
-        ], input=commands, text=True, capture_output=True, check=False, timeout=15)
+        browser = [str(BIN), "browse", "--repo", str(self.source),
+                   "--manifest", str(manifest)]
+        completed = subprocess.run(
+            browser, input=commands, text=True, capture_output=True, check=False, timeout=15
+        )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("'views'/", completed.stdout)
-        self.assertIn("'00-focus'/", completed.stdout)
+        self.assertIn("views/", completed.stdout)
+        self.assertIn("00-focus/", completed.stdout)
         self.assertIn("/views/00-focus", completed.stdout)
         self.assertFalse((self.source / "views").exists())
-        invalid = subprocess.run([
-            "python3", ROOT / "tools/view_browser.py", self.source, manifest,
-            "--rust", BIN,
-        ], input="cd ..\n", text=True, capture_output=True, check=False, timeout=15)
+        invalid = subprocess.run(
+            browser, input="cd ..\n", text=True, capture_output=True, check=False, timeout=15
+        )
         self.assertNotEqual(invalid.returncode, 0)
-        self.assertIn("above virtual root", invalid.stderr)
+        self.assertIn("cannot browse above view root", invalid.stderr)
 
 
     def test_namespaced_mounts_allow_distinct_focus_layouts_to_coexist(self):

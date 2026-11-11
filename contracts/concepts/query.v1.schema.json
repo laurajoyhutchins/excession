@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/concepts/query.v1.schema.json",
+  "title": "Excession concept query v1 (proposed)",
+  "required": [
+    "schema",
+    "query_id",
+    "snapshot_id",
+    "operation",
+    "selector",
+    "limits"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts-query.v1"
+    },
+    "query_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "operation": {
+      "enum": [
+        "FIND_CONCEPTS",
+        "LIST_MEMBERS",
+        "EXPLAIN_CLAIM",
+        "TRAVERSE_CLAIMS",
+        "ANSWERABILITY"
+      ]
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "concept_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "claim_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "term": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject_id": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "required_evidence": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "SOURCE_REPLAY",
+          "SCIP",
+          "COMPILER_DECLARATION",
+          "NATIVE_VERIFICATION",
+          "REVIEW"
+        ]
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_depth",
+        "max_results"
+      ],
+      "properties": {
+        "max_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      }
+    }
+  }
+}

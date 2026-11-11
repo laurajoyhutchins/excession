@@ -340,6 +340,13 @@ fn execute(args: &[String]) -> Result<Response> {
     let opt = &parsed.options;
     match parsed.path.as_slice() {
         [top, sub] if top == "concepts" => {
+            if sub == "query" {
+                let db = Db::open(opt.path("db"))?;
+                return Ok(json(excession::concepts_query::run_file(
+                    &db,
+                    opt.path("query"),
+                )?));
+            }
             let batch = excession::concepts_normalize::normalize_file(
                 opt.path("repo"),
                 opt.path("report"),

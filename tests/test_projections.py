@@ -103,6 +103,31 @@ class ProjectionIntegration(unittest.TestCase):
         self.assertEqual(json.loads(run(BIN, "research", "view-audit", self.source, manifest, view_dir).stdout), receipt)
         self.assertEqual(run("git", "-C", self.source, "status", "--porcelain").stdout, "")
 
+    def test_compact_dependency_paths_match_authenticated_full_view(self):
+        plan, _ = self.plan_deps()
+        for role in (
+            "focus", "direct-dependencies", "transitive-dependencies",
+            "direct-dependents", "transitive-dependents", "indexed-test",
+        ):
+            selected = json.loads(run(
+                BIN, "view", "paths", "--db", self.catalog, "--name", "h11",
+                "--rev", "HEAD", "--seed", "h11._connection", "--role", role,
+            ).stdout)
+            expected = sorted({e["source_path"] for e in plan["entries"] if e["role"] == role})
+            self.assertEqual(selected["schema"], "excession.dependency-paths.v1")
+            self.assertEqual(selected["source_commit"], self.commit)
+            self.assertEqual(selected["source_tree"], self.tree)
+            self.assertEqual(selected["view_id"], plan["view_id"])
+            self.assertEqual(selected["role"], role)
+            self.assertEqual(selected["source_paths"], expected)
+        self.assertNotEqual(run(
+            BIN, "view", "paths", "--db", self.catalog, "--name", "h11",
+            "--rev", "HEAD", "--seed", "h11._connection", "--role", "unknown",
+            ok=False,
+        ).returncode, 0)
+        # Compact results are not authenticatable materialization manifests.
+        self.assertNotIn("entries", selected)
+
     def test_focus_changes_layout_not_source_revision(self):
         a, _ = self.plan_deps("h11._connection")
         b, _ = self.plan_deps("h11._headers")

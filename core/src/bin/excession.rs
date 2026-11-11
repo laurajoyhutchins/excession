@@ -17,6 +17,7 @@ const HELP: &str = r#"Excession | Git-authenticated repository exploration and s
 Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
   excession view deps --db DB --name NAME --rev REV --seed MODULE
+  excession view paths --db DB --name NAME --rev REV --seed MODULE --role ROLE
   excession view security --db DB --repo REPO --run RUN_ID
   excession view compose --repo REPO --op union|intersection|difference --left JSON --right JSON
   excession view select --repo REPO --manifest JSON --axis role|source-prefix|virtual-prefix --value TEXT
@@ -124,6 +125,17 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             } else {
                 plan
             }
+        }
+        ("paths", false) => {
+            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "role"], &[])?;
+            let db = Db::open(opt.path("db"))?;
+            projection::dependency_paths(
+                &db,
+                opt.get("name"),
+                opt.get("rev"),
+                opt.get("seed"),
+                opt.get("role"),
+            )?
         }
         ("security", false) | ("security", true) => {
             let opt = Options::parse(

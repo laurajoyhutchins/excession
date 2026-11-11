@@ -269,7 +269,7 @@ fn bfs(seed: &str, graph: &BTreeMap<String, BTreeSet<String>>) -> BTreeMap<Strin
     distance
 }
 
-pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
+fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Plan> {
     let id = db
         .scalar(
             "SELECT id FROM repository WHERE name=?",
@@ -368,7 +368,53 @@ pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<V
     db.foreign_keys_valid()?;
     let plan = make_plan("dependencies", seed, commit, tree, entries)?;
     authenticate(&plan, &repo)?;
-    Ok(plan.manifest())
+    Ok(plan)
+}
+
+/// Generate the complete authenticated, materializable dependency projection.
+pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
+    Ok(dependency_plan(db, name, revision, seed)?.manifest())
+}
+
+/// Return only paths needed by a focused role query. The complete source-bound
+/// projection is authenticated first, but its unrelated entries are not emitted.
+/// This is a query result, not a view manifest or an independent correctness proof.
+pub fn dependency_paths(
+    db: &Db,
+    name: &str,
+    revision: &str,
+    seed: &str,
+    role: &str,
+) -> Result<Value> {
+    if !matches!(
+        role,
+        "focus"
+            | "direct-dependencies"
+            | "transitive-dependencies"
+            | "direct-dependents"
+            | "transitive-dependents"
+            | "indexed-test"
+    ) {
+        return refuse("unknown dependency role");
+    }
+    let plan = dependency_plan(db, name, revision, seed)?;
+    let paths = plan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role)
+        .map(|entry| entry.source_path.as_str())
+        .collect::<BTreeSet<_>>();
+    Ok(obj(&[
+        ("schema", Value::string("excession.dependency-paths.v1")),
+        ("source_commit", Value::string(&plan.commit)),
+        ("source_tree", Value::string(&plan.tree)),
+        ("view_id", Value::string(plan.payload().sha256())),
+        ("role", Value::string(role)),
+        (
+            "source_paths",
+            Value::array(paths.into_iter().map(Value::string)),
+        ),
+    ]))
 }
 
 pub fn security(db: &Db, repo: &Path, run_id: &str) -> Result<Value> {

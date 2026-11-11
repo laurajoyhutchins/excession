@@ -3,6 +3,7 @@ import importlib.util
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,24 @@ spec.loader.exec_module(clang)
 
 
 class ClangDatabaseTests(unittest.TestCase):
+    def test_compiler_output_is_bounded_while_streaming(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command = [
+                sys.executable, "-c",
+                "import sys; sys.stdout.write('x'*100000); "
+                "sys.stderr.write('y'*100000)"
+            ]
+            with self.assertRaisesRegex(ValueError, "byte budget"):
+                clang.invoke(command, Path(tmp), max_bytes=32768, timeout=5)
+
+    def test_compiler_timeout_kills_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "timed out"):
+                clang.invoke(
+                    [sys.executable, "-c", "import time; time.sleep(2)"],
+                    Path(tmp), max_bytes=4096, timeout=0.1,
+                )
+
     def test_parse_compilation_flags_without_shell(self):
         cwd = Path("/tmp")
         src = cwd / "sample.c"

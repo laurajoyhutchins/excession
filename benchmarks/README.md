@@ -22,10 +22,11 @@ or "better understanding." Those terms are not operationalized here.
 | Source identity | Exact Git commit/tree and output SHA-256 | Reproducible references, not an independent semantic guarantee |
 
 Peak per-process memory and model tokens are **not currently instrumented**, and
-must not appear in claims. The graph arm runs as a fresh Python interpreter,
-whereas Excession runs in Rust; latency measures end-user CLI invocation cost,
-not a pure comparison of the view-layout algorithm. Process cache state is not
-rigorously controlled.
+must not appear in claims. One graph arm runs as a fresh Python interpreter, while the native Rust graph
+and Excession views share the same Rust binary and indexed tree checks. The
+view additionally authenticates source references; this remains a CLI and
+verification comparison, not a pure layout-algorithm microbenchmark. Cache
+state is not rigorously controlled.
 
 ## Executable calibration: graph vs derived views
 
@@ -43,10 +44,10 @@ python3 benchmarks/paired.py run \
 ```
 
 The runner creates one Excession `module`/`dependency` SQLite index and uses
-**that exact database** for both arms. The graph baseline performs bounded
-breadth-first traversal in plain Python/SQLite; the view arm invokes
-`excession view deps` and selects named roles from its JSON output. Both
-queries are paired on the same task, revision, and index with randomized order.
+**that exact database** for all three arms: Python/SQLite BFS, Rust/SQLite BFS
+through `excession inspect graph`, and `excession view deps` with role filtering.
+They share tasks, commit and index, with rotated execution order. Query results
+are tested for source-set parity without claiming graph completeness.
 
 There are 24 mechanically specified queries: six graph operations against four
 h11 module seeds. These are **not 24 independent engineering tasks**. Four
@@ -64,16 +65,46 @@ The view arm does not independently replay or materialize every view. Audit
 cost must be measured in a separate study against a straightforward Git/SQLite
 hash-and-identity checking baseline.
 
-## Next comparisons: fixed, observable retrieval probes
+## Implemented simpler-tool probes
 
-Implement the remaining arms using fixed, versioned query protocols, pinned
-tools and Git commits:
+The native graph comparison uses `benchmarks/paired.py`. For four fixed module
+file-location queries, `benchmarks/locate.py` compares `rg --files`, `git ls-tree`,
+native Rust graph and views. The Git arm enumerates tracked `h11` paths and
+filters afterward, preserving the raw output amplification in the receipt.
+The `rg` arm requires a clean working tree at the exact queried HEAD.
+
+```sh
+python3 benchmarks/locate.py --repo /path/to/clean/h11 \
+  --db /tmp/excession-calibration-001/index.sqlite \
+  --bin ./core/target/debug/excession \
+  --tasks benchmarks/calibration-h11.json --name h11 \
+  --out /tmp/excession-file-lookup-001
+```
+
+A separate real JSON-RPC `textDocument/definition` probe uses the tiny tracked
+C fixture. `benchmarks/symbol_compare.py` compares returned definition
+locations to exact `rg` and `git grep` occurrences and records LSP initialization
+latency, definition-request latency and wire bytes. An unavailable language
+server is `unsupported`, not a zero-cost success. Excession currently lacks
+C-symbol navigation; it is unsupported on that probe.
+
+```sh
+python3 benchmarks/symbol_compare.py --repo . --out /tmp/excession-symbol-001
+```
+
+These probes test different query operations. Do **not** aggregate exact-file
+lookup, transitive dependency closure and semantic symbol resolution into one
+score. The C fixture is a protocol smoke, not representative LSP evidence.
+
+## Further fixed, observable retrieval probes
+
+Expand to independent source revisions, languages, and indexed queries:
 
 | Arm | What is executed | What is measured |
 | --- | --- | --- |
 | Keyword | Fixed `rg` queries and bounded file reads | Exact hits, rank, bytes emitted, CPU/wall time, exit status |
 | LSP | Pinned server: workspace symbols, definitions, references | Exact symbol locations, count, bytes, startup/index cost, latency, unsupported cases |
-| Graph | Identical indexed edges with plain SQL/BFS | Path sets, edge/node visits, depth, query cost |
+| Graph | Identical indexed edges with Python and Rust BFS | Path sets, query time, CPU and output bytes |
 | Shell | Fixed read-only `git`, `find`, `rg`, `sed`, `awk` pipelines | Exact returned paths/bytes and process costs |
 | Excession | Indexed views, select/compose, virtual source reads | Path sets, manifest amplification, verification and runtime costs |
 

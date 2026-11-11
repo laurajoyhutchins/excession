@@ -32,7 +32,8 @@ python3 benchmarks/experiments/scip_fixture_migration.py \
 ```
 
 The dedicated [SCIP fixture workflow](../../.github/workflows/scip-fixtures.yml)
-runs the six-fixture suite on relevant PRs and supports the historical sweep
+runs the six-fixture suite and one pinned historical PostCSS revision on
+relevant PRs. It also supports the complete 16-revision historical sweep
 through manual dispatch. The official SCIP decoder release archive is verified
 by SHA-256, and the tool versions are pinned in CI.
 
@@ -40,28 +41,45 @@ To replay previously generated decoded indexes without executing an indexer,
 replace `--trusted-local` with `--decoded-dir PATH` containing
 `<fixture>-python.json` or `<fixture>-typescript.json`.
 
-## Observed six-fixture run
+## Observed real-indexer coverage
 
-The pinned upstream SCIP tools and Git-bound replay passed on
-[workflow run 43055514994](https://github.com/laurajoyhutchins/excession/actions/runs/43055514994).
-That run produced 37,825 SCIP occurrences over six fixtures and preserved
-decoded indexes, generated binary SCIP files, reports and audit receipts.
+[Workflow run 43066123968](https://github.com/laurajoyhutchins/excession/actions/runs/43066123968)
+passed all six pinned fixtures, using the official upstream SCIP indexers
+and Git-bound replay. It reported **44,812 symbol occurrences** in total.
 
-| Fixture | Scoped source coverage | Outcome |
+| Fixture | Declared source files indexed | Status |
 | --- | ---: | --- |
 | h11 | 12 / 12 | `SOURCE_BOUND` |
 | ItsDangerous | 8 / 8 | `SOURCE_BOUND` |
 | Click | 17 / 17 | `SOURCE_BOUND` |
 | Requests | 19 / 19 | `SOURCE_BOUND` |
-| Axios | 0 / 72 expected `lib` files | `PARTIAL` |
-| Mixed import fixture | Python 4 / 4; JS/TS 1 / 4 | `PARTIAL` |
+| Axios | 72 / 72 | `SOURCE_BOUND` |
+| Mixed import fixture | Python 4 / 4; JS/TS 4 / 4 | `SOURCE_BOUND` |
 
-SCIP TypeScript indexed other source files in Axios but not the 72 scoped
-`lib` files. That is a real configuration/coverage difference, not a
-source-integrity failure. The fixture runner does **not** replace a
-repository's existing TypeScript project configuration or synthesize
-missing symbol relationships to produce apparent completeness.
-Neither of the two partial fixtures is claimed to have complete coverage.
+The same workflow exercised pinned historical PostCSS revision
+`173614d9cfa4660eddd3d42f55e3fb0ec4659427` and indexed its single
+declared `lib` source file (33 SCIP occurrences). All 16 historical
+revisions remain available through the opt-in full historical sweep; this
+run established one historical revision, not all 16.
+
+The preceding [baseline run 43055514994](https://github.com/laurajoyhutchins/excession/actions/runs/43055514994)
+indexed none of Axios's 72 declared `lib` JavaScript files and only one
+of the mixed fixture's four JS/TS files. The native TypeScript project
+selection excluded the others.
+
+The runner now uses an **explicit, disposable SCIP analysis project** for
+fixtures containing JavaScript or TypeScript. It lists precisely the
+Git-tracked source files within the declared roots, enables `allowJs`,
+and extends the original `tsconfig.json` when one exists. It never
+overwrites the pinned repository configuration. The generated analysis
+configuration, its SHA-256 digest, and the original project's config
+digest are preserved alongside the SCIP index and replay receipt.
+
+This separate fixture-scoped analysis does **not** establish that every
+source file participates in the original build, deployment, or runtime,
+nor that every symbol relationship has been discovered correctly. The
+original project-selected SCIP observations and the fixture-scoped
+observations are not interchangeable.
 
 ## Evidence contract
 

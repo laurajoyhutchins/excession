@@ -14,6 +14,7 @@ pub mod index;
 pub mod integration;
 pub mod json;
 pub mod kernel;
+pub mod kernel_clang;
 pub mod kernel_links;
 pub mod optimizer;
 pub mod overlap;

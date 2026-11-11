@@ -243,6 +243,64 @@ def tamper_checks(binary: Path, db: Path, work: Path, name: str,
     }
 
 
+def dependency_mutation_checks(
+    db: Path, repo: Path, commit: str, source: dict[str, tuple[str, str]],
+    work: Path, fixture_name: str,
+) -> dict:
+    """Prove the source oracle rejects omissions and invented SQL relations.
+
+    Full view and direct graph would agree when both use a damaged dependency
+    table. These checks must fail independently of their shared index.
+    """
+    from dependency_oracle import verify_dependencies
+
+    with sqlite3.connect(db) as con:
+        edges = con.execute(
+            "SELECT repo_id,commit_oid,source_name,target_name,line,syntax "
+            "FROM dependency ORDER BY source_name,target_name,line,syntax"
+        ).fetchall()
+        modules = [r[0] for r in con.execute("SELECT name FROM module ORDER BY name")]
+        repo_id = con.execute("SELECT id FROM repository").fetchone()[0]
+    if not edges or len(modules) < 2:
+        raise ValueError("dependency corruption fixture needs real edges and multiple modules")
+
+    missing_db = work / f"{fixture_name}-missing-dependency.sqlite"
+    shutil.copyfile(db, missing_db)
+    victim = edges[0]
+    with sqlite3.connect(missing_db) as con:
+        con.execute(
+            "DELETE FROM dependency WHERE repo_id=? AND commit_oid=? "
+            "AND source_name=? AND target_name=? AND line=? AND syntax=?", victim,
+        )
+        if con.total_changes != 1:
+            raise ValueError("could not remove precisely one dependency")
+    missing = verify_dependencies(missing_db, repo, commit, source)
+    if missing["counts"]["missing_edges"] != 1 or missing["counts"]["unexpected_edges"] != 0:
+        raise ValueError("independent oracle failed to detect one omitted source edge")
+
+    recorded = {(r[2], r[3], r[4], r[5]) for r in edges}
+    invented = next(
+        ((a, b, 1, "import") for a in modules for b in modules
+         if a != b and (a, b, 1, "import") not in recorded),
+        None,
+    )
+    if invented is None:
+        raise ValueError("no valid nonexisting module edge for invention test")
+    extra_db = work / f"{fixture_name}-invented-dependency.sqlite"
+    shutil.copyfile(db, extra_db)
+    with sqlite3.connect(extra_db) as con:
+        con.execute(
+            "INSERT INTO dependency(repo_id,commit_oid,source_name,target_name,line,syntax)"
+            " VALUES(?,?,?,?,?,?)", (repo_id, commit, *invented),
+        )
+        if con.total_changes != 1:
+            raise ValueError("could not insert precisely one false dependency")
+    extra = verify_dependencies(extra_db, repo, commit, source)
+    if extra["counts"]["unexpected_edges"] != 1 or extra["counts"]["missing_edges"] != 0:
+        raise ValueError("independent oracle failed to detect an invented source edge")
+    return {"removed_edge_detected": True, "invented_edge_detected": True}
+
+
 def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -> dict:
     name = fixture["name"]
     repo = work / name
@@ -269,6 +327,7 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -
     refusals = tamper_checks(binary, db, work, name, commit, fixture["seeds"][0], viewed)
     from dependency_oracle import verify_dependencies
     dependency_audit = verify_dependencies(db, repo, commit, source)
+    dependency_mutations = dependency_mutation_checks(db, repo, commit, source, work, name)
     for result in results:
         del result["source_paths"]
     return {
@@ -279,6 +338,7 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -
         "index_bytes": db.stat().st_size, "rows": counts,
         "git_blob_count": len(source), "seeds": results,
         "tamper_refusals": refusals, "dependency_audit": dependency_audit,
+        "dependency_mutation_checks": dependency_mutations,
     }
 
 
@@ -322,7 +382,9 @@ def main() -> None:
                       f"{audit['matched_edges']}/{audit['expected_in_scope_edges']} "
                       f"expected import edges, {audit['missing_edges']} missing, "
                       f"{audit['unexpected_edges']} unexpected; "
-                      f"{len(result['seeds'])} seeds and 2 tamper refusals", flush=True)
+                      f"{audit['not_proven_import_sites']} unproven import sites; "
+                      f"{len(result['seeds'])} seeds, 2 source integrity refusals, "
+                      f"2 graph mutation detections", flush=True)
             except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired,
                     sqlite3.Error) as exc:
                 report["fixtures"].append({

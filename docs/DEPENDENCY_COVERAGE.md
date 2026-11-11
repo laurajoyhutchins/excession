@@ -51,6 +51,17 @@ python3 benchmarks/experiments/real_fixtures.py \
   --out real-fixture-results.json
 ```
 
-A missing edge is a test failure, not a lower measured accuracy to overlook.
+A missing or invented edge is a test failure. Each fixture creates two
+damaged copies of its dependency table, deleting one true edge and adding
+one false edge, and requires the independent oracle to reject both. This
+demonstrates the failure mode that a view-versus-graph comparison cannot
+detect when both consume the same damaged table.
+
+In the 2026-11-11 pinned fixture run, the six fixtures recovered 568/568
+independently enumerated in-scope edges, with zero extras. Three import sites
+remain **outside** the claim: one Python wildcard import in h11 and two
+name-computed dynamic imports in Requests, both selecting third-party
+modules. Those are reported as unproven, not silently counted as successes.
+
 A green run supports a bounded fixture result, not an assertion that all
 possible dependencies in an arbitrary repository have been recovered.

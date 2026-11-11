@@ -228,7 +228,37 @@ pub(super) fn command() -> Command {
             &["rev", "compiler", "config", "object-prefix"],
         )
     };
-    let analyze = group("analyze", vec![clang()]).about("Compiler-backed source analysis");
+    let analyze = Command::new("analyze")
+        .about("Index supported source candidates or perform configured Clang analysis")
+        .arg(
+            Arg::new("path")
+                .index(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("rev")
+                .long("rev")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("roots")
+                .long("roots")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("db")
+                .long("db")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .subcommand(clang());
     let kernel = group(
         "kernel",
         vec![

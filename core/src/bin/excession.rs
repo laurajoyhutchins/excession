@@ -1,6 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
+use excession::analyze;
 use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
@@ -452,6 +453,19 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown graph command: {sub}")),
         },
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
+        [top] if top == "analyze" => {
+            let (report, db_path) = analyze::run(
+                Path::new(opt.get_or("path", ".")),
+                opt.get_or("rev", "HEAD"),
+                opt.0.get("roots").map(String::as_str),
+                opt.0.get("db").map(String::as_str),
+            )?;
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(report))
+            } else {
+                Ok(Response::Message(analyze::human(&report, &db_path)?))
+            }
+        }
         [top, sub] if top == "kernel" => match sub.as_str() {
             "scan" => {
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();

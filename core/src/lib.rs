@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod adapter;
+pub mod analyze;
 pub mod benchmark;
 pub mod compiler_clang;
 pub mod configured_store;

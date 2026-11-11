@@ -134,6 +134,21 @@ def one_configuration(repo, base, variant, binary, db):
     assert imported["graph_id"] == graph["graph_id"]
     assert imported["provider"] == "cmake"
     assert imported["node_count"] == len(graph["nodes"])
+    # Import a configured target without any compiler receipts and without
+    # an explicit DB path: this is intentionally partial but immediately useful.
+    default_import = json.loads(run([
+        str(binary), "graph", "import",
+        "--repo", str(repo), "--rev", COMMIT,
+        "--build", str(build), "--target", TARGET,
+    ]))
+    assert default_import["status"] == "PARTIAL_TARGET_OBSERVATIONS"
+    assert default_import["node_count"] > 0
+    assert default_import["database"] == str(build / "excession.sqlite")
+    default_listing = json.loads(run([
+        str(binary), "graph", "ls", "--build", str(build),
+    ]))
+    assert any(x["graph_id"] == default_import["graph_id"]
+               for x in default_listing["graphs"])
     listed = json.loads(run([str(binary), "graph", "ls", "--db", str(db)]))
     assert any(x["graph_id"] == imported["graph_id"] for x in listed["graphs"])
     shown = json.loads(run([str(binary), "graph", "show", "--db", str(db),

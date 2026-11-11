@@ -233,15 +233,18 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -
                                    source, repetitions))
     viewed = {path for result in results for path in result["source_paths"]}
     refusals = tamper_checks(binary, db, work, name, commit, fixture["seeds"][0], viewed)
+    from dependency_oracle import verify_dependencies
+    dependency_audit = verify_dependencies(db, repo, commit, source)
     for result in results:
         del result["source_paths"]
     return {
         "name": name, "upstream": fixture.get("repository", "bundled h11"),
         "source_commit": commit, "source_tree": tree, "roots": fixture["roots"],
-        "status": "passed", "index_wall_ms": index_ms,
+        "status": "passed" if dependency_audit["status"] == "matched" else "failed",
+        "index_wall_ms": index_ms,
         "index_bytes": db.stat().st_size, "rows": counts,
         "git_blob_count": len(source), "seeds": results,
-        "tamper_refusals": refusals,
+        "tamper_refusals": refusals, "dependency_audit": dependency_audit,
     }
 
 
@@ -268,7 +271,9 @@ def main() -> None:
         "limitations": (
             "Source OIDs, compact/full parity, and tamper refusal are checked. "
             "Graph retrieval and view selection both consume the same semantic SQLite index; "
-            "agreement does not validate dependency completeness. Git source tree and commit "
+            "agreement alone does not validate dependency completeness. A separate Git-source "
+            "AST/TypeScript import inventory checks statically resolvable indexed edges, but "
+            "does not establish runtime or dynamically constructed dependencies. Git source tree and commit "
             "identity are authoritative. Timings are process wall time on one CI host."
         ),
     }
@@ -278,9 +283,12 @@ def main() -> None:
             try:
                 result = inspect_fixture(binary, fixture, work, args.repetitions)
                 report["fixtures"].append(result)
-                print(f"PASS {result['name']}: {result['rows']['module']} modules, "
-                      f"{result['rows']['tree_entry']} tree rows, "
-                      f"{len(result['seeds'])} seeds, 2 tamper refusals", flush=True)
+                audit = result["dependency_audit"]["counts"]
+                print(f"{result['status'].upper()} {result['name']}: "
+                      f"{audit['matched_edges']}/{audit['expected_in_scope_edges']} "
+                      f"expected import edges, {audit['missing_edges']} missing, "
+                      f"{audit['unexpected_edges']} unexpected; "
+                      f"{len(result['seeds'])} seeds and 2 tamper refusals", flush=True)
             except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired,
                     sqlite3.Error) as exc:
                 report["fixtures"].append({

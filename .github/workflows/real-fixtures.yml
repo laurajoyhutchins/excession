@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - benchmarks/experiments/real_fixtures.py
+      - benchmarks/experiments/dependency_oracle.py
+      - benchmarks/experiments/js_import_oracle.cjs
+      - core/adapters/python_ast.py
       - benchmarks/fixtures/real-repositories.json
       - .github/workflows/real-fixtures.yml
       - core/src/projection.rs

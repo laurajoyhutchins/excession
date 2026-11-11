@@ -34,12 +34,18 @@ fn paths(report: &Value) -> Result<BTreeMap<String, Source<'_>>> {
         if !matches!(status, "PARSED" | "PARSED_WITH_ERRORS") {
             continue; // An unavailable parser supplies no trustworthy imports.
         }
-        if out.insert(path.to_owned(), Source {
-            path,
-            blob,
-            language: source.get("language")?.str()?,
-            imports: source.get("imports")?.array_ref()?,
-        }).is_some() {
+        if out
+            .insert(
+                path.to_owned(),
+                Source {
+                    path,
+                    blob,
+                    language: source.get("language")?.str()?,
+                    imports: source.get("imports")?.array_ref()?,
+                },
+            )
+            .is_some()
+        {
             return refuse("duplicated source path in syntax report");
         }
     }
@@ -50,11 +56,19 @@ fn module_name(contents: &str) -> Option<&str> {
     let mut found = None;
     for line in contents.lines() {
         let line = line.trim();
-        if let Some(name) = line.strip_prefix("module ").or_else(|| line.strip_prefix("module\t")) {
+        if let Some(name) = line
+            .strip_prefix("module ")
+            .or_else(|| line.strip_prefix("module\t"))
+        {
             let name = name.trim().trim_matches('"');
-            if found.is_some() || name.is_empty() || name.contains(char::is_whitespace)
-                || name.starts_with('/') || name.contains('\\')
-                || name.split('/').any(|part| part == "." || part == ".." || part.is_empty())
+            if found.is_some()
+                || name.is_empty()
+                || name.contains(char::is_whitespace)
+                || name.starts_with('/')
+                || name.contains('\\')
+                || name
+                    .split('/')
+                    .any(|part| part == "." || part == ".." || part.is_empty())
             {
                 return None;
             }
@@ -67,8 +81,11 @@ fn module_name(contents: &str) -> Option<&str> {
 fn go_modules(root: &Path, revision: &str) -> Result<Vec<GoModule>> {
     let mut selected = git::entries(root, revision)?
         .into_iter()
-        .filter(|e| e.kind == "blob" && e.mode == "100644"
-            && (e.path == "go.mod" || e.path.ends_with("/go.mod")))
+        .filter(|e| {
+            e.kind == "blob"
+                && e.mode == "100644"
+                && (e.path == "go.mod" || e.path.ends_with("/go.mod"))
+        })
         .collect::<Vec<_>>();
     if selected.len() > MAX_GO_MODULES {
         return refuse("more than 32 go.mod files; narrow the analyzed repository");
@@ -81,7 +98,12 @@ fn go_modules(root: &Path, revision: &str) -> Result<Vec<GoModule>> {
         let contents = std::str::from_utf8(&body).map_err(|_| "non-UTF-8 go.mod")?;
         if let Some(name) = module_name(contents) {
             result.push(GoModule {
-                root: entry.path.strip_suffix("go.mod").unwrap_or("").trim_end_matches('/').into(),
+                root: entry
+                    .path
+                    .strip_suffix("go.mod")
+                    .unwrap_or("")
+                    .trim_end_matches('/')
+                    .into(),
                 name: name.into(),
                 path: entry.path,
                 blob: entry.oid,
@@ -99,20 +121,37 @@ fn join_relative(base: &str, reference: &str) -> Option<String> {
     if reference.contains('\\') || reference.contains('\0') {
         return None;
     }
-    let mut segments = base.rsplit_once('/').map(|x| x.0).unwrap_or("")
-        .split('/').filter(|x| !x.is_empty()).collect::<Vec<_>>();
+    let mut segments = base
+        .rsplit_once('/')
+        .map(|x| x.0)
+        .unwrap_or("")
+        .split('/')
+        .filter(|x| !x.is_empty())
+        .collect::<Vec<_>>();
     for part in reference.split('/') {
         match part {
             "" | "." => (),
-            ".." => { segments.pop()?; }
+            ".." => {
+                segments.pop()?;
+            }
             v => segments.push(v),
         }
     }
-    if segments.is_empty() { None } else { Some(segments.join("/")) }
+    if segments.is_empty() {
+        None
+    } else {
+        Some(segments.join("/"))
+    }
 }
 
-fn relative_candidates(specifier: &str, source: &str, files: &BTreeMap<String, Source<'_>>) -> Vec<String> {
-    let Some(base) = join_relative(source, specifier) else { return Vec::new(); };
+fn relative_candidates(
+    specifier: &str,
+    source: &str,
+    files: &BTreeMap<String, Source<'_>>,
+) -> Vec<String> {
+    let Some(base) = join_relative(source, specifier) else {
+        return Vec::new();
+    };
     let extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
     let explicit = extensions.iter().any(|ext| base.ends_with(ext));
     let mut paths = Vec::new();
@@ -136,7 +175,11 @@ fn relative_candidates(specifier: &str, source: &str, files: &BTreeMap<String, S
     paths
 }
 
-fn python_candidates(specifier: &str, source: &str, files: &BTreeMap<String, Source<'_>>) -> Vec<String> {
+fn python_candidates(
+    specifier: &str,
+    source: &str,
+    files: &BTreeMap<String, Source<'_>>,
+) -> Vec<String> {
     let (module, relative) = if specifier.starts_with('.') {
         let dots = specifier.bytes().take_while(|ch| *ch == b'.').count();
         let tail = &specifier[dots..];
@@ -155,46 +198,78 @@ fn python_candidates(specifier: &str, source: &str, files: &BTreeMap<String, Sou
     } else {
         (specifier.replace('.', "/"), false)
     };
-    if module.is_empty() || module.contains('\\') || module.contains('\0')
-        || module.split('/').any(|p| p.is_empty() || p == "." || p == "..")
+    if module.is_empty()
+        || module.contains('\\')
+        || module.contains('\0')
+        || module
+            .split('/')
+            .any(|p| p.is_empty() || p == "." || p == "..")
     {
         return Vec::new();
     }
     let suffixes = [format!("{module}.py"), format!("{module}/__init__.py")];
     let mut matches = Vec::new();
     for path in files.keys() {
-        if !path.ends_with(".py") { continue; }
-        if suffixes.iter().any(|suffix| {
-            path == suffix || (!relative && path.ends_with(&format!("/{suffix}")))
-        }) {
+        if !path.ends_with(".py") {
+            continue;
+        }
+        if suffixes
+            .iter()
+            .any(|suffix| path == suffix || (!relative && path.ends_with(&format!("/{suffix}"))))
+        {
             matches.push(path.clone());
         }
     }
     matches
 }
 
-fn rust_candidates(specifier: &str, source: &str, files: &BTreeMap<String, Source<'_>>) -> Vec<String> {
-    let Some(rest) = specifier.strip_prefix("crate::") else { return Vec::new(); };
+fn rust_candidates(
+    specifier: &str,
+    source: &str,
+    files: &BTreeMap<String, Source<'_>>,
+) -> Vec<String> {
+    let Some(rest) = specifier.strip_prefix("crate::") else {
+        return Vec::new();
+    };
     let module = rest.split("::").next().unwrap_or("");
-    if module.is_empty() || !module.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+    if module.is_empty()
+        || !module
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
         return Vec::new();
     }
-    let Some((prefix, _)) = source.split_once("src/") else { return Vec::new(); };
+    let Some((prefix, _)) = source.split_once("src/") else {
+        return Vec::new();
+    };
     if !(files.contains_key(&format!("{prefix}src/lib.rs"))
         || files.contains_key(&format!("{prefix}src/main.rs")))
     {
         return Vec::new();
     }
-    let choices = [format!("{prefix}src/{module}.rs"), format!("{prefix}src/{module}/mod.rs")];
-    choices.into_iter().filter(|path| files.contains_key(path)).collect()
+    let choices = [
+        format!("{prefix}src/{module}.rs"),
+        format!("{prefix}src/{module}/mod.rs"),
+    ];
+    choices
+        .into_iter()
+        .filter(|path| files.contains_key(path))
+        .collect()
 }
 
-fn go_candidates<'a>(specifier: &str, source: &str, modules: &'a [GoModule],
-    files: &BTreeMap<String, Source<'_>>) -> (Vec<String>, Option<&'a GoModule>) {
-    let module = modules.iter()
+fn go_candidates<'a>(
+    specifier: &str,
+    source: &str,
+    modules: &'a [GoModule],
+    files: &BTreeMap<String, Source<'_>>,
+) -> (Vec<String>, Option<&'a GoModule>) {
+    let module = modules
+        .iter()
         .filter(|m| m.root.is_empty() || source.starts_with(&format!("{}/", m.root)))
         .max_by_key(|m| m.root.len());
-    let Some(module) = module else { return (Vec::new(), None); };
+    let Some(module) = module else {
+        return (Vec::new(), None);
+    };
     let local = if specifier == module.name {
         ""
     } else if let Some(path) = specifier.strip_prefix(&format!("{}/", module.name)) {
@@ -202,18 +277,29 @@ fn go_candidates<'a>(specifier: &str, source: &str, modules: &'a [GoModule],
     } else {
         return (Vec::new(), Some(module));
     };
-    if local.contains('\\') || local.contains('\0') ||
-        local.split('/').any(|piece| piece == ".." || piece == "." || (piece.is_empty() && !local.is_empty()))
+    if local.contains('\\')
+        || local.contains('\0')
+        || local
+            .split('/')
+            .any(|piece| piece == ".." || piece == "." || (piece.is_empty() && !local.is_empty()))
     {
         return (Vec::new(), Some(module));
     }
-    let directory = if module.root.is_empty() { local.to_owned() }
-        else if local.is_empty() { module.root.clone() }
-        else { format!("{}/{local}", module.root) };
-    let candidate = files.iter()
-        .filter(|(path, item)| item.language == "go"
-            && path.rsplit_once('/').map(|p| p.0).unwrap_or("") == directory
-            && path.ends_with(".go") && !path.ends_with("_test.go"))
+    let directory = if module.root.is_empty() {
+        local.to_owned()
+    } else if local.is_empty() {
+        module.root.clone()
+    } else {
+        format!("{}/{local}", module.root)
+    };
+    let candidate = files
+        .iter()
+        .filter(|(path, item)| {
+            item.language == "go"
+                && path.rsplit_once('/').map(|p| p.0).unwrap_or("") == directory
+                && path.ends_with(".go")
+                && !path.ends_with("_test.go")
+        })
         .map(|(path, _)| path.clone())
         .collect::<Vec<_>>();
     (candidate, Some(module))
@@ -247,7 +333,9 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
     // Replay the exact parser and Git sources before resolving anything.
     syntax::audit(root, syntax_report)?;
     let raw = std::fs::read(syntax_report).map_err(|e| format!("syntax read: {e}"))?;
-    if raw.len() > MAX_REPORT_BYTES { return refuse("syntax input exceeds 32 MiB"); }
+    if raw.len() > MAX_REPORT_BYTES {
+        return refuse("syntax input exceeds 32 MiB");
+    }
     let report = json::parse(&raw)?;
     let revision = git::oid(report.get("source_commit")?.str()?)?;
     let files = paths(&report)?;
@@ -263,7 +351,10 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
                 ("source_path", source.get("source_path")?.clone()),
                 ("status", Value::string(status)),
             ]));
-        } else if !matches!(language, "python" | "javascript" | "typescript" | "tsx" | "go" | "rust") {
+        } else if !matches!(
+            language,
+            "python" | "javascript" | "typescript" | "tsx" | "go" | "rust"
+        ) {
             skipped_sources.push(obj(&[
                 ("source_path", source.get("source_path")?.clone()),
                 ("status", Value::string("NO_RESOLVER_FOR_LANGUAGE")),
@@ -282,16 +373,33 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
                 "javascript" | "typescript" | "tsx" => (
                     relative_candidates(spec, source.path, &files),
                     "RELATIVE_PATH_CANDIDATE",
-                    if spec.starts_with('.') { "NO_UNIQUE_TRACKED_PATH" } else { "BARE_OR_ALIAS_IMPORT" },
+                    if spec.starts_with('.') {
+                        "NO_UNIQUE_TRACKED_PATH"
+                    } else {
+                        "BARE_OR_ALIAS_IMPORT"
+                    },
                 ),
-                "python" => (python_candidates(spec, source.path, &files),
-                    "PYTHON_MODULE_CANDIDATE", "NO_UNIQUE_TRACKED_MODULE"),
-                "rust" => (rust_candidates(spec, source.path, &files),
-                    "RUST_CRATE_PATH_CANDIDATE", "UNRESOLVED_OR_NONLOCAL_RUST_IMPORT"),
+                "python" => (
+                    python_candidates(spec, source.path, &files),
+                    "PYTHON_MODULE_CANDIDATE",
+                    "NO_UNIQUE_TRACKED_MODULE",
+                ),
+                "rust" => (
+                    rust_candidates(spec, source.path, &files),
+                    "RUST_CRATE_PATH_CANDIDATE",
+                    "UNRESOLVED_OR_NONLOCAL_RUST_IMPORT",
+                ),
                 "go" => {
                     let (targets, module) = go_candidates(spec, source.path, &modules, &files);
-                    (targets, "GO_MODULE_PACKAGE_CANDIDATE",
-                        if module.is_some() { "EXTERNAL_OR_UNTRACKED_GO_PACKAGE" } else { "GO_MODULE_NOT_FOUND" })
+                    (
+                        targets,
+                        "GO_MODULE_PACKAGE_CANDIDATE",
+                        if module.is_some() {
+                            "EXTERNAL_OR_UNTRACKED_GO_PACKAGE"
+                        } else {
+                            "GO_MODULE_NOT_FOUND"
+                        },
+                    )
                 }
                 _ => {
                     // Do not substitute a generic path guess for a language resolver.
@@ -300,9 +408,18 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
             };
             if targets.len() == 1 || (source.language == "go" && !targets.is_empty()) {
                 for path in targets {
-                    if path == source.path { continue; }
-                    if seen_edges.insert((source.path.to_owned(), path.clone(), line, spec.to_owned())) {
-                        let target = files.get(&path).ok_or("missing tracked resolution target")?;
+                    if path == source.path {
+                        continue;
+                    }
+                    if seen_edges.insert((
+                        source.path.to_owned(),
+                        path.clone(),
+                        line,
+                        spec.to_owned(),
+                    )) {
+                        let target = files
+                            .get(&path)
+                            .ok_or("missing tracked resolution target")?;
                         candidate_edges.push(edge(source, target, spec, line, rule));
                         if candidate_edges.len() > MAX_RELATIONS {
                             return refuse("too many resolution candidates");
@@ -310,26 +427,41 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
                     }
                 }
             } else {
-                unresolved_imports.push(unresolved(source, spec, line, if targets.len() > 1 {
-                    "AMBIGUOUS_TRACKED_TARGETS"
-                } else { fallback }));
+                unresolved_imports.push(unresolved(
+                    source,
+                    spec,
+                    line,
+                    if targets.len() > 1 {
+                        "AMBIGUOUS_TRACKED_TARGETS"
+                    } else {
+                        fallback
+                    },
+                ));
             }
         }
     }
     candidate_edges.sort_by_key(Value::canonical);
     unresolved_imports.sort_by_key(Value::canonical);
     skipped_sources.sort_by_key(Value::canonical);
-    let metadata = modules.iter().map(|module| obj(&[
-        ("source_path", Value::string(&module.path)),
-        ("source_blob", Value::string(&module.blob)),
-        ("module", Value::string(&module.name)),
-    ])).collect::<Vec<_>>();
+    let metadata = modules
+        .iter()
+        .map(|module| {
+            obj(&[
+                ("source_path", Value::string(&module.path)),
+                ("source_blob", Value::string(&module.blob)),
+                ("module", Value::string(&module.name)),
+            ])
+        })
+        .collect::<Vec<_>>();
     let payload = obj(&[
         ("schema", Value::string("excession.syntax-dependencies.v1")),
         ("source_commit", report.get("source_commit")?.clone()),
         ("source_tree", report.get("source_tree")?.clone()),
         ("syntax_report_id", report.get("report_id")?.clone()),
-        ("completeness", Value::string("CONSERVATIVE_CANDIDATES_ONLY")),
+        (
+            "completeness",
+            Value::string("CONSERVATIVE_CANDIDATES_ONLY"),
+        ),
         ("candidate_count", Value::number(candidate_edges.len())),
         ("unresolved_count", Value::number(unresolved_imports.len())),
         ("candidate_edges", Value::array(candidate_edges)),
@@ -343,8 +475,8 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
 }
 
 pub fn audit(root: &Path, syntax_report: &Path, resolution_report: &Path) -> Result<Value> {
-    let bytes = std::fs::read(resolution_report)
-        .map_err(|e| format!("resolution report read: {e}"))?;
+    let bytes =
+        std::fs::read(resolution_report).map_err(|e| format!("resolution report read: {e}"))?;
     if bytes.len() > MAX_REPORT_BYTES {
         return refuse("resolution report exceeds 32 MiB");
     }
@@ -355,7 +487,10 @@ pub fn audit(root: &Path, syntax_report: &Path, resolution_report: &Path) -> Res
     }
     Ok(obj(&[
         ("resolution_id", regenerated.get("resolution_id")?.clone()),
-        ("candidate_count", regenerated.get("candidate_count")?.clone()),
+        (
+            "candidate_count",
+            regenerated.get("candidate_count")?.clone(),
+        ),
         ("status", Value::string("REGENERATED_MATCH")),
     ]))
 }
@@ -374,8 +509,14 @@ mod tests {
 
     #[test]
     fn go_module_declaration_is_conservative() {
-        assert_eq!(module_name("go 1.22\nmodule example.org/m\n"), Some("example.org/m"));
+        assert_eq!(
+            module_name("go 1.22\nmodule example.org/m\n"),
+            Some("example.org/m")
+        );
         assert_eq!(module_name("module ../bad\n"), None);
-        assert_eq!(module_name("module example.org/m\nmodule example.org/n\n"), None);
+        assert_eq!(
+            module_name("module example.org/m\nmodule example.org/n\n"),
+            None
+        );
     }
 }

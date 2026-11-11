@@ -456,7 +456,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.get("source"),
                     opt.path("compile-db"),
                     opt.get_or("compiler", "clang"),
-                    opt.0.get("config").map(|s| Path::new(s)),
+                    opt.0.get("config").map(Path::new),
                     opt.get("trusted-local"),
                 )?))
             }

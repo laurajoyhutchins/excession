@@ -1,7 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, index, projection, refuse, security_ingest, slice_evidence, views};
+use excession::{Result, evidence_transport, git, index, projection, refuse, security_ingest, slice_evidence, views};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -28,6 +28,8 @@ Usage:
   excession browse --repo REPO --manifest JSON [--max-bytes 8192]
   excession security ingest|audit --repo REPO --report JSON --db DB --engine codeql|semgrep
   excession slice ingest|audit --repo REPO --manifest JSON --receipt JSON --db DB
+  excession evidence transport|transport-audit --repo REPO --source-manifest JSON --target-manifest JSON --receipt JSON --db DB
+  excession evidence trace --repo REPO --receipt-id HEX64 --db DB
   excession security scan --repo REPO --report NEW_JSON --db DB --engine codeql|semgrep
       --config LOCAL_RULES --trusted-local true [--scanner EXECUTABLE]
       [--codeql-db PREBUILT_DB] [--timeout-seconds 300]
@@ -418,14 +420,14 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "slice" | "inspect" | "index" | "browse"
+                    "view" | "security" | "slice" | "evidence" | "inspect" | "index" | "browse"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
         }
         [top, sub, a]
             if a == "--help"
-                && matches!(top.as_str(), "view" | "security" | "slice" | "inspect")
+                && matches!(top.as_str(), "view" | "security" | "slice" | "evidence" | "inspect")
                 && !sub.is_empty() =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -498,6 +500,32 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.path("receipt"),
                 &db,
                 sub == "audit",
+            )?))
+        }
+        [top, sub, rest @ ..] if top == "evidence" => {
+            if sub == "trace" {
+                let opt = Options::parse(rest, &["repo", "receipt-id", "db"], &[])?;
+                let db = Db::open(opt.path("db"))?;
+                return Ok(json(evidence_transport::trace(
+                    opt.path("repo"), opt.get("receipt-id"), &db,
+                )?));
+            }
+            if !matches!(sub.as_str(), "transport" | "transport-audit") {
+                return refuse(format!("unknown evidence command {sub}"));
+            }
+            let opt = Options::parse(
+                rest,
+                &["repo", "source-manifest", "target-manifest", "receipt", "db"],
+                &[],
+            )?;
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(evidence_transport::transport(
+                opt.path("repo"),
+                opt.path("source-manifest"),
+                opt.path("target-manifest"),
+                opt.path("receipt"),
+                &db,
+                sub == "transport-audit",
             )?))
         }
         [top, sub, rest @ ..] if top == "inspect" => inspect_cmd(sub, rest),

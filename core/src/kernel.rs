@@ -260,11 +260,20 @@ fn scan_impl(
                     return refuse("invalid kernel parser diagnostic");
                 }
             }
+            let next = facts.len().saturating_add(diagnostics.len());
+            if next > MAX_OBSERVATIONS.saturating_sub(fact_count + diagnostic_count) {
+                if partition.is_none() {
+                    return refuse("kernel parser exceeded observation budget");
+                }
+                unsupported.push(obj(&[
+                    ("source_path", Value::string(&entry.path)),
+                    ("source_blob", Value::string(&entry.oid)),
+                    ("reason", Value::string("OBSERVATION_BUDGET")),
+                ]));
+                continue;
+            }
             fact_count += facts.len();
             diagnostic_count += diagnostics.len();
-            if fact_count + diagnostic_count > MAX_OBSERVATIONS {
-                return refuse("kernel parser exceeded observation budget");
-            }
             results.push(obj(&[
                 ("source_path", Value::string(&entry.path)),
                 ("source_blob", Value::string(&entry.oid)),
@@ -275,9 +284,16 @@ fn scan_impl(
         }
     }
     reader.finish()?;
-    let links = kernel_links::derive(&results, &tracked)?;
-    if links.len() + fact_count + diagnostic_count > MAX_OBSERVATIONS {
-        return refuse("kernel link count exceeded observation budget");
+    let mut links = kernel_links::derive(&results, &tracked)?;
+    let links_bounded = links.len() <= MAX_OBSERVATIONS.saturating_sub(fact_count + diagnostic_count);
+    if !links_bounded {
+        if partition.is_none() {
+            return refuse("kernel link count exceeded observation budget");
+        }
+        // Preserve every accepted source/fact while explicitly withholding
+        // the whole candidate-link set. Returning a truncated subset would
+        // create false claims about which candidate edges are absent.
+        links.clear();
     }
     let mut fields = vec![
         ("schema", Value::string("excession.kernel-syntax.v1")),
@@ -300,6 +316,11 @@ fn scan_impl(
         let count = partition_count(total_eligible, size)?;
         fields.extend([
             ("unsupported", Value::array(unsupported)),
+            ("candidate_links_status", Value::string(if links_bounded {
+                "PARTITION_LOCAL_DERIVED"
+            } else {
+                "OMITTED_OBSERVATION_BUDGET"
+            })),
             ("selected_source_count", Value::number(selected.len())),
             ("total_eligible_source_count", Value::number(total_eligible)),
             (

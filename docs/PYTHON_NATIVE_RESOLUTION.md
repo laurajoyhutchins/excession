@@ -77,3 +77,10 @@ authorize skipping tests or transferring behavioral guarantees.
 This incremental implementation deliberately reuses the source/evidence
 contracts and Rust native discovery introduced by PR #50. It does not add a
 second source index, SQLite authority, or custom dependency file format.
+
+The existing `syntax native-audit` command independently replays the Git
+input declaration and static syntax boundary, **not** the Python site statuses.
+To reproduce the observation report, rerun `syntax native-run` with the
+same pinned revision and roots and compare `resolution.report_id`. A matching
+ID is deterministic re-execution of the same resolver, not independent
+proof of complete runtime dependencies.

@@ -1,7 +1,8 @@
 """Narrow language-native resolver behind Excession's Rust input authority.
 
-Input: <staged-root> <entry> <language> <trusted TypeScript helper>.
+Input: <staged-root> <entry> <language> <trusted TypeScript helper> <import-roots>.
 Output: one JSON object with source/configuration paths and resolver assumptions.
+Python also returns bounded static import-site observations.
 
 This module does not read Git history, construct evidence contracts, validate
 hashes, or stage files. Those responsibilities belong to the Rust core.

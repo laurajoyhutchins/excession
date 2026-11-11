@@ -180,6 +180,20 @@ fn reference(v: &Reference, documents: &BTreeMap<String, Document>) -> Value {
 /// Accept JSON decoded by the official SCIP CLI. No SCIP indexer is invoked:
 /// builds and index generation remain explicit, isolated preparatory work.
 pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
+    suggest_with_prefix(repo, revision, input, None)
+}
+
+/// Source-prefix binds a nested Cargo project (such as core/) to the outer
+/// repository's Git tree, without rewriting the upstream SCIP index.
+pub fn suggest_with_prefix(
+    repo: &Path,
+    revision: &str,
+    input: &Path,
+    source_prefix: Option<&str>,
+) -> Result<Value> {
+    if let Some(prefix) = source_prefix {
+        git::validate_path(prefix)?;
+    }
     git::verify_repo(repo)?;
     let commit = git::rev(repo, revision)?;
     if git::text(repo, &["cat-file", "-t", &commit])? != "commit" {
@@ -192,6 +206,21 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
     }
     let parsed = json::parse(&bytes)?;
     let metadata = parsed.get("metadata")?;
+    if let Some(prefix) = source_prefix {
+        let expected_root = format!(
+            "file://{}",
+            repo.canonicalize()
+                .map_err(|e| format!("SCIP checkout root: {e}"))?
+                .join(prefix)
+                .display()
+        );
+        let actual_root = property(metadata, "project_root", "projectRoot")
+            .ok_or("SCIP nested index lacks project_root")?
+            .str()?;
+        if actual_root != expected_root {
+            return refuse("SCIP project_root does not match pinned source prefix");
+        }
+    }
     let tool =
         property(metadata, "tool_info", "toolInfo").ok_or("SCIP metadata lacks tool_info")?;
     let name = property_str(tool, "name", "name")?;
@@ -219,8 +248,16 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
     let mut lines_only = 0_usize;
 
     for doc in docs {
-        let path = property_str(doc, "relative_path", "relativePath")?;
-        git::validate_path(path)?;
+        let relative_path = property_str(doc, "relative_path", "relativePath")?;
+        git::validate_path(relative_path)?;
+        let expanded;
+        let path = if let Some(prefix) = source_prefix {
+            expanded = format!("{prefix}/{relative_path}");
+            git::validate_path(&expanded)?;
+            expanded.as_str()
+        } else {
+            relative_path
+        };
         let entry = tracked
             .get(path)
             .ok_or_else(|| format!("SCIP document not a tracked regular Git file: {path}"))?;
@@ -419,12 +456,22 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
 }
 
 pub fn audit(repo: &Path, revision: &str, index: &Path, report: &Path) -> Result<Value> {
+    audit_with_prefix(repo, revision, index, report, None)
+}
+
+pub fn audit_with_prefix(
+    repo: &Path,
+    revision: &str,
+    index: &Path,
+    report: &Path,
+    source_prefix: Option<&str>,
+) -> Result<Value> {
     let data = std::fs::read(report).map_err(|e| format!("SCIP report read: {e}"))?;
     if data.len() > MAX_INDEX_BYTES {
         return refuse("SCIP report exceeds 16 MiB");
     }
     let saved = json::parse(&data)?;
-    let result = suggest(repo, revision, index)?;
+    let result = suggest_with_prefix(repo, revision, index, source_prefix)?;
     if saved != result {
         return refuse("SCIP refactor report differs from regenerated Git-bound observations");
     }

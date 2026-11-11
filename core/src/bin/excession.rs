@@ -1,10 +1,11 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::evidence_query;
+use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, git, graph_baseline, index, native_boundary, native_depinfo, preflight,
-    projection, refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
+    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -26,9 +27,12 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
+  excession semantic scan --repo REPO --roots src[,tests] [--rev HEAD]
+  excession semantic audit --repo REPO --roots src[,tests] --report SHARED_JSON
+  excession semantic resolve --repo REPO --syntax-report JSON
+  excession semantic export --repo REPO --syntax-report JSON --resolution-report JSON
   excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust|python --import-roots ROOTS(PYTHON) --trusted-local true
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
-  excession syntax cargo-depfile --repo REPO --package-root core --depfile CARGO_D --subject core/src/lib.rs --rustc RUSTC --rustc-version VERSION [--rev HEAD]
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
   excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
@@ -54,8 +58,8 @@ Usage:
   excession inspect review --db DB --name NAME --old REV --new REV
   excession refactor suggest --db DB --name NAME --rev REV
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
-  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
-  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
+  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON [--source-prefix core]
+  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON [--source-prefix core]
   excession benchmark report --kind relational --directory RESULT_DIR
   excession benchmark report --kind native --directory RESULT_DIR --input RECEIPT.json
   excession benchmark validate --report SAVED_REPORT_JSON
@@ -469,7 +473,14 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "syntax" | "refactor"
+                    "view"
+                        | "security"
+                        | "inspect"
+                        | "index"
+                        | "browse"
+                        | "syntax"
+                        | "semantic"
+                        | "refactor"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -478,7 +489,7 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "syntax" | "refactor"
+                    "view" | "security" | "inspect" | "syntax" | "semantic" | "refactor"
                 )
                 && !sub.is_empty() =>
         {
@@ -488,6 +499,43 @@ fn execute(args: &[String]) -> Result<Response> {
             research::run(tail)?;
             Ok(Response::Bytes(Vec::new()))
         }
+        [top, sub, tail @ ..] if top == "semantic" => match sub.as_str() {
+            "scan" => {
+                let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(semantic_contract::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
+                )?))
+            }
+            "audit" => {
+                let opt = Options::parse(tail, &["repo", "roots", "report"], &[])?;
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(semantic_contract::audit_scan(
+                    opt.path("repo"),
+                    &roots,
+                    opt.path("report"),
+                )?))
+            }
+            "resolve" => {
+                let opt = Options::parse(tail, &["repo", "syntax-report"], &[])?;
+                Ok(json(semantic_contract::resolve(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                )?))
+            }
+            "export" => {
+                let opt =
+                    Options::parse(tail, &["repo", "syntax-report", "resolution-report"], &[])?;
+                Ok(json(semantic_contract::export(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("resolution-report"),
+                )?))
+            }
+            _ => refuse(format!("unknown semantic command {sub}")),
+        },
         [top, sub, tail @ ..] if top == "syntax" => match sub.as_str() {
             "scan" => {
                 let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
@@ -509,29 +557,6 @@ fn execute(args: &[String]) -> Result<Response> {
             "resolve-preflight" => {
                 let opt = Options::parse(tail, &["report"], &[])?;
                 Ok(json(preflight::resolution_file(opt.path("report"))?))
-            }
-            "cargo-depfile" => {
-                let opt = Options::parse(
-                    tail,
-                    &[
-                        "repo",
-                        "package-root",
-                        "depfile",
-                        "subject",
-                        "rustc",
-                        "rustc-version",
-                    ],
-                    &["rev"],
-                )?;
-                Ok(json(native_depinfo::declaration(
-                    opt.path("repo"),
-                    opt.get("package-root"),
-                    opt.path("depfile"),
-                    opt.get("subject"),
-                    opt.path("rustc"),
-                    opt.get("rustc-version"),
-                    opt.get_or("rev", "HEAD"),
-                )?))
             }
             "native-run" => {
                 let opt = Options::parse(
@@ -679,17 +704,23 @@ fn execute(args: &[String]) -> Result<Response> {
                 } else {
                     &["repo", "rev", "index"]
                 },
-                &[],
+                &["source-prefix"],
             )?;
             Ok(json(if sub == "scip-audit" {
-                scip_refactor::audit(
+                scip_refactor::audit_with_prefix(
                     opt.path("repo"),
                     opt.get("rev"),
                     opt.path("index"),
                     opt.path("report"),
+                    opt.0.get("source-prefix").map(String::as_str),
                 )?
             } else {
-                scip_refactor::suggest(opt.path("repo"), opt.get("rev"), opt.path("index"))?
+                scip_refactor::suggest_with_prefix(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.0.get("source-prefix").map(String::as_str),
+                )?
             }))
         }
         [top, sub, rest @ ..] if top == "refactor" => {

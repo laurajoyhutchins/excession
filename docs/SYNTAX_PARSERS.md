@@ -106,7 +106,7 @@ python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
 cargo test --offline --manifest-path core/Cargo.toml preflight::tests
 ```
 
-`tests/test_preflight_cli.py` exercises the command surface without
+`core/tests/preflight_contracts.rs` exercises the command surface without
 Tree-sitter installed, including accepted-but-untrusted self-consistent
 forgeries. Full integration tests remain separate.
 
@@ -144,9 +144,8 @@ observation. Missing imports are never treated as evidence of no dependency.
   nearest `go.mod`. All tracked non-test `.go` package files are candidates;
   build constraints, workspaces, vendoring, generated files and CGO are not
   evaluated.
-- **Rust:** direct `crate::foo` import paths matched to a unique local
-  `src/foo.rs` or `src/foo/mod.rs` when a crate root is included. No
-  `mod` validation, macros, cfg variants, or Cargo build dependencies.
+- **Rust:** no handwritten import or module resolver. Tree-sitter retains
+  syntax observations; resolved Rust semantics come from rust-analyzer SCIP.
 
 A candidate edge means only that a **plausible tracked path** matches a parsed
 import. Native compiler resolution and complete build graphs remain separate
@@ -220,11 +219,12 @@ checker, with no intermediate user-editable declaration file.
 excession syntax native-run --repo "$REPO" \
   --syntax-report /tmp/syntax.json \
   --resolution-report /tmp/candidates.json \
-  --entry src/main.rs --language rust \
+  --entry src/go/main.go --language go \
   --trusted-local true > /tmp/native-run.json
 ```
 
-The command accepts `go`, `javascript`, `typescript`, and `rust`.
+The command accepts `go`, `javascript`, and `typescript`.
+Rust's native-run path was removed in favor of rust-analyzer SCIP.
 It first rejects malformed syntax/resolution reports, mismatched revisions,
 out-of-scope subjects, dirty checkouts, and incorrect Git trees. Only then
 does it reconstruct the pinned snapshot and execute the compiler-backed

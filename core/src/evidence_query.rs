@@ -13,6 +13,23 @@ use std::path::Path;
 const MAX_RECEIPT_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_RUNTIME_WITNESSES: usize = 10_000;
 
+const WIRE_SCHEMA: &str = include_str!("../../contracts/evidence/evidence-query.v1.schema.json");
+
+/// Enforce the versioned wire contract before emitting a read-only query.
+/// This is a structural guarantee; Git replay above establishes source facts.
+fn validate_wire(report: &Value) -> Result<()> {
+    let schema: serde_json::Value =
+        serde_json::from_str(WIRE_SCHEMA).map_err(|e| format!("evidence schema: {e}"))?;
+    let document: serde_json::Value =
+        serde_json::from_str(&report.canonical()).map_err(|e| format!("evidence JSON: {e}"))?;
+    let validator = jsonschema::draft202012::new(&schema)
+        .map_err(|e| format!("compile evidence contract: {e}"))?;
+    if let Err(error) = validator.validate(&document) {
+        return refuse(format!("evidence query violates its versioned JSON Schema: {error}"));
+    }
+    Ok(())
+}
+
 fn read(path: &Path) -> Result<Value> {
     let size = fs::metadata(path)
         .map_err(|e| format!("evidence input metadata: {e}"))?
@@ -306,7 +323,9 @@ pub fn query(
     let id = payload.sha256();
     let mut fields = payload.entries()?.clone();
     fields.insert("query_id".into(), Value::string(id));
-    Ok(Value::Object(fields))
+    let report = Value::Object(fields);
+    validate_wire(&report)?;
+    Ok(report)
 }
 
 #[cfg(test)]

@@ -37,8 +37,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install pinned Rust
-        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Install pinned Rust with rust-analyzer
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup component add --toolchain 1.99.1 rust-analyzer rust-src
+          rustup run 1.99.1 rust-analyzer --version
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: '.go-version'
+      - name: Build official SCIP decoder from immutable upstream commit
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/scip-code/scip.git "$RUNNER_TEMP/scip-source"
+          git -C "$RUNNER_TEMP/scip-source" checkout --detach 1c2b6db7e560d5233c944f36e4ac1377cc6963fc
+          mkdir -p "$RUNNER_TEMP/scip-bin"
+          (cd "$RUNNER_TEMP/scip-source" && go build -o "$RUNNER_TEMP/scip-bin/scip" ./cmd/scip)
+          "$RUNNER_TEMP/scip-bin/scip" --version
       - name: Resolve locked Rust dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml
       - uses: actions/setup-python@v5
@@ -54,25 +67,16 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_self_analysis.py' -v
       - name: Create clean source snapshot for self-analysis
         run: git worktree add --detach "$RUNNER_TEMP/excession-self-source" "$GITHUB_SHA"
-      - name: Compile pinned snapshot and capture real Cargo dep-info
+      - name: Produce rust-analyzer SCIP for pinned source
         run: |
           SOURCE="$RUNNER_TEMP/excession-self-source"
-          export CARGO_TARGET_DIR="$RUNNER_TEMP/excession-native-target"
-          cargo +1.99.1 build --offline --locked --manifest-path "$SOURCE/core/Cargo.toml" --lib --bin excession
-          ls -l "$CARGO_TARGET_DIR/debug/"*.d
-          RUSTC="$(rustup which rustc --toolchain 1.99.1)"
-          RUSTC_VERSION="$("$RUSTC" --version)"
-          BIN="$GITHUB_WORKSPACE/core/target/debug/excession"
           OUT="$GITHUB_WORKSPACE/self-analysis-artifacts"
           mkdir -p "$OUT"
-          "$BIN" syntax cargo-depfile --repo "$SOURCE" --package-root core \
-            --depfile "$CARGO_TARGET_DIR/debug/libexcession.d" \
-            --subject core/src/lib.rs --rustc "$RUSTC" --rustc-version "$RUSTC_VERSION" \
-            > "$OUT/native-lib.json"
-          "$BIN" syntax cargo-depfile --repo "$SOURCE" --package-root core \
-            --depfile "$CARGO_TARGET_DIR/debug/excession.d" \
-            --subject core/src/bin/excession.rs --rustc "$RUSTC" --rustc-version "$RUSTC_VERSION" \
-            > "$OUT/native-bin.json"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/excession-ra-target"
+          export RUSTUP_TOOLCHAIN=1.99.1
+          rustup run 1.99.1 rust-analyzer scip "$SOURCE/core" --output "$OUT/index.scip"
+          "$RUNNER_TEMP/scip-bin/scip" print --json "$OUT/index.scip" > "$OUT/index.scip.json"
+          test -s "$OUT/index.scip.json"
       - name: Analyze detached, clean source at the exact workflow commit
         run: |
           SOURCE="$RUNNER_TEMP/excession-self-source"
@@ -83,8 +87,7 @@ jobs:
             --out "$GITHUB_WORKSPACE/self-analysis-artifacts" \
             --rev "$GITHUB_SHA" \
             --base-rev "$BASE" \
-            --native-lib "$GITHUB_WORKSPACE/self-analysis-artifacts/native-lib.json" \
-            --native-bin "$GITHUB_WORKSPACE/self-analysis-artifacts/native-bin.json"
+            --scip-index "$GITHUB_WORKSPACE/self-analysis-artifacts/index.scip.json"
       - name: Report advisory observations
         run: cat self-analysis-artifacts/summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Retain self-analysis evidence and refusal diagnostics

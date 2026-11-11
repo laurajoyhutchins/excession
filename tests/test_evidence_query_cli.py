@@ -11,6 +11,9 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+from validate_evidence_contract import validate_evidence_query  # noqa: E402
+
 BIN = ROOT / "core/target/debug/excession"
 OBSERVER = ROOT / "tools/python_import_observer.py"
 HAVE_GRAMMARS = importlib.util.find_spec("tree_sitter_language_pack") is not None
@@ -94,6 +97,7 @@ class UnifiedEvidenceQuery(unittest.TestCase):
 
     def test_one_query_preserves_separate_claims(self):
         app = self.query("src/app.py")
+        validate_evidence_query(app)
         self.assertEqual(app["schema"], "excession.evidence-query.v1")
         self.assertEqual(app["source_commit"], self.commit)
         self.assertEqual(app["source_tree"], self.tree)
@@ -113,12 +117,14 @@ class UnifiedEvidenceQuery(unittest.TestCase):
                       app["limits"])
 
         plugin = self.query("src/pkg/plugin.py")
+        validate_evidence_query(plugin)
         self.assertTrue(any(x["target_path"] == "src/pkg/plugin.py"
                             for x in plugin["static_candidates"]))
         self.assertTrue(any(x["selection"] == "PINNED_TARGET_PATH"
                             for x in plugin["runtime_witnesses"]))
 
         rust = self.query("src/main.rs")
+        validate_evidence_query(rust)
         self.assertEqual(rust["compiler_receipt"]["subject"], "src/main.rs")
         self.assertEqual({x["path"] for x in rust["compiler_inputs"]},
                          {"src/main.rs", "src/helper.rs"})

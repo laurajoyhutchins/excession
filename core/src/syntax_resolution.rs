@@ -223,40 +223,6 @@ fn python_candidates(
     matches
 }
 
-fn rust_candidates(
-    specifier: &str,
-    source: &str,
-    files: &BTreeMap<String, Source<'_>>,
-) -> Vec<String> {
-    let Some(rest) = specifier.strip_prefix("crate::") else {
-        return Vec::new();
-    };
-    let module = rest.split("::").next().unwrap_or("");
-    if module.is_empty()
-        || !module
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-    {
-        return Vec::new();
-    }
-    let Some((prefix, _)) = source.split_once("src/") else {
-        return Vec::new();
-    };
-    if !(files.contains_key(&format!("{prefix}src/lib.rs"))
-        || files.contains_key(&format!("{prefix}src/main.rs")))
-    {
-        return Vec::new();
-    }
-    let choices = [
-        format!("{prefix}src/{module}.rs"),
-        format!("{prefix}src/{module}/mod.rs"),
-    ];
-    choices
-        .into_iter()
-        .filter(|path| files.contains_key(path))
-        .collect()
-}
-
 fn go_candidates<'a>(
     specifier: &str,
     source: &str,
@@ -365,26 +331,6 @@ fn import_target(language: &str, statement: &str) -> Option<String> {
                 None
             }
         }
-        "rust" => {
-            let value = text
-                .strip_prefix("pub use ")
-                .or_else(|| text.strip_prefix("use "))
-                .unwrap_or(text)
-                .trim_end_matches(';')
-                .trim();
-            if value.starts_with("crate::")
-                && value.split("::").all(|segment| {
-                    !segment.is_empty()
-                        && segment
-                            .bytes()
-                            .all(|c| c.is_ascii_alphanumeric() || c == b'_')
-                })
-            {
-                Some(value.to_owned())
-            } else {
-                None
-            }
-        }
         "python" => {
             if let Some(rest) = text.strip_prefix("from ") {
                 let (module, _) = rest.split_once(" import ")?;
@@ -407,38 +353,117 @@ fn import_target(language: &str, statement: &str) -> Option<String> {
     }
 }
 
-fn edge(source: &Source<'_>, target: &Source<'_>, spec: &str, line: i64, rule: &str) -> Value {
-    obj(&[
-        ("source_path", Value::string(source.path)),
-        ("source_blob", Value::string(source.blob)),
-        ("target_path", Value::string(target.path)),
-        ("target_blob", Value::string(target.blob)),
-        ("language", Value::string(source.language)),
-        ("specifier", Value::string(spec)),
-        ("line", Value::number(line)),
-        ("resolution", Value::string(rule)),
-    ])
+/// Language-native resolution decisions. This typed event is the shared
+/// adapter boundary, not a decoded copy of the historical JSON report.
+pub(crate) enum ImportOutcome {
+    Candidate {
+        target_path: String,
+        target_blob: String,
+        rule: &'static str,
+    },
+    Unresolved {
+        reason: &'static str,
+    },
 }
 
-fn unresolved(source: &Source<'_>, spec: &str, line: i64, reason: &str) -> Value {
-    obj(&[
-        ("source_path", Value::string(source.path)),
-        ("source_blob", Value::string(source.blob)),
-        ("language", Value::string(source.language)),
-        ("specifier", Value::string(spec)),
-        ("line", Value::number(line)),
-        ("reason", Value::string(reason)),
-    ])
+pub(crate) struct ImportEvent {
+    pub(crate) source_path: String,
+    pub(crate) source_blob: String,
+    pub(crate) language: String,
+    pub(crate) specifier: String,
+    pub(crate) line: i64,
+    pub(crate) outcome: ImportOutcome,
+}
+
+impl ImportEvent {
+    fn candidate(
+        source: &Source<'_>,
+        target: &Source<'_>,
+        spec: &str,
+        line: i64,
+        rule: &'static str,
+    ) -> Self {
+        Self {
+            source_path: source.path.into(),
+            source_blob: source.blob.into(),
+            language: source.language.into(),
+            specifier: spec.into(),
+            line,
+            outcome: ImportOutcome::Candidate {
+                target_path: target.path.into(),
+                target_blob: target.blob.into(),
+                rule,
+            },
+        }
+    }
+
+    fn unresolved(source: &Source<'_>, spec: &str, line: i64, reason: &'static str) -> Self {
+        Self {
+            source_path: source.path.into(),
+            source_blob: source.blob.into(),
+            language: source.language.into(),
+            specifier: spec.into(),
+            line,
+            outcome: ImportOutcome::Unresolved { reason },
+        }
+    }
+
+    /// Preserve the exact historical `excession.syntax-dependencies.v1` shape
+    /// and canonical resolution ID for existing replay consumers.
+    fn legacy(&self) -> Value {
+        let mut fields = BTreeMap::from([
+            ("source_path".into(), Value::string(&self.source_path)),
+            ("source_blob".into(), Value::string(&self.source_blob)),
+            ("language".into(), Value::string(&self.language)),
+            ("specifier".into(), Value::string(&self.specifier)),
+            ("line".into(), Value::number(self.line)),
+        ]);
+        match &self.outcome {
+            ImportOutcome::Candidate {
+                target_path,
+                target_blob,
+                rule,
+            } => {
+                fields.insert("target_path".into(), Value::string(target_path));
+                fields.insert("target_blob".into(), Value::string(target_blob));
+                fields.insert("resolution".into(), Value::string(*rule));
+            }
+            ImportOutcome::Unresolved { reason } => {
+                fields.insert("reason".into(), Value::string(*reason));
+            }
+        }
+        Value::Object(fields)
+    }
 }
 
 pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
-    // Replay the exact parser and Git sources before resolving anything.
+    candidates_with_sink(root, syntax_report, |_| Ok(()))
+}
+
+/// Each language-specific resolver emits its source-bound decision as it is made.
+/// The sink may build the shared semantic contract without decoding a legacy
+/// dependency report. The historical report is still produced for exact replay.
+pub(crate) fn candidates_with_sink<F>(root: &Path, syntax_report: &Path, sink: F) -> Result<Value>
+where
+    F: FnMut(&ImportEvent) -> Result<()>,
+{
+    // Do not trust a saved syntax report until a full Git/parser replay.
     syntax::audit(root, syntax_report)?;
     let raw = std::fs::read(syntax_report).map_err(|e| format!("syntax read: {e}"))?;
     if raw.len() > MAX_REPORT_BYTES {
         return refuse("syntax input exceeds 32 MiB");
     }
     let report = json::parse(&raw)?;
+    candidates_from_scanned(root, &report, sink)
+}
+
+/// Consume only a *fresh* syntax::scan result or a report already authenticated
+/// by syntax::audit. This deliberately stays crate-private: external reports
+/// must pass candidates_with_sink's independent Git source replay first.
+pub(crate) fn candidates_from_scanned<F>(root: &Path, report: &Value, mut sink: F) -> Result<Value>
+where
+    F: FnMut(&ImportEvent) -> Result<()>,
+{
     let revision = git::oid(report.get("source_commit")?.str()?)?;
     let files = paths(&report)?;
     let modules = go_modules(root, &revision)?;
@@ -455,7 +480,7 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
             ]));
         } else if !matches!(
             language,
-            "python" | "javascript" | "typescript" | "tsx" | "go" | "rust"
+            "python" | "javascript" | "typescript" | "tsx" | "go"
         ) {
             skipped_sources.push(obj(&[
                 ("source_path", source.get("source_path")?.clone()),
@@ -465,6 +490,14 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
     }
     let mut seen_edges = BTreeSet::new();
     for source in files.values() {
+        // Rust semantic resolution belongs to rust-analyzer/SCIP; syntactic
+        // declarations remain available, but are not treated as graph edges.
+        if !matches!(
+            source.language,
+            "python" | "javascript" | "typescript" | "tsx" | "go"
+        ) {
+            continue;
+        }
         for import in source.imports {
             if candidate_edges.len() + unresolved_imports.len() >= MAX_RELATIONS {
                 return refuse("resolution exceeds 10,000 observations; narrow --roots");
@@ -472,12 +505,10 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
             let raw_spec = import.get("source")?.str()?;
             let line = import.get("line")?.integer()?;
             let Some(spec) = import_target(source.language, raw_spec) else {
-                unresolved_imports.push(unresolved(
-                    source,
-                    raw_spec,
-                    line,
-                    "UNSUPPORTED_IMPORT_SHAPE",
-                ));
+                let item =
+                    ImportEvent::unresolved(source, raw_spec, line, "UNSUPPORTED_IMPORT_SHAPE");
+                sink(&item)?;
+                unresolved_imports.push(item.legacy());
                 continue;
             };
             let spec = spec.as_str();
@@ -495,11 +526,6 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
                     python_candidates(spec, source.path, &files),
                     "PYTHON_MODULE_CANDIDATE",
                     "NO_UNIQUE_TRACKED_MODULE",
-                ),
-                "rust" => (
-                    rust_candidates(spec, source.path, &files),
-                    "RUST_CRATE_PATH_CANDIDATE",
-                    "UNRESOLVED_OR_NONLOCAL_RUST_IMPORT",
                 ),
                 "go" => {
                     let (targets, module) = go_candidates(spec, source.path, &modules, &files);
@@ -532,23 +558,23 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
                         let target = files
                             .get(&path)
                             .ok_or("missing tracked resolution target")?;
-                        candidate_edges.push(edge(source, target, spec, line, rule));
+                        let item = ImportEvent::candidate(source, target, spec, line, rule);
+                        sink(&item)?;
+                        candidate_edges.push(item.legacy());
                         if candidate_edges.len() > MAX_RELATIONS {
                             return refuse("too many resolution candidates");
                         }
                     }
                 }
             } else {
-                unresolved_imports.push(unresolved(
-                    source,
-                    spec,
-                    line,
-                    if targets.len() > 1 {
-                        "AMBIGUOUS_TRACKED_TARGETS"
-                    } else {
-                        fallback
-                    },
-                ));
+                let reason = if targets.len() > 1 {
+                    "AMBIGUOUS_TRACKED_TARGETS"
+                } else {
+                    fallback
+                };
+                let item = ImportEvent::unresolved(source, spec, line, reason);
+                sink(&item)?;
+                unresolved_imports.push(item.legacy());
             }
         }
     }
@@ -638,11 +664,6 @@ mod tests {
             import_target("go", "\"example.org/pkg\""),
             Some("example.org/pkg".into())
         );
-        assert_eq!(
-            import_target("rust", "use crate::widget::answer;"),
-            Some("crate::widget::answer".into())
-        );
-        assert_eq!(import_target("rust", "use crate::{a,b};"), None);
         assert_eq!(
             import_target("python", "import pkg.util"),
             Some("pkg.util".into())

@@ -347,6 +347,9 @@ pub fn discover_and_compare(
     if !trusted {
         return refuse("native compiler execution requires --trusted-local true");
     }
+    if language == "rust" {
+        return refuse("Rust semantics use rust-analyzer SCIP; native Rust resolver removed");
+    }
     git::validate_path(entry)?;
     // Fail cheap: neither malformed evidence nor wrong revision may reach a
     // compiler. These are structural checks, not source authentication.

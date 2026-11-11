@@ -26,7 +26,8 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
         let filename = directory.join(format!("part-{index:05}.json"));
         if fs::metadata(&filename)
             .map_err(|e| format!("missing partition {}: {e}", filename.display()))?
-            .len() > MAX_RECEIPT_BYTES
+            .len()
+            > MAX_RECEIPT_BYTES
         {
             return refuse("partition receipt exceeds 64 MiB");
         }
@@ -37,13 +38,17 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
             || receipt.get("source_tree")?.str()? != tree
             || receipt.get("completeness")?.str()? != "CONSERVATIVE_SYNTAX_ONLY"
         {
-            return refuse(format!("partition {index} does not bind the pinned Git revision"));
+            return refuse(format!(
+                "partition {index} does not bind the pinned Git revision"
+            ));
         }
         let id = receipt.get("report_id")?.str()?.to_owned();
         let mut body = receipt.entries()?.clone();
         body.remove("report_id");
         if Value::Object(body).sha256() != id {
-            return refuse(format!("partition {index} report digest differs from its body"));
+            return refuse(format!(
+                "partition {index} report digest differs from its body"
+            ));
         }
         let scope = receipt.get("partition")?;
         if scope.get("index")?.integer()? != index as i64
@@ -53,7 +58,9 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
         {
             return refuse(format!("partition {index} inventory does not match"));
         }
-        let start = index.checked_mul(size).ok_or("partition multiplication overflow")?;
+        let start = index
+            .checked_mul(size)
+            .ok_or("partition multiplication overflow")?;
         let end = start.saturating_add(size).min(expected.len());
         let selected = &expected[start..end];
         if receipt.get("selected_source_count")?.integer()? != selected.len() as i64
@@ -68,7 +75,8 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
         {
             return refuse("partition failed to account for every selected Git source");
         }
-        let expected_files = selected.iter()
+        let expected_files = selected
+            .iter()
             .map(|e| (e.path.as_str(), e.oid.as_str()))
             .collect::<BTreeMap<_, _>>();
         let mut actual = BTreeMap::<&str, &str>::new();
@@ -83,7 +91,10 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
             let path = item.get("source_path")?.str()?;
             let blob = item.get("source_blob")?.str()?;
             let reason = item.get("reason")?.str()?;
-            if !matches!(reason, "SOURCE_EXCEEDS_1_MIB" | "PARTITION_EXCEEDS_32_MIB" | "SOURCE_NOT_UTF8") {
+            if !matches!(
+                reason,
+                "SOURCE_EXCEEDS_1_MIB" | "PARTITION_EXCEEDS_32_MIB" | "SOURCE_NOT_UTF8"
+            ) {
                 return refuse("unrecognized unsupported-source reason");
             }
             *reasons.entry(reason.to_owned()).or_default() += 1;
@@ -92,7 +103,9 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
             }
         }
         if actual != expected_files {
-            return refuse(format!("partition {index} omits or substitutes Git sources"));
+            return refuse(format!(
+                "partition {index} omits or substitutes Git sources"
+            ));
         }
         observed += sources.len();
         unsupported += skipped.len();
@@ -116,17 +129,23 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
         ("unsupported_sources", Value::number(unsupported)),
         ("fact_count", Value::number(facts)),
         ("diagnostic_count", Value::number(diagnostics)),
-        ("unsupported_reasons", Value::object(reasons.into_iter()
-            .map(|(k, v)| (k, Value::number(v))))),
+        (
+            "unsupported_reasons",
+            Value::object(reasons.into_iter().map(|(k, v)| (k, Value::number(v)))),
+        ),
         ("part_report_ids", Value::array(report_ids)),
-        ("status", Value::string(if unsupported == 0 {
-            "ALL_ELIGIBLE_SYNTAX_OBSERVED"
-        } else {
-            "ALL_ELIGIBLE_SOURCES_ACCOUNTED_PARTIAL_SYNTAX"
-        })),
-        ("semantic_scope", Value::string(
-            "LEXICAL_C_KBUILD_KCONFIG_FACTS_NOT_CONFIGURED_BUILD_CLOSURE"
-        )),
+        (
+            "status",
+            Value::string(if unsupported == 0 {
+                "ALL_ELIGIBLE_SYNTAX_OBSERVED"
+            } else {
+                "ALL_ELIGIBLE_SOURCES_ACCOUNTED_PARTIAL_SYNTAX"
+            }),
+        ),
+        (
+            "semantic_scope",
+            Value::string("LEXICAL_C_KBUILD_KCONFIG_FACTS_NOT_CONFIGURED_BUILD_CLOSURE"),
+        ),
     ]);
     let mut result = body.entries()?.clone();
     result.insert("report_id".into(), Value::string(body.sha256()));

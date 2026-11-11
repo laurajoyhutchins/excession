@@ -106,9 +106,7 @@ pub(crate) fn snapshot(repo: &Path, revision: &str) -> Result<(String, String, V
     let mut sources = git::entries(repo, &commit)?
         .into_iter()
         .filter(|e| {
-            e.kind == "blob"
-                && matches!(e.mode.as_str(), "100644" | "100755")
-                && eligible(&e.path)
+            e.kind == "blob" && matches!(e.mode.as_str(), "100644" | "100755") && eligible(&e.path)
         })
         .collect::<Vec<_>>();
     sources.sort_by(|a, b| a.path.cmp(&b.path));
@@ -126,7 +124,9 @@ pub(crate) fn inventory_identity(entries: &[git::Entry]) -> (String, usize) {
 }
 pub(crate) fn partition_count(total: usize, size: usize) -> Result<usize> {
     if size == 0 || size > MAX_PARTITION_FILES {
-        return refuse(format!("kernel partition size must be 1..{MAX_PARTITION_FILES}"));
+        return refuse(format!(
+            "kernel partition size must be 1..{MAX_PARTITION_FILES}"
+        ));
     }
     Ok(total.div_ceil(size))
 }
@@ -148,7 +148,9 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
     scan_impl(repo, revision, Some(roots), None)
 }
 fn scan_impl(
-    repo: &Path, revision: &str, roots: Option<&[&str]>,
+    repo: &Path,
+    revision: &str,
+    roots: Option<&[&str]>,
     partition: Option<(usize, usize)>,
 ) -> Result<Value> {
     git::clean(repo)?;
@@ -157,8 +159,10 @@ fn scan_impl(
     let total_eligible = eligible_sources.len();
     let source = git::entries(repo, &commit)?;
     let tracked = source
-        .into_iter().filter(|e| e.kind == "blob")
-        .map(|e| (e.path, e.oid)).collect::<BTreeMap<_, _>>();
+        .into_iter()
+        .filter(|e| e.kind == "blob")
+        .map(|e| (e.path, e.oid))
+        .collect::<BTreeMap<_, _>>();
     let selected = if let Some((index, size)) = partition {
         let count = partition_count(total_eligible, size)?;
         if index >= count {
@@ -169,10 +173,15 @@ fn scan_impl(
         eligible_sources[first..last].to_vec()
     } else {
         let roots = roots.ok_or("missing selected roots")?;
-        eligible_sources.into_iter().filter(|e| within(&e.path, roots)).collect()
+        eligible_sources
+            .into_iter()
+            .filter(|e| within(&e.path, roots))
+            .collect()
     };
     if selected.is_empty() || selected.len() > MAX_FILES {
-        return refuse(format!("kernel scan needs 1..{MAX_FILES} eligible tracked files"));
+        return refuse(format!(
+            "kernel scan needs 1..{MAX_FILES} eligible tracked files"
+        ));
     }
     let mut reader = git::BlobReader::open(repo)?;
     let mut results = Vec::with_capacity(selected.len());
@@ -197,7 +206,10 @@ fn scan_impl(
             };
             if let Some(reason) = reason {
                 if partition.is_none() {
-                    return refuse(format!("unsupported kernel source {}: {reason}", entry.path));
+                    return refuse(format!(
+                        "unsupported kernel source {}: {reason}",
+                        entry.path
+                    ));
                 }
                 unsupported.push(obj(&[
                     ("source_path", Value::string(&entry.path)),
@@ -284,12 +296,15 @@ fn scan_impl(
             ("unsupported", Value::array(unsupported)),
             ("selected_source_count", Value::number(selected.len())),
             ("total_eligible_source_count", Value::number(total_eligible)),
-            ("partition", obj(&[
-                ("index", Value::number(index)),
-                ("size", Value::number(size)),
-                ("count", Value::number(count)),
-                ("inventory_sha256", Value::string(&inventory_sha256)),
-            ])),
+            (
+                "partition",
+                obj(&[
+                    ("index", Value::number(index)),
+                    ("size", Value::number(size)),
+                    ("count", Value::number(count)),
+                    ("inventory_sha256", Value::string(&inventory_sha256)),
+                ]),
+            ),
         ]);
     }
     let body = obj(&fields);

@@ -1,7 +1,9 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, index, kernel, kernel_coverage, projection, refuse, security_ingest, views};
+use excession::{
+    Result, git, index, kernel, kernel_coverage, projection, refuse, security_ingest, views,
+};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -438,7 +440,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();
                 Ok(json(kernel::scan(
-                    opt.path("repo"), opt.get_or("rev", "HEAD"), &roots,
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
                 )?))
             }
             "inventory" | "partition" | "audit" => {
@@ -448,18 +452,27 @@ fn execute(args: &[String]) -> Result<Response> {
                     _ => &["repo"][..],
                 };
                 let opt = Options::parse(tail, required, &["rev", "size"])?;
-                let size = opt.get_or("size", "128").parse::<usize>()
+                let size = opt
+                    .get_or("size", "128")
+                    .parse::<usize>()
                     .map_err(|_| "invalid kernel partition size")?;
                 let repo = opt.path("repo");
                 let rev = opt.get_or("rev", "HEAD");
                 match sub.as_str() {
                     "inventory" => Ok(json(kernel::inventory(repo, rev, size)?)),
                     "partition" => {
-                        let index = opt.get("index").parse::<usize>()
+                        let index = opt
+                            .get("index")
+                            .parse::<usize>()
                             .map_err(|_| "invalid kernel partition index")?;
                         Ok(json(kernel::scan_partition(repo, rev, index, size)?))
                     }
-                    _ => Ok(json(kernel_coverage::audit(repo, rev, opt.path("dir"), size)?)),
+                    _ => Ok(json(kernel_coverage::audit(
+                        repo,
+                        rev,
+                        opt.path("dir"),
+                        size,
+                    )?)),
                 }
             }
             _ => refuse(format!("unknown kernel command: {sub}")),

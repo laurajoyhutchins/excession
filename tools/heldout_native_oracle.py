@@ -27,11 +27,11 @@ def git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def method_from_source(path: Path, name: str, namespace: dict) -> object:
+def method_from_source(path: Path, name: str, namespace: dict, owner_name: str) -> object:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     candidates = [
         method for owner in tree.body if isinstance(owner, ast.ClassDef)
-        for method in owner.body
+        for method in owner.body if owner.name == owner_name
         if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
         and method.name == name
     ]
@@ -53,7 +53,7 @@ def starlette_oracle(source: Path, root: Path) -> dict:
     outside.write_text("private-starlette", encoding="utf-8")
     public = root / "public.txt"
     public.write_text("public", encoding="utf-8")
-    lookup = method_from_source(source, "lookup_path", {"os": os, "typing": typing})
+    lookup = method_from_source(source, "lookup_path", {"os": os, "typing": typing}, "StaticFiles")
     instance = types.SimpleNamespace(all_directories=[str(root)], follow_symlink=False)
     escaped, escaped_stat = lookup(instance, "../static-private.txt")
     normal, normal_stat = lookup(instance, "public.txt")
@@ -81,7 +81,7 @@ def aiohttp_oracle(source: Path, root: Path) -> dict:
     method = method_from_source(source, "_handle", {
         "os": os, "Path": Path, "FileResponse": FileResponse,
         "HTTPNotFound": NotFound, "HTTPForbidden": Forbidden,
-    })
+    }, "StaticResource")
     instance = types.SimpleNamespace(_directory=root, _follow_symlinks=True,
                                      _show_index=False, _chunk_size=64 * 1024)
     async def call(name: str) -> object:

@@ -164,10 +164,17 @@ pub fn persist(
         CREATE TABLE IF NOT EXISTS configured_edge(\
         graph_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL,\
         source_id TEXT NOT NULL, destination_id TEXT NOT NULL, status TEXT NOT NULL,\
-        evidence TEXT NOT NULL, PRIMARY KEY(graph_id,id),\
+        evidence TEXT NOT NULL, relation TEXT NOT NULL DEFAULT 'unknown',\
+        PRIMARY KEY(graph_id,id),\
         FOREIGN KEY(graph_id,source_id) REFERENCES configured_entity(graph_id,id),\
         FOREIGN KEY(graph_id,destination_id) REFERENCES configured_entity(graph_id,id));",
     )?;
+    // v1 graph databases have no neutral relation column. Add it without
+    // changing immutable graph bodies or graph IDs.
+    let columns = db.query("PRAGMA table_info(configured_edge)", &[])?;
+    if !columns.iter().any(|row| row.get(1).and_then(|value| value.as_deref()) == Some("relation")) {
+        db.exec("ALTER TABLE configured_edge ADD COLUMN relation TEXT NOT NULL DEFAULT 'unknown'")?;
+    }
     db.transaction(|db| {
         db.execute(
             "INSERT OR IGNORE INTO configured_graph VALUES(?,?,?,?,?)",
@@ -203,7 +210,7 @@ pub fn persist(
         }
         for (edge_id, edge) in edges {
             db.execute(
-                "INSERT OR IGNORE INTO configured_edge VALUES(?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO configured_edge(graph_id,id,kind,source_id,destination_id,status,evidence,relation) VALUES(?,?,?,?,?,?,?,?)",
                 &[
                     Param::Text(id),
                     Param::Text(edge_id),
@@ -212,6 +219,7 @@ pub fn persist(
                     Param::Text(edge.get("to")?.str()?),
                     Param::Text(edge.get("status")?.str()?),
                     Param::Text(edge.get("evidence")?.str()?),
+                    Param::Text(edge.get("relation")?.str()?),
                 ],
             )?;
         }

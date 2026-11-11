@@ -559,8 +559,14 @@ mod tests {
     }
     #[test]
     fn plain_relative_report_filename_uses_working_directory() {
-        assert_eq!(report_parent(Path::new("native-calibration.report.json")), Path::new("."));
-        assert_eq!(report_parent(Path::new("sub/report.json")), Path::new("sub"));
+        assert_eq!(
+            report_parent(Path::new("native-calibration.report.json")),
+            Path::new(".")
+        );
+        assert_eq!(
+            report_parent(Path::new("sub/report.json")),
+            Path::new("sub")
+        );
     }
     #[test]
     fn schema_is_valid_draft_2020_12() {

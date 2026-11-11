@@ -1,6 +1,6 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
-use excession::doctor;
+
 use excession::discovery;
 use excession::evidence_query;
 use excession::semantic_contract;

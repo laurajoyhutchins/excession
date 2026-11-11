@@ -95,6 +95,21 @@ excession view audit --repo /path/to/h11 --manifest /tmp/dep-view.json --output 
 
 For security-focused views, first import and independently audit a CodeQL SARIF or Semgrep JSON report, then call `view-plan-security DB SOURCE_REPO RUN_ID`. Scanner flow labels remain **unverified scanner claims**, not confirmed trust boundaries. Views are copies of pinned Git blobs, permissioned read-only, with deterministic manifests and an independent audit. Details, refusal limits and all six CLI commands: [Repository views](docs/REPOSITORY_VIEWS.md).
 
+## Executable Python slices and evidence carry (trusted-local prototype)
+
+A bounded `tools/excession_slice.py` CLI can derive an exact Git-backed static
+Python import closure for one test entrypoint, materialize its source files
+without moving package paths, audit the reconstructed files, and execute the
+test only with explicit `--trusted-local` approval. After independent branches
+are merged, `carry` compares the historical and integrated closures and can
+optionally rerun the target slice to produce **fresh**, separate evidence.
+
+A matching slice reports `SOURCE_MATCH_ONLY`, never proof of behavioral
+preservation. Changes report `REVERIFY_REQUIRED`. Dynamic import patterns,
+unresolved packages, symlinks and unsupported layouts are refused. It is not
+a secure executor for untrusted source. See
+[Executable slices and evidence carry](docs/EXECUTABLE_SLICES.md).
+
 ## Blind historical protocol
 
 ```bash

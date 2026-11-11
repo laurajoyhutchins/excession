@@ -118,6 +118,8 @@ deterministic, unverified import-cycle and repeated-body hypotheses from the
 existing Python/JavaScript index. `excession refactor audit` replays the
 indexed query against Git source identities and checks a saved report. It does
 not reparse semantic relations, prove equivalence, or modify source.
+An optional SCIP decoder JSON input enables cross-language semantic-reference
+hypotheses without adding a Protobuf decoder or language parser to Rust.
 See [refactoring hypotheses](docs/REFACTORING.md).
 
 ## Integrated compiler-backed discovery

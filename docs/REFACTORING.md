@@ -62,6 +62,50 @@ source binding, tool/version provenance, and independent validation.
 cycle/duplicate detection, Git identities, deterministic replay, report and
 SQL-relation tampering, and unindexed-revision rejection.
 
+## SCIP-first indexing: replace handwritten semantic discovery
+
+SCIP provides a separate indexing path that **does not execute** Excession's
+Python AST or JavaScript/TypeScript parser adapters. Run an appropriate
+language-native SCIP indexer in a controlled environment and decode its
+`.scip` binary with the official executable:
+
+```sh
+scip print --json /path/to/index.scip > /tmp/index.scip.json
+COMMIT=$(git rev-parse HEAD)
+excession index --repo . --db /tmp/scip.sqlite --name project-scip \
+  --rev "$COMMIT" --scip-index /tmp/index.scip.json
+excession inspect scip-audit --repo . --db /tmp/scip.sqlite \
+  --name project-scip --rev "$COMMIT" --index /tmp/index.scip.json
+excession inspect dependencies --db /tmp/scip.sqlite \
+  --name project-scip --rev "$COMMIT"
+```
+
+The SCIP-indexed module key is the **repository-relative source path**. This
+is not a guessed Python package name, Rust crate name, or JS
+module-resolution alias. Existing view/dependency queries consume these
+source-bound keys.
+
+Only a reference with SCIP's explicit **Import role bit**, whose symbol has
+exactly one definition in the supplied index and whose source/target files are
+different, is recorded as a dependency (`scip:import-role`). Other symbol
+references are *not* inferred imports. SCIP indexers can omit import-role bits
+or report partial projects. Missing edges mean **unknown**, not independence.
+
+The importer stores the decoded input SHA-256, indexer name/version, document
+count, and import-edge count. Audit rereads the original input, rechecks
+Git blobs and spans, independently reconstructs the indexed Git tree, and
+compares the complete indexed module and import-edge sets. It cannot prove
+that the external SCIP indexer ran correctly or covered every configuration.
+
+The old `index --roots` path remains for reproducible legacy fixtures and
+environments without SCIP. It does not mix in one revision with a SCIP index.
+`--roots` is rejected in SCIP mode, and handwritten Python/JS resolvers
+are **not** a second source of authority when SCIP is selected.
+
+SCIP does not provide clone fingerprints, verified source transformations,
+complete compiler configuration, or dynamic runtime edges. Those require
+other tools or explicitly qualified analysis.
+
 ## Optional SCIP symbol evidence
 
 SCIP is Excession's preferred interchange format for definitions and references

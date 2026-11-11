@@ -125,8 +125,12 @@ deterministic, unverified import-cycle and repeated-body hypotheses from the
 existing Python/JavaScript index. `excession refactor audit` replays the
 indexed query against Git source identities and checks a saved report. It does
 not reparse semantic relations, prove equivalence, or modify source.
-An optional SCIP decoder JSON input enables cross-language semantic-reference
-hypotheses without adding a Protobuf decoder or language parser to Rust.
+SCIP is also an optional **semantic indexing authority**: `excession index --scip-index
+/tmp/index.scip.json` bypasses the handwritten Python/JS import parsers and derives
+import-role edges only from source-bound SCIP symbols.
+`excession inspect scip-audit` replays those Git/SQLite relationships.
+Without `--scip-index`, the historical parser-backed index remains available.
+Non-import symbol references never silently become dependency edges.
 See [refactoring hypotheses](docs/REFACTORING.md).
 
 ## Integrated compiler-backed discovery

@@ -15,6 +15,18 @@ pub fn index_revision(
     index_revision_with_roots(db, root, name, commit, provenance, &["h11", "tests"])
 }
 
+/// Record Git objects and trees without invoking language-native parsers or
+/// inventing source modules. The SCIP importer supplies its own document set.
+pub fn index_revision_git_only(
+    db: &Db,
+    root: &Path,
+    name: &str,
+    commit: &str,
+    provenance: &str,
+) -> Result<i64> {
+    index_revision_inner(db, root, name, commit, provenance, &[], false)
+}
+
 /// Index the complete Git object/tree/revision identities required by a
 /// bounded integration claim, without doing unrelated language parsing.
 /// The source tree is still independently reconstructed from SQLite rows.

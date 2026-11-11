@@ -23,6 +23,7 @@ pub mod overlap;
 pub mod preflight;
 pub mod projection;
 pub mod refactor;
+pub mod scip_index;
 pub mod scip_refactor;
 pub mod scoped;
 pub mod security;

@@ -15,18 +15,34 @@ const MAX_CANDIDATES: usize = 128;
 const MAX_REFERENCES_PER_CANDIDATE: usize = 100;
 
 #[derive(Clone)]
-struct Document {
-    path: String,
-    language: String,
-    blob: String,
+pub(crate) struct Document {
+    pub(crate) path: String,
+    pub(crate) language: String,
+    pub(crate) blob: String,
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
-struct Reference {
-    from: String,
-    to: String,
-    symbol: String,
-    line: usize,
+pub(crate) struct Reference {
+    pub(crate) from: String,
+    pub(crate) to: String,
+    pub(crate) symbol: String,
+    pub(crate) line: usize,
+    pub(crate) import_role: bool,
+}
+
+pub(crate) struct Graph {
+    pub(crate) commit: String,
+    pub(crate) tree: String,
+    pub(crate) index_sha256: String,
+    pub(crate) indexer_name: String,
+    pub(crate) indexer_version: String,
+    pub(crate) documents: BTreeMap<String, Document>,
+    pub(crate) references: BTreeSet<Reference>,
+    pub(crate) unresolved: usize,
+    pub(crate) occurrence_count: usize,
+    pub(crate) line_only: usize,
+    pub(crate) languages: BTreeSet<String>,
+    pub(crate) unique_definitions: usize,
 }
 
 fn opt<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
@@ -174,12 +190,15 @@ fn reference(v: &Reference, documents: &BTreeMap<String, Document>) -> Value {
         ("symbol", Value::string(&v.symbol)),
         ("line", Value::number(v.line + 1)),
         ("relation", Value::string("SCIP_SYMBOL_REFERENCE")),
+        ("import_role", Value::Bool(v.import_role)),
     ])
 }
 
 /// Accept JSON decoded by the official SCIP CLI. No SCIP indexer is invoked:
 /// builds and index generation remain explicit, isolated preparatory work.
-pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
+/// Single SCIP decoding and Git-binding path shared by reports and SQL indexing.
+/// Excession does not reconstruct a language resolver or infer missing links.
+pub(crate) fn load(repo: &Path, revision: &str, input: &Path) -> Result<Graph> {
     git::verify_repo(repo)?;
     let commit = git::rev(repo, revision)?;
     if git::text(repo, &["cat-file", "-t", &commit])? != "commit" {
@@ -289,7 +308,7 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
                     .or_default()
                     .insert(path.into());
             } else if role & 64 == 0 {
-                references.push((path.to_owned(), symbol.to_owned(), line));
+                references.push((path.to_owned(), symbol.to_owned(), line, role & 2 != 0));
             }
         }
     }
@@ -299,7 +318,7 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
     // reference. Ambiguous and external identities remain unsupported.
     let mut matched = BTreeSet::new();
     let mut unresolved = 0_usize;
-    for (from, symbol, line) in &references {
+    for (from, symbol, line, import_role) in &references {
         match definitions.get(symbol) {
             Some(destinations) if destinations.len() == 1 => {
                 let to = destinations.iter().next().expect("unique definition");
@@ -309,6 +328,7 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
                         to: to.clone(),
                         symbol: symbol.clone(),
                         line: *line,
+                        import_role: *import_role,
                     });
                 }
             }
@@ -316,8 +336,29 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
         }
     }
 
+    Ok(Graph {
+        commit,
+        tree,
+        index_sha256: crate::digest::sha256(&bytes),
+        indexer_name: name.to_owned(),
+        indexer_version: version.to_owned(),
+        documents,
+        references: matched,
+        unresolved,
+        occurrence_count: count,
+        line_only: lines_only,
+        languages,
+        unique_definitions: definitions.values().filter(|v| v.len() == 1).count(),
+    })
+}
+
+/// Produce conservative refactoring suggestions from the shared SCIP evidence.
+pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
+    let graph = load(repo, revision, input)?;
+    let documents = &graph.documents;
+    let matched = &graph.references;
     let mut by_pair: BTreeMap<(String, String), Vec<Reference>> = BTreeMap::new();
-    for edge in &matched {
+    for edge in matched {
         by_pair
             .entry((edge.from.clone(), edge.to.clone()))
             .or_default()
@@ -336,7 +377,7 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
                 .iter()
                 .chain(backward.iter())
                 .take(MAX_REFERENCES_PER_CANDIDATE)
-                .map(|x| reference(x, &documents))
+                .map(|x| reference(x, documents))
                 .collect::<Vec<_>>();
             candidates.push(candidate(obj(&[
                 ("kind", Value::string("reciprocal_symbol_references")),
@@ -349,14 +390,14 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
         }
     }
 
-    for edge in &matched {
+    for edge in matched {
         let from = &documents[&edge.from];
         let to = &documents[&edge.to];
         if from.language != to.language {
             candidates.push(candidate(obj(&[
                 ("kind", Value::string("cross_language_symbol_boundary")),
                 ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESIS")),
-                ("reference", reference(edge, &documents)),
+                ("reference", reference(edge, documents)),
                 ("action", Value::string("Inspect the explicitly indexed cross-language symbol boundary and its ownership; do not infer FFI or API equivalence.")),
                 ("verification", Value::string("Independently verify the language-specific bridge, build configurations and integration tests.")),
             ]))?);
@@ -369,34 +410,37 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
     let mut report = obj(&[
         ("schema", Value::string("excession.scip-refactor.v1")),
         ("status", Value::string("UNVERIFIED_SCIP_RELATIONS")),
-        ("source_commit", Value::string(commit)),
-        ("source_tree", Value::string(tree)),
-        ("index_sha256", Value::string(crate::digest::sha256(&bytes))),
+        ("source_commit", Value::string(&graph.commit)),
+        ("source_tree", Value::string(&graph.tree)),
+        ("index_sha256", Value::string(&graph.index_sha256)),
         (
             "indexer",
             obj(&[
-                ("name", Value::string(name)),
-                ("version", Value::string(version)),
+                ("name", Value::string(&graph.indexer_name)),
+                ("version", Value::string(&graph.indexer_version)),
             ]),
         ),
         (
             "coverage",
             obj(&[
-                ("indexed_documents", Value::number(documents.len())),
-                ("indexed_occurrences", Value::number(count)),
+                ("indexed_documents", Value::number(graph.documents.len())),
+                ("indexed_occurrences", Value::number(graph.occurrence_count)),
                 (
                     "unique_defined_symbols",
-                    Value::number(definitions.values().filter(|v| v.len() == 1).count()),
+                    Value::number(graph.unique_definitions),
                 ),
-                ("unresolved_references", Value::number(unresolved)),
+                ("unresolved_references", Value::number(graph.unresolved)),
                 (
                     "matched_cross_file_references",
                     Value::number(matched.len()),
                 ),
-                ("line_only_position_documents", Value::number(lines_only)),
+                (
+                    "line_only_position_documents",
+                    Value::number(graph.line_only),
+                ),
                 (
                     "languages",
-                    Value::array(languages.into_iter().map(Value::string)),
+                    Value::array(graph.languages.into_iter().map(Value::string)),
                 ),
                 (
                     "limitations",

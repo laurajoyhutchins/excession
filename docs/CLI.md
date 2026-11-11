@@ -75,6 +75,15 @@ excession view audit --repo "$REPO" --manifest "$OUT/combined.json" \
 
 Materialization requires a new **absolute** destination outside the source checkout, produces mode-0444 regular files, and audits every file against its original Git blob. Materialized views are **not runnable checkouts** and cannot be used to claim test or security equivalence.
 
+## SCIP semantic indexing
+
+With a decoded index from `scip print --json`, `excession index --scip-index
+/tmp/index.scip.json` bypasses native Python/JS parsing. `excession inspect
+scip-audit --repo . --db /tmp/scip.sqlite --name project --rev HEAD
+--index /tmp/index.scip.json` replays the imported source modules and only
+explicit SCIP import-role edges. Use a separate index name from legacy
+indexes. See [SCIP-first indexing](REFACTORING.md#scip-first-indexing-replace-handwritten-semantic-discovery).
+
 ## Refactoring hypotheses
 
 ```sh

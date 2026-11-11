@@ -58,6 +58,21 @@ CREATE TABLE IF NOT EXISTS dependency (
     REFERENCES module(repo_id,commit_oid,name)
 );
 CREATE INDEX IF NOT EXISTS dependency_reverse ON dependency(repo_id,commit_oid,target_name);
+
+-- Keep SCIP authority distinct from legacy parser observations. This digest
+-- binds the imported edge set to a specific decoded SCIP index and tool.
+CREATE TABLE IF NOT EXISTS scip_index_metadata (
+  repo_id INTEGER NOT NULL,
+  commit_oid TEXT NOT NULL,
+  index_sha256 TEXT NOT NULL,
+  indexer_name TEXT NOT NULL,
+  indexer_version TEXT NOT NULL,
+  document_count INTEGER NOT NULL CHECK(document_count>=0),
+  import_edge_count INTEGER NOT NULL CHECK(import_edge_count>=0),
+  PRIMARY KEY (repo_id,commit_oid),
+  FOREIGN KEY(repo_id,commit_oid) REFERENCES revision(repo_id,commit_oid)
+);
+
 CREATE TRIGGER IF NOT EXISTS check_revision_types BEFORE INSERT ON revision BEGIN
  SELECT CASE WHEN (SELECT kind FROM git_object WHERE repo_id=NEW.repo_id AND oid=NEW.commit_oid) != 'commit'
  THEN RAISE(ABORT,'revision commit must reference a commit object') END;

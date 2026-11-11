@@ -3,7 +3,7 @@
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, native_depinfo, preflight,
-    projection, refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    projection, refactor, refuse, scip_index, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -19,6 +19,7 @@ const HELP: &str = r#"Excession | Git-authenticated repository exploration and s
 
 Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
+  excession index --repo REPO --db DB --name NAME --scip-index DECODED_SCIP_JSON [--rev HEAD]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
   excession syntax audit --repo REPO --report SAVED_JSON
   excession syntax preflight --report SAVED_JSON
@@ -50,6 +51,7 @@ Usage:
   excession inspect dependencies|manifest --db DB --name NAME --rev REV
   excession inspect impact --db DB --name NAME --rev REV --seed MODULE
   excession inspect review --db DB --name NAME --old REV --new REV
+  excession inspect scip-audit --repo REPO --db DB --name NAME --rev REV --index DECODED_SCIP_JSON
   excession refactor suggest --db DB --name NAME --rev REV
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
   excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
@@ -306,6 +308,14 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
 }
 
 fn inspect_cmd(verb: &str, argv: &[String]) -> Result<Response> {
+    if verb == "scip-audit" {
+        let opt = Options::parse(argv, &["repo", "db", "name", "rev", "index"], &[])?;
+        let db = Db::open(opt.path("db"))?;
+        return Ok(json(scip_index::audit(
+            &db, opt.path("repo"), opt.get("name"),
+            opt.get("rev"), opt.path("index"),
+        )?));
+    }
     let (req, extra): (&[&str], &[&str]) = match verb {
         "dependencies" | "manifest" => (&["db", "name", "rev"], &[]),
         "impact" => (&["db", "name", "rev", "seed"], &[]),
@@ -615,7 +625,24 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown syntax command {sub}")),
         },
         [top, tail @ ..] if top == "index" => {
-            let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots"])?;
+            let opt = Options::parse(
+                tail,
+                &["repo", "db", "name"],
+                &["rev", "roots", "scip-index"],
+            )?;
+            if opt.0.contains_key("scip-index") {
+                if opt.0.contains_key("roots") {
+                    return refuse("--roots is not used with SCIP; the SCIP documents define the scope");
+                }
+                let db = Db::open(opt.path("db"))?;
+                return Ok(json(scip_index::import(
+                    &db,
+                    opt.path("repo"),
+                    opt.get("name"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.path("scip-index"),
+                )?));
+            }
             let roots = opt
                 .get_or("roots", "src,tests")
                 .split(',')

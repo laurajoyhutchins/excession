@@ -349,6 +349,11 @@ pub fn suggest(db: &Db, name: &str, revision: &str) -> Result<Value> {
         )?
         .parse::<u64>()
         .map_err(|_| "invalid indexed hazard count")?;
+    let source = db.scalar(
+        "SELECT provenance FROM repository WHERE id=?",
+        &[Param::Integer(repo_id)],
+    )?;
+    let scip = source == "scip-index";
     db.foreign_keys_valid()?;
 
     let mut report = obj(&[
@@ -362,7 +367,11 @@ pub fn suggest(db: &Db, name: &str, revision: &str) -> Result<Value> {
             obj(&[
                 (
                     "scope",
-                    Value::string("indexed Python/JavaScript modules only"),
+                    Value::string(if scip {
+                        "SCIP-backed tracked files; only explicit import-role edges are indexed"
+                    } else {
+                        "indexed Python/JavaScript modules only"
+                    }),
                 ),
                 ("indexed_modules", Value::number(modules.len())),
                 ("indexed_dependencies", Value::number(edges.len())),
@@ -370,9 +379,11 @@ pub fn suggest(db: &Db, name: &str, revision: &str) -> Result<Value> {
                 ("indexed_hazards", Value::number(hazards)),
                 (
                     "limitations",
-                    Value::string(
-                        "Missing dynamic, unresolved, runtime, cross-language or non-indexed relationships are unknown, not absent. Source identity is Git-checked; semantic observations are not re-extracted by this command.",
-                    ),
+                    Value::string(if scip {
+                        "SCIP symbol references without the explicit Import role are not dependency edges. Absent imports, dynamic/runtime/configuration links and unfinished indexer coverage are unknown. Use inspect scip-audit with the original decoded index for independent SQL relation replay."
+                    } else {
+                        "Missing dynamic, unresolved, runtime, cross-language or non-indexed relationships are unknown, not absent. Source identity is Git-checked; semantic observations are not re-extracted by this command."
+                    }),
                 ),
             ]),
         ),

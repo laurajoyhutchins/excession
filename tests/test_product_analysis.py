@@ -7,7 +7,7 @@ from product_contract_support import validate_schema
 
 class AnalyzeWorkflowContractTests(unittest.TestCase):
     def report(self):
-        return json.loads(r'''{"schema":"excession.analysis.v1","report_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","source_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source_tree":"cccccccccccccccccccccccccccccccccccccccc","status":"PARTIAL","observation_receipts":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],"relationships":[],"coverage":{"status":"PARTIAL","analyzed_sources":12,"gaps":[{"reason":"UNRESOLVED_RELATIONSHIP"}]},"ontology_links":[{"snapshot_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","link_report_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","role":"ANNOTATION_ONLY"}]}''')
+        return json.loads(r'''{"schema":"excession.analysis.v1","report_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","source_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","source_tree":"cccccccccccccccccccccccccccccccccccccccc","status":"PARTIAL","observation_receipts":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],"relationships":[],"coverage":{"status":"PARTIAL","analyzed_sources":12,"gaps":[{"reason":"UNRESOLVED_RELATIONSHIP"}]},"ontology_links":[{"snapshot_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","link_report_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","assessment":"ANNOTATION_ONLY"}]}''')
 
     def test_accepts_valid_draft_shape(self):
         validate_schema("analysis.v1.schema.json", self.report())
@@ -20,7 +20,7 @@ class AnalyzeWorkflowContractTests(unittest.TestCase):
 
     def test_rejects_ontology_as_authority(self):
         report = self.report()
-        report["ontology_links"][0]["role"] = "VERIFIED_DEPENDENCY"
+        report["ontology_links"][0]["assessment"] = "VERIFIED_DEPENDENCY"
         with self.assertRaises(ValidationError):
             validate_schema("analysis.v1.schema.json", report)
 

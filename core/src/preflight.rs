@@ -174,9 +174,6 @@ pub fn syntax(value: &Value) -> Result<Value> {
         git::validate_path(path)?;
         root_set.insert(path.to_owned());
     }
-    if root_set.len() != roots.len() {
-        return refuse("preflight: duplicate source roots");
-    }
     let mut previous = "";
     for source in sources {
         source_record(source, &root_set)?;

@@ -62,7 +62,7 @@ class ValidityTests(unittest.TestCase):
             for i, line in enumerate(lines):
                 connection.execute("INSERT INTO security_ingest_candidate VALUES(?,?,?,?,?,?)",
                                    (self.run_id, f"candidate-{i}", "benchmarks/security-validity/path.go",
-                                    self.blob, line, "excession.go.joined-read"))
+                                    self.blob, line, "benchmarks.security-validity.excession.go.joined-read"))
 
     def audit(self) -> dict:
         return {"run_id": self.run_id, "source_commit": self.commit,

@@ -10,7 +10,13 @@ on:
       - benchmarks/schemas/**
       - .github/workflows/native-paired.yml
       - core/src/graph_baseline.rs
+      - 'core/src/research/benchmark.rs'
+      - 'core/src/graph/graph_baseline.rs'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -37,6 +43,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git worktree add --detach "$RUNNER_TEMP/excession-baseline" "$BASE_SHA"
+          cargo fetch --locked --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
           cargo build --offline --locked --release --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
           python3 benchmarks/micro/native_paired.py "$RUNNER_TEMP/excession-baseline/core/target/release/excession" baseline-calibration.json
       - name: Validate native paired report envelopes

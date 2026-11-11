@@ -1,42 +1,67 @@
-# Excession: architectural specification
+# Excession: architecture and evidence model
 
-**Status:** implemented first vertical slice, not an autonomous CVE discovery system.
+**Current focus:** Git-grounded, auditable code intelligence.
 **Version:** 0.1.x. **Authority:** Git for source objects; Rust + SQLite for evidence relations.
-**Scope:** local authorized analysis of version-pinned software. No untrusted native execution on a shared host.
+**Scope:** local analysis of version-pinned software; language-native tools supply their own observations.
 
-## 1. Problem and falsifiable hypothesis
+## 1. Implemented foundation
 
-Excession owns the migrated Rust Git/SQLite core as its evidence authority. Given a revision `R`, a set of scanner outputs `S`, a source revision graph `G`, and
-native tests `T`, identify security invariant violations with independently replayable
-evidence. We want to learn whether relationships across revisions and between
-components discover additional *real* vulnerabilities over CodeQL + native
-fuzzing alone.
+Excession preserves source identity while assembling and inspecting evidence
+about a repository. The Rust CLI uses pinned Git revisions and a SQLite-backed
+relation store. It provides:
+
+- **Source identity:** exact commits, paths, blobs, and revision-bound records.
+- **Relationships:** bounded Python/JavaScript dependency indexing, optional
+  Tree-sitter syntax observations, and SCIP-derived symbol-reference evidence.
+- **Views:** composable, read-only repository projections that refer back to
+  the original Git objects.
+- **Inspection:** refactoring hypotheses, native-declaration comparisons, and
+  imported scanner findings with their source bindings.
+- **Audits:** deterministic reconstruction and checks of recorded outputs
+  against their sources and contracts.
+
+These layers preserve distinct meanings. A syntax candidate is not a compiler
+dependency; a source-bound scanner result is not a verified vulnerability.
+Audits make evidence reproducible within their stated boundaries, not
+semantically complete or automatically correct.
+
+## 2. Research hypothesis: vulnerability discovery
+
+The code-intelligence foundation can support security experiments. The
+unproven question is whether combining Git relationships and revisions with
+existing static analyzers and native tests produces *additional confirmed
+vulnerabilities* compared with those tools alone.
 
 **Hypothesis:** `confirmed(Excession + static analysis + fuzzing) > confirmed(static analysis + fuzzing)`
-on a preregistered held-out corpus at comparable resource cost. This is unproven.
+on a preregistered held-out corpus at comparable resource cost.
 
 A static warning is not a vulnerability, a bug is not necessarily exploitable,
 a historical CVE match is not a new CVE, and a new finding may never receive a CVE.
+This hypothesis is a research program, not a shipped autonomous discovery claim.
 
-## 2. System boundary
+## 3. Security experiment boundary (proposed)
+
+The following is an evaluation design, **not** a diagram of an already
+completed autonomous vulnerability-discovery pipeline:
 
 ```text
 Pinned Git revisions + frozen trial protocol
        |   (no CVEs/advisories in candidate generation)
        v
-Language-native extraction / CodeQL / Semgrep / Joern
-       |   SARIF 2.1.0, Semgrep JSON, future code-property graph
+Language-native extraction / CodeQL / Semgrep / future CPG inputs
+       |   SARIF, tool-native observations
        v
 Excession Rust: source binding, normalized findings, SQLite provenance
-       |   revision comparisons, dependency relations, selection
+       |   implemented evidence import, source-bound audit, relation queries
        v
 Native fuzz / dynamic oracles in isolated ephemeral environments
-       |   input + actual trace + counterexample + controls
+       |   research integration; input, trace, counterexample, controls
        v
-Excession independent audit, with source and tool version checks
-       |   freeze observations
+Independent validation and evidence freeze
+       |   controlled comparison, not automatic confirmation
        v
 Post-freeze OSV / GitHub advisory scoring and disclosure review
+       |   research evaluation
 ```
 
 Rust does not reimplement CodeQL's dataflow engine, Semgrep's rule matching,
@@ -57,7 +82,7 @@ immediately performs source-bound import plus independent replay. Its explicit
 `--trusted-local true` flag does **not** provide sandbox isolation, remote
 attestation, or a security verdict. Python tool adapters remain optional helpers.
 
-## 3. Existing engines and interface contracts
+## 4. Existing engines and interface contracts
 
 | Interface | Input | Output | Current support |
 |---|---|---|---|
@@ -77,7 +102,7 @@ execute untrusted source. CodeQL databases must be created by a separately
 reviewed and isolated build. Reports must use plain repository-relative source
 paths; ambiguous/encoded/absolute paths are refused rather than guessed.
 
-## 4. Authoritative identities
+## 5. Authoritative identities
 
 * Source authority: pinned Git SHA-1 commit + path + blob SHA. The current
   Rust core explicitly rejects SHA-256 Git object-format repositories.
@@ -97,7 +122,7 @@ A database hash alone does not authenticate remote execution or detect deliberat
 replacement of the entire database and its source inputs. Remote attestations and
 sandbox identity are separately required before trusting third-party agents.
 
-## 5. Relational state and proof obligations
+## 6. Relational state and proof obligations
 
 First implementation tables:
 
@@ -123,7 +148,7 @@ A separate `DISCONFIRMED` and `UNSUPPORTED` terminal outcome must remain in
 counts. *No inference from a lower state to a higher state.* A CVE ID is
 metadata only after a post-freeze match, not a security-verdict state.
 
-## 6. Trusted-local ingestion flow (implemented)
+## 7. Trusted-local ingestion flow (implemented)
 
 1. Require an existing clean SHA-1 Git checkout; record `HEAD`.
 2. Run a named installed scanner without a shell, at bounded time, using
@@ -144,7 +169,7 @@ primary locations with start lines, `tool.driver.name=CodeQL`, and Semgrep
 `results/check_id/path/start.line`. More complicated tool reports must be
 explicitly supported rather than silently truncated.
 
-## 7. Discovery and replay protocol
+## 8. Discovery and replay protocol
 
 **Before reading advisories:** Select repositories by publicly articulated
 neutral criteria (language, size, fixed historical date, supported analyzers),
@@ -164,7 +189,7 @@ audit from a clean checkout.
 Count true positives only with behavior and affected-version agreement. Compare
 Excession-enhanced output against CodeQL-only + fuzz-only baselines at similar cost.
 
-## 8. Security controls
+## 9. Security controls
 
 - Analyze only projects and systems authorized for security research.
 - No untrusted user-source execution on the shared host; use isolated workers
@@ -177,7 +202,7 @@ Excession-enhanced output against CodeQL-only + fuzz-only baselines at similar c
 - Treat analysis tool outputs and their messages as adversarial data.
 - Coordinate disclosure for any actionable new finding; no automatic CVE claim.
 
-## 9. Compute and CI
+## 10. Compute and CI
 
 Local commit check (<30s target): Rust formatting/strict Clippy, core unit
 and importer fixture tests, basic Python unittest. It should not trigger a
@@ -187,7 +212,7 @@ Cloud Build/manual deep check: fetch exact source revision, construct CodeQL
 DB, run code scanning, seeded fuzzing in isolation, audit and cost receipts.
 Explicit environment version-pins required. No GitHub Actions minutes assumed.
 
-## 10. Acceptance criteria and implementation status
+## 11. Acceptance criteria and implementation status
 
 **Delivered now:** new local git repo; Rust SARIF/Semgrep candidate ingest and
 audit; runner for local CodeQL/Semgrep; label-free benchmark protocol freeze;
@@ -199,7 +224,7 @@ Semgrep installs; trusted source-built CodeQL DB; native fuzz harness generator;
 replayable authorization impact; OSV post-freeze range matcher; blind historical
 benchmark; measurement against standalone scanners; remote attestations.
 
-## 11. Rejection policy and design choices
+## 12. Rejection policy and design choices
 
 - No general-purpose CPG rewrite in Rust. Consume Joern/CodeQL output.
 - No automatic acceptance of "fixed" from absent static findings.

@@ -22,6 +22,11 @@ contracts for source and target revisions, then use the existing
 `excession evidence contract-compare` and `contract-audit` commands. Always
 compare both revisions: an old closure alone cannot detect a new import.
 
+The TypeScript provider requires the actual TypeScript compiler API on the
+runner. A `tsc` executable alone is not proof that the API is installed. An
+explicit `UNSUPPORTED` outcome is correct when that API is missing; tests
+must distinguish this from a successfully resolved dependency closure.
+
 ## Resolution backends
 
 | Adapter | Native source of dependency information | Explicit restrictions |
@@ -29,7 +34,7 @@ compare both revisions: an old closure alone cannot detect a new import.
 | Go | `go list -deps -test -json` with no network, toolchain upgrades, workspaces or cgo. Includes same-package build alternatives, tracked test files, reachable packages, embeds, `go.mod`/`go.sum` | External modules outside the pinned Git snapshot, cgo/SWIG and toolchain errors refuse. Generated testmain code belongs to the Go toolchain and is not a Git input. |
 | JavaScript | Node CommonJS `createRequire(...).resolve` for `require`, with TypeScript compiler API parsing and ESM module resolution | Resolved packages must be tracked inside the pinned snapshot, including vendored `node_modules`. Dynamic imports, out-of-tree modules and ambiguous declaration-only runtime resolution refuse. |
 | TypeScript | TypeScript compiler API with effective `tsconfig` compiler options, aliases and static module references | `extends`, project references, config plugins, ambient type references and unresolved imports refuse. Does not typecheck or execute user code. |
-| Rust | `rustc --emit dep-info` on dependency-free crate roots, including tracked `include_str!` and `include_bytes!` assets | Workspaces, external dependencies, build scripts, arbitrary `env!`/`option_env!`, dynamic `include!`, and non-root entries refuse. This mode does not include `#[cfg(test)]` test compilation. |
+| Rust | **Unsupported by current `discover-native`**; use rust-analyzer SCIP for symbols and references | The previously experimental `rustc` depfile resolver was retired, and is not an alternative evidence authority. |
 
 The adapter returns `coverage: DECLARED_INPUTS_ONLY`. Native parsers improve
 resolution fidelity **but do not certify full effect or input closure**. For

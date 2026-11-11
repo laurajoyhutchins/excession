@@ -39,7 +39,13 @@ class NativeTests(unittest.TestCase):
         git(self.repo, 'config', 'user.name', 'Test')
 
     def discover(self, sha, entry, language):
-        result, _stats = native.discover(self.repo, sha, entry, language)
+        try:
+            result, _stats = native.discover(self.repo, sha, entry, language)
+        except native.Unsupported as error:
+            if language in ('javascript', 'typescript') and (
+                    'TypeScript compiler API missing beside tsc' in str(error)):
+                self.skipTest('TypeScript compiler API unavailable: explicit UNSUPPORTED')
+            raise
         return result
 
     def test_go_native_transitive_and_build_input_invalidation(self):
@@ -78,20 +84,10 @@ class NativeTests(unittest.TestCase):
         with self.assertRaises(native.Unsupported):
             self.discover(rev,'src/main.ts','typescript')
 
-    def test_rustc_depfile_and_include_str(self):
-        if not shutil.which('rustc'):
-            self.skipTest('rustc missing')
-        rev = put(self.repo, {'Cargo.toml': '[package]\nname="sample"\nversion="0.1.0"\nedition="2024"\n',
-            'src/lib.rs': 'mod util; pub fn f() -> &\'static str {include_str!("value.txt")}\n',
-            'src/util.rs': 'pub fn x() -> u32 {42}\n',
-            'src/value.txt': 'hello\n', 'not-used.rs':'fn unused() {}\n'}, 'base')
-        decl = self.discover(rev,'src/lib.rs','rust')
-        self.assertEqual({x['path'] for x in decl['inputs']},
-            {'Cargo.toml','src/lib.rs','src/util.rs','src/value.txt'})
-        self.assertFalse(any(x['path']=='not-used.rs' for x in decl['inputs']))
-        change = put(self.repo, {'src/value.txt':'hello again\n'}, 'asset changed')
-        self.assertEqual([x['path'] for x in decl['inputs']],
-                         [x['path'] for x in self.discover(change,'src/lib.rs','rust')['inputs']])
+    def test_native_rust_depfile_resolver_is_explicitly_retired(self):
+        rev = put(self.repo, {'src/lib.rs': 'fn main() {}'}, 'rust source')
+        with self.assertRaisesRegex(native.Unsupported, 'rust-analyzer SCIP'):
+            self.discover(rev, 'src/lib.rs', 'rust')
 
     def test_explicit_trust_and_untracked_files(self):
         rev = put(self.repo, {'main.js':'console.log("hello");\n'}, 'base')
@@ -147,7 +143,13 @@ class NativeTests(unittest.TestCase):
         target=Path(self.temp.name)/'postcss'
         subprocess.run(['git','clone','-q',str(bundle),str(target)],
                        check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-        decl, stats=native.discover(target,'HEAD','postcss/lib/postcss.js','javascript')
+        try:
+            decl, stats = native.discover(
+                target, 'HEAD', 'postcss/lib/postcss.js', 'javascript')
+        except native.Unsupported as error:
+            if 'TypeScript compiler API missing beside tsc' in str(error):
+                self.skipTest('TypeScript compiler API unavailable: explicit UNSUPPORTED')
+            raise
         paths={x['path'] for x in decl['inputs']}
         self.assertIn('postcss/node_modules/nanoid/non-secure/index.cjs',paths)
         self.assertIn('postcss/node_modules/picocolors/picocolors.js',paths)

@@ -1,4 +1,4 @@
-"""Regression tests for Rust-owned historical native dependency reconstruction.
+"""Regression tests for Rust-owned historical native dependency declarations.\nRust symbols are delegated to rust-analyzer SCIP.
 
 Only language resolution occurs outside Rust. The public declaration and
 stats must not depend on worktree contents or untracked files.
@@ -77,33 +77,22 @@ class RustNativeAuthorityTests(unittest.TestCase):
             'lib/math.ts': 'export const x = 1;\n',
             'other.ts': 'export const y = 2;\n',
         })
-        declaration, _ = native.discover(self.repo, old, 'src/main.ts', 'typescript')
+        try:
+            declaration, _ = native.discover(self.repo, old, 'src/main.ts', 'typescript')
+        except native.Unsupported as error:
+            if 'TypeScript compiler API missing beside tsc' in str(error):
+                self.skipTest('TypeScript compiler API unavailable: explicit UNSUPPORTED')
+            raise
         self.assertEqual(self.paths(declaration),
                          {'tsconfig.json', 'src/main.ts', 'lib/math.ts'})
         dynamic = self.commit({'src/main.ts': 'require(dynamicName());\n'})
         with self.assertRaises(native.Unsupported):
             native.discover(self.repo, dynamic, 'src/main.ts', 'typescript')
 
-    def test_rust_depfile_assets_and_symlink_refusal(self):
-        if not shutil.which('rustc'):
-            self.skipTest('Rust compiler unavailable')
-        old = self.commit({
-            'Cargo.toml': '[package]\nname="example"\nversion="0.1.0"\nedition="2024"\n',
-            'src/lib.rs': 'mod util; pub fn f() -> &\'static str {include_str!("value.txt")}\n',
-            'src/util.rs': 'pub fn x() ->u32{42}\n',
-            'src/value.txt': 'hello\n',
-            'unused.rs': 'fn other() {}\n',
-        })
-        declaration, _ = native.discover(self.repo, old, 'src/lib.rs', 'rust')
-        self.assertEqual(self.paths(declaration),
-                         {'Cargo.toml', 'src/lib.rs', 'src/util.rs', 'src/value.txt'})
-        # Reject tracked symlinks instead of interpreting their targets.
-        (self.repo / 'linked.txt').symlink_to('src/value.txt')
-        git(self.repo, 'add', 'linked.txt')
-        git(self.repo, 'commit', '-qm', 'link')
-        current = git(self.repo, 'rev-parse', 'HEAD')
-        with self.assertRaises(native.Unsupported):
-            native.discover(self.repo, current, 'src/lib.rs', 'rust')
+    def test_rust_native_depfiles_are_not_current_evidence_authority(self):
+        rev = self.commit({'src/lib.rs': 'fn main() {}'})
+        with self.assertRaisesRegex(native.Unsupported, 'rust-analyzer SCIP'):
+            native.discover(self.repo, rev, 'src/lib.rs', 'rust')
 
     def test_trust_opt_in_required_in_rust_and_python(self):
         old = self.commit({'main.js': 'console.log(1);\n'})

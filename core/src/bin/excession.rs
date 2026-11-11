@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, compiler_clang, git, index, kernel, projection, refuse, security_ingest, views,
+    Result, compiler_clang, git, graph_assembly, index, kernel, projection, refuse, security_ingest, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -19,6 +19,8 @@ const HELP: &str = r#"Excession | Git-authenticated repository exploration and s
 Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession graph assemble --repo REPO --rev HEAD --build BUILD_DIR
+      --target CMAKE_TARGET --observations JSON_DIRECTORY --db SQLITE
   excession analyze clang --repo REPO --source PATH --compile-db JSON --trusted-local true
       [--rev HEAD] [--compiler clang|clang++] [--config CONFIG]
   excession kernel clang --repo REPO --source PATH --compile-db JSON --trusted-local true
@@ -448,7 +450,7 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "kernel" | "analyze"
+                    "view" | "security" | "inspect" | "index" | "browse" | "kernel" | "analyze" | "graph"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -460,6 +462,25 @@ fn execute(args: &[String]) -> Result<Response> {
         {
             Ok(Response::Message(HELP.to_owned()))
         }
+        [top, sub, tail @ ..] if top == "graph" => match sub.as_str() {
+            "assemble" => {
+                let opt = Options::parse(
+                    tail,
+                    &["repo", "build", "target", "observations", "db"],
+                    &["rev"],
+                )?;
+                let db = Db::open(opt.path("db"))?;
+                Ok(json(graph_assembly::assemble(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.path("build"),
+                    opt.get("target"),
+                    opt.path("observations"),
+                    &db,
+                )?))
+            }
+            _ => refuse(format!("unknown graph command: {sub}")),
+        },
         [top, sub, tail @ ..] if top == "analyze" => match sub.as_str() {
             "clang" => clang_command(tail),
             _ => refuse(format!("unknown analysis command: {sub}")),

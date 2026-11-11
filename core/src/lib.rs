@@ -8,6 +8,7 @@ pub mod contracts;
 pub mod digest;
 pub mod effects;
 pub mod git;
+pub mod graph_assembly;
 pub mod historical;
 pub mod identity;
 pub mod impact;

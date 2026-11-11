@@ -44,13 +44,35 @@ pub fn push_node(
     kind: &str,
     payload: Value,
 ) -> Result<()> {
+    push_typed_node(nodes, id, role(kind), kind, payload)
+}
+
+/// Direct neutral contract for future adapters, without adding a
+/// language- or build-system-specific mapping to this module.
+pub fn push_typed_node(
+    nodes: &mut BTreeMap<String, Value>,
+    id: String,
+    neutral_role: &str,
+    kind: &str,
+    payload: Value,
+) -> Result<()> {
+    if !matches!(neutral_role,
+        "target" | "artifact" | "source" | "analysis" | "symbol"
+        | "reference" | "input" | "observation" | "action"
+        | "configuration" | "unknown"
+    ) {
+        return refuse("unrecognized neutral node role");
+    }
+    if kind.is_empty() || id.is_empty() {
+        return refuse("graph entity identity and native kind must be nonempty");
+    }
     if nodes.len() >= MAX_NODES && !nodes.contains_key(&id) {
         return refuse("configured graph node budget exceeded");
     }
     let item = obj(&[
         ("id", Value::string(&id)),
         ("kind", Value::string(kind)),
-        ("role", Value::string(role(kind))),
+        ("role", Value::string(neutral_role)),
         ("payload", payload),
     ]);
     if let Some(existing) = nodes.insert(id, item.clone())
@@ -68,6 +90,31 @@ pub fn push_edge(
     status: &str,
     evidence: &str,
 ) -> Result<()> {
+    push_typed_edge(edges, from, to, relation(kind), kind, status, evidence)
+}
+
+/// Language-neutral relationship contract. Original evidence is mandatory.
+pub fn push_typed_edge(
+    edges: &mut BTreeMap<String, Value>,
+    from: &str,
+    to: &str,
+    neutral_relation: &str,
+    kind: &str,
+    status: &str,
+    evidence: &str,
+) -> Result<()> {
+    if !matches!(neutral_relation,
+        "depends_on" | "uses" | "produces" | "analyzed_as"
+        | "reads" | "declares" | "contains" | "may_refer_to"
+        | "observed_with" | "has_evidence" | "unknown"
+    ) {
+        return refuse("unrecognized neutral relationship");
+    }
+    if from.is_empty() || to.is_empty() || kind.is_empty()
+        || status.is_empty() || evidence.is_empty()
+    {
+        return refuse("graph relationship needs identities, native kind, status, and evidence");
+    }
     if edges.len() >= MAX_EDGES {
         return refuse("configured graph edge budget exceeded");
     }
@@ -75,7 +122,7 @@ pub fn push_edge(
         ("from", Value::string(from)),
         ("to", Value::string(to)),
         ("kind", Value::string(kind)),
-        ("relation", Value::string(relation(kind))),
+        ("relation", Value::string(neutral_relation)),
         ("status", Value::string(status)),
         ("evidence", Value::string(evidence)),
     ]);

@@ -26,8 +26,9 @@ jobs:
           go-version: '1.23'
       - name: Install scanner and build Excession
         run: |
-          python3 -m pip install --user 'semgrep==1.145.0'
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          python3 -m venv "$RUNNER_TEMP/semgrep-venv"
+          "$RUNNER_TEMP/semgrep-venv/bin/python" -m pip install 'semgrep==1.145.0' 'pydantic==2.11.10'
+          echo "$RUNNER_TEMP/semgrep-venv/bin" >> "$GITHUB_PATH"
           cargo build --locked --manifest-path core/Cargo.toml --bin excession
       - name: Execute real Semgrep scan
         run: |
@@ -71,7 +72,10 @@ jobs:
         with:
           languages: go
           queries: security-extended
-          build-mode: none
+          build-mode: manual
+      - name: Build benchmark Go module for CodeQL extraction
+        working-directory: benchmarks/security-validity
+        run: go test -count=1 ./...
       - name: Analyze with CodeQL and retain SARIF locally
         uses: github/codeql-action/analyze@v3
         with:

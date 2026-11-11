@@ -525,17 +525,17 @@ pub fn assemble(
             Ok((source.clone(), receipt.clone(), document.clone()))
         })
         .collect::<Result<Vec<_>>>()?;
-    crate::configured_store::persist(
+    crate::configured_store::persist(crate::configured_store::GraphSnapshot {
         db,
-        &id,
-        &commit,
-        target_name,
-        config_name,
-        &body,
-        &nodes,
-        &edges,
-        &receipts,
-    )?;
+        id: &id,
+        commit: &commit,
+        target: target_name,
+        configuration: config_name,
+        graph: &body,
+        nodes: &nodes,
+        edges: &edges,
+        observations: &receipts,
+    })?;
     let mut result = body.entries()?.clone();
     result.insert("graph_id".to_owned(), Value::string(id));
     Ok(Value::Object(result))

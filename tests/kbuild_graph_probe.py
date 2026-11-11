@@ -114,7 +114,11 @@ def main():
     denied = run(command[:-1] + ["false"], okay=False)
     assert denied.returncode != 0
     assert "trusted-local" in denied.stderr
-    assert run(["git", "-C", str(repo), "status", "--porcelain"]).stdout.strip() == ""
+    # An out-of-tree Linux build may leave untracked generated files in the
+    # source directory. The authoritative tracked source must remain unchanged.
+    tracked = run(["git", "-C", str(repo), "status", "--porcelain",
+                   "--untracked-files=no"]).stdout.strip()
+    assert not tracked, f"tracked source changed after acceptance: {tracked}"
     report = {
         "schema": "excession.kbuild-acceptance.v1",
         "source_commit": LINUX,

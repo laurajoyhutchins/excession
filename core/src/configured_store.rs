@@ -150,17 +150,22 @@ pub fn push_typed_edge(
     edges.insert(item.sha256(), item);
     Ok(())
 }
-pub fn persist(
-    db: &Db,
-    id: &str,
-    commit: &str,
-    target: &str,
-    configuration: &str,
-    graph: &Value,
-    nodes: &BTreeMap<String, Value>,
-    edges: &BTreeMap<String, Value>,
-    observations: &[(String, String, Value)],
-) -> Result<()> {
+pub struct GraphSnapshot<'a> {
+    pub db: &'a Db,
+    pub id: &'a str,
+    pub commit: &'a str,
+    pub target: &'a str,
+    pub configuration: &'a str,
+    pub graph: &'a Value,
+    pub nodes: &'a BTreeMap<String, Value>,
+    pub edges: &'a BTreeMap<String, Value>,
+    pub observations: &'a [(String, String, Value)],
+}
+
+pub fn persist(snapshot: GraphSnapshot<'_>) -> Result<()> {
+    let GraphSnapshot {
+        db, id, commit, target, configuration, graph, nodes, edges, observations,
+    } = snapshot;
     if graph.sha256() != id {
         return refuse("graph ID differs from canonical body");
     }

@@ -393,17 +393,17 @@ pub fn assemble(
     ]);
     let id = body.sha256();
     let receipts = vec![(archive.to_owned(), export_id, exported)];
-    configured_store::persist(
+    configured_store::persist(configured_store::GraphSnapshot {
         db,
-        &id,
-        &commit,
-        archive,
-        &config_sha,
-        &body,
-        &nodes,
-        &edges,
-        &receipts,
-    )?;
+        id: &id,
+        commit: &commit,
+        target: archive,
+        configuration: &config_sha,
+        graph: &body,
+        nodes: &nodes,
+        edges: &edges,
+        observations: &receipts,
+    })?;
     let mut result = body.entries()?.clone();
     result.insert("graph_id".into(), Value::string(id));
     Ok(Value::Object(result))

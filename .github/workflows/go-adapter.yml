@@ -22,4 +22,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v5
       - name: Standard-library-only adapter tests
-        run: GO111MODULE=off go test ./core/adapters
+        run: mise run go-check

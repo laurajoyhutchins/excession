@@ -29,6 +29,6 @@ run = "make cli"
 [tasks.syntax-setup]
 description = "Install optional Tree-sitter grammars in a trusted setup step"
 run = [
-  "python -m pip install --disable-pip-version-check -r requirements/syntax.txt",
+  "python -m pip install --disable-pip-version-check -r requirements/research.txt -r requirements/syntax.txt",
   "python -c 'from tree_sitter_language_pack import prefetch; prefetch([\"rust\",\"go\",\"c\",\"java\",\"python\",\"javascript\",\"typescript\"])'",
 ]

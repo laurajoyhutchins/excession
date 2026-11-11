@@ -126,6 +126,16 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Versioned semantic candidate observations and ODCS contracts");
+    let concepts = group(
+        "concepts",
+        vec![
+            leaf("normalize", &["repo", "report"], &[]),
+            leaf("preview", &["repo", "report"], &[]),
+            leaf("compile", &["repo", "report", "db"], &[]),
+            leaf("audit", &["repo", "report", "db", "snapshot"], &[]),
+        ],
+    )
+    .about("Bounded, source-bound concept hypotheses and exact snapshot replay");
     let security = group(
         "security",
         vec![
@@ -263,6 +273,7 @@ pub(super) fn command() -> Command {
         )
         .subcommand(syntax)
         .subcommand(semantic)
+        .subcommand(concepts)
         .subcommand(views)
         .subcommand(security)
         .subcommand(inspect)

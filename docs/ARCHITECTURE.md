@@ -46,6 +46,21 @@ Joern's CPG, or native fuzzers. External reports are **untrusted inputs**.
 
 A separate, read-only projection capability maps the Git tree and recorded relations into alternate virtual file paths. Dependency projections use the existing `module`/`dependency` index; security projections use imported but **unverified** CodeQL flow steps and findings. Excession materializes regular Git blobs as read-only copies, never as editable links or executable checkouts. Exact source Git identity and a canonical manifest define the output, with independent regeneration and blob audits. See [Repository views](REPOSITORY_VIEWS.md) for contracts and limits. This capability does not promote static candidates into verified vulnerabilities.
 
+### Bounded executable slices (new experimental adapter)
+
+A separate Python-first trusted-local prototype, `tools/excession_slice.py`,
+reconstructs a static local-import closure from exact Git blobs and can execute
+an entrypoint after manifest and materialized-file audit. Its observation receipt
+is local and unsigned; cross-revision `carry` compares the old and new
+recomputed closures and yields either `SOURCE_MATCH_ONLY` (no target behavior
+claim) or `REVERIFY_REQUIRED`. An opt-in `--replay --trusted-local` produces
+fresh target evidence. See [Executable slices](EXECUTABLE_SLICES.md).
+
+This is not yet integrated into the Rust/SQLite cross-agent claim authority.
+Native execution requires a trusted checkout; no sandbox or comprehensive
+runtime-dependency capture is claimed. Do not treat `SOURCE_MATCH_ONLY` as a
+reason to omit mandatory verification of an integrated system.
+
 ## Public command surface
 
 The `excession` Rust executable is the supported user-facing CLI (see

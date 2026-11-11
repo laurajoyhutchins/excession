@@ -25,8 +25,11 @@ def run(argv, cwd=None, env=None):
         p = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, timeout=45)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise Unsupported(f"native resolver unavailable or timed out: {exc}") from exc
-    if p.returncode or len(p.stdout) > 16 * 1024 * 1024 or len(p.stderr) > 16 * 1024 * 1024:
-        raise Unsupported("native resolver failed: " + p.stderr[:700].decode(errors="replace"))
+    if len(p.stdout) > 16 * 1024 * 1024 or len(p.stderr) > 16 * 1024 * 1024:
+        raise Unsupported("native resolver exceeded 16 MiB output limit")
+    if p.returncode:
+        detail = (p.stderr or p.stdout)[:700].decode(errors="replace").strip()
+        raise Unsupported(f"native resolver exited {p.returncode}: {detail or 'no diagnostics'}")
     return p.stdout
 
 

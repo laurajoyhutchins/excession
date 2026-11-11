@@ -9,6 +9,7 @@ on:
       - 'core/src/lib.rs'
       - 'core/src/bin/excession.rs'
       - 'tests/kernel_partition_probe.py'
+      - 'tests/linux_partition_sweep.py'
       - 'docs/LINUX_WHOLE_SOURCE.md'
   workflow_dispatch:
 

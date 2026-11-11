@@ -11,6 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 LINUX = "adc218676eef25575469234709c2d87185ca223a"
@@ -134,8 +135,20 @@ def fixture_test(binary, root):
     outside = command([str(binary), "kernel", "partition", "--repo", str(repo),
                        "--size", str(size), "--index", "3"], okay=False)
     assert outside.returncode
+    runner = Path(__file__).with_name("linux_partition_sweep.py")
+    output = root / "orchestrated"
+    base = [sys.executable, str(runner), "--repo", str(repo),
+            "--binary", str(binary), "--out", str(output), "--size", str(size)]
+    partial = json.loads(command(base + ["--max-partitions", "1"]).stdout)
+    assert partial["status"] == "INCOMPLETE_PARTITIONS_UNAUDITED"
+    assert partial["completed_partitions"] == 1
+    full = json.loads(command(base).stdout)
+    assert full["coverage"]["report_id"] == audited["report_id"]
+    assert full["status"] == "ALL_ELIGIBLE_SOURCES_ACCOUNTED_PARTIAL_SYNTAX"
+    assert json.loads(command(base).stdout)["coverage"]["report_id"] == audited["report_id"]
     return {"eligible_sources": 6, "observed_sources": 5,
-            "unsupported_sources": 1, "partitions": 3, "integrity_refusals": 4}
+            "unsupported_sources": 1, "partitions": 3,
+            "integrity_refusals": 4, "checkpoint_resume_verified": True}
 
 
 def linux_test(binary, repo):

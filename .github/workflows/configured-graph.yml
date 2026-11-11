@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  fmt-debug-release:
+  zlib-debug-release:
     runs-on: ubuntu-24.04
     timeout-minutes: 24
     steps:
@@ -30,20 +30,20 @@ jobs:
         run: |
           rustup toolchain install 1.99.1 --profile minimal
           cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
-      - name: Fetch pinned fmt project
+      - name: Fetch pinned zlib project
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth=1 --filter=blob:none --branch 11.1.4 \
-            https://github.com/fmtlib/fmt.git "$RUNNER_TEMP/fmt"
-          test "$(git -C "$RUNNER_TEMP/fmt" rev-parse HEAD)" = "123913715afeb8a437e6388b4473fcc4753e1c9a"
-          test -z "$(git -C "$RUNNER_TEMP/fmt" status --porcelain)"
-      - name: Compare configured assembly against real CMake/Ninja build
+          git clone --depth=1 --filter=blob:none --branch v1.3.1 \
+            https://github.com/madler/zlib.git "$RUNNER_TEMP/zlib"
+          test "$(git -C "$RUNNER_TEMP/zlib" rev-parse HEAD)" = "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf"
+          test -z "$(git -C "$RUNNER_TEMP/zlib" status --porcelain)"
+      - name: Compare configured graph against two real CMake/Ninja builds
         shell: bash
         run: |
           set -euo pipefail
           python3 tests/configured_graph_probe.py \
-            --repo "$RUNNER_TEMP/fmt" \
+            --repo "$RUNNER_TEMP/zlib" \
             --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
             --output "$RUNNER_TEMP/configured-graphs"
           cat "$RUNNER_TEMP/configured-graphs/summary.json" >> "$GITHUB_STEP_SUMMARY"

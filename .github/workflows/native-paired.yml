@@ -4,12 +4,12 @@ on:
   pull_request:
     paths:
       - benchmarks/micro/native_paired.py
-      - core/src/benchmark.rs
+      - core/src/research/benchmark.rs
       - core/Cargo.toml
       - core/Cargo.lock
       - benchmarks/schemas/**
       - .github/workflows/native-paired.yml
-      - core/src/graph_baseline.rs
+      - core/src/graph/graph_baseline.rs
   workflow_dispatch:
 
 permissions:

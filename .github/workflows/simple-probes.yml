@@ -1,0 +1,57 @@
+name: Simple repository retrieval probes
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/locate.py'
+      - 'benchmarks/lsp_probe.py'
+      - 'benchmarks/symbol_compare.py'
+      - 'benchmarks/simple_common.py'
+      - 'benchmarks/calibration-h11.json'
+      - 'benchmarks/fixtures/**'
+      - 'tests/test_simple_probes.py'
+      - '.github/workflows/simple-probes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simple-probes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Build native CLI
+        run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -p test_simple_probes.py -v
+      - name: Exact module-file lookup, four arms
+        shell: bash
+        run: |
+          git clone -q core/fixtures/h11-crossrepo.bundle "$RUNNER_TEMP/h11"
+          ./core/target/debug/excession index --repo "$RUNNER_TEMP/h11" \
+            --db "$RUNNER_TEMP/simple-index.sqlite" --name h11 \
+            --rev HEAD --roots h11,tests
+          python3 benchmarks/locate.py \
+            --repo "$RUNNER_TEMP/h11" --db "$RUNNER_TEMP/simple-index.sqlite" \
+            --bin ./core/target/debug/excession \
+            --tasks benchmarks/calibration-h11.json --name h11 \
+            --out "$RUNNER_TEMP/simple-location" --repetitions 3
+          cat "$RUNNER_TEMP/simple-location/summary.json"
+      - name: LSP definition versus literal occurrence smoke
+        run: |
+          python3 benchmarks/symbol_compare.py --repo . \
+            --out "$RUNNER_TEMP/simple-symbol" --repetitions 3
+          cat "$RUNNER_TEMP/simple-symbol/summary.json"
+      - name: Retain measurements
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: excession-simple-tool-retrieval
+          path: |
+            ${{ runner.temp }}/simple-location/
+            ${{ runner.temp }}/simple-symbol/
+          if-no-files-found: warn

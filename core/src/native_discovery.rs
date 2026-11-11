@@ -467,6 +467,12 @@ mod tests {
         // adversarial test to simulate a hostile compiler process.
         let source = restored.join("main.go");
         let mut permissions = fs::metadata(&source).unwrap().permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(0o644);
+        }
+        #[cfg(not(unix))]
         permissions.set_readonly(false);
         fs::set_permissions(&source, permissions).unwrap();
         fs::write(&source, "changed").unwrap();

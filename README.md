@@ -16,9 +16,10 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
-crates. Git (SHA-1 object format) and native SQLite are required for
-repository operations; the digests use portable Rust without OpenSSL.
+The Rust CLI uses pinned Cargo dependencies, including clap for its single
+modern command grammar. After installing the locked dependencies, it builds
+offline with Rust 1.99.1. Git (SHA-1 object format) and native SQLite are
+required for repository operations; digests currently use portable Rust.
 Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
 Tree-sitter grammars and security scanners are opt-in adapters.
 

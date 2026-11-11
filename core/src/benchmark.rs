@@ -176,10 +176,17 @@ fn validate_value(report: &Value, base: &Path) -> Result<()> {
     Ok(())
 }
 
+fn report_parent(path: &Path) -> &Path {
+    // A filename such as "native-calibration.report.json" has an empty parent,
+    // which is not a resolvable directory. Treat it as the current directory.
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+}
+
 pub fn validate(path: &Path) -> Result<()> {
     let report = read(path)?;
-    let base = path.parent().ok_or("report path has no parent")?;
-    validate_value(&report, base)
+    validate_value(&report, report_parent(path))
 }
 
 fn environment() -> Value {
@@ -549,6 +556,11 @@ mod tests {
             serde_json::to_vec(&receipt).unwrap(),
         )
         .unwrap();
+    }
+    #[test]
+    fn plain_relative_report_filename_uses_working_directory() {
+        assert_eq!(report_parent(Path::new("native-calibration.report.json")), Path::new("."));
+        assert_eq!(report_parent(Path::new("sub/report.json")), Path::new("sub"));
     }
     #[test]
     fn schema_is_valid_draft_2020_12() {

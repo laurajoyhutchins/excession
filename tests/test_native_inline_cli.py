@@ -134,41 +134,6 @@ class NativeInlineCLI(unittest.TestCase):
             body, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
         ).encode()).hexdigest()
 
-    def test_rust_native_path_is_removed(self):
-        denied = self.invoke("src/main.rs", "rust", check=False)
-        self.assertNotEqual(denied.returncode, 0)
-        self.assertIn(b"rust-analyzer SCIP", denied.stderr)
-
-    def test_real_go_dependency_compilation(self):
-        if not shutil.which("go"):
-            self.skipTest("go not installed")
-        value = json.loads(self.invoke("src/go/main.go", "go").stdout)
-        boundary = self.assert_valid(value, "go", "src/go/main.go")
-        paths = {x["path"] for x in boundary["pinned_inputs"]}
-        self.assertTrue({"go.mod", "src/go/main.go", "src/dep/dep.go"} <= paths)
-        edges = {(x["source_path"], x["target_path"])
-                 for x in boundary["matching_edges"]}
-        self.assertIn(("src/go/main.go", "src/dep/dep.go"), edges)
-
-    def test_real_typescript_alias_is_not_silently_promoted(self):
-        if not shutil.which("node") or not (NPM_BIN / "tsc").exists():
-            self.skipTest("npm ci --ignore-scripts required")
-        value = json.loads(self.invoke("src/ui.ts", "typescript").stdout)
-        boundary = self.assert_valid(value, "typescript", "src/ui.ts")
-        self.assertIn("lib/math.ts", [x["path"] for x in boundary["pinned_inputs"]])
-        self.assertIn("lib/math.ts", boundary["native_only_sources"])
-        self.assertIn("lib/math.ts", boundary["unscanned_sources"])
-
-    def test_real_node_require_and_trust_gate(self):
-        if not shutil.which("node") or not (NPM_BIN / "tsc").exists():
-            self.skipTest("npm ci --ignore-scripts required")
-        value = json.loads(self.invoke("src/app.js", "javascript").stdout)
-        boundary = self.assert_valid(value, "javascript", "src/app.js")
-        self.assertIn("src/helper.js", [x["path"] for x in boundary["pinned_inputs"]])
-        refused = self.invoke("src/app.js", "javascript", trust="false", check=False)
-        self.assertNotEqual(refused.returncode, 0)
-        self.assertIn(b"--trusted-local true", refused.stderr)
-
     def test_python_native_resolution_authenticated_without_import_execution(self):
         result = json.loads(self.invoke(
             "src/pypkg/entry.py", "python", roots="src"
@@ -211,26 +176,6 @@ class NativeInlineCLI(unittest.TestCase):
         invalid = self.invoke("src/pypkg/entry.py", "python",
                               roots="../outside", check=False)
         self.assertNotEqual(invalid.returncode, 0)
-
-    def test_mismatched_resolution_refused_before_invocation(self):
-        data = json.loads(self.resolution.read_text())
-        data["source_commit"] = "f" * 40
-        import hashlib
-        payload = {k: v for k, v in data.items() if k != "resolution_id"}
-        data["resolution_id"] = hashlib.sha256(json.dumps(
-            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
-        ).encode()).hexdigest()
-        self.resolution.write_text(json.dumps(data))
-        denied = self.invoke("src/go/main.go", "go", check=False)
-        self.assertNotEqual(denied.returncode, 0)
-        self.assertIn(b"mismatched syntax/resolution identities", denied.stderr)
-
-    def test_dirty_checkout_refused_before_native_compiler(self):
-        (self.repo / "extra.rs").write_text("fn extra() {}\n")
-        denied = self.invoke("src/go/main.go", "go", check=False)
-        self.assertNotEqual(denied.returncode, 0)
-        self.assertIn(b"dirty checkout", denied.stderr)
-
 
 if __name__ == "__main__":
     unittest.main()

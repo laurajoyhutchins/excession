@@ -1,0 +1,66 @@
+{
+  "schema": "excession.real-projection-fixtures.v1",
+  "fixtures": [
+    {
+      "name": "h11",
+      "source": "bundle",
+      "roots": "h11,tests",
+      "seeds": [
+        "h11._connection",
+        "h11._headers",
+        "h11._events",
+        "h11._util"
+      ]
+    },
+    {
+      "name": "itsdangerous",
+      "source": "github",
+      "repository": "pallets/itsdangerous",
+      "commit": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "roots": "src",
+      "seeds": [
+        "src.itsdangerous.serializer",
+        "src.itsdangerous.signer",
+        "src.itsdangerous.timed"
+      ]
+    },
+    {
+      "name": "click",
+      "source": "github",
+      "repository": "pallets/click",
+      "commit": "8abb77a8432e03ed14a95f972b44f905279415a7",
+      "roots": "src",
+      "seeds": [
+        "src.click.core",
+        "src.click.parser",
+        "src.click.decorators",
+        "src.click.types"
+      ]
+    },
+    {
+      "name": "requests",
+      "source": "github",
+      "repository": "psf/requests",
+      "commit": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
+      "roots": "src",
+      "seeds": [
+        "src.requests.api",
+        "src.requests.sessions",
+        "src.requests.adapters",
+        "src.requests.models"
+      ]
+    },
+    {
+      "name": "axios",
+      "source": "github",
+      "repository": "axios/axios",
+      "commit": "4ee8d46fc463770b8f5da718d5449a5b027b2c08",
+      "roots": "lib",
+      "seeds": [
+        "lib.axios",
+        "lib.core.Axios",
+        "lib.utils"
+      ]
+    }
+  ]
+}

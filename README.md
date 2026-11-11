@@ -66,6 +66,15 @@ no parser is downloaded during analysis. The existing Python/JS dependency index
 remains a separate, language-aware path. See [syntax parsers](docs/SYNTAX_PARSERS.md)
 for installation, limits and provenance.
 
+## Candidate import resolution
+
+Parsed imports can be mapped to scoped, Git-bound file candidates with
+`excession syntax resolve --repo "$REPO" --report /tmp/syntax.json`.
+A separate `syntax resolve-audit` command independently replays the mapping.
+Go, Rust, JS/TS and Python use language-specific conservative path rules.
+Ambiguous, external, configuration-dependent and unsupported cases remain
+explicit. These are **navigation candidates, not compiler-established edges**.
+
 ## Source-bound scanner evidence
 
 ```sh

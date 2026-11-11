@@ -332,11 +332,15 @@ pub fn neighbors(
     let mut adjacency = BTreeMap::<String, Vec<(String, Arc)>>::new();
     for arc in arcs(db, &id)? {
         if direction != "in" {
-            adjacency.entry(arc.from.clone()).or_default()
+            adjacency
+                .entry(arc.from.clone())
+                .or_default()
                 .push((arc.to.clone(), arc.clone()));
         }
         if direction != "out" {
-            adjacency.entry(arc.to.clone()).or_default()
+            adjacency
+                .entry(arc.to.clone())
+                .or_default()
                 .push((arc.from.clone(), arc));
         }
     }
@@ -404,8 +408,12 @@ pub fn path(
     let mut queue = VecDeque::from([(start.clone(), 0usize)]);
     let mut parents = BTreeMap::<String, Arc>::new();
     while let Some((here, dist)) = queue.pop_front() {
-        if here == goal { break; }
-        if dist == depth { continue; }
+        if here == goal {
+            break;
+        }
+        if dist == depth {
+            continue;
+        }
         if let Some(outgoing) = adjacency.get(&here) {
             for arc in outgoing {
                 if visited.insert(arc.to.clone()) {
@@ -493,20 +501,34 @@ mod tests {
         let mut nodes = BTreeMap::new();
         let mut edges = BTreeMap::new();
         configured_store::push_node(
-            &mut nodes, "target:app".to_owned(), "configured-target",
-            obj(&[("name", Value::string("app"))])
-        ).unwrap();
+            &mut nodes,
+            "target:app".to_owned(),
+            "configured-target",
+            obj(&[("name", Value::string("app"))]),
+        )
+        .unwrap();
         configured_store::push_node(
-            &mut nodes, "source:a.c".to_owned(), "git-source",
-            obj(&[("path", Value::string("a.c"))])
-        ).unwrap();
+            &mut nodes,
+            "source:a.c".to_owned(),
+            "git-source",
+            obj(&[("path", Value::string("a.c"))]),
+        )
+        .unwrap();
         configured_store::push_edge(
-            &mut edges, "target:app", "source:a.c", "TARGET_SOURCE",
-            "CMAKE_CONFIGURED_GIT_VERIFIED", "native-receipt"
-        ).unwrap();
+            &mut edges,
+            "target:app",
+            "source:a.c",
+            "TARGET_SOURCE",
+            "CMAKE_CONFIGURED_GIT_VERIFIED",
+            "native-receipt",
+        )
+        .unwrap();
         let body = obj(&[
             ("schema", Value::string("excession.configured-graph.v1")),
-            ("source_commit", Value::string("0000000000000000000000000000000000000000")),
+            (
+                "source_commit",
+                Value::string("0000000000000000000000000000000000000000"),
+            ),
             ("target", Value::string("app")),
             ("configuration", Value::string("Debug")),
             ("status", Value::string("PARTIAL_TARGET_OBSERVATIONS")),
@@ -515,9 +537,17 @@ mod tests {
         ]);
         let id = body.sha256();
         configured_store::persist(
-            &db, &id, "0000000000000000000000000000000000000000",
-            "app", "Debug", &body, &nodes, &edges, &[],
-        ).unwrap();
+            &db,
+            &id,
+            "0000000000000000000000000000000000000000",
+            "app",
+            "Debug",
+            &body,
+            &nodes,
+            &edges,
+            &[],
+        )
+        .unwrap();
         let listed = list(&db).unwrap();
         assert_eq!(listed.get("count").unwrap().integer().unwrap(), 1);
         let shown = show(&db, Some(&id[..12]), None).unwrap();

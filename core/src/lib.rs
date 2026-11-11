@@ -10,6 +10,7 @@ pub mod contracts;
 pub mod digest;
 
 pub mod discovery;
+pub mod doctor;
 pub mod effects;
 pub mod evidence_query;
 pub mod git;

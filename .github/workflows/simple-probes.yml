@@ -3,10 +3,10 @@ name: Simple repository retrieval probes
 on:
   pull_request:
     paths:
-      - 'benchmarks/locate.py'
-      - 'benchmarks/lsp_probe.py'
-      - 'benchmarks/symbol_compare.py'
-      - 'benchmarks/simple_common.py'
+      - 'benchmarks/micro/locate.py'
+      - 'benchmarks/micro/lsp_probe.py'
+      - 'benchmarks/micro/symbol_compare.py'
+      - 'benchmarks/micro/simple_common.py'
       - 'benchmarks/calibration-h11.json'
       - 'benchmarks/fixtures/**'
       - 'tests/test_simple_probes.py'
@@ -22,14 +22,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Install pinned Rust
+      - name: Install pinned Rust for full manual benchmark
+        if: github.event_name == 'workflow_dispatch'
         run: rustup toolchain install 1.99.1 --profile minimal
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13.5'
       - name: Install pinned Python test dependency
         run: python3 -m pip install --disable-pip-version-check pytest==9.0.2
-      - name: Build native CLI
+      - name: Build native CLI for full manual benchmark
+        if: github.event_name == 'workflow_dispatch'
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Unit tests (JUnit XML)
         run: python3 -m pytest -q tests/test_simple_probes.py --junitxml=test-results/simple-probes.xml
@@ -40,35 +42,36 @@ jobs:
           name: excession-simple-probes-junit
           path: test-results/simple-probes.xml
           if-no-files-found: warn
-      - name: Install required comparison tools
+      - name: Install comparison tools for full manual benchmark
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          if ! command -v rg >/dev/null || ! command -v clangd >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y ripgrep clangd
-          fi
+          sudo timeout 180 apt-get update -qq
+          sudo timeout 180 apt-get install -y ripgrep clangd
           rg --version | head -1
           clangd --version | head -1
       - name: Exact module-file lookup, four arms
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           git clone -q core/fixtures/h11-crossrepo.bundle "$RUNNER_TEMP/h11"
           ./core/target/debug/excession index --repo "$RUNNER_TEMP/h11" \
             --db "$RUNNER_TEMP/simple-index.sqlite" --name h11 \
             --rev HEAD --roots h11,tests
-          python3 benchmarks/locate.py \
+          python3 benchmarks/micro/locate.py \
             --repo "$RUNNER_TEMP/h11" --db "$RUNNER_TEMP/simple-index.sqlite" \
             --bin ./core/target/debug/excession \
             --tasks benchmarks/calibration-h11.json --name h11 \
             --out "$RUNNER_TEMP/simple-location" --repetitions 3
           cat "$RUNNER_TEMP/simple-location/summary.json"
       - name: LSP definition versus literal occurrence smoke
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          python3 benchmarks/symbol_compare.py --repo . \
+          python3 benchmarks/micro/symbol_compare.py --repo . \
             --out "$RUNNER_TEMP/simple-symbol" --repetitions 3
           cat "$RUNNER_TEMP/simple-symbol/summary.json"
       - name: Retain measurements
-        if: always()
+        if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: excession-simple-tool-retrieval

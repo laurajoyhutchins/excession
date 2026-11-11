@@ -7,7 +7,7 @@ import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "benchmarks"))
+sys.path.insert(0, str(ROOT / "benchmarks/micro"))
 import locate
 import symbol_compare
 from simple_common import load_tasks

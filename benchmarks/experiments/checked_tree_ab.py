@@ -21,6 +21,8 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+# The phase generator remains a microbenchmark dependency, not a second copy.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "micro"))
 from projection_phases import prepare
 
 BASELINE = "fa1d15248210ee6ec2a4c744603b271d613fa7b5"

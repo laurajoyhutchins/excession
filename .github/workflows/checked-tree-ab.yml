@@ -3,7 +3,7 @@ name: Checked tree proof A/B
 on:
   pull_request:
     paths:
-      - benchmarks/checked_tree_ab.py
+      - benchmarks/experiments/checked_tree_ab.py
       - .github/workflows/checked-tree-ab.yml
   workflow_dispatch:
 
@@ -31,7 +31,7 @@ jobs:
           cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
       - name: Pair authenticated outputs, tamper refusals, and timing
         run: |
-          python3 benchmarks/checked_tree_ab.py \
+          python3 benchmarks/experiments/checked_tree_ab.py \
             "$RUNNER_TEMP/excession-before/core/target/release/excession" \
             core/target/release/excession \
             checked-tree-ab.json

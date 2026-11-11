@@ -1,7 +1,6 @@
-# Simple-tool retrieval benchmarks
+# Microbenchmarks: single-query retrieval and projection costs
 
-This supplements the native graph-versus-authenticated-view calibration already
-on main. It does **not** measure agent task completion or understanding.
+These historical calibration exercises live below the primary relational experiments. They do **not** measure agent task completion, independent graph completeness, or reusable multi-revision relationships.
 
 ## Exact file locations
 
@@ -15,7 +14,7 @@ of completeness for general module resolution.
 Run the isolated workflow or, after building the binary and indexing h11:
 
 ```sh
-python3 benchmarks/locate.py \
+python3 benchmarks/micro/locate.py \
   --repo /path/to/clean/h11 --db /tmp/h11-index.sqlite \
   --bin ./core/target/debug/excession \
   --tasks benchmarks/calibration-h11.json --name h11 \
@@ -28,7 +27,7 @@ Their raw outputs and different setup costs must be interpreted separately.
 
 ## Symbol definitions
 
-`benchmarks/symbol_compare.py` uses a tiny tracked C fixture containing one
+`benchmarks/micro/symbol_compare.py` uses a tiny tracked C fixture containing one
 definition and one call. A real LSP JSON-RPC `textDocument/definition`
 request is compared to fixed literal `rg` and `git grep` searches.
 Report returned location count, whether the explicit definition appears,
@@ -36,7 +35,7 @@ initialization time, definition-request time, wire bytes and CPU. The LSP
 client uses UTF-16 offsets as specified by the language server protocol.
 
 ```sh
-python3 benchmarks/symbol_compare.py --repo . --out /tmp/symbol-probe
+python3 benchmarks/micro/symbol_compare.py --repo . --out /tmp/symbol-probe
 ```
 
 An absent `clangd` server is recorded as unsupported; it is never treated as

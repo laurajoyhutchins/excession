@@ -257,7 +257,7 @@ pub(super) fn command() -> Command {
             leaf(
                 "discover-native",
                 &["repo", "rev", "entry", "language", "trusted-local"],
-                &[],
+                &["import-roots"],
             ),
             leaf("contract-plan", &["repo", "rev", "declaration"], &[]),
             leaf(

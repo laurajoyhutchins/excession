@@ -16,6 +16,7 @@ pub(super) fn run(verb: &str, opt: &Options) -> Result<Response> {
                 opt.get("rev"),
                 opt.get("entry"),
                 opt.get("language"),
+                opt.0.get("import-roots").map(String::as_str),
                 trusted,
             )?
         }

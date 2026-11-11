@@ -23,6 +23,7 @@ pub mod integration;
 pub mod json;
 pub mod kbuild_graph;
 pub mod kernel;
+pub mod kernel_coverage;
 pub mod kernel_links;
 pub mod native_boundary;
 pub mod native_discovery;

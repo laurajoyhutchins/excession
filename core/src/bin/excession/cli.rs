@@ -231,9 +231,15 @@ pub(super) fn command() -> Command {
     let analyze = group("analyze", vec![clang()]).about("Compiler-backed source analysis");
     let kernel = group(
         "kernel",
-        vec![leaf("scan", &["repo", "roots"], &["rev"]), clang()],
+        vec![
+            leaf("scan", &["repo", "roots"], &["rev"]),
+            leaf("inventory", &["repo"], &["rev", "size"]),
+            leaf("partition", &["repo", "index"], &["rev", "size"]),
+            leaf("audit", &["repo", "dir"], &["rev", "size"]),
+            clang(),
+        ],
     )
-    .about("Bounded Linux source observations");
+    .about("Bounded, Git-bound Linux source observations and coverage");
     Command::new("excession")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Excession | Git-authenticated repository exploration and security evidence")

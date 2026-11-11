@@ -335,7 +335,10 @@ fn check_indexed_bindings(plan: &Plan, modules: &BTreeMap<String, Module>) -> Re
             return refuse("view references a source absent from authenticated index");
         };
         if blob != entry.blob || mode != entry.mode {
-            return refuse(format!("view source identity mismatch: {}", entry.source_path));
+            return refuse(format!(
+                "view source identity mismatch: {}",
+                entry.source_path
+            ));
         }
     }
     Ok(())

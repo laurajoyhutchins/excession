@@ -50,6 +50,23 @@ copying code. Materialized views are read-only **and not executable checkouts**.
 See [CLI](docs/CLI.md), [repository views](docs/REPOSITORY_VIEWS.md), and
 [composable views](docs/COMPOSABLE_VIEWS.md).
 
+## Linux source syntax and candidate relationships
+
+Excession can inspect pinned Linux C preprocessor directives, Kbuild object
+assignments and Kconfig declarations without building or executing the kernel.
+
+```sh
+excession kernel scan --repo /path/to/linux --rev HEAD \
+  --roots drivers/rtc > /tmp/linux-rtc.json
+```
+
+The report binds source blobs and records conservative candidate links between
+C includes, Make objects, matching source filenames and Kconfig symbols. It
+does **not** evaluate a build configuration, perform complete C symbol
+resolution, or prove that a dependency is compiled. See the
+[Linux parser contract](docs/KERNEL_PARSERS.md) and
+[reproducible kernel experiment](docs/LINUX_KERNEL_EXPERIMENT.md).
+
 ## Source-bound scanner evidence
 
 ```sh
@@ -84,7 +101,8 @@ research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
 ## Limits
 
 The source index currently supports bounded Python and JavaScript static
-module relations, with additional Go-native research adapters. It cannot claim
+module relations, with additional Go-native research adapters and conservative
+Linux C/Kbuild/Kconfig syntax observations. It cannot claim
 that absent graph edges do not exist. Scanner source-to-sink flows are unverified
 scanner reports until independent analysis establishes reachability and impact.
 Excession does not automatically confirm CVEs, execute untrusted code safely,

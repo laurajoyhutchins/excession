@@ -1,0 +1,7 @@
+rules:
+  - id: excession.go.joined-read
+    languages: [go]
+    severity: WARNING
+    message: Joined path is read from disk; review whether the member is trusted.
+    patterns:
+      - pattern: os.ReadFile(filepath.Join($ROOT, $MEMBER))

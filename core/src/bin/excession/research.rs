@@ -1,43 +1,63 @@
-use relgit::sqlite::Db;
-use relgit::{Result, refuse};
-use relgit::{
+//! Historical research protocols: explicit `excession research` entry points.
+//! Preserve observable outputs and fixture identities for parity.
+use excession::sqlite::Db;
+use excession::{Result, refuse};
+use excession::{
     contracts, effects, git, historical, identity, impact, index, integration, json, optimizer,
     overlap, projection, scoped, security, security_discovery, security_ingest, security_survey,
     transactions, transform,
 };
-use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 fn usage() -> String {
-    "Usage:\n  relgit index DB NAME REPOSITORY [REF] [ROOTS_CSV]\n  relgit tree-check DB REPOSITORY_NAME COMMIT\n  relgit carry EXPERIMENT_ROOT [DATABASE] [REFERENCE_REPORT]
-  relgit carry-local EXPERIMENT_ROOT [DATABASE]\n  relgit carry-scoped SPEC_JSON --trusted-local [DATABASE]\n  relgit json-check FILE
-  relgit impact DB NAME COMMIT MODULE
-  relgit review DB NAME OLD NEW
-  relgit manifest DB NAME COMMIT
-  relgit dependencies DB NAME COMMIT\n  relgit compose-inferred SPEC_JSON DATABASE\n  relgit compose-inferred-audit SPEC_JSON DATABASE
-  relgit security-observe PILOT_DIR DATABASE
-  relgit security-observe-audit PILOT_DIR DATABASE
-  relgit security-discover SCAN_GIT_DIR DATABASE
-  relgit security-discover-audit SCAN_GIT_DIR DATABASE
-  relgit security-survey SURVEY_GIT_DIR DATABASE
-  relgit security-survey-audit SURVEY_GIT_DIR DATABASE
-  relgit security-ingest REPO REPORT DATABASE ENGINE
-  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\n  relgit view-plan-deps DB REPO_NAME REVISION SEED_MODULE\n  relgit view-plan-replay-deps DB REPO_NAME REVISION SEED_MODULE MANIFEST\n  relgit view-plan-security DB SOURCE_REPO RUN_ID\n  relgit view-plan-replay-security DB SOURCE_REPO RUN_ID MANIFEST\n  relgit view-materialize SOURCE_REPO MANIFEST OUT_DIR\n  relgit view-audit SOURCE_REPO MANIFEST OUT_DIR
-  relgit view-compose SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST
-  relgit view-compose-replay SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST OUTPUT_MANIFEST
-  relgit view-select SOURCE_REPO MANIFEST role|source-prefix|virtual-prefix VALUE
-  relgit view-mount SOURCE_REPO MANIFEST NAMESPACE
-  relgit view-mount-replay SOURCE_REPO MANIFEST NAMESPACE OUTPUT_MANIFEST
-  relgit view-select-replay SOURCE_REPO MANIFEST role|source-prefix|virtual-prefix VALUE OUTPUT_MANIFEST
-  relgit view-ls SOURCE_REPO MANIFEST [VIRTUAL_DIRECTORY]
-  relgit view-stat SOURCE_REPO MANIFEST VIRTUAL_PATH
-  relgit view-open SOURCE_REPO MANIFEST VIRTUAL_PATH\nErrors are fatal; unsupported semantics are not silently inferred.".into()
+    "Usage:\n  excession research index DB NAME REPOSITORY [REF] [ROOTS_CSV]\n  excession research tree-check DB REPOSITORY_NAME COMMIT\n  excession research carry EXPERIMENT_ROOT [DATABASE] [REFERENCE_REPORT]
+  excession research carry-local EXPERIMENT_ROOT [DATABASE]\n  excession research carry-scoped SPEC_JSON --trusted-local [DATABASE]\n  excession research json-check FILE
+  excession research impact DB NAME COMMIT MODULE
+  excession research review DB NAME OLD NEW
+  excession research manifest DB NAME COMMIT
+  excession research dependencies DB NAME COMMIT\n  excession research project SPEC_JSON DATABASE OUTPUT_DIRECTORY
+  excession research replay SPEC_JSON DATABASE
+  excession research contracts-import SPEC_JSON DATABASE
+  excession research contract-impact SPEC_JSON DATABASE
+  excession research identity SPEC_JSON DATABASE
+  excession research score COST_INPUT_JSON
+  excession research compose SPEC_JSON DATABASE
+  excession research compose-audit SPEC_JSON DATABASE
+  excession research compose-overlap SPEC_JSON DATABASE
+  excession research compose-overlap-audit SPEC_JSON DATABASE
+  excession research effects-observe SPEC_JSON DATABASE
+  excession research effects-observe-audit SPEC_JSON DATABASE
+  excession research compose-inferred SPEC_JSON DATABASE\n  excession research compose-inferred-audit SPEC_JSON DATABASE
+  excession research security-observe PILOT_DIR DATABASE
+  excession research security-observe-audit PILOT_DIR DATABASE
+  excession research security-discover SCAN_GIT_DIR DATABASE
+  excession research security-discover-audit SCAN_GIT_DIR DATABASE
+  excession research security-survey SURVEY_GIT_DIR DATABASE
+  excession research security-survey-audit SURVEY_GIT_DIR DATABASE
+  excession research security-ingest REPO REPORT DATABASE ENGINE
+  excession research security-ingest-audit REPO REPORT DATABASE ENGINE\n  excession research view-plan-deps DB REPO_NAME REVISION SEED_MODULE\n  excession research view-plan-replay-deps DB REPO_NAME REVISION SEED_MODULE MANIFEST\n  excession research view-plan-security DB SOURCE_REPO RUN_ID\n  excession research view-plan-replay-security DB SOURCE_REPO RUN_ID MANIFEST\n  excession research view-materialize SOURCE_REPO MANIFEST OUT_DIR\n  excession research view-audit SOURCE_REPO MANIFEST OUT_DIR
+  excession research view-compose SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST
+  excession research view-compose-replay SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST OUTPUT_MANIFEST
+  excession research view-select SOURCE_REPO MANIFEST role|source-prefix|virtual-prefix VALUE
+  excession research view-mount SOURCE_REPO MANIFEST NAMESPACE
+  excession research view-mount-replay SOURCE_REPO MANIFEST NAMESPACE OUTPUT_MANIFEST
+  excession research view-select-replay SOURCE_REPO MANIFEST role|source-prefix|virtual-prefix VALUE OUTPUT_MANIFEST
+  excession research view-ls SOURCE_REPO MANIFEST [VIRTUAL_DIRECTORY]
+  excession research view-stat SOURCE_REPO MANIFEST VIRTUAL_PATH
+  excession research view-open SOURCE_REPO MANIFEST VIRTUAL_PATH\nErrors are fatal; unsupported semantics are not silently inferred.".into()
 }
 
-fn run() -> Result<()> {
-    let args = env::args().collect::<Vec<_>>();
+pub(super) fn run(argv: &[String]) -> Result<()> {
+    if argv.is_empty() || matches!(argv, [flag] if flag == "--help" || flag == "help") {
+        println!("{}", usage());
+        return Ok(());
+    }
+    // Preserve positional argument indexing for the historical experiments.
+    let args = std::iter::once("excession research".to_owned())
+        .chain(argv.iter().cloned())
+        .collect::<Vec<_>>();
     let Some(action) = args.get(1).map(String::as_str) else {
         return refuse(usage());
     };
@@ -45,7 +65,7 @@ fn run() -> Result<()> {
         "view-compose" | "view-compose-replay" => {
             if args.len() != if action == "view-compose" { 6 } else { 7 } {
                 return refuse(
-                    "Usage: relgit view-compose[-replay] SOURCE_REPO OP LEFT_MANIFEST RIGHT_MANIFEST [OUTPUT_MANIFEST]",
+                    "Usage: excession research view-compose[-replay] SOURCE_REPO OP LEFT_MANIFEST RIGHT_MANIFEST [OUTPUT_MANIFEST]",
                 );
             }
             let repo = Path::new(&args[2]);
@@ -61,7 +81,7 @@ fn run() -> Result<()> {
         "view-select" | "view-select-replay" => {
             if args.len() != if action == "view-select" { 6 } else { 7 } {
                 return refuse(
-                    "Usage: relgit view-select[-replay] SOURCE_REPO MANIFEST AXIS VALUE [OUTPUT_MANIFEST]",
+                    "Usage: excession research view-select[-replay] SOURCE_REPO MANIFEST AXIS VALUE [OUTPUT_MANIFEST]",
                 );
             }
             let repo = Path::new(&args[2]);
@@ -76,7 +96,7 @@ fn run() -> Result<()> {
         "view-mount" | "view-mount-replay" => {
             if args.len() != if action == "view-mount" { 5 } else { 6 } {
                 return refuse(
-                    "Usage: relgit view-mount[-replay] SOURCE_REPO MANIFEST NAMESPACE [OUTPUT_MANIFEST]",
+                    "Usage: excession research view-mount[-replay] SOURCE_REPO MANIFEST NAMESPACE [OUTPUT_MANIFEST]",
                 );
             }
             let repo = Path::new(&args[2]);
@@ -90,7 +110,9 @@ fn run() -> Result<()> {
         }
         "view-ls" => {
             if args.len() != 4 && args.len() != 5 {
-                return refuse("Usage: relgit view-ls SOURCE_REPO MANIFEST [VIRTUAL_DIRECTORY]");
+                return refuse(
+                    "Usage: excession research view-ls SOURCE_REPO MANIFEST [VIRTUAL_DIRECTORY]",
+                );
             }
             println!(
                 "{}",
@@ -105,7 +127,7 @@ fn run() -> Result<()> {
         "view-stat" | "view-open" => {
             if args.len() != 5 {
                 return refuse(
-                    "Usage: relgit view-stat|view-open SOURCE_REPO MANIFEST VIRTUAL_PATH",
+                    "Usage: excession research view-stat|view-open SOURCE_REPO MANIFEST VIRTUAL_PATH",
                 );
             }
             if action == "view-stat" {
@@ -122,7 +144,7 @@ fn run() -> Result<()> {
         "view-plan-deps" | "view-plan-replay-deps" => {
             if args.len() != if action == "view-plan-deps" { 6 } else { 7 } {
                 return refuse(
-                    "Usage: relgit view-plan[-replay]-deps DB REPO_NAME REVISION SEED_MODULE [MANIFEST]",
+                    "Usage: excession research view-plan[-replay]-deps DB REPO_NAME REVISION SEED_MODULE [MANIFEST]",
                 );
             }
             let db = Db::open(Path::new(&args[2]))?;
@@ -137,7 +159,7 @@ fn run() -> Result<()> {
         "view-plan-security" | "view-plan-replay-security" => {
             if args.len() != if action == "view-plan-security" { 5 } else { 6 } {
                 return refuse(
-                    "Usage: relgit view-plan[-replay]-security DB SOURCE_REPO RUN_ID [MANIFEST]",
+                    "Usage: excession research view-plan[-replay]-security DB SOURCE_REPO RUN_ID [MANIFEST]",
                 );
             }
             let db = Db::open(Path::new(&args[2]))?;
@@ -152,7 +174,7 @@ fn run() -> Result<()> {
         "view-materialize" | "view-audit" => {
             if args.len() != 5 {
                 return refuse(
-                    "Usage: relgit view-materialize|view-audit SOURCE_REPO MANIFEST OUT_DIR",
+                    "Usage: excession research view-materialize|view-audit SOURCE_REPO MANIFEST OUT_DIR",
                 );
             }
             let report = if action == "view-materialize" {
@@ -172,7 +194,9 @@ fn run() -> Result<()> {
         }
         "security-ingest" | "security-ingest-audit" => {
             if args.len() != 6 {
-                return refuse("Usage: relgit security-ingest[-audit] REPO REPORT DATABASE ENGINE");
+                return refuse(
+                    "Usage: excession research security-ingest[-audit] REPO REPORT DATABASE ENGINE",
+                );
             }
             let db = Db::open(Path::new(&args[4]))?;
             println!(
@@ -189,7 +213,9 @@ fn run() -> Result<()> {
         }
         "security-survey" | "security-survey-audit" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit security-survey[-audit] SURVEY_GIT_DIR DATABASE");
+                return refuse(
+                    "Usage: excession research security-survey[-audit] SURVEY_GIT_DIR DATABASE",
+                );
             }
             let db = Db::open(Path::new(&args[3]))?;
             println!(
@@ -204,7 +230,9 @@ fn run() -> Result<()> {
         }
         "security-discover" | "security-discover-audit" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit security-discover[-audit] SCAN_GIT_DIR DATABASE");
+                return refuse(
+                    "Usage: excession research security-discover[-audit] SCAN_GIT_DIR DATABASE",
+                );
             }
             let db = Db::open(Path::new(&args[3]))?;
             println!(
@@ -219,7 +247,9 @@ fn run() -> Result<()> {
         }
         "security-observe" | "security-observe-audit" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit security-observe[-audit] PILOT_DIR DATABASE");
+                return refuse(
+                    "Usage: excession research security-observe[-audit] PILOT_DIR DATABASE",
+                );
             }
             let db = Db::open(Path::new(&args[3]))?;
             println!(
@@ -230,7 +260,9 @@ fn run() -> Result<()> {
         }
         "effects-observe" | "effects-observe-audit" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit effects-observe[-audit] SPEC_JSON DATABASE");
+                return refuse(
+                    "Usage: excession research effects-observe[-audit] SPEC_JSON DATABASE",
+                );
             }
             let spec = effects::Spec::read(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -275,7 +307,7 @@ fn run() -> Result<()> {
             let id = db
                 .scalar(
                     "SELECT id FROM repository WHERE name=?",
-                    &[relgit::sqlite::Param::Text(&args[3])],
+                    &[excession::sqlite::Param::Text(&args[3])],
                 )?
                 .parse::<i64>()
                 .map_err(|e| e.to_string())?;
@@ -301,7 +333,7 @@ fn run() -> Result<()> {
         }
         "carry-local" => {
             if !(args.len() == 3 || args.len() == 4) {
-                return refuse("Usage: relgit carry-local EXPERIMENT_ROOT [DATABASE]");
+                return refuse("Usage: excession research carry-local EXPERIMENT_ROOT [DATABASE]");
             }
             let root = PathBuf::from(&args[2])
                 .canonicalize()
@@ -312,7 +344,9 @@ fn run() -> Result<()> {
         }
         "carry-scoped" => {
             if !(args.len() == 4 || args.len() == 5) || args[3] != "--trusted-local" {
-                return refuse("Usage: relgit carry-scoped SPEC_JSON --trusted-local [DATABASE]");
+                return refuse(
+                    "Usage: excession research carry-scoped SPEC_JSON --trusted-local [DATABASE]",
+                );
             }
             let db = args.get(4).map(PathBuf::from);
             let result = scoped::carry_scoped(Path::new(&args[2]), db.as_deref(), true)?;
@@ -320,7 +354,7 @@ fn run() -> Result<()> {
         }
         "contract-impact" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit contract-impact SPEC_JSON DATABASE");
+                return refuse("Usage: excession research contract-impact SPEC_JSON DATABASE");
             }
             let spec = impact::ImpactPlan::read(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -328,7 +362,7 @@ fn run() -> Result<()> {
         }
         "identity" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit identity SPEC_JSON DATABASE");
+                return refuse("Usage: excession research identity SPEC_JSON DATABASE");
             }
             let spec = identity::IdentityPlan::read(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -342,7 +376,7 @@ fn run() -> Result<()> {
         | "compose-inferred-audit" => {
             if args.len() != 4 {
                 return refuse(
-                    "Usage: relgit compose-overlap[-audit] or compose-operation[-audit] SPEC_JSON DATABASE",
+                    "Usage: excession research compose-overlap[-audit] or compose-operation[-audit] SPEC_JSON DATABASE",
                 );
             }
             let spec = overlap::Spec::read(Path::new(&args[2]))?;
@@ -364,7 +398,7 @@ fn run() -> Result<()> {
         }
         "compose-audit" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit compose-audit SPEC_JSON DATABASE");
+                return refuse("Usage: excession research compose-audit SPEC_JSON DATABASE");
             }
             let spec = transactions::Spec::read(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -372,7 +406,7 @@ fn run() -> Result<()> {
         }
         "compose" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit compose SPEC_JSON DATABASE");
+                return refuse("Usage: excession research compose SPEC_JSON DATABASE");
             }
             let spec = transactions::Spec::read(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -380,7 +414,7 @@ fn run() -> Result<()> {
         }
         "contracts-import" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit contracts-import SPEC_JSON DATABASE");
+                return refuse("Usage: excession research contracts-import SPEC_JSON DATABASE");
             }
             let spec = contracts::Spec::read(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -388,7 +422,7 @@ fn run() -> Result<()> {
         }
         "replay" => {
             if args.len() != 4 {
-                return refuse("Usage: relgit replay SPEC_JSON DATABASE");
+                return refuse("Usage: excession research replay SPEC_JSON DATABASE");
             }
             let plan = historical::from_spec(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -397,13 +431,15 @@ fn run() -> Result<()> {
         }
         "score" => {
             if args.len() != 3 {
-                return refuse("Usage: relgit score COST_INPUT_JSON");
+                return refuse("Usage: excession research score COST_INPUT_JSON");
             }
             println!("{}", optimizer::from_file(Path::new(&args[2]))?.canonical());
         }
         "project" => {
             if args.len() != 5 {
-                return refuse("Usage: relgit project SPEC_JSON DATABASE OUTPUT_DIRECTORY");
+                return refuse(
+                    "Usage: excession research project SPEC_JSON DATABASE OUTPUT_DIRECTORY",
+                );
             }
             let plan = transform::Plan::parse(Path::new(&args[2]))?;
             let db = Db::open(Path::new(&args[3]))?;
@@ -428,10 +464,10 @@ fn run() -> Result<()> {
             }
             let db = Db::open(Path::new(&args[2]))?;
             let output = match action {
-                "impact" => relgit::views::impact(&db, &args[3], &args[4], &args[5])?,
-                "review" => relgit::views::review(&db, &args[3], &args[4], &args[5])?,
-                "manifest" => relgit::views::manifest(&db, &args[3], &args[4])?,
-                "dependencies" => relgit::views::dependencies(&db, &args[3], &args[4])?,
+                "impact" => excession::views::impact(&db, &args[3], &args[4], &args[5])?,
+                "review" => excession::views::review(&db, &args[3], &args[4], &args[5])?,
+                "manifest" => excession::views::manifest(&db, &args[3], &args[4])?,
+                "dependencies" => excession::views::dependencies(&db, &args[3], &args[4])?,
                 _ => unreachable!(),
             };
             println!("{}", output.canonical());
@@ -439,10 +475,4 @@ fn run() -> Result<()> {
         _ => return refuse(usage()),
     }
     Ok(())
-}
-fn main() {
-    if let Err(e) = run() {
-        eprintln!("REFUSED: {e}");
-        std::process::exit(1);
-    }
 }

@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn fk_and_binding() {
         let d = std::env::temp_dir().join(format!(
-            "relgit-sqlite-test-{}-{}.db",
+            "excession-sqlite-test-{}-{}.db",
             std::process::id(),
             std::thread::current().name().unwrap_or("unnamed")
         ));

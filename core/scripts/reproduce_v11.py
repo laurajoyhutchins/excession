@@ -14,7 +14,7 @@ import tempfile
 import sys
 
 ROOT=Path(__file__).resolve().parents[1]
-BIN=ROOT/'target/debug/relgit'
+BIN=ROOT/'target/debug/excession'
 
 def run(argv, *, capture=False):
     args=list(map(str,argv))
@@ -90,7 +90,7 @@ def main():
            'probe':str(ROOT/'adapters/python_identity_probe.py'),
            'crossload':str(ROOT/'adapters/python_pickle_crossload.py'), 'label':label}
         spec=h/f'identity-{label}.json';spec.write_text(json.dumps(plan))
-        output=json.loads(run([BIN,'identity',spec,h/'identity.sqlite'],capture=True))
+        output=json.loads(run([BIN,'research','identity',spec,h/'identity.sqlite'],capture=True))
         assert output['commit']==expected_commit,(label,output)
         assert output['tree']==expected_tree,(label,output)
         assert output['symbols']==12,output
@@ -102,7 +102,7 @@ def main():
     import_spec=h/'v5-import.json'
     import_spec.write_text((work/'contracts/contracts.json').read_text())
     print('STAGE shared catalog: importing',flush=True)
-    imported=json.loads(run([BIN,'contracts-import',import_spec,h/'h11.sqlite'],capture=True))
+    imported=json.loads(run([BIN,'research','contracts-import',import_spec,h/'h11.sqlite'],capture=True))
     assert imported['trace_count']==112
     impact_plan={
         'source':str(h/'h11-source'),
@@ -117,7 +117,7 @@ def main():
     }
     ip=h/'contract-impact.json';ip.write_text(json.dumps(impact_plan))
     print('STAGE shared catalog: impact',flush=True)
-    decision=json.loads(run([BIN,'contract-impact',ip,h/'h11.sqlite'],capture=True))
+    decision=json.loads(run([BIN,'research','contract-impact',ip,h/'h11.sqlite'],capture=True))
     got={s['view']:(s['matching_inputs'],s['decision']) for s in decision['snapshots']}
     assert got=={
         'original_parent':(11,'REVERIFY_REQUIRED'),
@@ -130,7 +130,7 @@ def main():
     # Recompute v3 weight policy from original archived measurements (not new benchmarks).
     cost_expected=json.loads((ROOT/'fixtures/reference/v3/expected.json').read_text())
     for name in ('h11','postcss'):
-        cost=json.loads(run([BIN,'score',ROOT/f'fixtures/reference/v3/{name}.json'],capture=True))
+        cost=json.loads(run([BIN,'research','score',ROOT/f'fixtures/reference/v3/{name}.json'],capture=True))
         assert cost['chosen']==cost_expected[name]['chosen']
         for layout in ('original','projected'):
             assert abs(cost['costs'][layout]-cost_expected[name]['costs'][layout])<1e-8

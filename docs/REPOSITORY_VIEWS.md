@@ -6,15 +6,16 @@ A conventional checkout chooses one directory layout. Excession derives alternat
 
 ## Interface
 
-The existing Rust `relgit` binary is retained as the compatibility CLI. Its new commands are:
+The installed CLI is `excession`; generated views are not separate source checkouts.
+The relevant commands are:
 
 ```text
-relgit view-plan-deps           DB REPO_NAME REVISION SEED_MODULE
-relgit view-plan-replay-deps    DB REPO_NAME REVISION SEED_MODULE MANIFEST
-relgit view-plan-security      DB SOURCE_REPO RUN_ID
-relgit view-plan-replay-security DB SOURCE_REPO RUN_ID MANIFEST
-relgit view-materialize        SOURCE_REPO MANIFEST OUT_DIR
-relgit view-audit              SOURCE_REPO MANIFEST OUT_DIR
+excession index --repo REPO --db DB --name NAME [--rev REV] [--roots ROOTS]
+excession view deps --db DB --name NAME --rev REV --seed MODULE
+excession view replay deps --db DB --name NAME --rev REV --seed MODULE --manifest JSON
+excession view security --db DB --repo REPO --run RUN_ID
+excession view replay security --db DB --repo REPO --run RUN_ID --manifest JSON
+excession view materialize|audit --repo REPO --manifest JSON --output DIR
 ```
 
 ### Dependency view
@@ -25,11 +26,11 @@ First index a clean source checkout with the existing parser/indexer. It already
 REPO=/path/to/checkout
 OUT=/tmp/excession-work
 mkdir -p "$OUT"
-relgit index "$OUT/index.sqlite" project "$REPO" HEAD package,tests
-relgit view-plan-deps "$OUT/index.sqlite" project HEAD package.entry > "$OUT/dependencies.json"
-relgit view-materialize "$REPO" "$OUT/dependencies.json" "$OUT/dependencies-view"
-relgit view-plan-replay-deps "$OUT/index.sqlite" project HEAD package.entry "$OUT/dependencies.json"
-relgit view-audit "$REPO" "$OUT/dependencies.json" "$OUT/dependencies-view"
+excession index --repo "$REPO" --db "$OUT/index.sqlite" --name project --rev HEAD --roots package,tests
+excession view deps --db "$OUT/index.sqlite" --name project --rev HEAD --seed package.entry > "$OUT/dependencies.json"
+excession view materialize --repo "$REPO" --manifest "$OUT/dependencies.json" --output "$OUT/dependencies-view"
+excession view replay deps --db "$OUT/index.sqlite" --name project --rev HEAD --seed package.entry --manifest "$OUT/dependencies.json"
+excession view audit --repo "$REPO" --manifest "$OUT/dependencies.json" --output "$OUT/dependencies-view"
 ```
 
 The layout is deterministic: `00-focus`, `10-dependencies/{direct,transitive}`, `20-dependents/{direct,transitive}`, and `30-tests/{dependencies,dependents}`. Graph traversal uses **shortest reachable distance** and terminates on cycles. A module may deliberately appear in multiple groups, each with the original source blob ID. Only indexed, statically resolved dependencies are represented. Missing dynamic imports, external packages, and runtime relationships are not assumed safe or absent.
@@ -39,12 +40,12 @@ The layout is deterministic: `00-focus`, `10-dependencies/{direct,transitive}`, 
 First run and **independently audit** CodeQL or Semgrep ingestion (see `docs/ARCHITECTURE.md`). The scanner report and SQLite file must live outside the source checkout. After import, use the returned `run_id`:
 
 ```bash
-relgit security-ingest "$REPO" "$OUT/report.sarif" "$OUT/findings.sqlite" codeql
-relgit security-ingest-audit "$REPO" "$OUT/report.sarif" "$OUT/findings.sqlite" codeql
-relgit view-plan-security "$OUT/findings.sqlite" "$REPO" "$RUN_ID" > "$OUT/security.json"
-relgit view-materialize "$REPO" "$OUT/security.json" "$OUT/security-view"
-relgit view-plan-replay-security "$OUT/findings.sqlite" "$REPO" "$RUN_ID" "$OUT/security.json"
-relgit view-audit "$REPO" "$OUT/security.json" "$OUT/security-view"
+excession security ingest --repo "$REPO" --report "$OUT/report.sarif" --db "$OUT/findings.sqlite" --engine codeql
+excession security audit --repo "$REPO" --report "$OUT/report.sarif" --db "$OUT/findings.sqlite" --engine codeql
+excession view security --db "$OUT/findings.sqlite" --repo "$REPO" --run "$RUN_ID" > "$OUT/security.json"
+excession view materialize --repo "$REPO" --manifest "$OUT/security.json" --output "$OUT/security-view"
+excession view replay security --db "$OUT/findings.sqlite" --repo "$REPO" --run "$RUN_ID" --manifest "$OUT/security.json"
+excession view audit --repo "$REPO" --manifest "$OUT/security.json" --output "$OUT/security-view"
 ```
 
 The view groups `00-findings`, `10-flow-starts`, `20-flow-intermediate`, and `30-flow-ends`; a single-step thread uses `10-flow-single`. Group names indicate **positions reported by the scanner**, not confirmed sources, sinks, authority boundaries, exploitability, or CVEs. Semgrep candidates lacking CodeQL flows appear only in `00-findings`. Each individual thread step is separately addressable through its candidate, flow, thread, and step numbers.

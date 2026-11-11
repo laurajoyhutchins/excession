@@ -6,13 +6,13 @@
 
 ## 1. Problem and falsifiable hypothesis
 
-Excession uses the existing RelGit Rust Git/SQLite core as an evidence authority. Given a revision `R`, a set of scanner outputs `S`, a source revision graph `G`, and
+Excession owns the migrated Rust Git/SQLite core as its evidence authority. Given a revision `R`, a set of scanner outputs `S`, a source revision graph `G`, and
 native tests `T`, identify security invariant violations with independently replayable
 evidence. We want to learn whether relationships across revisions and between
 components discover additional *real* vulnerabilities over CodeQL + native
 fuzzing alone.
 
-**Hypothesis:** `confirmed(RelGit + static analysis + fuzzing) > confirmed(static analysis + fuzzing)`
+**Hypothesis:** `confirmed(Excession + static analysis + fuzzing) > confirmed(static analysis + fuzzing)`
 on a preregistered held-out corpus at comparable resource cost. This is unproven.
 
 A static warning is not a vulnerability, a bug is not necessarily exploitable,
@@ -27,13 +27,13 @@ Pinned Git revisions + frozen trial protocol
 Language-native extraction / CodeQL / Semgrep / Joern
        |   SARIF 2.1.0, Semgrep JSON, future code-property graph
        v
-RelGit Rust: source binding, normalized findings, SQLite provenance
+Excession Rust: source binding, normalized findings, SQLite provenance
        |   revision comparisons, dependency relations, selection
        v
 Native fuzz / dynamic oracles in isolated ephemeral environments
        |   input + actual trace + counterexample + controls
        v
-RelGit independent audit, with source and tool version checks
+Excession independent audit, with source and tool version checks
        |   freeze observations
        v
 Post-freeze OSV / GitHub advisory scoring and disclosure review
@@ -50,7 +50,7 @@ A separate, read-only projection capability maps the Git tree and recorded relat
 
 The `excession` Rust executable is the supported user-facing CLI (see
 [`CLI.md`](CLI.md)). It uses the existing Rust library directly for Git/SQLite
-authority and read-only repository projections. The historical `relgit` binary
+authority and read-only repository projections. The historical `excession research` command family
 is retained for reproducibility of earlier experiments. The optional trusted-local
 `excession security scan` command invokes installed CodeQL/Semgrep programs and
 immediately performs source-bound import plus independent replay. Its explicit
@@ -66,7 +66,7 @@ attestation, or a security verdict. Python tool adapters remain optional helpers
 | Joern | source checkout and CPG | candidate edges with provenance | planned; no working adapter |
 | Go fuzzing / libFuzzer / AFL++ | explicit trusted native harness + seed corpus | bounded native traces/crashes | research integration planned; existing RelGit native pilot retained |
 | OSV / GitHub advisories | frozen finding IDs + exact package/revision | CVE match candidates | planned post-freeze evaluation, not part of discovery |
-| RelGit | exact Git commit and tool output | canonical candidate and audit receipts | implemented |
+| Excession | exact Git commit and tool output | canonical candidate and audit receipts | implemented |
 
 Tool references: CodeQL SARIF (<https://docs.github.com/en/code-security/reference/code-scanning/sarif-files/sarif-support>),
 Semgrep JSON (<https://github.com/semgrep/semgrep-interfaces/blob/main/semgrep_output_v1.jsonschema>),
@@ -162,7 +162,7 @@ audit from a clean checkout.
 
 **Scoring:** Only after freezing, consult CVE/OSV advisories and patch histories.
 Count true positives only with behavior and affected-version agreement. Compare
-RelGit-enhanced output against CodeQL-only + fuzz-only baselines at similar cost.
+Excession-enhanced output against CodeQL-only + fuzz-only baselines at similar cost.
 
 ## 8. Security controls
 
@@ -210,4 +210,4 @@ benchmark; measurement against standalone scanners; remote attestations.
 - Extend native adapters only when a real bounded test case requires them.
 
 **Next decisive experiment:** a preregistered Go repository benchmark comparing
-CodeQL-only + native fuzzing against the same evidence joined through RelGit.
+CodeQL-only + native fuzzing against the same evidence joined through Excession.

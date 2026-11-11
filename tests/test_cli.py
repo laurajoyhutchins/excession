@@ -10,7 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "core/target/debug/excession"
-LEGACY = ROOT / "core/target/debug/relgit"
+
 BUNDLE = ROOT / "core/fixtures/h11-crossrepo.bundle"
 
 
@@ -28,8 +28,8 @@ def data(*argv: object) -> dict:
 class DedicatedCLI(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        if not BIN.is_file() or not LEGACY.is_file():
-            raise unittest.SkipTest("build both Rust binaries first")
+        if not BIN.is_file():
+            raise unittest.SkipTest("build Excession CLI first")
         cls.temp = tempfile.TemporaryDirectory(prefix="excession-cli-")
         cls.dir = Path(cls.temp.name)
         cls.repo = cls.dir / "source"
@@ -79,6 +79,8 @@ class DedicatedCLI(unittest.TestCase):
         self.assertIn("Excession", cmd(BIN, "--help").stdout.decode())
         self.assertIn("Excession", cmd(BIN, "view", "--help").stdout.decode())
         self.assertTrue(cmd(BIN, "--version").stdout.decode().startswith("excession "))
+        self.assertIn(b"excession research carry", cmd(BIN, "research", "--help").stdout)
+        self.assertIn(b"excession research project", cmd(BIN, "research").stdout)
         for argv in [
             ["view", "deps", "--db", str(self.db)],
             ["view", "deps", "--db", str(self.db), "--db", "duplicate"],
@@ -91,9 +93,9 @@ class DedicatedCLI(unittest.TestCase):
             self.assertEqual(bad.stdout, b"", argv)
             self.assertIn(b"REFUSED:", bad.stderr)
 
-    def test_dependency_plan_matches_legacy_and_replays(self):
+    def test_dependency_plan_matches_research_protocol_and_replays(self):
         result, file = self.plan()
-        old = data(LEGACY, "view-plan-deps", self.db, "h11", "HEAD", "h11._connection")
+        old = data(BIN, "research", "view-plan-deps", self.db, "h11", "HEAD", "h11._connection")
         self.assertEqual(result, old)
         self.assertEqual(result["source_commit"], self.commit)
         replay = data(BIN, "view", "replay", "deps", "--db", self.db, "--name", "h11", "--rev", "HEAD", "--seed", "h11._connection", "--manifest", file)
@@ -101,6 +103,18 @@ class DedicatedCLI(unittest.TestCase):
         file.write_text("{}")
         bad = cmd(BIN, "view", "replay", "deps", "--db", self.db, "--name", "h11", "--rev", "HEAD", "--seed", "h11._connection", "--manifest", file, check=False)
         self.assertNotEqual(bad.returncode, 0)
+
+    def test_one_crate_one_binary_and_research_dispatch(self):
+        import tomllib
+        cargo = tomllib.loads((ROOT / "core/Cargo.toml").read_text())
+        self.assertEqual(cargo["package"]["name"], "excession")
+        self.assertEqual(cargo["lib"]["name"], "excession")
+        self.assertEqual([target["name"] for target in cargo["bin"]], ["excession"])
+        evidence = self.work / "canonical.json"
+        evidence.write_text('{"x":1}')
+        result = cmd(BIN, "research", "json-check", evidence)
+        self.assertRegex(result.stdout.decode(), r"^canonical_sha256=[0-9a-f]{64}\n$")
+        self.assertNotEqual(cmd(BIN, "relgit", check=False).returncode, 0)
 
     def test_virtual_navigation_and_exact_bytes(self):
         plan, manifest = self.plan()

@@ -52,9 +52,11 @@ class Browser:
         self.cwd = ""
 
     def query(self, verb: str, path: str = "", *, raw: bool = False):
-        argv = [str(self.executable), verb, str(self.repository), str(self.manifest)]
+        operation = {'view-ls': 'ls', 'view-stat': 'stat', 'view-open': 'cat'}[verb]
+        argv = [str(self.executable), 'view', operation, '--repo', str(self.repository),
+                '--manifest', str(self.manifest)]
         if path:
-            argv.append(path)
+            argv.extend(["--path", path])
         result = subprocess.run(argv, capture_output=True, check=False)
         if result.returncode:
             msg = result.stderr.decode("utf-8", errors="replace").strip()
@@ -98,7 +100,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repository", type=Path, help="Git repository containing the pinned blobs")
     parser.add_argument("manifest", type=Path, help="Existing Excession view manifest")
-    parser.add_argument("--rust", type=Path, default=Path(__file__).resolve().parents[1] / "core/target/debug/relgit")
+    parser.add_argument("--rust", type=Path, default=Path(__file__).resolve().parents[1] / "core/target/debug/excession")
     parser.add_argument("--max-bytes", type=int, default=8192)
     args = parser.parse_args()
     if not 1 <= args.max_bytes <= 65536:

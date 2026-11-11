@@ -1,13 +1,16 @@
-# Excession command-line interface
+# Excession CLI
 
-`excession` is the public Rust executable for repository exploration and security-evidence inspection. It calls the same Git/SQLite Rust authority as the historical `relgit` binary, without shelling out to that program or requiring Python to browse a view. The inherited `relgit` binary remains for earlier reproducibility scripts.
+`excession` is the sole first-party Rust executable and crate for repository
+exploration and security-evidence inspection. It calls the Git/SQLite Rust
+authority directly. Pinned historical research operations are a **subcommand
+family** (`excession research`), not a second executable.
 
 ## Install
 
 Prerequisites: Rust 1.99.1, Cargo, Git (SHA-1 object repositories), and system `libsqlite3` and `libcrypto`. No third-party Rust crates or network downloads are required.
 
 ```sh
-# From the repository root; do not install the legacy binary by accident.
+# From the repository root; one binary is installed.
 cargo install --offline --locked --path core --bin excession
 excession --version
 excession --help
@@ -117,4 +120,9 @@ The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL
 
 All file contents and view identities remain grounded in Git objects. The CLI does not silently turn a candidate into a vulnerability, execute untrusted code, install scanners, or claim that unindexed edges do not exist. JSON commands write canonical JSON to standard output; `view cat` writes raw bytes. Errors and refusals go to standard error and return a nonzero exit code. The CLI uses strict named options and refuses unknown or duplicate flags.
 
-**Compatibility:** the existing `relgit` executable and its historical command shapes are intentionally retained. Any scripts depending on their output can migrate incrementally. `excession` is now the user-facing interface; the Rust library keeps its existing crate name until a separate, independently verified migration is warranted.
+**Historical compatibility:** use `excession research COMMAND [historical arguments]`
+for bounded reproduction operations such as `carry`, `compose`, `replay`,
+`contracts-import`, `identity`, `contract-impact`, `score`, and `project`.
+There is no separately installed legacy binary, and the crate is named
+`excession`. Versioned on-disk protocols and exact-replay fixture identities
+are retained. See [migration notes](MIGRATION.md).

@@ -34,7 +34,7 @@ spec=dict(baseline=str(base),candidate=str(cand),vendor=str(ref/'vendor/h11_pres
 sp=work/'contracts.json';sp.write_text(json.dumps(spec))
 db=work/'contracts.sqlite'
 subprocess.run(['git','-C',str(cand),'status','--porcelain'],check=True)
-r=subprocess.run([str(root/'target/debug/relgit'),'contracts-import',str(sp),str(db)],capture_output=True,text=True)
+r=subprocess.run([str(root/'target/debug/excession'),'research','contracts-import',str(sp),str(db)],capture_output=True,text=True)
 print('contract import',r.returncode,r.stdout[:1500],r.stderr[-1600:]);assert r.returncode==0
 result=json.loads(r.stdout);assert result['trace_count']==112
 assert result['contract_ideals']==5

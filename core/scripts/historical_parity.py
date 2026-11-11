@@ -20,8 +20,8 @@ for name,language,module,old,new,probe,compat in [
     spec={'source':str(source),'name':name,'base':base,'language':language,'moves':[{'module':module,'old':old,'new':new}],
           'probe':probe,'compatibility':compat,'adapter_script':str(root/'adapters'/('python_rewrite.py' if language=='python' else 'js_transform.cjs'))}
     sp=work/(name+'-project.json');sp.write_text(json.dumps(spec))
-    db=work/(name+'.sqlite');binary=root/'target/debug/relgit'
-    r=subprocess.run([str(binary),'project',str(sp),str(db),str(output)],capture_output=True,text=True)
+    db=work/(name+'.sqlite');binary=root/'target/debug/excession'
+    r=subprocess.run([str(binary),'research','project',str(sp),str(db),str(output)],capture_output=True,text=True)
     print(name,'project',r.returncode,r.stderr[-1000:]);assert r.returncode==0
     info=json.loads(r.stdout)
     assert info['projection_tree']==configs[name]['projection_tree'],(info['projection_tree'],configs[name]['projection_tree'])
@@ -41,7 +41,7 @@ for name,language,module,old,new,probe,compat in [
             ['node','-e',(src/'probes/postcss_behavior.js').read_text()]
         ]}
     rpath=work/(name+'-replay.json');rpath.write_text(json.dumps(replay))
-    rr=subprocess.run([str(binary),'replay',str(rpath),str(db)],capture_output=True,text=True)
+    rr=subprocess.run([str(binary),'research','replay',str(rpath),str(db)],capture_output=True,text=True)
     print(name,'replay',rr.returncode,rr.stderr[-1800:]);print(rr.stdout[:1100]);assert rr.returncode==0
     replay_result=json.loads(rr.stdout)
     expected={'h11':'87a0a610d6078f3922013f642aa3eaaad6590b53','postcss':'dba02ee93ad6ac251f515f37d0469715912d0ecb'}[name]

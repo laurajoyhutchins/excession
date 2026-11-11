@@ -65,12 +65,9 @@ def scanner_command(args: argparse.Namespace, repo: Path, output: Path) -> list[
 
 def ingest(binary: str, repo: Path, report: Path, db: Path, engine: str) -> dict:
     receipts: list[dict] = []
-    legacy = Path(binary).name == 'relgit'
     for command in ('ingest', 'audit'):
-        argv = ([binary, 'security-' + ('ingest' if command == 'ingest' else 'ingest-audit'),
-                 str(repo), str(report), str(db), engine] if legacy else
-                [binary, 'security', command, '--repo', str(repo), '--report', str(report),
-                 '--db', str(db), '--engine', engine])
+        argv = [binary, 'security', command, '--repo', str(repo), '--report', str(report),
+                '--db', str(db), '--engine', engine]
         process = run(argv, timeout=60)
         if process.returncode:
             raise RuntimeError(f'{command} refused: {process.stderr.strip()}')

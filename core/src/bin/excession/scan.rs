@@ -1,9 +1,9 @@
 //! Explicit trusted-local orchestration for installed scanner engines. No shell,
 //! source checkout mutation, implicit downloads, or claim of sandbox isolation.
 use super::Options;
-use relgit::json::Value;
-use relgit::sqlite::Db;
-use relgit::{Result, git, refuse, security_ingest};
+use excession::json::Value;
+use excession::sqlite::Db;
+use excession::{Result, git, refuse, security_ingest};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

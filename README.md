@@ -1,137 +1,94 @@
 # Excession
 
-**Security analysis across code histories.** Excession binds static analysis, native counterexamples, and cross-revision relationships to independently auditable Git evidence. It builds on the RelGit Rust research core without pretending that scanner warnings are confirmed vulnerabilities.
+**Git-grounded exploration, source relationships, and auditable security evidence.**
 
-**Current implementation:** import and independently audit CodeQL SARIF 2.1.0
-and Semgrep JSON against exact source blobs, plus CodeQL path flow relations; execute trusted local scanners;
-freeze an advisory-blind protocol and compare candidate sets across revisions.
-**Not yet implemented:** an automatic exploitable-vulnerability detector,
-custom CodeQL security-flow queries, or a verified-new-CVE claim.
+Excession derives focused, read-only repository views from pinned Git revisions
+and indexed relationships. It also ingests CodeQL SARIF and Semgrep JSON as
+**unverified security candidates** and independently audits their Git source
+identities, SQLite records, and reported flows. A scanner finding is not a
+confirmed vulnerability or a CVE.
 
-See [the architectural specification](docs/ARCHITECTURE.md).
+The **only installed Rust executable** is `excession`. The library and Cargo
+package are also named `excession`. The earlier research implementation is
+accessible through the `excession research ...` command family, not through
+an additional binary. See [migration notes](docs/MIGRATION.md), the
+[architecture](docs/ARCHITECTURE.md), and [origins](docs/ORIGINS.md).
 
-**Repository exploration:** generate dependency/security-flow views, compose them by original Git source identity, filter or namespace them, and browse their virtual files without a copied checkout. See [composable views](docs/COMPOSABLE_VIEWS.md) and [repository projections](docs/REPOSITORY_VIEWS.md).
+## Install and verify
 
-## Dedicated CLI
+Requirements: Rust 1.99.1, Git with SHA-1 repositories, native `libsqlite3` and
+`libcrypto`, and Python 3 for the repository integration tests. The Rust crate
+has no third-party Cargo dependencies; a network connection is not required.
 
-Install the first-party `excession` executable, not the historical `relgit` binary:
-
-```bash
+```sh
 cargo install --offline --locked --path core --bin excession
 excession --help
+make check
 ```
 
-The command groups are `excession index`, `excession view`, `excession browse`,
-`excession security`, and `excession inspect`. For example:
+`make check` runs Rust tests, Rust formatting and strict Clippy, plus the Python
+integration suite. Use `make cli` for a local development binary.
 
-```bash
-excession index --repo /path/to/h11 --db /tmp/h11.sqlite --name h11 --roots h11,tests
-excession view deps --db /tmp/h11.sqlite --name h11 --rev HEAD \
-  --seed h11._connection > /tmp/h11-view.json
-excession browse --repo /path/to/h11 --manifest /tmp/h11-view.json
+## One repository, multiple layouts
+
+```sh
+REPO=/path/to/clean/h11
+OUT=/tmp/excession-h11
+mkdir -p "$OUT"
+excession index --repo "$REPO" --db "$OUT/index.sqlite" --name h11 \
+  --rev HEAD --roots h11,tests
+excession view deps --db "$OUT/index.sqlite" --name h11 \
+  --rev HEAD --seed h11._connection > "$OUT/deps.json"
+excession view replay deps --db "$OUT/index.sqlite" --name h11 \
+  --rev HEAD --seed h11._connection --manifest "$OUT/deps.json"
+excession browse --repo "$REPO" --manifest "$OUT/deps.json"
 ```
 
-The CLI preserves exact Git blob provenance and never interprets a virtual
-layout as executable code. See the [complete CLI reference](docs/CLI.md),
-including composition, scanner ingestion, independent audit, and the read-only
-browser. `relgit` remains available only for historical compatibility.
+Other view operators include `compose`, `select`, `mount`, `ls`, `stat`, `cat`,
+`materialize`, and `audit`. Views read pinned Git blobs on demand without
+copying code. Materialized views are read-only **and not executable checkouts**.
+See [CLI](docs/CLI.md), [repository views](docs/REPOSITORY_VIEWS.md), and
+[composable views](docs/COMPOSABLE_VIEWS.md).
 
-## Build and test (offline, no external dependencies)
+## Source-bound scanner evidence
 
-```bash
-cargo test --offline --manifest-path core/Cargo.toml
-cargo fmt --manifest-path core/Cargo.toml -- --check
-cargo clippy --offline --manifest-path core/Cargo.toml --all-targets -- -D warnings
-python3 -m unittest discover -s tests -v
+```sh
+excession security ingest --repo "$REPO" --report /tmp/report.sarif \
+  --db /tmp/findings.sqlite --engine codeql
+excession security audit --repo "$REPO" --report /tmp/report.sarif \
+  --db /tmp/findings.sqlite --engine codeql
 ```
 
-Use Rust 1.99.1; the core requires `libsqlite3` and `libcrypto` installed on
-the host. The source includes inherited RelGit test fixtures.
+To invoke an already installed Semgrep or CodeQL scanner, use
+`excession security scan ... --trusted-local true` with a reviewed, local
+configuration. This is trusted-local execution, **not a sandbox**; database
+creation and untrusted builds require their own isolation. The executable
+neither downloads scanners nor asserts that a finding is exploitable.
 
-## Import an existing scanner result
+## Research compatibility
 
-```bash
-python3 tools/pipeline.py import --engine codeql \
-  --repo /path/to/clean/checkout \
-  --report /tmp/codeql.sarif \
-  --evidence /tmp/candidates.sqlite \
-  --rust ./core/target/debug/excession
+Pinned earlier experiments retain their original Git blobs, schema strings,
+identity-forming metadata, and fixture bundles. They can be replayed through
+one binary:
+
+```sh
+excession research --help
+excession research compose SPEC_JSON DATABASE
+excession research compose-audit SPEC_JSON DATABASE
 ```
 
-For trusted local scanner execution, `excession security scan` can launch an
-installed Semgrep/CodeQL executable with a reviewed ruleset and bounded runtime,
-then independently audit its report. This **is not isolated execution**:
+The `research` commands accept historical positional arguments. They are
+separate from the modern named-option CLI and intentionally preserve existing
+research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
 
-```bash
-excession security scan --repo /path/to/clean/checkout \
-  --engine semgrep --config /path/to/rules.yaml --trusted-local true \
-  --report /tmp/semgrep.json --db /tmp/candidates.sqlite
-```
+## Limits
 
-The CLI is the preferred interface; the Python runner remains as a compatible
-orchestration adapter. See [CLI reference](docs/CLI.md).
+The source index currently supports bounded Python and JavaScript static
+module relations, with additional Go-native research adapters. It cannot claim
+that absent graph edges do not exist. Scanner source-to-sink flows are unverified
+scanner reports until independent analysis establishes reachability and impact.
+Excession does not automatically confirm CVEs, execute untrusted code safely,
+or generate independently verified executable source reorganizations.
 
-The `semgrep` engine supports JSON scan output. The source checkout must be clean;
-the database and report must be outside it.
-
-To run the scanner first, replace `import` with `scan`, providing `--config
-/path/to/local/rules` (Semgrep) or `--database /path/to/codeql-db --config
-/path/to/query-suite` (CodeQL). These tools are **not** bundled or required for
-offline tests. Native scan build and execution require isolation when running
-untrusted repository code.
-
-## Queryable repository layouts (read-only)
-
-The same pinned Git revision can now be browsed through deterministic **dependency-focused** or **security-flow-focused** directory trees. Every virtual file maps to an original tracked source blob, including deliberate duplicates in multiple groups. Excession does not relocate source or promise that a materialized view is executable.
-
-```bash
-# First index the source, using the existing static dependency index:
-excession index --repo /path/to/h11 --db /tmp/index.sqlite --name h11 --roots h11,tests
-excession view deps --db /tmp/index.sqlite --name h11 --rev HEAD --seed h11._connection > /tmp/dep-view.json
-excession view materialize --repo /path/to/h11 --manifest /tmp/dep-view.json --output /tmp/dep-view
-excession view replay deps --db /tmp/index.sqlite --name h11 --rev HEAD --seed h11._connection --manifest /tmp/dep-view.json
-excession view audit --repo /path/to/h11 --manifest /tmp/dep-view.json --output /tmp/dep-view
-```
-
-For security-focused views, first import and independently audit a CodeQL SARIF or Semgrep JSON report, then call `view-plan-security DB SOURCE_REPO RUN_ID`. Scanner flow labels remain **unverified scanner claims**, not confirmed trust boundaries. Views are copies of pinned Git blobs, permissioned read-only, with deterministic manifests and an independent audit. Details, refusal limits and all six CLI commands: [Repository views](docs/REPOSITORY_VIEWS.md).
-
-## Blind historical protocol
-
-```bash
-python3 tools/protocol.py --repo /path/to/pinned/project \
-  --family authorization-consistency \
-  --family parser-differential --rules /path/to/local/semgrep.yaml \
-  --out /tmp/protocol.json
-```
-
-The protocol includes no advisory or CVE labels and refuses overwrites.
-Record candidate and native evidence before looking up advisories.
-
-## Candidate comparison
-
-```bash
-python3 tools/compare.py /tmp/candidates.sqlite LEFT_RUN_ID RIGHT_RUN_ID
-```
-
-This report is a triage aid **only**. Candidate absence does not establish a fix.
-Re-audit source and report against both run IDs before relying on a comparison.
-
-## Historical RelGit work
-
-The `core` directory contains the inherited Rust RelGit Git/SQLite
-implementation and its bounded native examples, extended with
-`security_ingest`. It is retained rather than replaced by a Python evidence
-store. The security architecture is intentionally separate from the historical
-experimental fixtures.
-
-## Boundaries
-
-This project does not authorize scanning third-party systems, execution of
-untrusted code without isolation, or publishing unverified findings. A CVE is
-an externally assigned identifier. Local observations alone do not create one.
-
-## Naming and provenance
-
-**Excession** is the project, repository, and dedicated CLI name. `relgit` remains an additional Rust binary for compatibility with inherited experiments. It is not an independent security scanner. The original six-commit RelGit Security history is retained; see [Origins](docs/ORIGINS.md).
-
-The GitHub repository lives at <https://github.com/laurajoyhutchins/excession>.
+Third-party source fixtures retain their upstream licensing obligations; see
+[third-party material](THIRD_PARTY.md).

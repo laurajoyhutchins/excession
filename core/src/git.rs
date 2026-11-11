@@ -19,7 +19,7 @@ pub fn command(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
         .args(args)
         .output()
         .map_err(|e| format!("git launch: {e}"))?;
-    if std::env::var("RELGIT_TIMING").ok().as_deref() == Some("1") {
+    if std::env::var("EXCESSION_TIMING").ok().as_deref() == Some("1") {
         eprintln!(
             "TIMING git {:.2}ms {}",
             t0.elapsed().as_secs_f64() * 1000.,

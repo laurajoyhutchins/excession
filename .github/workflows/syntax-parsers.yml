@@ -8,6 +8,9 @@ on:
       - '.python-version'
       - 'requirements/syntax.txt'
       - 'requirements/research.txt'
+      - 'requirements/locks/**'
+      - 'tools/grammar_artifacts.py'
+      - 'tests/test_grammar_artifacts.py'
       - 'core/adapters/tree_sitter.py'
       - 'core/src/syntax.rs'
       - 'core/src/preflight.rs'
@@ -33,6 +36,8 @@ jobs:
     name: Rust, Go, C, Java grammar smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      TREE_SITTER_LANGUAGE_PACK_CACHE_DIR: /tmp/excession-grammars
     steps:
       - uses: actions/checkout@v4
       - name: Activate pinned Rust toolchain
@@ -41,11 +46,19 @@ jobs:
         with:
           python-version-file: .python-version
       - name: Fast grammar-independent adapter contract tests
-        run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
-      - name: Install optional parser and prefetch grammars
         run: |
-          python3 -m pip install --disable-pip-version-check -r requirements/research.txt -r requirements/syntax.txt
-          python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java", "python", "typescript", "javascript"])'
+          python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
+          python3 -m unittest discover -s tests -p test_grammar_artifacts.py -v
+      - name: Install SHA-256-locked parser and research wheels
+        run: >-
+          python3 -m pip install --disable-pip-version-check --require-hashes
+          --only-binary=:all:
+          -r requirements/locks/research-linux-cp313-x86_64.txt
+          -r requirements/locks/syntax-linux-cp313-x86_64.txt
+      - name: Trusted grammar prefetch
+        run: python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java", "python", "typescript", "javascript"])'
+      - name: Authenticate cached grammar library SHA-256 hashes offline
+        run: python3 tools/grammar_artifacts.py verify
       - name: Build Excession CLI
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Run parser unit and Git integration tests (JUnit XML)

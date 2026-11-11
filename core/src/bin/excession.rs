@@ -3,7 +3,7 @@
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, git, graph_baseline, index, native_boundary, native_depinfo, preflight, projection,
-    refactor, refuse, security_ingest, syntax, syntax_resolution, views,
+    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -51,6 +51,8 @@ Usage:
   excession inspect review --db DB --name NAME --old REV --new REV
   excession refactor suggest --db DB --name NAME --rev REV
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
+  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
+  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
   excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
@@ -104,6 +106,7 @@ impl Options {
 
 enum Response {
     Json(excession::json::Value),
+    CanonicalJson(String),
     Message(String),
     Bytes(Vec<u8>),
 }
@@ -112,7 +115,7 @@ impl Response {
         let mut out = io::stdout().lock();
         match self {
             Self::Json(j) => writeln!(out, "{}", j.canonical()),
-            Self::Message(s) => writeln!(out, "{s}"),
+            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}"),
             Self::Bytes(bytes) => out.write_all(&bytes),
         }
         .map_err(|e| format!("stdout write failed: {e}"))
@@ -123,25 +126,23 @@ fn json(v: excession::json::Value) -> Response {
 }
 
 fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
+    if (verb, replay) == ("deps", false) {
+        let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
+        let db = Db::open(opt.path("db"))?;
+        return Ok(Response::CanonicalJson(projection::dependencies_canonical(
+            &db,
+            opt.get("name"),
+            opt.get("rev"),
+            opt.get("seed"),
+        )?));
+    }
     let v = match (verb, replay) {
-        ("deps", false) | ("deps", true) => {
-            let opt = Options::parse(
-                argv,
-                if replay {
-                    &["db", "name", "rev", "seed", "manifest"]
-                } else {
-                    &["db", "name", "rev", "seed"]
-                },
-                &[],
-            )?;
+        ("deps", true) => {
+            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "manifest"], &[])?;
             let db = Db::open(opt.path("db"))?;
             let plan =
                 projection::dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?;
-            if replay {
-                projection::replay(&plan, opt.path("manifest"))?
-            } else {
-                plan
-            }
+            projection::replay(&plan, opt.path("manifest"))?
         }
         ("profile-deps", false) => {
             let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
@@ -633,6 +634,29 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("engine"),
                 sub == "audit",
             )?))
+        }
+        [top, sub, rest @ ..]
+            if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
+        {
+            let opt = Options::parse(
+                rest,
+                if sub == "scip-audit" {
+                    &["repo", "rev", "index", "report"]
+                } else {
+                    &["repo", "rev", "index"]
+                },
+                &[],
+            )?;
+            Ok(json(if sub == "scip-audit" {
+                scip_refactor::audit(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.path("report"),
+                )?
+            } else {
+                scip_refactor::suggest(opt.path("repo"), opt.get("rev"), opt.path("index"))?
+            }))
         }
         [top, sub, rest @ ..] if top == "refactor" => {
             if !matches!(sub.as_str(), "suggest" | "audit") {

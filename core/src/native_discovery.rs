@@ -139,9 +139,8 @@ fn executable(name: &str) -> Result<PathBuf> {
     }
     refuse(format!("native resolver requires installed {name}"))
 }
-fn toolchain(name: &str, version_flag: &str) -> Result<(String, String)> {
-    let path = executable(name)?;
-    let mut command = Command::new(&path);
+fn toolchain_at(path: &Path, version_flag: &str) -> Result<(String, String)> {
+    let mut command = Command::new(path);
     command.arg(version_flag);
     let version = String::from_utf8(run_bounded(command, "toolchain version")?)
         .map_err(|_| "non-UTF8 toolchain version".to_string())?;
@@ -149,8 +148,29 @@ fn toolchain(name: &str, version_flag: &str) -> Result<(String, String)> {
     if version.is_empty() {
         return refuse("toolchain version is empty");
     }
-    let binary = fs::read(&path).map_err(|e| format!("read toolchain: {e}"))?;
+    let binary = fs::read(path).map_err(|e| format!("read toolchain: {e}"))?;
     Ok((version, digest::sha256(&binary)))
+}
+fn toolchain(name: &str, version_flag: &str) -> Result<(String, String)> {
+    toolchain_at(&executable(name)?, version_flag)
+}
+
+/// Resolve the selected Rust toolchain while still in the caller's environment.
+/// Running the rustup shim from a staged checkout without a rust-toolchain file
+/// can silently select another compiler or fail without a default toolchain.
+/// Pin the *real* rustc executable for invocation and SHA-256 provenance.
+fn rustc_binary() -> Result<PathBuf> {
+    let launcher = executable("rustc")?;
+    let mut probe = Command::new(&launcher);
+    probe.args(["--print", "sysroot"])
+        .env("RUSTUP_AUTO_INSTALL", "0");
+    let sysroot = String::from_utf8(run_bounded(probe, "native rustc sysroot")?)
+        .map_err(|_| "non-UTF8 rustc sysroot")?;
+    let compiler = PathBuf::from(sysroot.trim()).join("bin").join("rustc");
+    if !compiler.is_file() {
+        return refuse("selected Rust sysroot has no actual rustc executable");
+    }
+    compiler.canonicalize().map_err(|e| format!("resolve rustc compiler: {e}"))
 }
 fn stage(repo: &Path, commit: &str, root: &Path) -> Result<(usize, usize, PinnedFiles)> {
     let entries = git::entries(repo, commit)?;
@@ -303,7 +323,16 @@ pub fn discover(
         "rust" => ("rustc", "--version"),
         _ => ("node", "--version"),
     };
-    let (version, binary_sha256) = toolchain(tool, version_flag)?;
+    let pinned_rustc = if language == "rust" {
+        Some(rustc_binary()?)
+    } else {
+        None
+    };
+    let (version, binary_sha256) = if let Some(ref path) = pinned_rustc {
+        toolchain_at(path, version_flag)?
+    } else {
+        toolchain(tool, version_flag)?
+    };
     let (adapter_python_version, adapter_python_sha256) = toolchain("python3", "--version")?;
     let helper = snapshot.directory.join("typescript.cjs");
     fs::write(&helper, TYPESCRIPT_HELPER)
@@ -318,6 +347,9 @@ pub fn discover(
         .arg(language)
         .arg(&helper)
         .current_dir(&root);
+    if let Some(ref compiler) = pinned_rustc {
+        cmd.env("EXCESSION_NATIVE_RUSTC", compiler);
+    }
     let raw = run_bounded(cmd, "language-native resolver")?;
     let found = json::parse(&raw)?;
     if found.entries()?.len() != 3 {

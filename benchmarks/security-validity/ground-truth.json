@@ -37,7 +37,7 @@
   ],
   "rule_ids": {
     "semgrep": [
-      "excession.go.joined-read"
+      "benchmarks.security-validity.excession.go.joined-read"
     ],
     "codeql": [
       "go/path-injection"

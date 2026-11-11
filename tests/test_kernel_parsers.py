@@ -34,24 +34,22 @@ EXPORT_SYMBOL_GPL(public_symbol);
                             f["kind"] == "c_export" for f in facts))
 
     def test_c_export_text_inside_strings_is_not_a_symbol(self):
-        text = (
-            'const char *example = "EXPORT_SYMBOL(false_symbol)";\\n'
-            "EXPORT_SYMBOL(real_symbol);\\n"
-        )
+        text = '''const char *example = "EXPORT_SYMBOL(false_symbol)";
+EXPORT_SYMBOL(real_symbol);
+'''
         facts, _ = parser.c_facts(text)
         exports = [f["subject"] for f in facts if f["kind"] == "c_export"]
         self.assertEqual(exports, ["real_symbol"])
 
     def test_kconfig_help_text_is_not_a_config_statement(self):
-        text = (
-            "config FOO\\n"
-            "    bool \\"example\\"\\n"
-            "    help\\n"
-            "      if FAKE\\n"
-            "      depends on FAKE\\n"
-            "config BAR\\n"
-            "    depends on FOO\\n"
-        )
+        text = '''config FOO
+    bool "example"
+    help
+      if FAKE
+      depends on FAKE
+config BAR
+    depends on FOO
+'''
         facts, diagnostics = parser.kconfig_facts(text)
         self.assertEqual(diagnostics, [])
         self.assertEqual(

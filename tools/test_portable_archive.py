@@ -50,7 +50,9 @@ def verify(archive: Path) -> None:
             "commit", "-qm", "fixture", cwd=root,
         )
         assert "excession " in run(str(binary), "--version", cwd=source)
-        assert "excession index" in run(str(binary), "--help", cwd=source)
+        assert "index" in run(str(binary), "--help", cwd=source)
+        index_help = run(str(binary), "index", "--help", cwd=source)
+        assert all(flag in index_help for flag in ("--repo", "--db", "--name"))
         import json
         doctor = json.loads(run(str(binary), "doctor", "--json", cwd=source))
         assert doctor["schema"] == "excession.capabilities.v1"

@@ -51,14 +51,6 @@ def run(argv: list[str], timeout: int = 60) -> tuple[bytes, float, float]:
     return proc.stdout, round(elapsed, 3), round(cpu, 3)
 
 
-def decoded(argv: list[str]) -> dict:
-    stdout, _, _ = run(argv)
-    value = json.loads(stdout)
-    if not isinstance(value, dict):
-        raise ValueError("query returned non-object JSON")
-    return value
-
-
 def summary(values: list[float]) -> dict[str, float]:
     ordered = sorted(values)
     return {
@@ -72,12 +64,14 @@ def measure(binary: Path, root: Path, db: Path, commit: str, tree: str) -> dict:
     fixed = ["--db", str(db), "--name", "h11", "--rev", commit]
     expected: dict[tuple[str, str], list[str]] = {}
     full_bytes: dict[str, int] = {}
+    full_ids: dict[str, str] = {}
     for seed in SEEDS:
         view_stdout, _, _ = run(prefix + ["deps", *fixed, "--seed", seed])
         manifest = json.loads(view_stdout)
         if manifest["source_commit"] != commit or manifest["source_tree"] != tree:
             raise ValueError("full view source identity mismatch")
         full_bytes[seed] = len(view_stdout)
+        full_ids[seed] = manifest["view_id"]
         for kind, role in KINDS.items():
             expected[(seed, kind)] = sorted({
                 item["source_path"] for item in manifest["entries"]
@@ -101,9 +95,7 @@ def measure(binary: Path, root: Path, db: Path, commit: str, tree: str) -> dict:
             paths = data["source_paths"]
             if paths != expected[(seed, kind)]:
                 raise ValueError(f"{arm} source mismatch at {seed}/{kind}: {paths!r}")
-            if arm == "paths" and data["view_id"] != decoded(
-                prefix + ["deps", *fixed, "--seed", seed]
-            )["view_id"]:
+            if arm == "paths" and data["view_id"] != full_ids[seed]:
                 raise ValueError("focused result has wrong full-view commitment")
             samples.append({
                 "seed": seed, "kind": kind, "repeat": repeat,

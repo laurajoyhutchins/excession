@@ -84,6 +84,13 @@ class RealBinaryWorkload(unittest.TestCase):
                 for item in summary["workloads"] for record in item["revisions"]
             ))
             self.assertTrue((out / "modules8_fanout1.bundle").is_file())
+            self.assertTrue((out / "report.json").is_file())
+            validated = subprocess.run([
+                sys.executable, str(ROOT / "benchmarks/reporting.py"),
+                "validate", str(out / "report.json"),
+            ], capture_output=True, text=True, timeout=20)
+            self.assertEqual(validated.returncode, 0, validated.stderr)
+            self.assertEqual(json.loads((out / "report.json").read_text())["status"], "passed")
 
 
 if __name__ == "__main__":

@@ -131,12 +131,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
         ("profile-deps", false) => {
             let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
             let db = Db::open(opt.path("db"))?;
-            projection::profile_dependencies(
-                &db,
-                opt.get("name"),
-                opt.get("rev"),
-                opt.get("seed"),
-            )?
+            projection::profile_dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?
         }
         ("graph", false) => {
             let opt = Options::parse(argv, &["db", "name", "rev", "seed", "kind"], &[])?;

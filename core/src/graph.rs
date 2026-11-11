@@ -504,9 +504,9 @@ mod tests {
         assert_eq!(relation.get("status").unwrap().str().unwrap(),
             "CMAKE_CONFIGURED_GIT_VERIFIED");
         assert_eq!(relation.get("evidence").unwrap().str().unwrap(), "native-receipt");
-        let walk = self::path(&db, None, None, "app", "a.c", 2).unwrap();
+        let walk = super::path(&db, None, None, "app", "a.c", 2).unwrap();
         assert_eq!(walk.get("status").unwrap().str().unwrap(), "RECORDED_EVIDENCE_PATH");
-        let unreachable = self::path(&db, None, None, "a.c", "app", 2).unwrap();
+        let unreachable = super::path(&db, None, None, "a.c", "app", 2).unwrap();
         assert_eq!(unreachable.get("status").unwrap().str().unwrap(),
             "NO_RECORDED_PATH_IN_SELECTED_DIRECTION_AND_DEPTH");
         drop(db);

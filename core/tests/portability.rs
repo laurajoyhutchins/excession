@@ -50,8 +50,16 @@ fn installed_binary_works_outside_build_tree_with_unicode_paths() {
         return;
     }
 
-    fs::write(repo.join("pkg/__init__.py"), b"from .module import answer\n").unwrap();
-    fs::write(repo.join("pkg/module.py"), b"def answer():\n    return 42\n").unwrap();
+    fs::write(
+        repo.join("pkg/__init__.py"),
+        b"from .module import answer\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("pkg/module.py"),
+        b"def answer():\n    return 42\n",
+    )
+    .unwrap();
     let repo_arg = repo.to_str().expect("portable Unicode fixture");
     let cwd_arg = working.to_str().expect("portable Unicode fixture");
     run("git", &["init", "-q", repo_arg], &working);
@@ -77,8 +85,8 @@ fn installed_binary_works_outside_build_tree_with_unicode_paths() {
     let indexed = run(
         binary,
         &[
-            "index", "--repo", repo_arg, "--db", db_arg, "--name", "portable",
-            "--rev", "HEAD", "--roots", "pkg",
+            "index", "--repo", repo_arg, "--db", db_arg, "--name", "portable", "--rev", "HEAD",
+            "--roots", "pkg",
         ],
         &working,
     );
@@ -87,8 +95,16 @@ fn installed_binary_works_outside_build_tree_with_unicode_paths() {
     let view = run(
         binary,
         &[
-            "view", "deps", "--db", db_arg, "--name", "portable",
-            "--rev", "HEAD", "--seed", "pkg.module",
+            "view",
+            "deps",
+            "--db",
+            db_arg,
+            "--name",
+            "portable",
+            "--rev",
+            "HEAD",
+            "--seed",
+            "pkg.module",
         ],
         &working,
     );
@@ -98,8 +114,19 @@ fn installed_binary_works_outside_build_tree_with_unicode_paths() {
     let replay = run(
         binary,
         &[
-            "view", "replay", "deps", "--db", db_arg, "--name", "portable",
-            "--rev", "HEAD", "--seed", "pkg.module", "--manifest", manifest_arg,
+            "view",
+            "replay",
+            "deps",
+            "--db",
+            db_arg,
+            "--name",
+            "portable",
+            "--rev",
+            "HEAD",
+            "--seed",
+            "pkg.module",
+            "--manifest",
+            manifest_arg,
         ],
         &working,
     );

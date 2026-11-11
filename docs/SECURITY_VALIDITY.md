@@ -21,6 +21,12 @@ Public GitHub Actions run [#43108611322](https://github.com/laurajoyhutchins/exc
 
 The subsequent **HTTP entry-point calibration** adds explicit request-derived input and independent `httptest` checks for disclosure, rejection, and benign access. Its purpose is to make the threat model actionable for taint-analysis tools without changing the original pinned file-read source blob. This is a controlled *calibration revision*, not an independent held-out evaluation or a production security claim.
 
+## Real scanner calibration result (2026-11-11)
+
+[Run #43109801180](https://github.com/laurajoyhutchins/excession/actions/runs/43109801180), commit `94beafa6faa28ff813d43d0e38b5890a4626c5d3`, completed **both** scanner jobs. The independent Go oracle passed all seven tests. Semgrep produced one source-bound behavioral positive at `path.go:14` and one safe-control hit at `path.go:30`. CodeQL `go/path-injection` produced one behavioral positive at `path.go:14` and one safe-control hit at the guarded read, `path.go:25`. Both assessments reported `reproduced_boundaries=1`, `safe_control_hits=1`, `unjudged_candidates=0`, and `known_positive_cases_without_hit=0`. Raw scanner reports, Git-bound ingest receipts, audit receipts, and assessments are retained as separate run artifacts.
+
+This is an intentionally constructed, **non-held-out calibration**. The positive is an independently observed local HTTP-to-file read, not a claim of deployment exposure. The guard is only a parent-component check and is **not symlink-safe**. A CodeQL alert at that guard is therefore classified as a safe control only for the specifically tested parent-traversal behavior, not as a universal false positive for every path-injection threat. No general precision/recall estimate follows from this corpus.
+
 ## Run the experiment
 
 Use a **trusted** clean checkout of Excession, with the built Rust CLI, Go and

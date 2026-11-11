@@ -56,36 +56,122 @@ fn index_revision_inner(
     let tree = git::rev(root, &format!("{commit}^{{tree}}"))?;
     let entries = git::entries(root, &commit)?;
     db.init_schema()?;
+
     db.transaction(|db| {
-        db.execute("INSERT OR IGNORE INTO repository(name,git_dir,provenance) VALUES(?,?,?)",&[Param::Text(name),Param::Text(&root.to_string_lossy()),Param::Text(provenance)])?;
-        let id=db.scalar("SELECT id FROM repository WHERE name=?",&[Param::Text(name)])?.parse::<i64>().map_err(|e|e.to_string())?;
-        // A registered name is one logical checkout. Moving it requires a new name.
-        let old_root=db.scalar("SELECT git_dir FROM repository WHERE id=?",&[Param::Integer(id)])?;
-        if std::fs::canonicalize(&old_root).map_err(|e|e.to_string())?!=std::fs::canonicalize(root).map_err(|e|e.to_string())?{
-            return refuse(format!("repository name {name} already registered for another checkout"));
-        }
-        for (oid,kind) in [(&commit,"commit"),(&tree,"tree")] {
-            db.execute("INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",&[Param::Integer(id),Param::Text(oid),Param::Text(kind)])?;
-        }
-        db.execute("INSERT OR IGNORE INTO revision(repo_id,commit_oid,tree_oid) VALUES(?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&tree)])?;
-        for e in &entries {
-            db.execute("INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",&[Param::Integer(id),Param::Text(&e.oid),Param::Text(&e.kind)])?;
-            db.execute("INSERT OR IGNORE INTO tree_entry(repo_id,commit_oid,path,mode,kind,oid) VALUES(?,?,?,?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&e.path),Param::Text(&e.mode),Param::Text(&e.kind),Param::Text(&e.oid)])?;
-            if e.kind=="blob" && let Some((module,is_test))=module_name(&e.path,roots) {
-                db.execute("INSERT OR IGNORE INTO module(repo_id,commit_oid,name,path,blob_oid,is_test) VALUES(?,?,?,?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&module),Param::Text(&e.path),Param::Text(&e.oid),Param::Integer(i64::from(is_test))])?;
+        let repo_id = register_repository(db, root, name, provenance)?;
+        let mut recorded_objects = BTreeSet::new();
+
+        // Multiple paths may have identical contents. Persist each distinct
+        // (object ID, type) once while retaining every tree-entry relationship.
+        for (oid, kind) in [(&commit, "commit"), (&tree, "tree")] {
+            if recorded_objects.insert((oid.as_str(), kind)) {
+                record_object(db, repo_id, oid, kind)?;
             }
         }
-        if db.scalar("SELECT tree_oid FROM revision WHERE repo_id=? AND commit_oid=?",&[Param::Integer(id),Param::Text(&commit)])?!=tree{
+        db.execute(
+            "INSERT OR IGNORE INTO revision(repo_id,commit_oid,tree_oid) VALUES(?,?,?)",
+            &[
+                Param::Integer(repo_id),
+                Param::Text(&commit),
+                Param::Text(&tree),
+            ],
+        )?;
+
+        for entry in &entries {
+            if recorded_objects.insert((entry.oid.as_str(), entry.kind.as_str())) {
+                record_object(db, repo_id, &entry.oid, &entry.kind)?;
+            }
+            db.execute(
+                "INSERT OR IGNORE INTO tree_entry(repo_id,commit_oid,path,mode,kind,oid) VALUES(?,?,?,?,?,?)",
+                &[
+                    Param::Integer(repo_id),
+                    Param::Text(&commit),
+                    Param::Text(&entry.path),
+                    Param::Text(&entry.mode),
+                    Param::Text(&entry.kind),
+                    Param::Text(&entry.oid),
+                ],
+            )?;
+            if entry.kind == "blob"
+                && let Some((module, is_test)) = module_name(&entry.path, roots)
+            {
+                db.execute(
+                    "INSERT OR IGNORE INTO module(repo_id,commit_oid,name,path,blob_oid,is_test) VALUES(?,?,?,?,?,?)",
+                    &[
+                        Param::Integer(repo_id),
+                        Param::Text(&commit),
+                        Param::Text(&module),
+                        Param::Text(&entry.path),
+                        Param::Text(&entry.oid),
+                        Param::Integer(i64::from(is_test)),
+                    ],
+                )?;
+            }
+        }
+
+        let stored_tree = db.scalar(
+            "SELECT tree_oid FROM revision WHERE repo_id=? AND commit_oid=?",
+            &[Param::Integer(repo_id), Param::Text(&commit)],
+        )?;
+        if stored_tree != tree {
             return refuse("existing revision changed root tree");
         }
-        let computed=reconstruct_tree(db,id,&commit)?;
-        if computed!=tree{return refuse(format!("Git/SQLite tree mismatch: expected {tree}, got {computed}"));}
+        let reconstructed = reconstruct_tree(db, repo_id, &commit)?;
+        if reconstructed != tree {
+            return refuse(format!(
+                "Git/SQLite tree mismatch: expected {tree}, got {reconstructed}"
+            ));
+        }
         if include_semantics {
-            crate::semantic::index_sources(db,id,root,&commit,&entries,roots)?;
+            crate::semantic::index_sources(db, repo_id, root, &commit, &entries, roots)?;
         }
         db.foreign_keys_valid()?;
-        Ok(id)
+        Ok(repo_id)
     })
+}
+
+fn register_repository(db: &Db, root: &Path, name: &str, provenance: &str) -> Result<i64> {
+    db.execute(
+        "INSERT OR IGNORE INTO repository(name,git_dir,provenance) VALUES(?,?,?)",
+        &[
+            Param::Text(name),
+            Param::Text(&root.to_string_lossy()),
+            Param::Text(provenance),
+        ],
+    )?;
+    let repo_id = db
+        .scalar(
+            "SELECT id FROM repository WHERE name=?",
+            &[Param::Text(name)],
+        )?
+        .parse::<i64>()
+        .map_err(|err| err.to_string())?;
+
+    // A registered name identifies one logical checkout. It must not be
+    // silently rebound to a different repository on a later indexing call.
+    let existing_root = db.scalar(
+        "SELECT git_dir FROM repository WHERE id=?",
+        &[Param::Integer(repo_id)],
+    )?;
+    let existing = std::fs::canonicalize(existing_root).map_err(|err| err.to_string())?;
+    let current = std::fs::canonicalize(root).map_err(|err| err.to_string())?;
+    if existing != current {
+        return refuse(format!(
+            "repository name {name} already registered for another checkout"
+        ));
+    }
+    Ok(repo_id)
+}
+
+fn record_object(db: &Db, repo_id: i64, oid: &str, kind: &str) -> Result<()> {
+    db.execute(
+        "INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",
+        &[
+            Param::Integer(repo_id),
+            Param::Text(oid),
+            Param::Text(kind),
+        ],
+    )
 }
 
 pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {

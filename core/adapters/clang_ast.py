@@ -100,7 +100,7 @@ def invoke(argv, cwd, max_bytes, timeout=TIMEOUT_SECONDS):
     return stdout, stderr.decode("utf-8", "replace")[-8192:]
 
 
-def load_command(path, source):
+def load_command(path, source, object_prefix=None):
     db_digest, raw = digest_file(path, MAX_DB_BYTES)
     try:
         entries = json.loads(raw)
@@ -119,6 +119,30 @@ def load_command(path, source):
             if not directory.is_dir() or not source.is_file():
                 raise ValueError("matching compilation directory or source is missing")
             matches.append((item, directory))
+    if object_prefix is not None:
+        if (not isinstance(object_prefix, str) or not object_prefix
+                or len(object_prefix) > 256 or ".." in object_prefix
+                or not re.fullmatch(r"[a-zA-Z0-9_./+-]+", object_prefix)):
+            raise ValueError("invalid selected compilation object prefix")
+        selected = []
+        for item, directory in matches:
+            if "arguments" in item:
+                args = item["arguments"]
+            elif isinstance(item.get("command"), str):
+                args = shlex.split(item["command"], posix=True)
+            else:
+                raise ValueError("entry needs arguments or command")
+            if not isinstance(args, list):
+                raise ValueError("compilation arguments must be an array")
+            outputs = []
+            for index, arg in enumerate(args):
+                if arg == "-o" and index + 1 < len(args):
+                    outputs.append(args[index + 1])
+                elif isinstance(arg, str) and arg.startswith("-o") and len(arg) > 2:
+                    outputs.append(arg[2:])
+            if len(outputs) == 1 and object_prefix in outputs[0]:
+                selected.append((item, directory))
+        matches = selected
     if len(matches) != 1:
         raise ValueError("expected exactly one compile command for %s, found %d" %
                          (source, len(matches)))
@@ -361,7 +385,8 @@ def analyze(item):
     if real_oid != expected:
         raise ValueError("working source differs from pinned Git blob")
     db_path = Path(item["compile_db"]).resolve(strict=True)
-    db_digest, entry, directory, original = load_command(db_path, source)
+    db_digest, entry, directory, original = load_command(
+        db_path, source, item.get("object_prefix"))
     flags = analysis_flags(original, source, directory)
     config_path = item.get("config")
     config = None

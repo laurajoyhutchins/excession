@@ -1,7 +1,10 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, evidence_transport, git, index, projection, refuse, security_ingest, slice_evidence, views};
+use excession::{
+    Result, evidence_transport, git, index, projection, refuse, security_ingest, slice_evidence,
+    views,
+};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -427,7 +430,10 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub, a]
             if a == "--help"
-                && matches!(top.as_str(), "view" | "security" | "slice" | "evidence" | "inspect")
+                && matches!(
+                    top.as_str(),
+                    "view" | "security" | "slice" | "evidence" | "inspect"
+                )
                 && !sub.is_empty() =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -507,7 +513,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 let opt = Options::parse(rest, &["repo", "receipt-id", "db"], &[])?;
                 let db = Db::open(opt.path("db"))?;
                 return Ok(json(evidence_transport::trace(
-                    opt.path("repo"), opt.get("receipt-id"), &db,
+                    opt.path("repo"),
+                    opt.get("receipt-id"),
+                    &db,
                 )?));
             }
             if !matches!(sub.as_str(), "transport" | "transport-audit") {
@@ -515,7 +523,13 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             let opt = Options::parse(
                 rest,
-                &["repo", "source-manifest", "target-manifest", "receipt", "db"],
+                &[
+                    "repo",
+                    "source-manifest",
+                    "target-manifest",
+                    "receipt",
+                    "db",
+                ],
                 &[],
             )?;
             let db = Db::open(opt.path("db"))?;

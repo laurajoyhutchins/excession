@@ -1,4 +1,4 @@
-.PHONY: check build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli benchmark-schema-check
+.PHONY: check build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli benchmark-schema-check contracts-check
 
 build:
 	cargo build --offline --locked --manifest-path core/Cargo.toml
@@ -32,6 +32,11 @@ junit: rust-junit python-junit
 
 benchmark-schema-check:
 	python3 -m unittest discover -s tests -p test_benchmark_reporting.py -v
+
+# Uses the JSON Schema validator pinned in requirements/research.txt.
+contracts-check:
+	python3 tools/validate_semantic_contract.py
+	python3 -m unittest discover -s tests -p test_semantic_contracts.py -v
 
 cli:
 	cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession

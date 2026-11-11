@@ -1,19 +1,12 @@
 name: Relational benchmark protocol
 
+# Measurements run explicitly; benchmark correctness already runs in Verify.
 on:
-  pull_request:
-    paths:
-      - 'benchmarks/experiments/**'
-      - 'benchmarks/protocol.md'
-      - 'benchmarks/schemas/**'
-      - 'core/src/benchmark.rs'
-      - 'core/src/bin/excession.rs'
-      - 'core/Cargo.toml'
-      - 'core/Cargo.lock'
-      - 'benchmarks/README.md'
-      - 'tests/test_benchmark_experiments.py'
-      - '.github/workflows/benchmark-relations.yml'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

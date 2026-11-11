@@ -31,6 +31,7 @@ pub mod security_discovery;
 pub mod security_ingest;
 pub mod security_survey;
 pub mod semantic;
+pub mod semantic_contract;
 pub mod sqlite;
 pub mod syntax;
 pub mod syntax_resolution;

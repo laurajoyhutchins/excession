@@ -15,6 +15,10 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -25,18 +29,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      # Linux smoke on PRs; all native targets on tags and manual releases.
       matrix:
-        include:
-          - os: ubuntu-24.04
-            executable: excession
-          - os: ubuntu-24.04-arm
-            executable: excession
-          - os: macos-15
-            executable: excession
-          - os: macos-15-intel
-            executable: excession
-          - os: windows-2025
-            executable: excession.exe
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","executable":"excession"}]' || '[{"os":"ubuntu-24.04","executable":"excession"},{"os":"ubuntu-24.04-arm","executable":"excession"},{"os":"macos-15","executable":"excession"},{"os":"macos-15-intel","executable":"excession"},{"os":"windows-2025","executable":"excession.exe"}]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Select pinned Rust toolchain
@@ -50,6 +45,9 @@ jobs:
           cache: npm
       - name: Install locked TypeScript sidecar
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
       - name: Fetch pinned Cargo dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Check digests, bundled SQLite and capability reporting
@@ -73,6 +71,7 @@ jobs:
       - name: Test extracted archive without repository-side dependencies
         run: python tools/test_portable_archive.py dist
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: excession-${{ runner.os }}-${{ runner.arch }}
           path: dist/*
@@ -81,6 +80,7 @@ jobs:
 
   musl:
     name: Minimal Linux (x86-64 musl)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

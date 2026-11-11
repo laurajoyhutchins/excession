@@ -107,3 +107,11 @@ Draft 2020-12 schema, content digest, and referenced raw-artifact hashes.
 The Rust `jsonschema` dependency is pinned in `core/Cargo.lock`.
 `make benchmark-schema-check` runs report conversion and negative-case tests.
 This verification checks benchmark evidence, not the installed environment.
+
+## Test ownership
+
+Cargo integration suites in `core/tests/` cover CLI, Git/SQLite, repository
+views, security evidence, parser preflight, dependency resolution, refactor
+hypotheses, SCIP, and native compiler/declaration comparisons. Python tests
+remain for Python-specific adapters, tooling, benchmarks, and independent
+oracles; they are not a second copy of the Rust CLI contract suite.

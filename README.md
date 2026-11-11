@@ -39,7 +39,9 @@ mise exec -- core/target/debug/excession doctor --json
 ```
 
 `make check` runs Rust tests, formatting, strict Clippy, the JS adapter
-checks, and Python integration tests. Use `make cli` for the development
+checks, and Python-specific adapter and independent-oracle tests. Git, SQLite,
+projection, security, syntax, and refactoring integration tests run under Cargo.
+Use `make cli` for the development
 binary and `make go-check` for the optional Go adapter. See
 [development setup](docs/DEVELOPMENT.md) for mise tasks, native toolchain
 version files, and optional Tree-sitter grammars. Mise is a convenience layer;
@@ -47,8 +49,8 @@ Cargo, npm, and pip remain usable independently.
 
 For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
 Python research requirements,
-then run `make junit`. This retains the existing `unittest` test cases while
-producing separate Rust and Python reports:
+then run `make junit`. Rust owns application integration contracts;
+Python retains its adapters and independent reference checks. Reports:
 
 - `core/target/nextest/ci/junit.xml` (Rust, including failure output)
 - `test-results/python.xml` (Python, including skipped and failed tests)
@@ -211,3 +213,14 @@ or generate independently verified executable source reorganizations.
 
 Third-party source fixtures retain their upstream licensing obligations; see
 [third-party material](THIRD_PARTY.md).
+
+## Versioned source evidence contracts
+
+\`excession semantic scan\` emits JSON Schema Draft 2020-12 language-neutral
+syntax candidates and unresolved imports, with replay against Git.
+\`excession inspect evidence\` retains a separately typed, read-only query
+contract that distinguishes static candidates, compiler-declared inputs and
+runtime witnesses. Both datasets use ODCS 3.2.0 metadata and fail closed on
+schema drift without claiming complete dependency discovery. See the
+[semantic contract](docs/SEMANTIC_CONTRACTS.md) and
+[evidence query contract](docs/EVIDENCE_QUERY.md).

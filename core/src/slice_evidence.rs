@@ -184,7 +184,12 @@ pub(crate) fn source_rows(
     Ok((view, commit, tree, entry, result))
 }
 
-pub(crate) fn validated_receipt(receipt: &Value, view: &str, commit: &str, entry: &str) -> Result<String> {
+pub(crate) fn validated_receipt(
+    receipt: &Value,
+    view: &str,
+    commit: &str,
+    entry: &str,
+) -> Result<String> {
     if receipt.get("schema")?.str()? != "excession.slice-observation.v1"
         || receipt.get("scope")?.str()? != "FINITE_TRUSTED_LOCAL_EXECUTION"
         || receipt.get("view_id")?.str()? != view

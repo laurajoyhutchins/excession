@@ -97,7 +97,7 @@ def load_command(path, source):
         raise ValueError("unbounded compilation command")
     # Original executable is provenance, not an executable. Cross-compilers
     # and arbitrary GCC target triples are supported as descriptive metadata.
-    if any("\\x00" in arg for arg in argv):
+    if any(chr(0) in arg for arg in argv):
         raise ValueError("NUL in compilation command")
     return db_digest, entry, directory, argv
 
@@ -325,7 +325,7 @@ def analyze(item):
         config_sha, _ = digest_file(config_file, 4 * 1024 * 1024)
         config = {"path": str(config_file), "sha256": config_sha}
     compiler_name = item.get("compiler") or ("clang" if language == "c" else "clang++")
-    if not re.fullmatch(r"(?:clang(?:\\+\\+)?(?:-[0-9]+)?|/[\\w./+-]*clang(?:\\+\\+)?(?:-[0-9]+)?)", compiler_name):
+    if not re.fullmatch(r"(?:clang(?:[+][+])?(?:-[0-9]+)?|/[A-Za-z0-9_./+-]*clang(?:[+][+])?(?:-[0-9]+)?)", compiler_name):
         raise ValueError("compiler must be an explicitly selected Clang C/C++ binary")
     compiler_location = shutil.which(compiler_name)
     if not compiler_location:

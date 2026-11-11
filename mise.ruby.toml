@@ -1,0 +1,3 @@
+# Optional Ruby interpreter; project Bundler remains authoritative for gems.
+[tools]
+ruby = "4.0"

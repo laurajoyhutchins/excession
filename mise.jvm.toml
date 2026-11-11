@@ -1,0 +1,4 @@
+# Optional JDK for Java and JVM-family Kotlin/Scala projects.
+# Kotlin/Scala build dependencies are owned by the inspected project.
+[tools]
+java = "temurin-25"

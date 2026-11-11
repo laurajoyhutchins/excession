@@ -1,9 +1,9 @@
-# RelGit Security
+# Excession
 
-Git-authenticated vulnerability *research evidence*, built on RelGit's Rust core.
+**Security analysis across code histories.** Excession binds static analysis, native counterexamples, and cross-revision relationships to independently auditable Git evidence. It builds on the RelGit Rust research core without pretending that scanner warnings are confirmed vulnerabilities.
 
 **Current implementation:** import and independently audit CodeQL SARIF 2.1.0
-and Semgrep JSON against exact source blobs; execute trusted local scanners;
+and Semgrep JSON against exact source blobs, plus CodeQL path flow relations; execute trusted local scanners;
 freeze an advisory-blind protocol and compare candidate sets across revisions.
 **Not yet implemented:** an automatic exploitable-vulnerability detector,
 custom CodeQL security-flow queries, or a verified-new-CVE claim.
@@ -64,7 +64,7 @@ Re-audit source and report against both run IDs before relying on a comparison.
 
 ## Historical RelGit work
 
-The `core` directory contains the existing Rust RelGit v0.19.0 Git/SQLite
+The `core` directory contains the inherited Rust RelGit Git/SQLite
 implementation and its bounded native examples, extended with
 `security_ingest`. It is retained rather than replaced by a Python evidence
 store. The security architecture is intentionally separate from the historical
@@ -75,3 +75,9 @@ experimental fixtures.
 This project does not authorize scanning third-party systems, execution of
 untrusted code without isolation, or publishing unverified findings. A CVE is
 an externally assigned identifier. Local observations alone do not create one.
+
+## Naming and provenance
+
+**Excession** is the project and repository name. `relgit` remains the internal Rust CLI name for compatibility with the imported, tested engine. It is not an independent security scanner. The original six-commit RelGit Security history is retained; see [Origins](docs/ORIGINS.md).
+
+The GitHub repository lives at <https://github.com/laurajoyhutchins/excession>.

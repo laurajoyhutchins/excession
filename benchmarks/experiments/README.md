@@ -55,3 +55,23 @@ These suites verify exact in-index static import edges for their named fixtures,
 not all runtime dependencies in arbitrary code. Dynamic imports, unsupported
 import-resolution configurations, and external packages remain outside the
 coverage denominator. See [dependency scope](../../docs/DEPENDENCY_COVERAGE.md).
+
+## Independent indexed-query verifier
+
+`independent_audit.py` is an independent full Git/SQLite replay
+implementation, complementary to the already established Python/JavaScript
+source-import candidate oracle. It compares exact accept/refuse outcomes,
+full manifest commitments, and per-command cost against Excession's native
+`view replay deps` rather than comparing an unauthenticated graph
+query to an authenticated view.
+
+```sh
+python3 benchmarks/experiments/independent_audit.py benchmark \
+  --bin core/target/debug/excession --out /tmp/replay-audit --repetitions 2
+```
+
+Intact manifest and eight corruption variants are checked on a pinned h11
+Git bundle. A passing result does not authenticate arbitrary dependency
+relations that are self-consistent but absent from the source. The existing
+`dependency_oracle.py` and `real_fixtures.py` supply
+the separate source-level falsification experiment.

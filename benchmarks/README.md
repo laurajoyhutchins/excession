@@ -72,3 +72,14 @@ encoded as zeros, duplicate metrics, unsafe paths, and false success labels.
 Report IDs are digests, **not signatures**. A native calibration explicitly
 declares a shared-index oracle, while relational experiments declare
 independently authored source relationships. Historical JSON is preserved.
+
+## Full indexed-query audit: independently implemented
+
+`experiments/independent_audit.py` independently checks a dependency
+projection's complete deterministic query against Git's actual tree objects,
+the SQLite index, module source bindings, and the canonical view ID. It compares
+against `excession view replay deps` on intact inputs and eight
+manifests/database corruption variants, recording refusal parity and execution
+costs. This does not prove semantic dependency truth: the independent Python
+and JS source-import oracle in `experiments/dependency_oracle.py`
+establishes that *separately*, within its declared static scope.

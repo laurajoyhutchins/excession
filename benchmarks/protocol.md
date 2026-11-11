@@ -79,3 +79,16 @@ passed/failed check consistency. The report ID digests canonical JSON contents
 excluding itself and is **not** a signature. An independently authored oracle
 and a shared-index comparison must never be conflated. Validation cannot
 establish the semantic truth of supplied source or claims.
+
+## Independent full-query audit control
+
+`experiments/independent_audit.py` is a second, separately implemented
+Git/SQLite verifier. It parses a view manifest strictly, re-enumerates the
+complete pinned Git tree, compares every indexed tree row, authenticates
+module path/mode/blob claims, recomputes dependency reachability and roles,
+and verifies the full canonical commitment. Its behavior is compared
+against `excession view replay deps` on matching evidence and
+corrupted manifests/records. This establishes source-bound **indexed query
+replay**, not semantic edge truth, independent code execution, or a
+cryptographically signed worker identity. Both trust Git; Python's
+interpreter startup is a measurement confound.

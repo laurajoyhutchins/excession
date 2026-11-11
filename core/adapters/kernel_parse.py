@@ -190,8 +190,13 @@ def build_facts(text):
                 variable = prefix
         elif variable.endswith("-m"):
             guard = "MODULE"
+            variable = variable[:-2]
         elif variable.endswith("-y"):
             guard = "BUILTIN"
+            variable = variable[:-2]
+        elif variable.endswith("-objs"):
+            guard = "COMPOSITE"
+            variable = variable[:-5]
         if "$(" in value or "${" in value:
             diagnostics.append(dict(line=line, reason="dynamic make RHS: " + value[:150]))
         for target in value.split():

@@ -79,6 +79,28 @@ def without_c_comments(text):
     return "".join(out)
 
 
+def mask_c_literals(line):
+    """Mask C string/character literal interiors before scanning macro calls."""
+    result = []
+    quote = ""
+    escaped = False
+    for char in line:
+        if quote:
+            result.append(" ")
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = ""
+        elif char in ('"', "'"):
+            quote = char
+            result.append(" ")
+        else:
+            result.append(char)
+    return "".join(result)
+
+
 def fact(line, kind, subject, target="", condition="", status="DECLARED"):
     return dict(line=line, kind=kind, subject=subject, target=target,
                 condition=condition, status=status)
@@ -98,7 +120,7 @@ def c_facts(text):
     for line, source in logical_lines(masked):
         m = DIRECTIVE.match(source)
         if not m:
-            for exported in EXPORT.finditer(source):
+            for exported in EXPORT.finditer(mask_c_literals(source)):
                 name, symbol, namespace = exported.groups()
                 facts.append(fact(line, "c_export", symbol, namespace or "",
                                   cond(stack), "LEXICAL_CANDIDATE"))

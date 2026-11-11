@@ -1,0 +1,59 @@
+name: Clang compilation database adapter
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/clang-compile-db.yml'
+      - 'core/adapters/clang_ast.py'
+      - 'core/src/kernel_clang.rs'
+      - 'core/src/adapter.rs'
+      - 'core/src/bin/excession.rs'
+      - 'core/src/lib.rs'
+      - 'tests/test_clang_ast.py'
+      - 'tests/clang_linux_probe.py'
+      - 'docs/CLANG_TU.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clang-tu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests and actual Clang fixture
+        run: |
+          clang --version | head -1
+          python3 -m unittest discover -s tests -p test_clang_ast.py -v
+      - name: Build native Excession CLI
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch pinned Linux feature-test source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --sparse --branch v6.12 \
+            https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
+          git -C "$RUNNER_TEMP/linux" sparse-checkout set tools/build/feature
+          test "$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)" = "adc218676eef25575469234709c2d87185ca223a"
+          test -z "$(git -C "$RUNNER_TEMP/linux" status --porcelain)"
+      - name: Verify real Linux C source and Clang AST observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/clang_linux_probe.py \
+            --repo "$RUNNER_TEMP/linux" \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --output "$RUNNER_TEMP/clang-probe"
+          cat "$RUNNER_TEMP/clang-probe/clang-summary.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload bounded receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-clang-tu
+          path: ${{ runner.temp }}/clang-probe/clang-summary.json
+          if-no-files-found: warn
+          retention-days: 7

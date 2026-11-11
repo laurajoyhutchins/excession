@@ -13,6 +13,10 @@ path = "src/lib.rs"
 name = "relgit"
 path = "src/main.rs"
 
+[[bin]]
+name = "excession"
+path = "src/bin/excession.rs"
+
 [profile.dev]
 opt-level = 0
 

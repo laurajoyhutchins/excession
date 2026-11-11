@@ -2,11 +2,12 @@ use relgit::sqlite::Db;
 use relgit::{Result, refuse};
 use relgit::{
     contracts, effects, git, historical, identity, impact, index, integration, json, optimizer,
-    overlap, scoped, security, security_discovery, security_ingest, security_survey, transactions,
-    transform,
+    overlap, projection, scoped, security, security_discovery, security_ingest, security_survey,
+    transactions, transform,
 };
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 fn usage() -> String {
@@ -23,7 +24,16 @@ fn usage() -> String {
   relgit security-survey SURVEY_GIT_DIR DATABASE
   relgit security-survey-audit SURVEY_GIT_DIR DATABASE
   relgit security-ingest REPO REPORT DATABASE ENGINE
-  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\nErrors are fatal; unsupported semantics are not silently inferred.".into()
+  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\n  relgit view-plan-deps DB REPO_NAME REVISION SEED_MODULE\n  relgit view-plan-replay-deps DB REPO_NAME REVISION SEED_MODULE MANIFEST\n  relgit view-plan-security DB SOURCE_REPO RUN_ID\n  relgit view-plan-replay-security DB SOURCE_REPO RUN_ID MANIFEST\n  relgit view-materialize SOURCE_REPO MANIFEST OUT_DIR\n  relgit view-audit SOURCE_REPO MANIFEST OUT_DIR
+  relgit view-compose SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST
+  relgit view-compose-replay SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST OUTPUT_MANIFEST
+  relgit view-select SOURCE_REPO MANIFEST role|source-prefix|virtual-prefix VALUE
+  relgit view-mount SOURCE_REPO MANIFEST NAMESPACE
+  relgit view-mount-replay SOURCE_REPO MANIFEST NAMESPACE OUTPUT_MANIFEST
+  relgit view-select-replay SOURCE_REPO MANIFEST role|source-prefix|virtual-prefix VALUE OUTPUT_MANIFEST
+  relgit view-ls SOURCE_REPO MANIFEST [VIRTUAL_DIRECTORY]
+  relgit view-stat SOURCE_REPO MANIFEST VIRTUAL_PATH
+  relgit view-open SOURCE_REPO MANIFEST VIRTUAL_PATH\nErrors are fatal; unsupported semantics are not silently inferred.".into()
 }
 
 fn run() -> Result<()> {
@@ -32,6 +42,134 @@ fn run() -> Result<()> {
         return refuse(usage());
     };
     match action {
+        "view-compose" | "view-compose-replay" => {
+            if args.len() != if action == "view-compose" { 6 } else { 7 } {
+                return refuse(
+                    "Usage: relgit view-compose[-replay] SOURCE_REPO OP LEFT_MANIFEST RIGHT_MANIFEST [OUTPUT_MANIFEST]",
+                );
+            }
+            let repo = Path::new(&args[2]);
+            let left = Path::new(&args[4]);
+            let right = Path::new(&args[5]);
+            let result = if action == "view-compose" {
+                projection::compose(repo, &args[3], left, right)?
+            } else {
+                projection::compose_replay(repo, &args[3], left, right, Path::new(&args[6]))?
+            };
+            println!("{}", result.canonical());
+        }
+        "view-select" | "view-select-replay" => {
+            if args.len() != if action == "view-select" { 6 } else { 7 } {
+                return refuse(
+                    "Usage: relgit view-select[-replay] SOURCE_REPO MANIFEST AXIS VALUE [OUTPUT_MANIFEST]",
+                );
+            }
+            let repo = Path::new(&args[2]);
+            let input = Path::new(&args[3]);
+            let result = if action == "view-select" {
+                projection::select(repo, input, &args[4], &args[5])?
+            } else {
+                projection::select_replay(repo, input, &args[4], &args[5], Path::new(&args[6]))?
+            };
+            println!("{}", result.canonical());
+        }
+        "view-mount" | "view-mount-replay" => {
+            if args.len() != if action == "view-mount" { 5 } else { 6 } {
+                return refuse(
+                    "Usage: relgit view-mount[-replay] SOURCE_REPO MANIFEST NAMESPACE [OUTPUT_MANIFEST]",
+                );
+            }
+            let repo = Path::new(&args[2]);
+            let input = Path::new(&args[3]);
+            let result = if action == "view-mount" {
+                projection::mount(repo, input, &args[4])?
+            } else {
+                projection::mount_replay(repo, input, &args[4], Path::new(&args[5]))?
+            };
+            println!("{}", result.canonical());
+        }
+        "view-ls" => {
+            if args.len() != 4 && args.len() != 5 {
+                return refuse("Usage: relgit view-ls SOURCE_REPO MANIFEST [VIRTUAL_DIRECTORY]");
+            }
+            println!(
+                "{}",
+                projection::list(
+                    Path::new(&args[2]),
+                    Path::new(&args[3]),
+                    args.get(4).map(String::as_str).unwrap_or("")
+                )?
+                .canonical()
+            );
+        }
+        "view-stat" | "view-open" => {
+            if args.len() != 5 {
+                return refuse(
+                    "Usage: relgit view-stat|view-open SOURCE_REPO MANIFEST VIRTUAL_PATH",
+                );
+            }
+            if action == "view-stat" {
+                println!(
+                    "{}",
+                    projection::describe(Path::new(&args[2]), Path::new(&args[3]), &args[4])?
+                        .canonical()
+                );
+            } else {
+                let bytes = projection::open(Path::new(&args[2]), Path::new(&args[3]), &args[4])?;
+                io::stdout().write_all(&bytes).map_err(|e| e.to_string())?;
+            }
+        }
+        "view-plan-deps" | "view-plan-replay-deps" => {
+            if args.len() != if action == "view-plan-deps" { 6 } else { 7 } {
+                return refuse(
+                    "Usage: relgit view-plan[-replay]-deps DB REPO_NAME REVISION SEED_MODULE [MANIFEST]",
+                );
+            }
+            let db = Db::open(Path::new(&args[2]))?;
+            let expected = projection::dependencies(&db, &args[3], &args[4], &args[5])?;
+            let result = if action == "view-plan-replay-deps" {
+                projection::replay(&expected, Path::new(&args[6]))?
+            } else {
+                expected
+            };
+            println!("{}", result.canonical());
+        }
+        "view-plan-security" | "view-plan-replay-security" => {
+            if args.len() != if action == "view-plan-security" { 5 } else { 6 } {
+                return refuse(
+                    "Usage: relgit view-plan[-replay]-security DB SOURCE_REPO RUN_ID [MANIFEST]",
+                );
+            }
+            let db = Db::open(Path::new(&args[2]))?;
+            let expected = projection::security(&db, Path::new(&args[3]), &args[4])?;
+            let result = if action == "view-plan-replay-security" {
+                projection::replay(&expected, Path::new(&args[5]))?
+            } else {
+                expected
+            };
+            println!("{}", result.canonical());
+        }
+        "view-materialize" | "view-audit" => {
+            if args.len() != 5 {
+                return refuse(
+                    "Usage: relgit view-materialize|view-audit SOURCE_REPO MANIFEST OUT_DIR",
+                );
+            }
+            let report = if action == "view-materialize" {
+                projection::materialize(
+                    Path::new(&args[2]),
+                    Path::new(&args[3]),
+                    Path::new(&args[4]),
+                )?
+            } else {
+                projection::audit(
+                    Path::new(&args[2]),
+                    Path::new(&args[3]),
+                    Path::new(&args[4]),
+                )?
+            };
+            println!("{}", report.canonical());
+        }
         "security-ingest" | "security-ingest-audit" => {
             if args.len() != 6 {
                 return refuse("Usage: relgit security-ingest[-audit] REPO REPORT DATABASE ENGINE");

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trusted-local scanner adapter for RelGit. Does not execute arbitrary repository code.
+"""Trusted-local scanner adapter for Excession. Does not execute arbitrary repository code.
 
 It runs an explicitly installed scanner and calls the Rust authority for Git/SQL
 provenance. Any tool output is a static *candidate*, not a confirmed vulnerability.
@@ -65,8 +65,13 @@ def scanner_command(args: argparse.Namespace, repo: Path, output: Path) -> list[
 
 def ingest(binary: str, repo: Path, report: Path, db: Path, engine: str) -> dict:
     receipts: list[dict] = []
-    for command in ('security-ingest', 'security-ingest-audit'):
-        process = run([binary, command, str(repo), str(report), str(db), engine], timeout=60)
+    legacy = Path(binary).name == 'relgit'
+    for command in ('ingest', 'audit'):
+        argv = ([binary, 'security-' + ('ingest' if command == 'ingest' else 'ingest-audit'),
+                 str(repo), str(report), str(db), engine] if legacy else
+                [binary, 'security', command, '--repo', str(repo), '--report', str(report),
+                 '--db', str(db), '--engine', engine])
+        process = run(argv, timeout=60)
         if process.returncode:
             raise RuntimeError(f'{command} refused: {process.stderr.strip()}')
         receipt = json.loads(process.stdout)
@@ -83,7 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument('--repo', type=Path, required=True)
     p.add_argument('--report', type=Path, required=True)
     p.add_argument('--evidence', type=Path, required=True)
-    p.add_argument('--rust', default='core/target/debug/relgit')
+    p.add_argument('--rust', default='core/target/debug/excession')
     p.add_argument('--config')
     p.add_argument('--database', help='prebuilt CodeQL database (not the evidence DB)')
     p.add_argument('--executable')

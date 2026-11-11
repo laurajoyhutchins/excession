@@ -15,6 +15,7 @@ pub mod integration;
 pub mod json;
 pub mod optimizer;
 pub mod overlap;
+pub mod projection;
 pub mod scoped;
 pub mod security;
 pub mod security_discovery;

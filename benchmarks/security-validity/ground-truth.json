@@ -33,7 +33,10 @@
     }
   ],
   "additional_required_tests": [
-    "TestGuardPreservesBenignAccess"
+    "TestGuardPreservesBenignAccess",
+    "TestHTTPTraversalIsObservable",
+    "TestHTTPGuardRefusesTraversal",
+    "TestHTTPGuardPreservesBenignAccess"
   ],
   "rule_ids": {
     "semgrep": [

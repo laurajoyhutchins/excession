@@ -15,6 +15,12 @@ oracle is the independent Go test code, not the scanner or the source pattern.
 It does not establish application reachability, symlink safety, general
 path-traversal absence, or exploitability in a deployed service.
 
+## Executed benchmark evidence (2026-11-11)
+
+Public GitHub Actions run [#43108611322](https://github.com/laurajoyhutchins/excession/actions/runs/43108611322) on commit `fa1928ab052a8560b05edfb75793415dd5cdf06c` ran both real scanners. The **Semgrep 1.145.0** report contained two candidate locations: one matched the independently reproduced outside-root read (line 14), and one matched the benign constant-path read (line 30). The Excession assessment recorded `reproduced_boundaries=1`, `safe_control_hits=1`, `unjudged_candidates=0`. CodeQL ran and produced a SARIF report with zero candidates; this source-only benchmark did not provide an independently exercised HTTP taint source, so no CodeQL detection-accuracy claim follows. Both original reports and assessment receipts are retained as run artifacts.
+
+The subsequent **HTTP entry-point calibration** adds explicit request-derived input and independent `httptest` checks for disclosure, rejection, and benign access. Its purpose is to make the threat model actionable for taint-analysis tools without changing the original pinned file-read source blob. This is a controlled *calibration revision*, not an independent held-out evaluation or a production security claim.
+
 ## Run the experiment
 
 Use a **trusted** clean checkout of Excession, with the built Rust CLI, Go and

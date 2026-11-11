@@ -14,24 +14,15 @@ jobs:
     name: Rust and integration tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      MISE_ENABLE_TOOLS: rust,python,node
     steps:
       - uses: actions/checkout@v4
-      - name: Activate pinned Rust toolchain
+      - uses: jdx/mise-action@v5
+      - name: Confirm Rust toolchain
         run: rustup show active-toolchain
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: .python-version
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Install locked JavaScript parser
-        run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Install SHA-256-locked Python wheels
-        run: >-
-          python3 -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements/locks/research-linux-cp313-x86_64.txt
-      - name: Observe loaded native library ABIs
-        run: python3 tools/native_runtime.py
+      - name: Install development dependencies with mise
+        run: mise run setup
       - name: Install pinned Rust test reporter
         uses: taiki-e/install-action@v2
         with:

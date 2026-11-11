@@ -35,6 +35,9 @@ recorded in `package-lock.json`.
 Rust integration tests under `core/tests/` own the CLI, Git, SQLite,
 projection, security, refactor, syntax, and preflight contracts. Python tests
 remain for Python-specific tooling and independent verification oracles.
+Run `make rust-check` for native contracts and `make python-check` for the
+Python-only adapters, research drivers, and separate oracles. The optional
+grammar CI job runs the Rust source-bound tests with prefetched grammars.
 Rust adversarial checks also run a Python research probe that imports pytest.
 Install the pinned
 `requirements/locks/research-linux-cp313-x86_64.txt` before `make check` (as CI does). The optional Tree-sitter adapter is installed

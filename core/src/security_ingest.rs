@@ -5,7 +5,7 @@ use crate::git;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -13,7 +13,7 @@ const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS security_ingest_run (
  run_id TEXT PRIMARY KEY, source_commit TEXT NOT NULL,
  report_sha256 TEXT NOT NULL, engine TEXT NOT NULL,
- candidate_count INTEGER NOT NULL, status TEXT NOT NULL
+ candidate_count INTEGER NOT NULL, flow_step_count INTEGER NOT NULL, status TEXT NOT NULL
  CHECK(status='UNVERIFIED_STATIC_CANDIDATES')
 );
 CREATE TABLE IF NOT EXISTS security_ingest_candidate (
@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS security_ingest_candidate (
  line INTEGER NOT NULL, rule_id TEXT NOT NULL,
  raw_evidence TEXT NOT NULL,
  PRIMARY KEY(run_id,candidate_id)
+);
+CREATE TABLE IF NOT EXISTS security_ingest_flow_step (
+ run_id TEXT NOT NULL, candidate_id TEXT NOT NULL,
+ flow_index INTEGER NOT NULL, thread_index INTEGER NOT NULL, step_index INTEGER NOT NULL,
+ source_path TEXT NOT NULL, source_blob TEXT NOT NULL, line INTEGER NOT NULL,
+ PRIMARY KEY(run_id,candidate_id,flow_index,thread_index,step_index),
+ FOREIGN KEY(run_id,candidate_id) REFERENCES security_ingest_candidate(run_id,candidate_id)
 );
 "#;
 
@@ -36,6 +43,45 @@ struct Candidate {
     rule: String,
     evidence: String,
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FlowStep {
+    candidate_id: String,
+    flow_index: i64,
+    thread_index: i64,
+    step_index: i64,
+    path: String,
+    blob: String,
+    line: i64,
+}
+
+// A tiny source cache matters here: a thousand SARIF flow steps should not
+// spawn thousands of Git processes to re-validate the same source file.
+fn source_anchor(
+    repo: &Path,
+    cache: &mut BTreeMap<String, (String, usize)>,
+    path: &str,
+    line: i64,
+) -> Result<(String, String)> {
+    let path = normalize_path(path)?;
+    if !cache.contains_key(&path) {
+        let blob = git::blob(repo, "HEAD", &path)?;
+        let mode = git::text(repo, &["ls-tree", "HEAD", "--", &path])?;
+        if !mode.starts_with("100644 ") && !mode.starts_with("100755 ") {
+            return refuse("source path is not a regular tracked file");
+        }
+        if git::text(repo, &["hash-object", &path])? != blob {
+            return refuse("source blob mismatched checkout");
+        }
+        let bytes = fs::read(repo.join(&path)).map_err(|e| e.to_string())?;
+        cache.insert(path.clone(), (blob, bytes.split(|b| *b == b'\n').count()));
+    }
+    let (blob, nlines) = cache.get(&path).ok_or("missing cached source")?;
+    if line < 1 || line as usize > *nlines {
+        return refuse("finding outside source file");
+    }
+    Ok((path, blob.clone()))
+}
+
 fn normalize_path(p: &str) -> Result<String> {
     let value = p.strip_prefix("./").unwrap_or(p);
     if value.starts_with("file:")
@@ -57,45 +103,15 @@ fn line(value: &Value) -> Result<i64> {
     }
     Ok(l)
 }
-fn rows_from_report(repo: &Path, engine: &str, report: &Value) -> Result<Vec<Candidate>> {
+fn rows_from_report(
+    repo: &Path,
+    engine: &str,
+    report: &Value,
+) -> Result<(Vec<Candidate>, Vec<FlowStep>)> {
     let mut candidates = Vec::new();
+    let mut flows = Vec::new();
     let mut seen = BTreeSet::new();
-    let mut append = |path: &str, line: i64, rule: &str, evidence: &Value| -> Result<()> {
-        if rule.is_empty() || rule.len() > 300 {
-            return refuse("invalid rule id");
-        }
-        let path = normalize_path(path)?;
-        let blob = git::blob(repo, "HEAD", &path)?;
-        let mode = git::text(repo, &["ls-tree", "HEAD", "--", &path])?;
-        if !mode.starts_with("100644 ") && !mode.starts_with("100755 ") {
-            return refuse("source path is not a regular tracked file");
-        }
-        // Avoid accidentally attributing a static finding to a changed/dirty blob.
-        let actual = git::text(repo, &["hash-object", &path])?;
-        if actual != blob {
-            return refuse("source blob mismatched checkout");
-        }
-        let bytes = fs::read(repo.join(&path)).map_err(|e| e.to_string())?;
-        if bytes.split(|b| *b == b'\n').count() < line as usize {
-            return refuse("finding outside source file");
-        }
-        let logical_key = digest::sha256(format!("{engine}\0{rule}\0{path}\0{line}").as_bytes());
-        let evidence = evidence.canonical();
-        let id = digest::sha256(format!("{logical_key}\0{blob}\0{evidence}").as_bytes());
-        if !seen.insert(id.clone()) {
-            return refuse("duplicate candidate");
-        }
-        candidates.push(Candidate {
-            id,
-            logical_key,
-            path,
-            blob,
-            line,
-            rule: rule.to_owned(),
-            evidence,
-        });
-        Ok(())
-    };
+    let mut cache = BTreeMap::new();
     match engine {
         "codeql" => {
             if report.get("version")?.str()? != "2.1.0" {
@@ -129,7 +145,62 @@ fn rows_from_report(repo: &Path, engine: &str, report: &Value) -> Result<Vec<Can
                 let phys = location.get("physicalLocation")?;
                 let path = phys.get("artifactLocation")?.get("uri")?.str()?;
                 let lineno = line(phys.get("region")?.get("startLine")?)?;
-                append(path, lineno, rule, result)?;
+                let (path, blob) = source_anchor(repo, &mut cache, path, lineno)?;
+                if rule.is_empty() || rule.len() > 300 {
+                    return refuse("invalid rule id");
+                }
+                let logical_key =
+                    digest::sha256(format!("{engine}\0{rule}\0{path}\0{lineno}").as_bytes());
+                let evidence = result.canonical();
+                let id = digest::sha256(format!("{logical_key}\0{blob}\0{evidence}").as_bytes());
+                if !seen.insert(id.clone()) {
+                    return refuse("duplicate candidate");
+                }
+                candidates.push(Candidate {
+                    id: id.clone(),
+                    logical_key,
+                    path,
+                    blob,
+                    line: lineno,
+                    rule: rule.to_owned(),
+                    evidence,
+                });
+                if let Some(codeflows) = result.entries()?.get("codeFlows") {
+                    for (flow_i, flow) in codeflows.array_ref()?.iter().enumerate() {
+                        if flow_i >= 32 {
+                            return refuse("too many CodeQL flows");
+                        }
+                        for (thread_i, thread) in
+                            flow.get("threadFlows")?.array_ref()?.iter().enumerate()
+                        {
+                            if thread_i >= 32 {
+                                return refuse("too many CodeQL thread flows");
+                            }
+                            for (step_i, step) in
+                                thread.get("locations")?.array_ref()?.iter().enumerate()
+                            {
+                                if step_i >= 256 {
+                                    return refuse("too many CodeQL flow steps");
+                                }
+                                let location = step.get("location")?.get("physicalLocation")?;
+                                let step_path =
+                                    location.get("artifactLocation")?.get("uri")?.str()?;
+                                let step_line = line(location.get("region")?.get("startLine")?)?;
+                                let (path, blob) =
+                                    source_anchor(repo, &mut cache, step_path, step_line)?;
+                                flows.push(FlowStep {
+                                    candidate_id: id.clone(),
+                                    flow_index: flow_i as i64,
+                                    thread_index: thread_i as i64,
+                                    step_index: step_i as i64,
+                                    path,
+                                    blob,
+                                    line: step_line,
+                                });
+                            }
+                        }
+                    }
+                }
             }
         }
         "semgrep" => {
@@ -142,23 +213,48 @@ fn rows_from_report(repo: &Path, engine: &str, report: &Value) -> Result<Vec<Can
                 let rule = result.get("check_id")?.str()?;
                 let path = result.get("path")?.str()?;
                 let lineno = line(result.get("start")?.get("line")?)?;
-                append(path, lineno, rule, result)?;
+                let (path, blob) = source_anchor(repo, &mut cache, path, lineno)?;
+                if rule.is_empty() || rule.len() > 300 {
+                    return refuse("invalid rule id");
+                }
+                let logical_key =
+                    digest::sha256(format!("{engine}\0{rule}\0{path}\0{lineno}").as_bytes());
+                let evidence = result.canonical();
+                let id = digest::sha256(format!("{logical_key}\0{blob}\0{evidence}").as_bytes());
+                if !seen.insert(id.clone()) {
+                    return refuse("duplicate candidate");
+                }
+                candidates.push(Candidate {
+                    id,
+                    logical_key,
+                    path,
+                    blob,
+                    line: lineno,
+                    rule: rule.to_owned(),
+                    evidence,
+                });
             }
         }
         _ => return refuse("unsupported scanner: expected codeql or semgrep"),
     }
-    if candidates.len() > 10_000 {
-        return refuse("candidate count limit exceeded");
+    if candidates.len() > 10_000 || flows.len() > 20_000 {
+        return refuse("candidate or flow step count limit exceeded");
     }
     candidates.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(candidates)
+    flows.sort_by(|a, b| {
+        (&a.candidate_id, a.flow_index, a.thread_index, a.step_index).cmp(&(
+            &b.candidate_id,
+            b.flow_index,
+            b.thread_index,
+            b.step_index,
+        ))
+    });
+    Ok((candidates, flows))
 }
 
-fn read_expected(
-    repo: &Path,
-    report_path: &Path,
-    engine: &str,
-) -> Result<(String, String, String, Vec<Candidate>)> {
+type Expected = (String, String, String, Vec<Candidate>, Vec<FlowStep>);
+
+fn read_expected(repo: &Path, report_path: &Path, engine: &str) -> Result<Expected> {
     git::clean(repo)?;
     let commit = git::rev(repo, "HEAD")?;
     let contents = fs::read(report_path).map_err(|e| e.to_string())?;
@@ -167,19 +263,19 @@ fn read_expected(
     }
     let hash = digest::sha256(&contents);
     let val = json::parse(&contents)?;
-    let rows = rows_from_report(repo, engine, &val)?;
+    let (rows, flows) = rows_from_report(repo, engine, &val)?;
     let run = digest::sha256(format!("relgit-security-v1\0{commit}\0{hash}\0{engine}").as_bytes());
-    Ok((run, commit, hash, rows))
+    Ok((run, commit, hash, rows, flows))
 }
 
 pub fn execute(repo: &Path, report: &Path, db: &Db, engine: &str, audit: bool) -> Result<Value> {
-    let (run_id, commit, report_sha, candidates) = read_expected(repo, report, engine)?;
+    let (run_id, commit, report_sha, candidates, flows) = read_expected(repo, report, engine)?;
     if !audit {
         db.exec(SCHEMA)?;
         db.transaction(|db| {
-            db.execute("INSERT INTO security_ingest_run VALUES(?1,?2,?3,?4,?5,'UNVERIFIED_STATIC_CANDIDATES')", &[
+            db.execute("INSERT INTO security_ingest_run VALUES(?1,?2,?3,?4,?5,?6,'UNVERIFIED_STATIC_CANDIDATES')", &[
                 Param::Text(&run_id), Param::Text(&commit), Param::Text(&report_sha),
-                Param::Text(engine), Param::Integer(candidates.len() as i64),
+                Param::Text(engine), Param::Integer(candidates.len() as i64), Param::Integer(flows.len() as i64),
             ])?;
             for c in &candidates {
                 db.execute("INSERT INTO security_ingest_candidate VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", &[
@@ -188,15 +284,24 @@ pub fn execute(repo: &Path, report: &Path, db: &Db, engine: &str, audit: bool) -
                     Param::Text(&c.rule), Param::Text(&c.evidence),
                 ])?;
             }
+            for step in &flows {
+                db.execute("INSERT INTO security_ingest_flow_step VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", &[
+                    Param::Text(&run_id), Param::Text(&step.candidate_id),
+                    Param::Integer(step.flow_index), Param::Integer(step.thread_index),
+                    Param::Integer(step.step_index), Param::Text(&step.path),
+                    Param::Text(&step.blob), Param::Integer(step.line),
+                ])?;
+            }
             Ok(())
         })?;
     } else {
-        let runs = db.query("SELECT source_commit,report_sha256,engine,candidate_count,status FROM security_ingest_run WHERE run_id=?", &[Param::Text(&run_id)])?;
+        let runs = db.query("SELECT source_commit,report_sha256,engine,candidate_count,flow_step_count,status FROM security_ingest_run WHERE run_id=?", &[Param::Text(&run_id)])?;
         let expected = vec![
             Some(commit.clone()),
             Some(report_sha.clone()),
             Some(engine.to_owned()),
             Some(candidates.len().to_string()),
+            Some(flows.len().to_string()),
             Some("UNVERIFIED_STATIC_CANDIDATES".into()),
         ];
         if runs != vec![expected] {
@@ -220,6 +325,24 @@ pub fn execute(repo: &Path, report: &Path, db: &Db, engine: &str, audit: bool) -
         if stored != reconstructed {
             return refuse("candidate evidence differs from independent replay");
         }
+        let stored_flows = db.query("SELECT candidate_id,flow_index,thread_index,step_index,source_path,source_blob,line FROM security_ingest_flow_step WHERE run_id=? ORDER BY candidate_id,flow_index,thread_index,step_index", &[Param::Text(&run_id)])?;
+        let expected_flows = flows
+            .iter()
+            .map(|s| {
+                vec![
+                    Some(s.candidate_id.clone()),
+                    Some(s.flow_index.to_string()),
+                    Some(s.thread_index.to_string()),
+                    Some(s.step_index.to_string()),
+                    Some(s.path.clone()),
+                    Some(s.blob.clone()),
+                    Some(s.line.to_string()),
+                ]
+            })
+            .collect::<Vec<_>>();
+        if stored_flows != expected_flows {
+            return refuse("flow evidence differs from independent replay");
+        }
         db.foreign_keys_valid()?;
     }
     Ok(obj(&[
@@ -229,6 +352,7 @@ pub fn execute(repo: &Path, report: &Path, db: &Db, engine: &str, audit: bool) -
         ("report_sha256", Value::string(report_sha)),
         ("engine", Value::string(engine)),
         ("candidate_count", Value::number(candidates.len())),
+        ("flow_step_count", Value::number(flows.len())),
         ("status", Value::string("UNVERIFIED_STATIC_CANDIDATES")),
         ("independently_replayed", Value::Bool(audit)),
     ]))

@@ -1,0 +1,52 @@
+name: Whole Linux Git inventory and partition integrity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/kernel-whole-inventory.yml'
+      - 'core/src/kernel.rs'
+      - 'core/src/kernel_coverage.rs'
+      - 'core/src/lib.rs'
+      - 'core/src/bin/excession.rs'
+      - 'tests/kernel_partition_probe.py'
+      - 'docs/LINUX_WHOLE_SOURCE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory-and-partition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native Excession
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Pin Linux v6.12 tree, sparse RTC checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --sparse --branch v6.12 \
+            https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
+          git -C "$RUNNER_TEMP/linux" sparse-checkout set drivers/rtc
+          test "$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)" = "adc218676eef25575469234709c2d87185ca223a"
+      - name: Audit independent full Git inventory and bounded real partition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/kernel_partition_probe.py \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --linux "$RUNNER_TEMP/linux" \
+            --out "$RUNNER_TEMP/kernel-source-inventory.json"
+          cat "$RUNNER_TEMP/kernel-source-inventory.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve compact acceptance record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-kernel-whole-inventory
+          path: ${{ runner.temp }}/kernel-source-inventory.json
+          if-no-files-found: warn
+          retention-days: 7

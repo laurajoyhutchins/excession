@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 LINUX_COMMIT = "adc218676eef25575469234709c2d87185ca223a"
-SEED = "scripts.gdb.linux.tasks"
+SEED = "linux.tasks"
 SOURCE = "scripts/gdb/linux/tasks.py"
 
 
@@ -46,7 +46,8 @@ def main():
     db = out / "index.sqlite"
     indexed, index_seconds = run([
         binary, "index", "--repo", str(repo), "--db", str(db),
-        "--name", "linux", "--rev", commit, "--roots", "scripts/gdb"
+        "--name", "linux", "--rev", commit, "--roots", "scripts/gdb",
+        "--import-base", "scripts/gdb"
     ])
     indexed = json.loads(indexed)
     if indexed["source_commit"] != commit or indexed["status"] != "GIT_TREE_INDEXED":
@@ -84,7 +85,7 @@ def main():
     for item in ast.walk(tree):
         if isinstance(item, ast.ImportFrom) and item.module == "linux":
             expected.update(
-                "scripts.gdb.linux." + alias.name
+                "linux." + alias.name
                 for alias in item.names if alias.name != "*"
             )
     with sqlite3.connect(db) as connection:
@@ -104,12 +105,17 @@ def main():
         c_files = connection.execute(
             "SELECT COUNT(*) FROM tree_entry WHERE kind='blob' AND path LIKE '%.c'"
         ).fetchone()[0]
+    if expected - observed:
+        raise AssertionError(f"Unresolved direct imports: {sorted(expected - observed)}")
+    if len(manifest["entries"]) < 3:
+        raise AssertionError("View did not include the known dependent modules")
     result = {
         "target": "torvalds/linux v6.12",
         "source_commit": commit,
         "source_tree": indexed["source_tree"],
         "focused_source": SOURCE,
         "index_roots": ["scripts/gdb"],
+        "python_import_base": "scripts/gdb",
         "timings_seconds": {
             "index": index_seconds,
             "view_deps": project_seconds,
@@ -128,7 +134,7 @@ def main():
         "known_imports_missing_from_index": sorted(expected - observed),
         "limitations": [
             "No C or Kbuild/Kconfig semantic relationships are indexed.",
-            "Python names are currently derived from Git paths rather than sys.path roots.",
+            "Python imports are resolved relative to the explicit --import-base.",
             "A matching Git object and view replay do not establish executable equivalence."
         ]
     }

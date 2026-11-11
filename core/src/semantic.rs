@@ -4,7 +4,7 @@
 use crate::adapter;
 use crate::digest;
 use crate::git::{self, Entry};
-use crate::index::module_name;
+use crate::index::module_name_with_import_base;
 use crate::json::Value;
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
@@ -133,6 +133,7 @@ pub fn index_sources(
     commit: &str,
     entries: &[Entry],
     roots: &[&str],
+    import_base: Option<&str>,
 ) -> Result<()> {
     let mut modules = BTreeMap::new();
     let mut files = BTreeMap::new();
@@ -150,7 +151,7 @@ pub fn index_sources(
         if e.kind != "blob" || !matches!(e.mode.as_str(), "100644" | "100755") {
             continue;
         }
-        if let Some((name, _)) = module_name(&e.path, roots) {
+        if let Some((name, _)) = module_name_with_import_base(&e.path, roots, import_base) {
             if modules.insert(name.clone(), e.path.clone()).is_some() {
                 return refuse("duplicate logical module identity");
             }

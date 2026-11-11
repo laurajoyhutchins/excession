@@ -434,7 +434,7 @@ fn execute(args: &[String]) -> Result<Response> {
             Ok(Response::Bytes(Vec::new()))
         }
         [top, tail @ ..] if top == "index" => {
-            let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots"])?;
+            let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots", "import-base"])?;
             let roots = opt
                 .get_or("roots", "src,tests")
                 .split(',')
@@ -446,14 +446,26 @@ fn execute(args: &[String]) -> Result<Response> {
             let repo = opt.path("repo");
             let db = Db::open(opt.path("db"))?;
             let rev = opt.get_or("rev", "HEAD");
-            let id = index::index_revision_with_roots(
-                &db,
-                repo,
-                opt.get("name"),
-                rev,
-                "local-checkout",
-                &roots,
-            )?;
+            let id = if let Some(import_base) = opt.0.get("import-base") {
+                index::index_revision_with_import_base(
+                    &db,
+                    repo,
+                    opt.get("name"),
+                    rev,
+                    "local-checkout",
+                    &roots,
+                    import_base,
+                )?
+            } else {
+                index::index_revision_with_roots(
+                    &db,
+                    repo,
+                    opt.get("name"),
+                    rev,
+                    "local-checkout",
+                    &roots,
+                )?
+            };
             let commit = git::rev(repo, rev)?;
             let tree = index::reconstruct_tree(&db, id, &commit)?;
             Ok(json(excession::json::obj(&[

@@ -25,7 +25,7 @@ pub fn index_revision_for_evidence(
     commit: &str,
     provenance: &str,
 ) -> Result<i64> {
-    index_revision_inner(db, root, name, commit, provenance, &["h11", "tests"], false)
+    index_revision_inner(db, root, name, commit, provenance, &["h11", "tests"], false, None)
 }
 
 pub fn index_revision_with_roots(
@@ -36,7 +36,26 @@ pub fn index_revision_with_roots(
     provenance: &str,
     roots: &[&str],
 ) -> Result<i64> {
-    index_revision_inner(db, root, name, commit, provenance, roots, true)
+    index_revision_inner(db, root, name, commit, provenance, roots, true, None)
+}
+
+/// Resolve Python imports relative to a declared source root, without changing
+/// the underlying Git paths or blob identities.
+pub fn index_revision_with_import_base(
+    db: &Db,
+    root: &Path,
+    name: &str,
+    commit: &str,
+    provenance: &str,
+    roots: &[&str],
+    import_base: &str,
+) -> Result<i64> {
+    git::validate_path(import_base)?;
+    let prefix = format!("{import_base}/");
+    if roots.iter().any(|root| *root != import_base && !root.starts_with(&prefix)) {
+        return refuse("every module root must be inside --import-base");
+    }
+    index_revision_inner(db, root, name, commit, provenance, roots, true, Some(import_base))
 }
 
 fn index_revision_inner(
@@ -47,6 +66,7 @@ fn index_revision_inner(
     provenance: &str,
     roots: &[&str],
     include_semantics: bool,
+    import_base: Option<&str>,
 ) -> Result<i64> {
     git::clean(root)?;
     let commit = git::rev(root, commit)?;
@@ -71,7 +91,7 @@ fn index_revision_inner(
         for e in &entries {
             db.execute("INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",&[Param::Integer(id),Param::Text(&e.oid),Param::Text(&e.kind)])?;
             db.execute("INSERT OR IGNORE INTO tree_entry(repo_id,commit_oid,path,mode,kind,oid) VALUES(?,?,?,?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&e.path),Param::Text(&e.mode),Param::Text(&e.kind),Param::Text(&e.oid)])?;
-            if e.kind=="blob" && let Some((module,is_test))=module_name(&e.path,roots) {
+            if e.kind=="blob" && let Some((module,is_test))=module_name_with_import_base(&e.path,roots,import_base) {
                 db.execute("INSERT OR IGNORE INTO module(repo_id,commit_oid,name,path,blob_oid,is_test) VALUES(?,?,?,?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&module),Param::Text(&e.path),Param::Text(&e.oid),Param::Integer(i64::from(is_test))])?;
             }
         }
@@ -81,7 +101,7 @@ fn index_revision_inner(
         let computed=reconstruct_tree(db,id,&commit)?;
         if computed!=tree{return refuse(format!("Git/SQLite tree mismatch: expected {tree}, got {computed}"));}
         if include_semantics {
-            crate::semantic::index_sources(db,id,root,&commit,&entries,roots)?;
+            crate::semantic::index_sources(db,id,root,&commit,&entries,roots,import_base)?;
         }
         db.foreign_keys_valid()?;
         Ok(id)
@@ -124,6 +144,21 @@ pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
         return Some((name.to_owned(), is_test));
     }
     None
+}
+
+/// Map physical Git paths to Python's sys.path-relative module names.
+/// The default preserves established repository-qualified identities.
+pub fn module_name_with_import_base(
+    path: &str,
+    roots: &[&str],
+    import_base: Option<&str>,
+) -> Option<(String, bool)> {
+    let (name, is_test) = module_name(path, roots)?;
+    let Some(import_base) = import_base else {
+        return Some((name, is_test));
+    };
+    let prefix = format!("{}.", import_base.replace('/', "."));
+    Some((name.strip_prefix(&prefix)?.to_owned(), is_test))
 }
 
 #[derive(Clone, Debug)]
@@ -302,4 +337,25 @@ pub fn changed_paths(db: &Db, repo: i64, old: &str, new: &str) -> Result<Vec<Fil
             if x == y { None } else { Some((p, x, y)) }
         })
         .collect())
+}
+
+#[cfg(test)]
+mod import_base_tests {
+    use super::*;
+
+    #[test]
+    fn git_paths_remain_distinct_from_python_import_names() {
+        let path = "scripts/gdb/linux/tasks.py";
+        let roots = &["scripts/gdb"];
+        assert_eq!(module_name(path, roots).unwrap().0, "scripts.gdb.linux.tasks");
+        assert_eq!(
+            module_name_with_import_base(path, roots, Some("scripts/gdb")).unwrap().0,
+            "linux.tasks"
+        );
+        assert_eq!(
+            module_name_with_import_base("scripts/gdb/linux/__init__.py", roots, Some("scripts/gdb")).unwrap().0,
+            "linux"
+        );
+        assert!(module_name_with_import_base("scripts/other/task.py", roots, Some("scripts/gdb")).is_none());
+    }
 }

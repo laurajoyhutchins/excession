@@ -139,9 +139,9 @@ observation. Missing imports are never treated as evidence of no dependency.
   nearest `go.mod`. All tracked non-test `.go` package files are candidates;
   build constraints, workspaces, vendoring, generated files and CGO are not
   evaluated.
-- **Rust:** direct `crate::foo` import paths matched to a unique local
-  `src/foo.rs` or `src/foo/mod.rs` when a crate root is included. No
-  `mod` validation, macros, cfg variants, or Cargo build dependencies.
+- **Rust:** no handcrafted resolver. Source syntax remains observable, but
+  only rust-analyzer SCIP is used for resolved Rust symbols/references.
+  This avoids guessing `crate::` paths, macro expansions or module ownership.
 
 A candidate edge means only that a **plausible tracked path** matches a parsed
 import. Native compiler resolution and complete build graphs remain separate

@@ -48,16 +48,20 @@ def export(repo, build, archive_relative, archiver):
     archive_members = output.stdout.decode("utf-8").splitlines()
     if not archive_members or len(archive_members) > MAX_MEMBERS:
         raise ValueError("archive member count unsupported")
-    if len(set(archive_members)) != len(archive_members):
-        raise ValueError("duplicate archive member identity")
     matcher = producer.re.compile(producer._LINE_PATTERN)
     members = []
-    for name in archive_members:
-        if not name.endswith(".o") or name.startswith("/") or "\\" in name:
+    seen = set()
+    for raw_name in archive_members:
+        if not raw_name.endswith(".o") or "\\" in raw_name:
             raise ValueError("unsupported archive member name")
-        if any(part in ("", ".", "..") for part in name.split("/")):
-            raise ValueError("archive member traversal")
-        object_path = inside(build, build / name)
+        # GNU ar reports absolute paths for thin archives when the archive
+        # argument is absolute. This is normal Kbuild behavior, not traversal.
+        object_path = inside(build, Path(raw_name) if Path(raw_name).is_absolute()
+                             else build / raw_name)
+        name = object_path.relative_to(build).as_posix()
+        if any(part in ("", ".", "..") for part in name.split("/")) or name in seen:
+            raise ValueError("unsafe or duplicate normalized archive member")
+        seen.add(name)
         cmd = inside(build, Path(producer.to_cmdfile(str(object_path))))
         member = {"object": name,
                   "object_sha256": digest(object_path) if object_path.is_file() else None,

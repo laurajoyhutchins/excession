@@ -1,7 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, index, projection, refuse, security_ingest, views};
+use excession::{Result, git, index, kernel, projection, refuse, security_ingest, views};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -16,6 +16,7 @@ const HELP: &str = r#"Excession | Git-authenticated repository exploration and s
 
 Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
+  excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
   excession view deps --db DB --name NAME --rev REV --seed MODULE
   excession view security --db DB --repo REPO --run RUN_ID
   excession view compose --repo REPO --op union|intersection|difference --left JSON --right JSON
@@ -417,7 +418,7 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse"
+                    "view" | "security" | "inspect" | "index" | "browse" | "kernel"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -428,6 +429,14 @@ fn execute(args: &[String]) -> Result<Response> {
                 && !sub.is_empty() =>
         {
             Ok(Response::Message(HELP.to_owned()))
+        }
+        [top, sub, tail @ ..] if top == "kernel" => {
+            if sub != "scan" {
+                return refuse(format!("unknown kernel command: {sub}"));
+            }
+            let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
+            let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+            Ok(json(kernel::scan(opt.path("repo"), opt.get_or("rev", "HEAD"), &roots)?))
         }
         [top, tail @ ..] if top == "research" => {
             research::run(tail)?;

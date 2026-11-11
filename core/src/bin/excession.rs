@@ -1,7 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, index, projection, refuse, security_ingest, syntax, views};
+use excession::{Result, git, graph_baseline, index, projection, refuse, security_ingest, syntax, views};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -20,6 +20,7 @@ Usage:
   excession syntax audit --repo REPO --report SAVED_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
   excession view paths --db DB --name NAME --rev REV --seed MODULE --role ROLE
+  excession view graph --db DB --name NAME --rev REV --seed MODULE --kind KIND
   excession view security --db DB --repo REPO --run RUN_ID
   excession view compose --repo REPO --op union|intersection|difference --left JSON --right JSON
   excession view select --repo REPO --manifest JSON --axis role|source-prefix|virtual-prefix --value TEXT
@@ -127,6 +128,17 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             } else {
                 plan
             }
+        }
+        ("graph", false) => {
+            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "kind"], &[])?;
+            let db = Db::open(opt.path("db"))?;
+            graph_baseline::paths(
+                &db,
+                opt.get("name"),
+                opt.get("rev"),
+                opt.get("seed"),
+                opt.get("kind"),
+            )?
         }
         ("paths", false) => {
             let opt = Options::parse(argv, &["db", "name", "rev", "seed", "role"], &[])?;

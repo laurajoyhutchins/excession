@@ -99,5 +99,11 @@ report replay *without* a full kernel build. **The test's constructed entry
 is not a Linux Kbuild-generated compilation command**, and it is not evidence
 that any kernel configuration was successfully built.
 
+The test additionally feeds a **synthetic `.cmd` fixture** for the pinned
+`scripts/mod/empty.c` through Linux's unmodified
+`gen_compile_commands.py`, then verifies that the generated `command`-form
+database is accepted by Excession and parsed by Clang. This is compatibility
+testing, **not evidence of a real Kbuild compilation**.
+
 For configuration-sensitive kernel C sources, use the upstream
 `gen_compile_commands.py` on real build outputs as shown above.

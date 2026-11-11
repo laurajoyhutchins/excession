@@ -12,6 +12,7 @@ import subprocess
 
 COMMIT = "adc218676eef25575469234709c2d87185ca223a"
 PATH = "tools/build/feature/test-hello.c"
+GEN_SOURCE = "scripts/mod/empty.c"
 
 
 def run(args, *, success=True):
@@ -73,6 +74,36 @@ def main():
     assert refusal.returncode != 0
     assert "trusted-local" in refusal.stderr
 
+    # Compatibility with the real Linux generator's command-string format.
+    # The .cmd record is a fixture; it is NOT evidence of a completed build.
+    out_build = output / "synthetic-kbuild"
+    out_build.mkdir(exist_ok=True)
+    source_file = repo / GEN_SOURCE
+    assert source_file.is_file()
+    (out_build / ".empty.o.cmd").write_text(
+        "savedcmd_empty.o := clang -c -o " +
+        str(out_build / "empty.o") + " " + str(source_file) + "\\n"
+    )
+    generated_db = output / "linux-generator-compile_commands.json"
+    generator = repo / "scripts/clang-tools/gen_compile_commands.py"
+    run(["python3", str(generator), "-d", str(out_build),
+         "-o", str(generated_db), str(out_build)])
+    generated_entries = json.loads(generated_db.read_text())
+    assert len(generated_entries) == 1
+    assert generated_entries[0]["file"] == str(source_file)
+    assert generated_entries[0]["command"].startswith("clang -c -o ")
+    generated_command = [
+        str(args.binary.resolve()), "kernel", "clang",
+        "--repo", str(repo), "--rev", COMMIT,
+        "--source", GEN_SOURCE, "--compile-db", str(generated_db),
+        "--compiler", "clang", "--trusted-local", "true"
+    ]
+    generated_result = json.loads(run(generated_command).stdout)
+    assert generated_result["source_commit"] == COMMIT
+    assert generated_result["observation"]["status"] == "CLANG_AST_OBSERVED_NOT_BUILD_VERIFIED"
+    assert generated_result["observation"]["compilation_database"]["path"] == str(generated_db)
+    assert generated_result["report_id"] == json.loads(run(generated_command).stdout)["report_id"]
+
     summary = {
         "source_commit": COMMIT,
         "source_path": PATH,
@@ -84,6 +115,10 @@ def main():
         "calls": len(obs["calls"]),
         "status": obs["status"],
         "provenance_note": "An existing Linux C feature test, NOT a kernel configuration build",
+        "native_generator_compatible": True,
+        "native_generator_fixture_source": GEN_SOURCE,
+        "native_generator_fixture_report_id": generated_result["report_id"],
+        "native_generator_fixture_kind": "synthetic .cmd for compatibility; NOT a kernel build",
     }
     (output / "clang-summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, indent=2, sort_keys=True))

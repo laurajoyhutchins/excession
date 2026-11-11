@@ -37,10 +37,10 @@ jobs:
           set -euo pipefail
           git clone --depth=1 --filter=blob:none --sparse --branch v6.12 \
             https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
-          git -C "$RUNNER_TEMP/linux" sparse-checkout set tools/build/feature
+          git -C "$RUNNER_TEMP/linux" sparse-checkout set tools/build/feature scripts/clang-tools scripts/mod
           test "$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)" = "adc218676eef25575469234709c2d87185ca223a"
           test -z "$(git -C "$RUNNER_TEMP/linux" status --porcelain)"
-      - name: Verify real Linux C source and Clang AST observations
+      - name: Verify real Linux C source, upstream generator format, and Clang AST observations
         shell: bash
         run: |
           set -euo pipefail

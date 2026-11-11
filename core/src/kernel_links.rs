@@ -5,7 +5,10 @@ use crate::json::{Value, obj};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn joined(base: &str, target: &str) -> Option<String> {
-    let mut parts = base.split('/').filter(|p| !p.is_empty()).collect::<Vec<_>>();
+    let mut parts = base
+        .split('/')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>();
     for piece in target.split('/') {
         match piece {
             "" | "." => (),
@@ -27,9 +30,7 @@ fn config_names(text: &str) -> BTreeSet<String> {
         if bytes[at..].starts_with(b"CONFIG_") {
             let start = at + 7;
             let mut end = start;
-            while end < bytes.len()
-                && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
-            {
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
                 end += 1;
             }
             if end > start {
@@ -91,10 +92,7 @@ fn append_path(
 
 /// Relations that are mechanically supported by matching names to paths in
 /// one pinned Git tree. Build-configuration semantics remain unresolved.
-pub fn derive(
-    sources: &[Value],
-    tracked: &BTreeMap<String, String>,
-) -> Result<Vec<Value>> {
+pub fn derive(sources: &[Value], tracked: &BTreeMap<String, String>) -> Result<Vec<Value>> {
     let mut symbols = BTreeMap::<String, Vec<(String, String)>>::new();
     for source in sources {
         let path = source.get("source_path")?.str()?;
@@ -113,7 +111,10 @@ pub fn derive(
     for source in sources {
         let path = source.get("source_path")?.str()?;
         let oid = source.get("source_blob")?.str()?;
-        let directory = path.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("");
+        let directory = path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or("");
         for fact in source.get("facts")?.array_ref()? {
             let kind = fact.get("kind")?.str()?;
             let target = fact.get("target")?.str()?;
@@ -136,7 +137,9 @@ pub fn derive(
                     )?;
                 }
                 "build_object" if target.ends_with(".o") => {
-                    let stem = target.strip_suffix(".o").ok_or("object suffix disappeared")?;
+                    let stem = target
+                        .strip_suffix(".o")
+                        .ok_or("object suffix disappeared")?;
                     append_path(
                         &mut edges,
                         tracked,
@@ -194,8 +197,14 @@ mod tests {
 
     #[test]
     fn normalizes_quote_includes_without_escaping_tree() {
-        assert_eq!(joined("drivers/rtc", "local.h").as_deref(), Some("drivers/rtc/local.h"));
-        assert_eq!(joined("drivers/rtc", "../base.h").as_deref(), Some("drivers/base.h"));
+        assert_eq!(
+            joined("drivers/rtc", "local.h").as_deref(),
+            Some("drivers/rtc/local.h")
+        );
+        assert_eq!(
+            joined("drivers/rtc", "../base.h").as_deref(),
+            Some("drivers/base.h")
+        );
         assert!(joined("", "../outside.h").is_none());
         assert!(joined("drivers", "x\\bad").is_none());
     }

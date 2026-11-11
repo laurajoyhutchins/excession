@@ -67,7 +67,8 @@ compiler-time working tree remained clean.
   `CMAKE_CONFIGURED` never means a target actually built successfully.
 - **Clang receipts:** verifies schema, canonical report SHA-256, source
   commit/tree/blob and the full compilation database SHA-256. Re-hashes
-  observed dependency files on import, refusing stale evidence.
+  the selected Clang executable, optional configuration file and observed
+  dependency files on import, refusing stale evidence.
 - **SQLite:** stores immutable graph snapshots, entities and typed
   relationships, with the edge's status and producing evidence receipt.
   Importing the same snapshot again reuses its identity.

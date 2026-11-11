@@ -340,6 +340,15 @@ fn execute(args: &[String]) -> Result<Response> {
     let opt = &parsed.options;
     match parsed.path.as_slice() {
         [top, sub] if top == "concepts" => {
+            if sub == "annotate-refactor" {
+                let db = Db::open(opt.path("db"))?;
+                return Ok(json(excession::concepts_analysis::annotate_refactor(
+                    &db,
+                    opt.get("name"),
+                    opt.get("rev"),
+                    opt.get("snapshot"),
+                )?));
+            }
             if sub == "review" {
                 let trusted = opt.get("trusted-local") == "true";
                 let db = Db::open(opt.path("db"))?;

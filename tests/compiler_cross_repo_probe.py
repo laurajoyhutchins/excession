@@ -85,7 +85,8 @@ def verify_case(case, repo, binary, output):
     assert any(d["repo_path"] == case["source"]
                for d in observation["dependencies"]), name
     assert all(len(d["sha256"]) == 64 for d in observation["dependencies"])
-    assert observation["effective_compiler"].endswith(case["compiler"]), name
+    assert "clang" in observation["compiler_version"].lower(), name
+    assert observation["effective_compiler"] == observation["effective_args"][0]
     if name == "fmt":
         assert any(c["callee"] == "foo" for c in observation["calls"]), (
             "the C++ call to foo should appear", observation["calls"]

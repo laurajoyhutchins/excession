@@ -97,7 +97,7 @@ fn validate_value(report: &Value, base: &Path) -> Result<()> {
     let mut unique = BTreeSet::new();
     for item in array(report, "artifacts")? {
         let path = string(item, "path")?;
-        if !unique.insert(path) {
+        if !unique.insert(path.to_owned()) {
             return refuse(format!("duplicate artifact path: {path}"));
         }
         let expected = artifact(base, path, string(item, "role")?, string(item, "media_type")?)?;
@@ -280,7 +280,7 @@ pub fn build_relational(directory: &Path) -> Result<std::path::PathBuf> {
     for workload in array(&summary, "workloads")? {
         let bundle = string(workload, "source_bundle")?;
         let source_bundle = artifact(directory, bundle, "source-bundle", "application/octet-stream")?;
-        if source_bundle["sha256"] != field(workload, "bundle_sha256")? {
+        if source_bundle["sha256"].as_str() != Some(string(workload, "bundle_sha256")?) {
             return refuse(format!("bundle digest does not match summary: {bundle}"));
         }
         artifacts.push(source_bundle);

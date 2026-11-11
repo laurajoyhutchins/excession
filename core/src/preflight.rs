@@ -49,7 +49,9 @@ fn source_path(value: &Value) -> Result<()> {
 
 fn digest(value: &Value, id: &str) -> Result<String> {
     let mut payload = value.entries()?.clone();
-    let claimed = payload.remove(id).ok_or("preflight: missing report digest")?;
+    let claimed = payload
+        .remove(id)
+        .ok_or("preflight: missing report digest")?;
     let asserted = bounded_string(&claimed, 64)?;
     // Compare against the canonical body, excluding the asserted digest.
     let calculated = Value::Object(payload).sha256();
@@ -63,8 +65,12 @@ fn status(source: &Value) -> Result<bool> {
     let state = source.get("status")?.str()?;
     if !matches!(
         state,
-        "PARSED" | "PARSED_WITH_ERRORS" | "UNSUPPORTED_LANGUAGE"
-            | "GRAMMAR_NOT_INSTALLED" | "PARSER_ERROR" | "RESOURCE_LIMIT"
+        "PARSED"
+            | "PARSED_WITH_ERRORS"
+            | "UNSUPPORTED_LANGUAGE"
+            | "GRAMMAR_NOT_INSTALLED"
+            | "PARSER_ERROR"
+            | "RESOURCE_LIMIT"
     ) {
         return refuse("preflight: unknown syntax status");
     }
@@ -80,7 +86,10 @@ fn structure(node: &Value, depth: usize, count: &mut usize) -> Result<()> {
         return refuse("preflight: structure exceeds depth or observation budget");
     }
     *count += 1;
-    keys(node, &["kind", "name", "line", "start_byte", "end_byte", "children"])?;
+    keys(
+        node,
+        &["kind", "name", "line", "start_byte", "end_byte", "children"],
+    )?;
     bounded_string(node.get("kind")?, 128)?;
     if node.get("name")?.str()?.len() > 1024 {
         return refuse("preflight: oversized symbol name");
@@ -98,13 +107,25 @@ fn structure(node: &Value, depth: usize, count: &mut usize) -> Result<()> {
 }
 
 fn source_record(source: &Value, roots: &BTreeSet<String>) -> Result<()> {
-    keys(source, &[
-        "source_path", "source_blob", "source_mode", "language", "status",
-        "structure", "imports", "diagnostics",
-    ])?;
+    keys(
+        source,
+        &[
+            "source_path",
+            "source_blob",
+            "source_mode",
+            "language",
+            "status",
+            "structure",
+            "imports",
+            "diagnostics",
+        ],
+    )?;
     let path = source.get("source_path")?.str()?;
     git::validate_path(path)?;
-    if !roots.iter().any(|r| path == r || path.starts_with(&format!("{r}/"))) {
+    if !roots
+        .iter()
+        .any(|r| path == r || path.starts_with(&format!("{r}/")))
+    {
         return refuse("preflight: source outside declared roots");
     }
     object_id(source.get("source_blob")?)?;
@@ -146,10 +167,21 @@ fn source_record(source: &Value, roots: &BTreeSet<String>) -> Result<()> {
 }
 
 pub fn syntax(value: &Value) -> Result<Value> {
-    keys(value, &[
-        "schema", "parser", "parser_version", "completeness", "source_commit",
-        "source_tree", "roots", "source_count", "sources", "report_id",
-    ])?;
+    keys(
+        value,
+        &[
+            "schema",
+            "parser",
+            "parser_version",
+            "completeness",
+            "source_commit",
+            "source_tree",
+            "roots",
+            "source_count",
+            "sources",
+            "report_id",
+        ],
+    )?;
     if value.get("schema")?.str()? != "excession.syntax-observations.v1"
         || value.get("parser")?.str()? != "tree-sitter-language-pack"
         || value.get("completeness")?.str()? != "CONSERVATIVE_SYNTAX_ONLY"
@@ -201,12 +233,23 @@ fn candidate_source(value: &Value) -> Result<()> {
 }
 
 pub fn resolution(value: &Value) -> Result<Value> {
-    keys(value, &[
-        "schema", "source_commit", "source_tree", "syntax_report_id",
-        "completeness", "candidate_count", "unresolved_count",
-        "candidate_edges", "unresolved_imports", "skipped_sources",
-        "metadata", "resolution_id",
-    ])?;
+    keys(
+        value,
+        &[
+            "schema",
+            "source_commit",
+            "source_tree",
+            "syntax_report_id",
+            "completeness",
+            "candidate_count",
+            "unresolved_count",
+            "candidate_edges",
+            "unresolved_imports",
+            "skipped_sources",
+            "metadata",
+            "resolution_id",
+        ],
+    )?;
     if value.get("schema")?.str()? != "excession.syntax-dependencies.v1"
         || value.get("completeness")?.str()? != "CONSERVATIVE_CANDIDATES_ONLY"
     {
@@ -224,25 +267,44 @@ pub fn resolution(value: &Value) -> Result<Value> {
         return refuse("preflight: inconsistent resolution counts");
     }
     for edge in edges {
-        keys(edge, &[
-            "source_path", "source_blob", "target_path", "target_blob",
-            "language", "specifier", "line", "resolution",
-        ])?;
+        keys(
+            edge,
+            &[
+                "source_path",
+                "source_blob",
+                "target_path",
+                "target_blob",
+                "language",
+                "specifier",
+                "line",
+                "resolution",
+            ],
+        )?;
         candidate_source(edge)?;
         source_path(edge.get("target_path")?)?;
         object_id(edge.get("target_blob")?)?;
         if !matches!(
             edge.get("resolution")?.str()?,
-            "RELATIVE_PATH_CANDIDATE" | "PYTHON_MODULE_CANDIDATE"
-                | "RUST_CRATE_PATH_CANDIDATE" | "GO_MODULE_PACKAGE_CANDIDATE"
+            "RELATIVE_PATH_CANDIDATE"
+                | "PYTHON_MODULE_CANDIDATE"
+                | "RUST_CRATE_PATH_CANDIDATE"
+                | "GO_MODULE_PACKAGE_CANDIDATE"
         ) {
             return refuse("preflight: unknown candidate resolution type");
         }
     }
     for item in unresolved {
-        keys(item, &[
-            "source_path", "source_blob", "language", "specifier", "line", "reason",
-        ])?;
+        keys(
+            item,
+            &[
+                "source_path",
+                "source_blob",
+                "language",
+                "specifier",
+                "line",
+                "reason",
+            ],
+        )?;
         candidate_source(item)?;
         bounded_string(item.get("reason")?, 128)?;
     }
@@ -324,16 +386,25 @@ mod tests {
     fn valid_shape_never_claims_git_authentication() {
         let report = valid_syntax();
         let result = syntax(&report).unwrap();
-        assert_eq!(result.get("status").unwrap().str().unwrap(), "SHAPE_AND_DIGEST_ONLY");
+        assert_eq!(
+            result.get("status").unwrap().str().unwrap(),
+            "SHAPE_AND_DIGEST_ONLY"
+        );
     }
 
     #[test]
     fn stale_digest_or_extra_field_refused_before_parsing() {
         let mut report = valid_syntax();
-        report.entries_mut().unwrap().insert("report_id".into(), Value::string("0".repeat(64)));
+        report
+            .entries_mut()
+            .unwrap()
+            .insert("report_id".into(), Value::string("0".repeat(64)));
         assert!(syntax(&report).is_err());
         let mut report = valid_syntax();
-        report.entries_mut().unwrap().insert("unexpected".into(), Value::string("extra"));
+        report
+            .entries_mut()
+            .unwrap()
+            .insert("unexpected".into(), Value::string("extra"));
         assert!(syntax(&report).is_err());
     }
 
@@ -341,12 +412,21 @@ mod tests {
     fn self_consistent_forgery_is_only_provisionally_valid() {
         let mut report = valid_syntax();
         let mut items = report.get("sources").unwrap().array_ref().unwrap().to_vec();
-        items[0].entries_mut().unwrap().insert("source_blob".into(), Value::string("f".repeat(40)));
-        report.entries_mut().unwrap().insert("sources".into(), Value::array(items));
+        items[0]
+            .entries_mut()
+            .unwrap()
+            .insert("source_blob".into(), Value::string("f".repeat(40)));
+        report
+            .entries_mut()
+            .unwrap()
+            .insert("sources".into(), Value::array(items));
         let mut payload = report.entries().unwrap().clone();
         payload.remove("report_id");
         let id = Value::Object(payload).sha256();
-        report.entries_mut().unwrap().insert("report_id".into(), Value::string(id));
+        report
+            .entries_mut()
+            .unwrap()
+            .insert("report_id".into(), Value::string(id));
         assert!(syntax(&report).is_ok()); // Only Git replay can reject the lie.
     }
 
@@ -354,8 +434,14 @@ mod tests {
     fn malformed_source_and_observations_refused() {
         let mut report = valid_syntax();
         let mut items = report.get("sources").unwrap().array_ref().unwrap().to_vec();
-        items[0].entries_mut().unwrap().insert("source_path".into(), Value::string("../escape"));
-        report.entries_mut().unwrap().insert("sources".into(), Value::array(items));
+        items[0]
+            .entries_mut()
+            .unwrap()
+            .insert("source_path".into(), Value::string("../escape"));
+        report
+            .entries_mut()
+            .unwrap()
+            .insert("sources".into(), Value::array(items));
         assert!(syntax(&report).is_err());
     }
 }

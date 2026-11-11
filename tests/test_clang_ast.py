@@ -61,6 +61,59 @@ class ClangDatabaseTests(unittest.TestCase):
                 clang.load_command(path / "compile_commands.json",
                                    (path / "unit.c").resolve())
 
+    @unittest.skipUnless(shutil.which("clang++"), "clang++ unavailable")
+    def test_clang_cpp_namespaces_methods_and_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            content = (
+                "namespace zoo {\\n"
+                "int twice(int n) { return n + n; }\\n"
+                "struct Pet { int feed() { return twice(2); } };\\n"
+                "}\\n"
+                "int main() { zoo::Pet p; return p.feed(); }\\n"
+            )
+            source = root / "pet.cc"
+            source.write_text(content)
+            blob = __import__("hashlib").sha1(
+                b"blob " + str(len(content.encode())).encode() + b"\\0" + content.encode()
+            ).hexdigest()
+            db = root / "compile_commands.json"
+            db.write_text(json.dumps([{
+                "directory": str(root), "file": "pet.cc",
+                "arguments": ["aarch64-linux-gnu-g++", "-std=c++17",
+                              "-c", "pet.cc", "-o", "pet.o"],
+            }]))
+            request = {
+                "trusted_local": True, "repo": str(root),
+                "source_path": "pet.cc", "source_blob": blob,
+                "compile_db": str(db), "compiler": "clang++", "config": None,
+            }
+            observation = clang.analyze(request)
+            self.assertEqual(observation["language"], "c++")
+            definitions = {s["qualified_name"] for s in observation["symbols"]
+                           if s["definition"]}
+            self.assertTrue({"zoo::twice", "zoo::Pet::feed", "main"}.issubset(definitions),
+                            definitions)
+            self.assertTrue(any(x["caller"] == "zoo::Pet::feed"
+                                and x["callee"] == "twice"
+                                for x in observation["calls"]), observation["calls"])
+            self.assertTrue(any(x["caller"] == "main"
+                                and x["callee"] == "feed"
+                                for x in observation["calls"]), observation["calls"])
+            self.assertEqual(observation["calls"], clang.analyze(request)["calls"])
+
+    def test_arbitrary_cross_compiler_name_is_only_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "sample.c").write_text("int a;\\n")
+            db = root / "compile_commands.json"
+            db.write_text(json.dumps([{
+                "directory": str(root), "file": "sample.c",
+                "arguments": ["riscv64-linux-gnu-gcc", "-c", "sample.c"]
+            }]))
+            _, _, _, argv = clang.load_command(db, (root / "sample.c").resolve())
+            self.assertEqual(argv[0], "riscv64-linux-gnu-gcc")
+
     @unittest.skipUnless(shutil.which("clang"), "clang unavailable")
     def test_clang_real_ast_and_header_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:

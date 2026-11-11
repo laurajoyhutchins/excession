@@ -21,12 +21,12 @@ a complete hermetic OS image.
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
-python3 -m pip install -r requirements/research.txt
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements/locks/research-linux-cp313-x86_64.txt
 make check
 make go-check                  # optional Go research adapter
 ```
 
-The Rust dependency graph is empty; `core/Cargo.lock` remains committed, and
+The Rust dependencies for benchmark reporting are pinned; `core/Cargo.lock` remains committed, and
 Cargo commands use both `--locked` and `--offline`. The JS adapters import
 `typescript` from the repository's locked `node_modules`, never from a
 machine-global npm installation. `npm ci` verifies the tarball integrity
@@ -34,12 +34,13 @@ recorded in `package-lock.json`.
 
 The direct Python integration suite uses `unittest`, but Rust adversarial
 checks run a Python research probe that imports pytest. Install the pinned
-`requirements/research.txt` before `make check` (as CI does). The optional Tree-sitter adapter is installed
+`requirements/locks/research-linux-cp313-x86_64.txt` before `make check` (as CI does). The optional Tree-sitter adapter is installed
 separately:
 
 ```sh
-python3 -m pip install -r requirements/syntax.txt
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements/locks/syntax-linux-cp313-x86_64.txt
 python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java", "python", "javascript", "typescript"])'
+python3 tools/grammar_artifacts.py verify
 ```
 
 Do not download grammars during analysis. Grammar caches remain local and
@@ -47,6 +48,14 @@ are not source-controlled. Python version pins are not wheel-hash locks, and
 a package version alone does not authenticate grammar binaries. Store
 trusted parser artifacts and their hashes externally when the exact compiled
 grammar bytes must be reproduced.
+
+For CI, the reviewed wheel SHA-256 lock is enforced with `--require-hashes`
+and `--only-binary` on CPython 3.13 Linux x86_64. Other operating systems
+need independent locks. After trusted grammar prefetch,
+`tools/grammar_artifacts.py record` inventories the native grammar bytes;
+`verify` requires the committed hash manifest offline, with no download.
+`make native-preflight` records loaded SQLite/OpenSSL versions and their
+SHA-256 digests. This is a native ABI observation, not an immutable OS lock.
 
 Run `make rust-check`, `make python-check`, or `make node-check` for a
 focused loop; `make check` runs those checks together. For JUnit XML reports,

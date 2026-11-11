@@ -1,0 +1,4 @@
+# Optional PHP interpreter via mise's PHP registry backend.
+# Installation may require platform-specific libraries or build tools.
+[tools]
+php = "8.4"

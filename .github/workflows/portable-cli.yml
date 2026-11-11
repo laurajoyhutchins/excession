@@ -1,0 +1,156 @@
+name: Portable CLI
+
+on:
+  pull_request:
+    paths:
+      - "core/**"
+      - "tools/package_release.py"
+      - "tools/test_portable_archive.py"
+      - "docs/PORTABILITY.md"
+      - ".github/workflows/portable-cli.yml"
+      - "package-lock.json"
+      - "rust-toolchain.toml"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  portability:
+    name: Build and smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # Fast Linux smoke on ordinary PRs; full matrix on labeled PRs/tags/manual runs.
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:full-portability') && '[{"os":"ubuntu-24.04","executable":"excession"}]' || '[{"os":"ubuntu-24.04","executable":"excession"},{"os":"ubuntu-24.04-arm","executable":"excession"},{"os":"macos-15","executable":"excession"},{"os":"macos-15-intel","executable":"excession"},{"os":"windows-2025","executable":"excession.exe"}]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select pinned Rust toolchain
+        run: rustup show active-toolchain
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install locked TypeScript sidecar
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Fetch pinned Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Check digests, bundled SQLite and capability reporting
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib
+      - name: Installed CLI test in independent checkout
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test portability
+      - name: Build release executable
+        run: cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
+      - name: Check dynamic libraries on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            ! ldd core/target/release/excession | grep -E 'libsqlite3|libcrypto'
+          else
+            ! otool -L core/target/release/excession | grep -E 'libsqlite3|libcrypto'
+          fi
+      - name: Construct portable archive and SHA-256 manifest
+        run: python tools/package_release.py --binary core/target/release/${{ matrix.executable }} --output dist
+      - name: Test extracted archive without repository-side dependencies
+        run: python tools/test_portable_archive.py dist
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: excession-${{ runner.os }}-${{ runner.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  musl:
+    name: Minimal Linux (x86-64 musl)
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-portability')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install musl compiler and Rust target
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Compile statically for musl
+        shell: bash
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --manifest-path core/Cargo.toml
+          cargo build --offline --locked --release --manifest-path core/Cargo.toml --target x86_64-unknown-linux-musl --bin excession
+          file core/target/x86_64-unknown-linux-musl/release/excession
+      - name: Package musl CLI
+        run: python tools/package_release.py --binary core/target/x86_64-unknown-linux-musl/release/excession --target x86_64-unknown-linux-musl --output dist
+      - name: Check runnable archive on Ubuntu
+        run: python tools/test_portable_archive.py dist
+      - name: Check in minimal network-isolated Alpine
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none -v "$PWD/dist:/archives:ro" alpine:3.21 sh -ec '
+            mkdir -p /tmp/excession-dist
+            tar -xzf /archives/excession-v*-x86_64-unknown-linux-musl.tar.gz -C /tmp/excession-dist
+            /tmp/excession-dist/excession/excession --version
+            /tmp/excession-dist/excession/excession doctor --json > /tmp/doctor.json
+            grep -q "BUNDLED" /tmp/doctor.json
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: excession-musl-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [portability, musl]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: excession-*
+          merge-multiple: true
+          path: dist
+      - name: Publish archives and their SHA-256 checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
+          fi

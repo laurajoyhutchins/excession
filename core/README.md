@@ -1,11 +1,26 @@
 # Excession Rust core
 
-Git is authoritative for source objects; SQLite stores indexed relations and
-scoped evidence. This crate's package and library are both named `excession`.
+Git is authoritative for source objects; bundled SQLite via rusqlite stores
+indexed relations and scoped evidence. This crate's package and library are both named `excession`.
 The **one** binary is `excession`. It exposes read-only projection operations,
 scanner ingestion and independent audit, and a `research` subgroup for exact
 historical reproductions. The Rust engine does not claim to infer arbitrary
 language semantics or confirm exploitable vulnerabilities.
+
+## Local capabilities
+
+`excession doctor` shows detected Git, language runtimes, scanners and the
+bundled SQLite version without fetching toolchains. `excession doctor --json`
+emits the versioned `excession.capabilities.v1` report. Parser presence is
+not evidence of complete dependency resolution.
+
+## Optional multi-language parsing
+
+`excession syntax scan` uses preinstalled Tree-sitter grammar-pack parsers to
+produce Git-authenticated structural and import observations; `syntax audit`
+independently re-parses and compares those observations. No external source
+code is executed and no unverified syntax fact becomes a dependency or proof.
+See [syntax parser documentation](../docs/SYNTAX_PARSERS.md).
 
 ## Run the checks
 
@@ -17,6 +32,11 @@ cargo fmt --manifest-path core/Cargo.toml -- --check
 cargo clippy --offline --manifest-path core/Cargo.toml --all-targets -- -D warnings
 python3 -m unittest discover -s tests -v
 ```
+
+To collect CI-compatible JUnit XML, run `make junit` from the repository root
+with `cargo-nextest` 0.9.151 and `pytest` 9.0.2 installed. The reports are
+written to `core/target/nextest/ci/junit.xml` and
+`test-results/python.xml`; the tests and assertions are unchanged.
 
 Historical differential checks remain available from inside `core/`:
 

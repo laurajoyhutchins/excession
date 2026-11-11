@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/semantic/semantic-observations.v1.schema.json",
+  "title": "Excession semantic observations v1",
+  "description": "Language-neutral, source-bound semantic relationship candidates. Schema validation is not source authentication or dependency closure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "report_id",
+    "source_commit",
+    "source_tree",
+    "syntax_report_id",
+    "resolution_report_id",
+    "completeness",
+    "record_count",
+    "gap_count",
+    "records",
+    "gaps"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.semantic-observations.v1"
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/oid"
+    },
+    "syntax_report_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "resolution_report_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "completeness": {
+      "const": "PARTIAL_CANDIDATES_ONLY"
+    },
+    "record_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "gap_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 500
+    },
+    "records": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/observation"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "$ref": "#/$defs/gap"
+      }
+    }
+  },
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "blob",
+        "line",
+        "language"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "blob": {
+          "$ref": "#/$defs/oid"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9_+.-]+$"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "blob"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "blob": {
+          "$ref": "#/$defs/oid"
+        }
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "method",
+        "rule"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "CANDIDATE",
+            "UNRESOLVED"
+          ]
+        },
+        "method": {
+          "const": "SYNTAX_RESOLUTION"
+        },
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "kind",
+        "subject",
+        "specifier",
+        "assessment",
+        "condition_evaluation"
+      ],
+      "properties": {
+        "observation_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kind": {
+          "enum": [
+            "DEFINES",
+            "REFERENCES",
+            "IMPORTS",
+            "CALLS",
+            "IMPLEMENTS",
+            "GENERATES",
+            "DEPENDS_ON",
+            "CONDITIONALLY_DEPENDS_ON"
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/source"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "specifier": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096
+        },
+        "assessment": {
+          "$ref": "#/$defs/assessment"
+        },
+        "condition_evaluation": {
+          "const": "NOT_EVALUATED"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "assessment": {
+              "properties": {
+                "status": {
+                  "const": "CANDIDATE"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          },
+          "required": [
+            "target"
+          ]
+        },
+        {
+          "properties": {
+            "assessment": {
+              "properties": {
+                "status": {
+                  "const": "UNRESOLVED"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            }
+          },
+          "not": {
+            "required": [
+              "target"
+            ]
+          }
+        }
+      ]
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_path",
+        "status"
+      ],
+      "properties": {
+        "source_path": {
+          "$ref": "#/$defs/path"
+        },
+        "status": {
+          "enum": [
+            "UNSUPPORTED_LANGUAGE",
+            "GRAMMAR_NOT_INSTALLED",
+            "PARSER_ERROR",
+            "RESOURCE_LIMIT",
+            "NO_RESOLVER_FOR_LANGUAGE",
+            "PARSED_WITH_ERRORS"
+          ]
+        }
+      }
+    }
+  }
+}

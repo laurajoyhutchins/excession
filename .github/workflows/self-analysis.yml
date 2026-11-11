@@ -1,0 +1,84 @@
+name: Excession self-analysis (advisory)
+
+# Deep dogfooding is scheduled/on-demand, not a PR admission gate.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  self-analysis:
+    name: Audit pinned self-source and dependency candidates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Rust with rust-analyzer
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup component add --toolchain 1.99.1 rust-analyzer rust-src
+          rustup run 1.99.1 rust-analyzer --version
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: '.go-version'
+      - name: Build official SCIP decoder from immutable upstream commit
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/scip-code/scip.git "$RUNNER_TEMP/scip-source"
+          git -C "$RUNNER_TEMP/scip-source" checkout --detach 1c2b6db7e560d5233c944f36e4ac1377cc6963fc
+          mkdir -p "$RUNNER_TEMP/scip-bin"
+          (cd "$RUNNER_TEMP/scip-source" && go build -o "$RUNNER_TEMP/scip-bin/scip" ./cmd/scip)
+          "$RUNNER_TEMP/scip-bin/scip" --version
+      - name: Resolve locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Install and prefetch optional Tree-sitter grammars
+        run: |
+          python3 -m pip install --disable-pip-version-check tree-sitter-language-pack==1.25.0
+          python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "python", "javascript", "typescript", "go", "c", "java"])'
+      - name: Build actual Excession binary
+        run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Adversarial self-analysis reporting tests
+        run: python3 -m unittest discover -s tests -p 'test_self_analysis.py' -v
+      - name: Create clean source snapshot for self-analysis
+        run: git worktree add --detach "$RUNNER_TEMP/excession-self-source" "$GITHUB_SHA"
+      - name: Produce rust-analyzer SCIP for pinned source
+        run: |
+          SOURCE="$RUNNER_TEMP/excession-self-source"
+          OUT="$GITHUB_WORKSPACE/self-analysis-artifacts"
+          mkdir -p "$OUT"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/excession-ra-target"
+          export RUSTUP_TOOLCHAIN=1.99.1
+          rustup run 1.99.1 rust-analyzer scip "$SOURCE/core" --output "$OUT/index.scip"
+          "$RUNNER_TEMP/scip-bin/scip" print --json "$OUT/index.scip" > "$OUT/index.scip.json"
+          test -s "$OUT/index.scip.json"
+      - name: Analyze detached, clean source at the exact workflow commit
+        run: |
+          SOURCE="$RUNNER_TEMP/excession-self-source"
+          BASE="$(git -C "$SOURCE" rev-parse "$GITHUB_SHA^1")"
+          python3 tools/self_analysis.py \
+            --repo "$SOURCE" \
+            --bin "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --out "$GITHUB_WORKSPACE/self-analysis-artifacts" \
+            --rev "$GITHUB_SHA" \
+            --base-rev "$BASE" \
+            --scip-index "$GITHUB_WORKSPACE/self-analysis-artifacts/index.scip.json"
+      - name: Report advisory observations
+        run: cat self-analysis-artifacts/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain self-analysis evidence and refusal diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-self-analysis
+          path: self-analysis-artifacts/
+          if-no-files-found: warn

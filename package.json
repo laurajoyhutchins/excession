@@ -1,0 +1,17 @@
+{
+  "name": "excession-adapters",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pinned TypeScript parser for the Excession JS/TS adapters",
+  "engines": {
+    "node": "22.16.0"
+  },
+  "packageManager": "npm@10.9.2",
+  "scripts": {
+    "check": "node --check core/adapters/js_adapter.cjs && node --check core/adapters/js_infer_effect.cjs && node --check core/adapters/js_transform.cjs",
+    "test": "node --test tests/js_adapters.test.cjs"
+  },
+  "dependencies": {
+    "typescript": "5.8.3"
+  }
+}

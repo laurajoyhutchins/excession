@@ -6,7 +6,6 @@ use crate::{Result, refuse};
 use crate::{git, index, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 const UPSTREAM: [(&str, &str, &str); 3] = [
     (
@@ -55,7 +54,7 @@ fn string_list(xs: &[&str]) -> Value {
 /// interface check removes one redundant Python interpreter startup.
 fn header_probe_and_environment(repo: &Path) -> Result<(String, String, String)> {
     const CODE: &str = "import json,sys,pytest,h11\nfrom pathlib import Path\nfrom h11._headers import normalize_and_validate\nassert Path(h11.__file__).resolve().parents[1] == Path.cwd().resolve()\nprint(json.dumps([[v.hex() for v in triple] for triple in normalize_and_validate([])], sort_keys=True))\nprint(sys.version.split()[0])\nprint(pytest.__version__)";
-    let out = Command::new("python3")
+    let out = crate::adapter::python_command()
         .arg("-c")
         .arg(CODE)
         .current_dir(repo)
@@ -95,7 +94,7 @@ struct LocalWitness {
 /// as externally supplied unsigned evidence. This is a LOCAL-ONLY mode.
 fn run_local_branch_probe(repo: &Path, claim: &str) -> Result<(Value, String)> {
     const CODE: &str = include_str!("../adapters/probe_monitor.py");
-    let out = Command::new("python3")
+    let out = crate::adapter::python_command()
         .arg("-c")
         .arg(CODE)
         .arg(claim)

@@ -1,0 +1,724 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence/evidence-query.v1.schema.json",
+  "title": "Excession evidence query v1: typed sources and partial observations",
+  "description": "A read-only, Git-bound query. Static candidates are source-replayed; compiler inputs are unverified producer declarations; runtime witnesses are self-hashed observations. No source grants complete dependency discovery. The static candidate vocabulary is compatible with semantic-observations.v1, not an assertion of equivalent evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "query_id",
+    "source_commit",
+    "source_tree",
+    "focus",
+    "static_replay",
+    "static_resolution_id",
+    "static_candidates",
+    "unresolved_imports",
+    "source_gaps",
+    "compiler_inputs",
+    "compiler_receipt",
+    "runtime_witnesses",
+    "runtime_gaps",
+    "runtime_receipt",
+    "counts",
+    "limits"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.evidence-query.v1"
+    },
+    "query_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "source_tree": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "focus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "blob",
+        "mode"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+        },
+        "blob": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "mode": {
+          "enum": [
+            "100644",
+            "100755"
+          ]
+        }
+      }
+    },
+    "static_replay": {
+      "const": "REGENERATED_FROM_PINNED_GIT"
+    },
+    "static_resolution_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "static_candidates": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_path",
+          "source_blob",
+          "target_path",
+          "target_blob",
+          "language",
+          "specifier",
+          "line",
+          "resolution"
+        ],
+        "properties": {
+          "source_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+          },
+          "source_blob": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "target_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+          },
+          "target_blob": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "specifier": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resolution": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "unresolved_imports": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_path",
+          "source_blob",
+          "language",
+          "specifier",
+          "line",
+          "reason"
+        ],
+        "properties": {
+          "source_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+          },
+          "source_blob": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "language": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "specifier": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "source_gaps": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_path",
+          "status"
+        ],
+        "properties": {
+          "source_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      }
+    },
+    "compiler_inputs": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "role",
+          "blob",
+          "mode"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+          },
+          "role": {
+            "enum": [
+              "source",
+              "configuration"
+            ]
+          },
+          "blob": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "mode": {
+            "enum": [
+              "100644",
+              "100755"
+            ]
+          }
+        }
+      }
+    },
+    "compiler_receipt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "declaration_id",
+            "subject",
+            "language",
+            "coverage",
+            "provenance",
+            "selected_inputs",
+            "assumptions"
+          ],
+          "properties": {
+            "declaration_id": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "subject": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+            },
+            "language": {
+              "enum": [
+                "rust",
+                "go",
+                "javascript",
+                "typescript"
+              ]
+            },
+            "coverage": {
+              "const": "DECLARED_INPUTS_ONLY"
+            },
+            "provenance": {
+              "const": "UNATTESTED_NATIVE_DECLARATION"
+            },
+            "selected_inputs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "assumptions": {
+              "type": "object",
+              "minProperties": 5,
+              "maxProperties": 32,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "required": [
+                "source-commit",
+                "source-tree",
+                "dependency-discovery",
+                "toolchain-sha256",
+                "toolchain-version",
+                "platform"
+              ],
+              "properties": {
+                "source-commit": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}$"
+                },
+                "source-tree": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}$"
+                },
+                "dependency-discovery": {
+                  "const": "excession-toolchain-native-v1"
+                },
+                "toolchain-sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "toolchain-version": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "platform": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "runtime_witnesses": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "witness",
+          "selection"
+        ],
+        "properties": {
+          "witness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "importer",
+              "module",
+              "mechanism",
+              "observation",
+              "count",
+              "source"
+            ],
+            "properties": {
+              "importer": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "module": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "mechanism": {
+                "enum": [
+                  "builtins.__import__",
+                  "importlib.import_module",
+                  "sys.modules.after"
+                ]
+              },
+              "observation": {
+                "const": "MODULE_PRESENT"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "GIT_BOUND",
+                      "NO_SOURCE_FILE",
+                      "UNRESOLVED_SOURCE_PATH",
+                      "EXTERNAL_TO_PINNED_REPO",
+                      "UNTRACKED_REPO_PATH",
+                      "UNSUPPORTED_GIT_MODE",
+                      "SOURCE_UNREADABLE",
+                      "GIT_BLOB_MISMATCH"
+                    ]
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+                  },
+                  "blob_oid": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "pattern": "^[0-7]{6}$"
+                  },
+                  "origin": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "expected_oid": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                  },
+                  "observed_oid": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{40}$"
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "status": {
+                          "const": "GIT_BOUND"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "path",
+                        "blob_oid",
+                        "mode"
+                      ],
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "100644",
+                            "100755"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "selection": {
+            "enum": [
+              "PINNED_TARGET_PATH",
+              "EXECUTION_CONTEXT_ONLY"
+            ]
+          }
+        }
+      }
+    },
+    "runtime_gaps": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "COVERAGE_UNPROVEN",
+              "PREEXISTING_MODULES",
+              "CHILD_AND_NATIVE_CODE",
+              "CHILD_PROCESS_OBSERVED",
+              "NATIVE_LOADER_OBSERVED",
+              "OBSERVATION_CAP_EXCEEDED"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "runtime_receipt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "receipt_id",
+            "entrypoint",
+            "execution",
+            "interpreter",
+            "claim",
+            "provenance"
+          ],
+          "properties": {
+            "receipt_id": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "entrypoint": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "blob_oid",
+                "mode"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096,
+                  "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+                },
+                "blob_oid": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{40}$"
+                },
+                "mode": {
+                  "enum": [
+                    "100644",
+                    "100755"
+                  ]
+                }
+              }
+            },
+            "execution": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "exit_code",
+                "failure",
+                "elapsed_wall_ms"
+              ],
+              "properties": {
+                "exit_code": {
+                  "type": "integer"
+                },
+                "failure": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "message"
+                      ],
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "maxLength": 4096
+                        },
+                        "message": {
+                          "type": "string",
+                          "maxLength": 4096
+                        }
+                      }
+                    }
+                  ]
+                },
+                "elapsed_wall_ms": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "interpreter": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "executable",
+                "sha256"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "executable": {
+                  "type": "string",
+                  "maxLength": 4096
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            },
+            "claim": {
+              "const": "OBSERVED_RUNTIME_ONLY"
+            },
+            "provenance": {
+              "const": "SELF_HASHED_UNATTESTED_EXECUTION"
+            }
+          }
+        }
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "static_candidates",
+        "unresolved_static_imports",
+        "scoped_source_gaps",
+        "compiler_declared_inputs",
+        "runtime_witness_records",
+        "runtime_gaps"
+      ],
+      "properties": {
+        "static_candidates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_static_imports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "scoped_source_gaps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "compiler_declared_inputs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtime_witness_records": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtime_gaps": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "limits": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "const": "SOURCE_REPLAY_DOES_NOT_PROVE_ALL_DEPENDENCIES"
+        },
+        {
+          "const": "COMPILER_DECLARATIONS_ARE_UNATTESTED_INPUT_SETS_NOT_IMPORT_EDGES"
+        },
+        {
+          "const": "RUNTIME_OBSERVATIONS_ARE_NOT_COMPLETE_OR_INDEPENDENTLY_ATTESTED"
+        },
+        {
+          "const": "ABSENCE_OF_OBSERVATION_IS_NEVER_ABSENCE_OF_DEPENDENCY"
+        }
+      ],
+      "items": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "compiler_receipt": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "compiler_inputs": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "runtime_receipt": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "runtime_witnesses": {
+            "maxItems": 0
+          },
+          "runtime_gaps": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

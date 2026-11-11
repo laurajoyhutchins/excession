@@ -130,13 +130,13 @@ fn native_command(suite: &Suite, origin: &Origin) -> Result<Command> {
     let argv = &suite.argv;
     match (argv[0].as_str(), origin.kind.as_str()) {
         ("python3", "python") if argv.len() >= 5 && argv[1] == "-m" && argv[2] == "pytest" => {
-            let mut c = Command::new("python3");
+            let mut c = crate::adapter::python_command();
             c.args(["-c", PY_NATIVE, &origin.name, &origin.file, "pytest"])
                 .args(&argv[3..]);
             Ok(c)
         }
         ("python3", "python") if argv.len() == 3 && argv[1] == "-c" => {
-            let mut c = Command::new("python3");
+            let mut c = crate::adapter::python_command();
             c.args([
                 "-c",
                 PY_NATIVE,
@@ -149,13 +149,13 @@ fn native_command(suite: &Suite, origin: &Origin) -> Result<Command> {
         }
         ("node", "node") if argv.len() == 2 && !argv[1].starts_with('-') => {
             git::validate_path(&argv[1])?;
-            let mut c = Command::new("node");
+            let mut c = crate::adapter::node_command();
             c.args(["-e", JS_NATIVE, &origin.name, &origin.file, &argv[1]]);
             Ok(c)
         }
         ("node", "node") if argv.len() == 3 && argv[1] == "--check" => {
             git::validate_path(&argv[2])?;
-            let mut c = Command::new("node");
+            let mut c = crate::adapter::node_command();
             c.args(["--check", &argv[2]]);
             Ok(c)
         }

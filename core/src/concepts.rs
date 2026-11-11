@@ -8,10 +8,10 @@ const SCHEMA: &str = include_str!("../../contracts/concepts/model.v1.schema.json
 
 /// Validate the bounded public wire shape; this does not authenticate the source.
 pub fn validate_shape(model: &Value) -> Result<()> {
-    let schema: serde_json::Value = serde_json::from_str(SCHEMA)
-        .map_err(|e| format!("concept schema: {e}"))?;
-    let instance: serde_json::Value = serde_json::from_str(&model.canonical())
-        .map_err(|e| format!("concept document: {e}"))?;
+    let schema: serde_json::Value =
+        serde_json::from_str(SCHEMA).map_err(|e| format!("concept schema: {e}"))?;
+    let instance: serde_json::Value =
+        serde_json::from_str(&model.canonical()).map_err(|e| format!("concept document: {e}"))?;
     let validator = jsonschema::draft202012::new(&schema)
         .map_err(|e| format!("compile concepts schema: {e}"))?;
     if let Err(e) = validator.validate(&instance) {
@@ -62,7 +62,11 @@ pub fn validate_model(model: &Value) -> Result<()> {
         }
     }
     let mut receipts = BTreeSet::new();
-    for receipt in model.get("coverage")?.get("producer_receipts")?.array_ref()? {
+    for receipt in model
+        .get("coverage")?
+        .get("producer_receipts")?
+        .array_ref()?
+    {
         if !receipts.insert(receipt.str()?.to_owned()) {
             return refuse("duplicate coverage receipt");
         }
@@ -142,16 +146,24 @@ mod tests {
                 ("subjects", Value::array(vec![])),
                 ("claims", Value::array(vec![])),
                 ("concepts", Value::array(vec![])),
-                ("coverage", obj(&[
-                    ("status", Value::string("PARTIAL")),
-                    ("producer_receipts", Value::array(vec![])),
-                    ("gaps", Value::array(vec![
-                        obj(&[("reason", Value::string("UNKNOWN_COVERAGE"))]),
-                    ])),
-                ])),
+                (
+                    "coverage",
+                    obj(&[
+                        ("status", Value::string("PARTIAL")),
+                        ("producer_receipts", Value::array(vec![])),
+                        (
+                            "gaps",
+                            Value::array(vec![obj(&[(
+                                "reason",
+                                Value::string("UNKNOWN_COVERAGE"),
+                            )])]),
+                        ),
+                    ]),
+                ),
             ]),
             "model_id",
-        ).expect("seal")
+        )
+        .expect("seal")
     }
 
     #[test]
@@ -162,7 +174,10 @@ mod tests {
     #[test]
     fn changing_any_published_field_invalidates_model_id() {
         let mut model = minimal_model();
-        model.entries_mut().unwrap().insert("source_tree".into(), Value::string("c".repeat(40)));
+        model
+            .entries_mut()
+            .unwrap()
+            .insert("source_tree".into(), Value::string("c".repeat(40)));
         assert!(validate_model(&model).is_err());
     }
 
@@ -177,7 +192,10 @@ mod tests {
             ("behavioral_verification", Value::string("UNTESTED")),
             ("support", Value::array(vec![])),
         ]);
-        model.entries_mut().unwrap().insert("claims".into(), Value::array(vec![invalid_claim]));
+        model
+            .entries_mut()
+            .unwrap()
+            .insert("claims".into(), Value::array(vec![invalid_claim]));
         let model = seal(model, "model_id").unwrap();
         assert!(validate_model(&model).is_err());
     }

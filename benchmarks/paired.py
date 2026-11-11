@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Graph-only versus Excession-view calibration on one pinned Git revision.
+"""Measure graph-query and derived-view output and resource costs on pinned Git.
 
-The graph arm reads precisely the module/dependency index used by Excession.
-This is a mechanical cost/parity benchmark, not a user-task success study.
+The two arms consume exactly the same module/dependency index. No agent outcome
+or human-assigned task-success score is claimed by this calibration.
 """
 from __future__ import annotations
 
 import argparse
+import math
 from collections import deque
 import hashlib
 import json
@@ -43,7 +44,10 @@ def digest(path: Path) -> str:
 def command(argv: list[str], timeout: float) -> tuple[subprocess.CompletedProcess[bytes], dict[str, float]]:
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     start = time.perf_counter_ns()
-    proc = subprocess.run(argv, capture_output=True, timeout=timeout, check=False)
+    try:
+        proc = subprocess.run(argv, capture_output=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        proc = subprocess.CompletedProcess(argv, 124, exc.stdout or b"", exc.stderr or b"timed out")
     wall = (time.perf_counter_ns() - start) / 1_000_000
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     return proc, {
@@ -155,6 +159,42 @@ def view_paths(manifest: dict[str, Any], revision: str, seed: str, kind: str) ->
     return sorted(paths)
 
 
+def output_counts(data: dict[str, Any], arm: str, kind: str) -> dict[str, int]:
+    """Count emitted references before postprocessing or deduplication.
+
+    A view emits its entire multi-role manifest even for a focused question.
+    The number of selected files is not its raw response size.
+    """
+    if arm == "graph":
+        emitted = data["source_paths"]
+        if not isinstance(emitted, list) or not all(isinstance(p, str) for p in emitted):
+            raise ValueError("invalid graph output")
+        selected = emitted
+    elif arm == "view":
+        entries = data["entries"]
+        if not isinstance(entries, list):
+            raise ValueError("invalid view entries")
+        emitted = [item["source_path"] for item in entries]
+        selected = [item["source_path"] for item in entries if item["role"] in ROLES[kind]]
+        if not all(isinstance(p, str) for p in emitted):
+            raise ValueError("invalid view source path")
+    else:
+        raise ValueError("unknown arm")
+    return {
+        "emitted_references": len(emitted),
+        "emitted_unique_files": len(set(emitted)),
+        "emitted_duplicate_references": len(emitted) - len(set(emitted)),
+        "selected_references": len(selected),
+        "selected_duplicate_references": len(selected) - len(set(selected)),
+    }
+
+
+def nearest_rank_p95(data: list[float]) -> float:
+    """Observed p95; no interpolation or invented sampling precision."""
+    ordered = sorted(data)
+    return ordered[math.ceil(len(ordered) * 0.95) - 1]
+
+
 def git_value(repo: Path, *args: str) -> str:
     out, _ = checked(["git", "-C", str(repo), *args], 20)
     return out.decode("utf-8").strip()
@@ -195,7 +235,7 @@ def run(args: argparse.Namespace) -> None:
         "tasks_sha256": digest(tasks_file), "index_cost": index_cost,
         "index_bytes": db_path.stat().st_size, "repetitions": args.repetitions,
         "random_seed": args.random_seed,
-        "measurement_notes": "Wall and child CPU measured. Peak RSS and model tokens are not measured; source bytes are measured separately. Graph worker has Python startup overhead.",
+        "measurement_notes": "Wall, child CPU, raw stdout bytes and emitted references measured. Selected candidate source bytes are Git blob sizes, not files actually read by an agent. Peak RSS, model tokens and agent outcomes are not measured. Graph worker includes Python process startup.",
     }
     (output / "metadata.json").write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n")
     rng = random.Random(args.random_seed)
@@ -214,40 +254,104 @@ def run(args: argparse.Namespace) -> None:
                 str(binary), "view", "deps", "--db", str(db_path),
                 "--name", args.name, "--rev", revision, "--seed", task["seed"],
             ])
-            stdout, timing = checked(command_line, args.timeout)
-            data = json.loads(stdout)
-            paths = data["source_paths"] if arm == "graph" else view_paths(data, revision, task["seed"], task["kind"])
-            if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
-                raise ValueError("invalid query output")
-            paths = sorted(set(paths))
-            expected = task.get("expected_source_paths")
-            record = {
+            proc, timing = command(command_line, args.timeout)
+            stdout = proc.stdout
+            record: dict[str, Any] = {
                 "task_id": task["id"], "kind": task["kind"], "seed": task["seed"],
-                "repeat": repeat, "arm": arm, "source_paths": paths,
-                "file_count": len(paths), "source_bytes": source_bytes(repo, revision, paths, cache),
-                "oracle_correct": None if expected is None else paths == sorted(expected),
-                "wall_ms": timing["wall_ms"],
-                "child_user_cpu_ms": timing["child_user_cpu_ms"],
-                "child_system_cpu_ms": timing["child_system_cpu_ms"],
+                "repeat": repeat, "arm": arm, "returncode": proc.returncode,
+                "raw_stdout_bytes": len(stdout),
+                "raw_stdout_sha256": hashlib.sha256(stdout).hexdigest(),
+                **timing,
             }
+            if proc.returncode:
+                record["status"] = "timeout" if proc.returncode == 124 else "refused"
+                record["error"] = proc.stderr.decode("utf-8", errors="replace")[:1500]
+            else:
+                try:
+                    data = json.loads(stdout)
+                    paths = data["source_paths"] if arm == "graph" else view_paths(
+                        data, revision, task["seed"], task["kind"]
+                    )
+                    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+                        raise ValueError("invalid query output")
+                    paths = sorted(set(paths))
+                    expected = task.get("expected_source_paths")
+                    canonical = json.dumps({"source_paths": paths}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                    counts = output_counts(data, arm, task["kind"])
+                    record.update({
+                        "status": "ok", "source_paths": paths,
+                        "selected_unique_files": len(paths),
+                        "empty_selected": len(paths) == 0,
+                        "candidate_source_bytes": source_bytes(repo, revision, paths, cache),
+                        "declared_paths_equal": None if expected is None else paths == sorted(expected),
+                        "canonical_selected_output_bytes": len(canonical),
+                        **counts,
+                    })
+                except (ValueError, KeyError, TypeError, RuntimeError) as exc:
+                    record["status"] = "invalid-output"
+                    record["error"] = str(exc)[:1500]
             rows.append(record)
             pair[arm] = record
         assert set(pair) == {"graph", "view"}
+        parity = (
+            pair["graph"]["source_paths"] == pair["view"]["source_paths"]
+            if all(pair[arm]["status"] == "ok" for arm in ("graph", "view"))
+            else None
+        )
         for arm in ("graph", "view"):
-            pair[arm]["paired_source_parity"] = pair["graph"]["source_paths"] == pair["view"]["source_paths"]
+            pair[arm]["paired_source_parity"] = parity
     with (output / "trials.jsonl").open("w", encoding="utf-8") as fp:
         for record in rows:
             fp.write(json.dumps(record, sort_keys=True) + "\n")
     grouped = {arm: [r for r in rows if r["arm"] == arm] for arm in ("graph", "view")}
+    successful = {arm: [r for r in records if r["status"] == "ok"] for arm, records in grouped.items()}
+
+    def median(arm: str, field: str) -> float | None:
+        records = successful[arm]
+        return round(statistics.median(r[field] for r in records), 3) if records else None
+
+    def p95(arm: str, field: str) -> float | None:
+        records = successful[arm]
+        return round(nearest_rank_p95([r[field] for r in records]), 3) if records else None
+
     summary = {
         "schema": SCHEMA, "tasks": len(tasks), "repetitions": args.repetitions,
-        "source_parity_pairs": sum(r["paired_source_parity"] for r in grouped["graph"]),
+        "source_parity_pairs": sum(r["paired_source_parity"] is True for r in grouped["graph"]),
+        "parity_eligible_pairs": sum(r["paired_source_parity"] is not None for r in grouped["graph"]),
         "total_pairs": len(grouped["graph"]),
-        "independently_oracle_graded_tasks": sum("expected_source_paths" in t and t["expected_source_paths"] is not None for t in tasks),
-        "correct_trials": {arm: sum(r["oracle_correct"] is True for r in records) for arm, records in grouped.items()},
-        "median_wall_ms": {arm: round(statistics.median(r["wall_ms"] for r in records), 3) for arm, records in grouped.items()},
-        "median_source_bytes": {arm: statistics.median(r["source_bytes"] for r in records) for arm, records in grouped.items()},
-        "conclusion": "Calibration only: graph/view source parity and costs do not establish agent productivity or independent retrieval accuracy.",
+        "counts_by_status": {
+            arm: {state: sum(r["status"] == state for r in records)
+                  for state in ("ok", "refused", "timeout", "invalid-output")}
+            for arm, records in grouped.items()
+        },
+        "empty_selected_trials": {
+            arm: sum(r.get("empty_selected", False) for r in records)
+            for arm, records in grouped.items()
+        },
+        "declared_path_tasks": sum(t.get("expected_source_paths") is not None for t in tasks),
+        "declared_path_matches": {
+            arm: sum(r.get("declared_paths_equal") is True for r in records)
+            for arm, records in grouped.items()
+        },
+        "median_wall_ms": {arm: median(arm, "wall_ms") for arm in grouped},
+        "p95_wall_ms": {arm: p95(arm, "wall_ms") for arm in grouped},
+        "median_child_cpu_ms": {
+            arm: round(statistics.median(r["child_user_cpu_ms"] + r["child_system_cpu_ms"] for r in records), 3)
+            if records else None for arm, records in successful.items()
+        },
+        "median_raw_stdout_bytes": {arm: median(arm, "raw_stdout_bytes") for arm in grouped},
+        "median_canonical_selected_output_bytes": {
+            arm: median(arm, "canonical_selected_output_bytes") for arm in grouped
+        },
+        "median_emitted_references": {arm: median(arm, "emitted_references") for arm in grouped},
+        "median_duplicate_references": {arm: median(arm, "emitted_duplicate_references") for arm in grouped},
+        "median_candidate_source_bytes": {arm: median(arm, "candidate_source_bytes") for arm in grouped},
+        "amortized_wall_ms_per_query": {
+            arm: {str(n): round(index_cost["wall_ms"] / n + statistics.mean(r["wall_ms"] for r in records), 3)
+                  for n in (1, 5, 20, 100)} if records else None
+            for arm, records in successful.items()
+        },
+        "conclusion": "Calibration only: path parity, emitted output, query CPU/wall cost and shared indexing cost are measured. No task-completion or agent-efficiency inference.",
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, indent=2, sort_keys=True))

@@ -22,7 +22,7 @@ pub fn kernel_sources(entries: &[Value]) -> Result<Value> {
 
 pub fn clang_ast(request: &Value) -> Result<Value> {
     let code = include_str!("../adapters/clang_ast.py");
-    let reply = run("python3", code, &[request.clone()])?;
+    let reply = run("python3", code, std::slice::from_ref(request))?;
     let records = reply.array_ref()?;
     if records.len() != 1 {
         return refuse("Clang adapter did not return exactly one result");

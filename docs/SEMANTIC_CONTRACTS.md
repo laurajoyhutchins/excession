@@ -1,10 +1,16 @@
 # Semantic relationship contracts
 
-Excession's language-native resolvers feed one **versioned semantic observation
-envelope**. This is deliberately narrower than a complete cross-language
-symbol graph. The format is defined by [JSON Schema Draft 2020-12](../contracts/semantic/semantic-observations.v1.schema.json);
-dataset metadata and quality obligations are declared with
+Excession gives language-specific relationship observations a **shared,
+versioned format** so they can be inspected alongside one another without
+losing their producer, source revision or uncertainty. The contract is an
+interchange format, not a claim that all languages have been resolved into a
+complete cross-language graph.
+
+The envelope uses [JSON Schema Draft 2020-12](../contracts/semantic/semantic-observations.v1.schema.json);
+dataset metadata and quality obligations use
 [ODCS v3.2.0](../contracts/semantic/semantic-observations.odcs.json).
+The current resolver emits import candidates or unresolved observations; SCIP
+symbol references remain a separate evidence path.
 
 ## Producers and source authority
 

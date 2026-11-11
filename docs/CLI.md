@@ -1,13 +1,29 @@
 # Excession CLI
 
-`excession` is the sole first-party Rust executable and crate for repository
-exploration and security-evidence inspection. It calls the Git/SQLite Rust
-authority directly. Pinned historical research operations are a **subcommand
-family** (`excession research`), not a second executable.
+`excession` is the Rust command-line interface for Git-grounded code
+intelligence. It indexes relationships at a pinned revision, assembles source
+views, inspects evidence from other analysis tools, and audits recorded results
+against their stated inputs.
+
+The command families correspond to different evidence layers:
+
+| Work | Commands | Output |
+| --- | --- | --- |
+| Static repository relationships | `index`, `inspect dependencies`, `view deps` | Source-linked module relations and navigable views |
+| Syntax and native inputs | `syntax`, `semantic`, `inspect evidence` | Source-bound candidates and separately typed native observations |
+| Refactoring investigation | `refactor suggest`, `refactor scip-suggest`, audit variants | Git-bound hypotheses, not source edits |
+| Security evidence | `security ingest`, `security audit`, `view security` | Imported scanner results with source identities |
+
+A successful audit establishes the reproducibility specified by its contract,
+not the correctness or completeness of an external analyzer. The
+[architecture](ARCHITECTURE.md) explains these boundaries.
 
 ## Install
 
-Prerequisites: Rust 1.99.1, Cargo, Git (SHA-1 object repositories), and system `libsqlite3` and `libcrypto`. No third-party Rust crates or network downloads are required.
+Build from the repository with Rust 1.99.1, Cargo, Git (SHA-1 object
+repositories), and an available dependency cache for offline installation.
+Release archives bundle SQLite and do not require separately installed SQLite
+or OpenSSL libraries; see [portability](PORTABILITY.md).
 
 ```sh
 # From the repository root; one binary is installed.

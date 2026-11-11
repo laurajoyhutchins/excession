@@ -1,8 +1,15 @@
-# Repository projections: derived layouts over one Git tree
+# Repository views: one Git tree, multiple perspectives
 
-**Status:** working, read-only, bounded v1, including composable queries and virtual browsing. This is not a source move, a compiled workspace, or a security proof.
+A checkout gives source code one directory layout. Excession derives focused,
+navigable layouts from indexed relationships without rewriting or duplicating
+the original tree. Use a dependency view to follow a module's surroundings,
+or a security view to inspect the files associated with a scanner report.
 
-A conventional checkout chooses one directory layout. Excession derives alternative navigable trees from the Git-backed relation index. Each virtual file is a reference to a **specific commit, source pathname, regular-file mode, and Git blob OID**. Different views of the same source have the same Git source identities; they are not diverging copies of the program.
+**Implemented:** bounded, read-only projections with composition, virtual
+browsing, deterministic manifests and replay. Each virtual file retains its
+**commit, original pathname, file mode and Git blob OID**, even when the same
+source appears in several views. Materialization produces read-only copies,
+not an executable or transformed checkout.
 
 ## Interface
 

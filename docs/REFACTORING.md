@@ -1,8 +1,13 @@
-# Refactoring hypotheses (bounded v1)
+# Refactoring intelligence
 
-Excession reports structural **candidates for review**, not automatically safe
-edits or verified improvements. The first slice deliberately reuses its indexed
-Python/JavaScript module graph and symbol fingerprints.
+Excession finds **places to investigate** in an indexed codebase and ties
+each suggestion to the Git revision and source observations that produced it.
+The built-in detector uses Python/JavaScript module relations and body
+fingerprints; a separate SCIP path consumes language-native symbol references.
+
+These are evidence-backed hypotheses, not automatic edits or proven
+improvements. Use the language's own refactoring tools and tests to evaluate
+any proposed change.
 
 ## Usage
 
@@ -34,6 +39,15 @@ and investigation/verification instructions. No source files are modified.
 These findings are **not ranked remediations**. A proposed consolidation still
 needs contract, caller, side-effect and test review.
 
+## From hypothesis to change
+
+A useful refactoring report tells you **what was observed**, **where**, and
+**why that observation may matter**. For each candidate, inspect the exact
+source paths and Git blobs, check callers and tests, then perform a change
+using the appropriate language-native tooling. Re-run the index and audits
+after changing source; the old report remains evidence about its original
+revision, not approval of the new one.
+
 ## Authority and limits
 
 The Git revision and root tree are checked against independently reconstructed
@@ -50,13 +64,14 @@ Analysis refuses excessive inputs: 10,000 modules, 50,000 indexed edges,
 100,000 symbols, 128 candidates, or an 8 MiB report. Narrow index roots to
 reduce scope.
 
-## Planned reuse, not implemented in v1
+## Possible extensions
 
-SCIP is the natural resolved-symbol index format. jscpd can report clone
-families beyond exact fingerprints; ast-grep can match patterns; Code Maat's
-methods can inform historical co-change; and language-native refactoring tools
-should perform any eventual edits. All imported results would require explicit
-source binding, tool/version provenance, and independent validation.
+SCIP ingestion and source-bound symbol-reference hypotheses are already
+available through the separate commands documented below. Further reuse
+could include jscpd for clone families, ast-grep for structural patterns,
+and Code Maat's methods for historical co-change. These integrations are not
+implemented here. Source binding and producer-specific semantics would still
+be required.
 
 `core/tests/refactor_contracts.rs` creates a local Git fixture and verifies
 cycle/duplicate detection, Git identities, deterministic replay, report and

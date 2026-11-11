@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/concepts/answer.v1.schema.json",
+  "title": "Excession concept answer v1 (proposed)",
+  "required": [
+    "schema",
+    "query_id",
+    "snapshot_id",
+    "source_commit",
+    "answerability",
+    "claim_ids",
+    "evidence_receipts",
+    "gaps",
+    "limits_applied"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts-answer.v1"
+    },
+    "query_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/oid"
+    },
+    "answerability": {
+      "enum": [
+        "ANSWERABLE",
+        "PARTIAL",
+        "AMBIGUOUS",
+        "UNKNOWN",
+        "UNSUPPORTED"
+      ]
+    },
+    "claim_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "evidence_receipts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producer": {
+            "type": "string"
+          },
+          "subject_id": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "limits_applied": {
+      "type": "boolean"
+    },
+    "explanation": {
+      "type": "string"
+    },
+    "concept_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "subject_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  }
+}

@@ -133,6 +133,7 @@ pub(super) fn command() -> Command {
             leaf("preview", &["repo", "report"], &[]),
             leaf("compile", &["repo", "report", "db"], &[]),
             leaf("audit", &["repo", "report", "db", "snapshot"], &[]),
+            leaf("query", &["db", "query"], &[]),
         ],
     )
     .about("Bounded, source-bound concept hypotheses and exact snapshot replay");

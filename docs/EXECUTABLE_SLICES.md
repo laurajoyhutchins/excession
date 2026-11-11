@@ -1,9 +1,9 @@
 # Executable slices and conservative evidence carry
 
-**Status: bounded Python-first trusted-local vertical slice.** This does not
-establish semantic equivalence, secure isolation, remote attestation, or a
-universal safe-to-skip-CI rule. It complements, but does not supersede, the
-Rust/SQLite RelGit evidence authority or the existing read-only projections.
+**Status: bounded Python adapter with Rust/SQLite evidence ingestion.** This does
+not establish semantic equivalence, remote attestation, or a universal safe-to-skip-CI
+rule. A Linux namespace worker is available for explicitly approved local execution,
+with no silent fallback. Source and SQL authenticity are distinct from executor authenticity.
 
 ## The joined operation
 
@@ -47,7 +47,13 @@ python3 tools/excession_slice.py audit /src/repo /tmp/base-slice.json /tmp/slice
 
 # This executes code; use only for source trusted to run on the current machine.
 python3 tools/excession_slice.py run /src/repo /tmp/base-slice.json /tmp/slice-base \
-  --trusted-local > /tmp/base-receipt.json
+  --trusted-local --isolated-linux > /tmp/base-receipt.json
+
+# Bind the finite receipt to Git objects in Rust-owned SQLite, then replay the audit.
+excession slice ingest --repo /src/repo --manifest /tmp/base-slice.json \
+  --receipt /tmp/base-receipt.json --db /tmp/evidence.sqlite
+excession slice audit --repo /src/repo --manifest /tmp/base-slice.json \
+  --receipt /tmp/base-receipt.json --db /tmp/evidence.sqlite
 
 # After branch integration, in a checkout whose HEAD is the integrated commit:
 python3 tools/excession_slice.py carry /src/integrated \
@@ -55,7 +61,7 @@ python3 tools/excession_slice.py carry /src/integrated \
 
 # Optional: make a fresh target slice and run its entrypoint, not merely carry.
 python3 tools/excession_slice.py carry /src/integrated \
-  /tmp/base-slice.json /tmp/base-receipt.json --replay --trusted-local
+  /tmp/base-slice.json /tmp/base-receipt.json --replay --trusted-local --isolated-linux
 ```
 
 ## Scope and refusals
@@ -74,20 +80,38 @@ python3 tools/excession_slice.py carry /src/integrated \
   file modes, missing modules, ambiguous source paths, or mutation of original
   source. Maximum 512 files and 32 MiB, plus bounded native execution time and
   output. Materialized files are read-only and checked again before execution.
-- Execution invokes the current Python interpreter in isolated Python mode,
-  but **is not an operating-system sandbox**. The `--trusted-local` gate is
-  mandatory. Never run unknown or hostile repository code on the shared host.
+- Execution always requires `--trusted-local`. Without `--isolated-linux`,
+  Python `-I` alone **is not an OS sandbox**. For supported Linux machines,
+  the opt-in worker uses a new user/mount/PID/network/IPC/UTS namespace, an
+  isolated chroot, a read-only `/usr` and source bind mount, a small tmpfs,
+  dropped capabilities, `no_new_privs`, and bounded CPU/address space. Failure
+  to enter the worker refuses execution, never falling back to the host.
+  The worker is tested on one Linux host; these controls are **not a remotely
+  trusted attestation or a guarantee of containment**. Do not treat this as
+  sufficient to run adversarial code in a credential-bearing environment.
 - Fresh test results prove only that the selected command passed or failed in
   that finite environment. They do not establish equivalence of the entire
   source or that no other tests need to run.
-- Hash-only receipts are forgeable by an actor controlling the receipt file.
-  Before trusting external workers, add signed environment attestation,
-  isolation controls, and a Rust-authenticated evidence import path.
+- The Rust core's `slice-evidence-ingest`/`slice-evidence-audit` and the public
+  `excession slice ingest|audit` commands validate canonical manifest/receipt
+  digests, exact tracked Git source blobs and modes, limits, and SQLite rows.
+  A second audit recomputes everything from the original inputs and compares
+  exact stored rows, refusing tampering or duplicate ingestion. Rust does *not*
+  independently rederive Python's import semantics: that remains an adapter
+  claim, with dynamic imports and external state explicitly unsupported.
+- Hash-only Python receipts are forgeable by actors controlling the receipt
+  bytes. `LOCAL_LINUX_NAMESPACES_UNATTESTED` records a local policy selection,
+  **not cryptographic proof of the worker**. Signed workload identity, pinned
+  toolchains and trustworthy remote-worker attestations are still required
+  before cross-agent or distributed execution claims can be trusted.
 
 ## Verification
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_executable_slices.py' -v
+# Optional on a Linux host permitting user/mount namespaces:
+EXCESSION_RUN_NAMESPACE_TESTS=1 python3 -m unittest discover -s tests -p 'test_executable_slices.py' -v
+cargo test --offline --manifest-path core/Cargo.toml slice_evidence
 ```
 
 The offline tests include a two-agent nonoverlapping merge, modified-dependency
@@ -98,9 +122,9 @@ repositories rather than mocks of Git identity.
 
 ## Next contract increment
 
-This initial CLI is explicitly a language-native adapter. Generalize its
-manifest into the existing Rust source/claim schema and make Rust the
-cross-language authority for indexing, claim-scoped closure validity and signed
-receipt ingestion. Python retains ownership of import semantics. Then add
-controlled runtime import/file traces in an isolated worker, and test whether
-incremental reruns save time over full CI on several real repositories.
+Python remains the language-native import planner; Rust now owns storage,
+source integrity validation, and independent SQL replay. The next decisive
+contract is **runtime import and file-read observation inside an attested worker**, 
+followed by claim-scoped evidence carry and controlled comparisons against full
+CI on multiple genuine repositories. Until that is demonstrated,
+`SOURCE_MATCH_ONLY` is not permission to skip tests.

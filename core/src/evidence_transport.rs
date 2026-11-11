@@ -4,11 +4,12 @@
 //! source dependencies. It never promotes an unsigned historical execution to
 //! evidence of behavior on another revision.
 use crate::digest;
+use crate::input_contract;
 use crate::json::{Value, obj};
 use crate::slice_evidence::{self, Source};
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 const SCHEMA: &str = r#"
@@ -61,13 +62,16 @@ fn index(entries: &[Source]) -> BTreeMap<&str, &str> {
 fn comparison(left: &Snapshot, right: &Snapshot, receipt_id: &str) -> Value {
     let a = index(&left.sources);
     let b = index(&right.sources);
-    let changed: Vec<Value> = a
-        .keys()
-        .chain(b.keys())
-        .copied()
-        .collect::<BTreeSet<_>>()
+    let old = a
         .into_iter()
-        .filter(|path| a.get(path) != b.get(path))
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    let new = b
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+    let changed: Vec<Value> = input_contract::changed_paths(&old, &new)
+        .into_iter()
         .map(Value::string)
         .collect();
     let same_entry = left.entry == right.entry;

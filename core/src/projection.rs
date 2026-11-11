@@ -593,12 +593,7 @@ pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<V
 
 /// Emit the same authenticated dependency manifest bytes as `dependencies`,
 /// without constructing the nested JSON Value representation for output.
-pub fn dependencies_canonical(
-    db: &Db,
-    name: &str,
-    revision: &str,
-    seed: &str,
-) -> Result<String> {
+pub fn dependencies_canonical(db: &Db, name: &str, revision: &str, seed: &str) -> Result<String> {
     Ok(dependency_plan(db, name, revision, seed)?.canonical_manifest())
 }
 
@@ -858,14 +853,20 @@ mod tests {
             .unwrap();
             let legacy = plan.manifest().canonical();
             let new = plan.canonical_manifest();
-            assert_eq!(new, legacy, "different full manifest bytes at {count} entries");
+            assert_eq!(
+                new, legacy,
+                "different full manifest bytes at {count} entries"
+            );
             assert_eq!(
                 Plan::from_bytes(new.as_bytes()).unwrap(),
                 plan,
                 "direct serialization must remain materializable",
             );
             let parsed = json::parse(new.as_bytes()).unwrap();
-            assert_eq!(parsed.get("view_id").unwrap().str().unwrap(), plan.view_id());
+            assert_eq!(
+                parsed.get("view_id").unwrap().str().unwrap(),
+                plan.view_id()
+            );
         }
     }
 

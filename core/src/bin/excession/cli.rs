@@ -249,6 +249,21 @@ pub(super) fn command() -> Command {
         )
         .subcommand_required(true)
         .subcommand(
+            Command::new("discover")
+                .about("Read-only Git revision and supported source-root discovery")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("rev")
+                        .long("rev")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                ),
+        )
+        .subcommand(
             Command::new("doctor")
                 .about("Report local toolchain and bundled storage capabilities")
                 .arg(

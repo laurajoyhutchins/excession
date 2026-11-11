@@ -33,6 +33,32 @@ EXPORT_SYMBOL_GPL(public_symbol);
         self.assertTrue(any(f["subject"] == "public_symbol" and
                             f["kind"] == "c_export" for f in facts))
 
+    def test_c_export_text_inside_strings_is_not_a_symbol(self):
+        text = (
+            'const char *example = "EXPORT_SYMBOL(false_symbol)";\\n'
+            "EXPORT_SYMBOL(real_symbol);\\n"
+        )
+        facts, _ = parser.c_facts(text)
+        exports = [f["subject"] for f in facts if f["kind"] == "c_export"]
+        self.assertEqual(exports, ["real_symbol"])
+
+    def test_kconfig_help_text_is_not_a_config_statement(self):
+        text = (
+            "config FOO\\n"
+            "    bool \\"example\\"\\n"
+            "    help\\n"
+            "      if FAKE\\n"
+            "      depends on FAKE\\n"
+            "config BAR\\n"
+            "    depends on FOO\\n"
+        )
+        facts, diagnostics = parser.kconfig_facts(text)
+        self.assertEqual(diagnostics, [])
+        self.assertEqual(
+            [f["target"] for f in facts if f["kind"] == "kconfig_depends"],
+            ["FOO"],
+        )
+
     def test_c_preprocessor_rejects_unmatched_blocks(self):
         _, diagnostics = parser.c_facts("#else\n#if FOO\n#include <x.h>\n")
         self.assertEqual(len(diagnostics), 2)

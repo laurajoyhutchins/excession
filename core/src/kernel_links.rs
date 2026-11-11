@@ -27,7 +27,9 @@ fn config_names(text: &str) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     let mut at = 0;
     while at + 7 <= bytes.len() {
-        if bytes[at..].starts_with(b"CONFIG_") {
+        let boundary = at == 0
+            || !(bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_');
+        if boundary && bytes[at..].starts_with(b"CONFIG_") {
             let start = at + 7;
             let mut end = start;
             while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
@@ -212,7 +214,7 @@ mod tests {
     #[test]
     fn configuration_names_are_distinct_and_exact() {
         assert_eq!(
-            config_names("(CONFIG_FOO) || CONFIG_BAR && CONFIG_FOO"),
+            config_names("(CONFIG_FOO) || CONFIG_BAR && CONFIG_FOO && NOTCONFIG_FAKE"),
             BTreeSet::from(["FOO".to_owned(), "BAR".to_owned()])
         );
     }

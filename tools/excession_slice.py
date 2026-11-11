@@ -45,6 +45,20 @@ def canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
 
 
+def revision_identity(repo: Path, revision: str) -> tuple[str, str]:
+    """Read an existing commit from the Git object database, independent of HEAD.
+
+    Nothing from the source worktree is executed or trusted by this function.
+    """
+    if not repo.is_dir() or git(repo, "rev-parse", "--show-object-format").strip() != b"sha1":
+        raise Refusal("historical revision requires a SHA-1 Git repository")
+    oid = git(repo, "rev-parse", "--verify", f"{revision}^{{commit}}").decode().strip()
+    if len(oid) != 40 or any(c not in "0123456789abcdef" for c in oid):
+        raise Refusal("unsupported historical Git commit OID")
+    tree = git(repo, "rev-parse", f"{oid}^{{tree}}").decode().strip()
+    return oid, tree
+
+
 def clean_revision(repo: Path, revision: str) -> tuple[str, str]:
     if not repo.is_dir() or git(repo, "status", "--porcelain", "--untracked-files=normal").strip():
         raise Refusal("source checkout must be clean")
@@ -220,8 +234,9 @@ def build_plan(repo: Path, oid: str, tree: str, entry: str,
     return body
 
 
-def plan(repo: Path, entry: str, revision: str = "HEAD", assets: list[str] | None = None) -> dict[str, Any]:
-    oid, tree = clean_revision(repo, revision)
+def plan(repo: Path, entry: str, revision: str = "HEAD", assets: list[str] | None = None,
+         history: bool = False) -> dict[str, Any]:
+    oid, tree = revision_identity(repo, revision) if history else clean_revision(repo, revision)
     return build_plan(repo, oid, tree, entry, assets)
 
 
@@ -231,7 +246,8 @@ def validate_manifest(repo: Path, value: dict[str, Any]) -> None:
     body = {k: v for k, v in value.items() if k != "view_id"}
     if digest(canonical(body)) != value["view_id"]:
         raise Refusal("slice manifest identity mismatch")
-    regenerated = plan(repo, value["entry"], value["commit"], value["assets"])
+    oid, tree = revision_identity(repo, value["commit"])
+    regenerated = build_plan(repo, oid, tree, value["entry"], value["assets"])
     if regenerated != value:
         raise Refusal("slice differs from deterministic source-derived plan")
 
@@ -378,9 +394,9 @@ def carry(repo: Path, previous: dict[str, Any], receipt: dict[str, Any],
         raise Refusal("observation does not match prior slice")
     if digest(canonical({k: v for k, v in receipt.items() if k != "receipt_id"})) != receipt.get("receipt_id"):
         raise Refusal("observation receipt identity mismatch")
-    if receipt.get("status") != "OBSERVED_PASS":
-        raise Refusal("only passing historical observations may be carried")
-    oid, _ = clean_revision(repo, revision)
+    if receipt.get("status") != "OBSERVED_PASS" or receipt.get("commit") != previous.get("commit") or receipt.get("entry") != previous.get("entry"):
+        raise Refusal("only source-bound passing historical observations may be carried")
+    oid, _ = revision_identity(repo, revision)
     # Replan on the target to detect new import-resolution paths and closure changes.
     # Recompute historical evidence from target's Git object store. Hashes in
     # caller-provided JSON are not sufficient authentication.
@@ -421,6 +437,7 @@ def cli() -> None:
     p.add_argument("entry")
     p.add_argument("--revision", default="HEAD")
     p.add_argument("--asset", action="append", default=[])
+    p.add_argument("--history", action="store_true", help="plan from any retained historical commit without a checkout")
     p = sub.add_parser("materialize")
     p.add_argument("repo", type=Path)
     p.add_argument("manifest")
@@ -448,7 +465,7 @@ def cli() -> None:
     args = parser.parse_args()
     try:
         if args.action == "plan":
-            result = plan(args.repo, args.entry, args.revision, args.asset)
+            result = plan(args.repo, args.entry, args.revision, args.asset, args.history)
         elif args.action == "materialize":
             materialize(args.repo, read_json(args.manifest), args.destination)
             result = {"status": "MATERIALIZED", "directory": str(args.destination)}
@@ -467,7 +484,7 @@ def cli() -> None:
             if args.replay:
                 if not args.trusted_local:
                     raise Refusal("target execution requires explicit --trusted-local")
-                fresh = plan(args.target_repo, previous["entry"], args.revision, previous["assets"])
+                fresh = plan(args.target_repo, previous["entry"], args.revision, previous["assets"], history=True)
                 with tempfile.TemporaryDirectory(prefix="excession-replay-") as root:
                     directory = Path(root) / "slice"
                     materialize(args.target_repo, fresh, directory)

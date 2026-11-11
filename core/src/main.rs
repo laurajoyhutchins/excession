@@ -2,8 +2,8 @@ use relgit::sqlite::Db;
 use relgit::{Result, refuse};
 use relgit::{
     contracts, effects, git, historical, identity, impact, index, integration, json, optimizer,
-    overlap, scoped, security, security_discovery, security_ingest, security_survey, transactions,
-    transform,
+    overlap, projection, scoped, security, security_discovery, security_ingest, security_survey,
+    transactions, transform,
 };
 use std::env;
 use std::fs;
@@ -23,7 +23,7 @@ fn usage() -> String {
   relgit security-survey SURVEY_GIT_DIR DATABASE
   relgit security-survey-audit SURVEY_GIT_DIR DATABASE
   relgit security-ingest REPO REPORT DATABASE ENGINE
-  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\nErrors are fatal; unsupported semantics are not silently inferred.".into()
+  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\n  relgit view-plan-deps DB REPO_NAME REVISION SEED_MODULE\n  relgit view-plan-replay-deps DB REPO_NAME REVISION SEED_MODULE MANIFEST\n  relgit view-plan-security DB SOURCE_REPO RUN_ID\n  relgit view-plan-replay-security DB SOURCE_REPO RUN_ID MANIFEST\n  relgit view-materialize SOURCE_REPO MANIFEST OUT_DIR\n  relgit view-audit SOURCE_REPO MANIFEST OUT_DIR\nErrors are fatal; unsupported semantics are not silently inferred.".into()
 }
 
 fn run() -> Result<()> {
@@ -32,6 +32,57 @@ fn run() -> Result<()> {
         return refuse(usage());
     };
     match action {
+        "view-plan-deps" | "view-plan-replay-deps" => {
+            if args.len() != if action == "view-plan-deps" { 6 } else { 7 } {
+                return refuse(
+                    "Usage: relgit view-plan[-replay]-deps DB REPO_NAME REVISION SEED_MODULE [MANIFEST]",
+                );
+            }
+            let db = Db::open(Path::new(&args[2]))?;
+            let expected = projection::dependencies(&db, &args[3], &args[4], &args[5])?;
+            let result = if action == "view-plan-replay-deps" {
+                projection::replay(&expected, Path::new(&args[6]))?
+            } else {
+                expected
+            };
+            println!("{}", result.canonical());
+        }
+        "view-plan-security" | "view-plan-replay-security" => {
+            if args.len() != if action == "view-plan-security" { 5 } else { 6 } {
+                return refuse(
+                    "Usage: relgit view-plan[-replay]-security DB SOURCE_REPO RUN_ID [MANIFEST]",
+                );
+            }
+            let db = Db::open(Path::new(&args[2]))?;
+            let expected = projection::security(&db, Path::new(&args[3]), &args[4])?;
+            let result = if action == "view-plan-replay-security" {
+                projection::replay(&expected, Path::new(&args[5]))?
+            } else {
+                expected
+            };
+            println!("{}", result.canonical());
+        }
+        "view-materialize" | "view-audit" => {
+            if args.len() != 5 {
+                return refuse(
+                    "Usage: relgit view-materialize|view-audit SOURCE_REPO MANIFEST OUT_DIR",
+                );
+            }
+            let report = if action == "view-materialize" {
+                projection::materialize(
+                    Path::new(&args[2]),
+                    Path::new(&args[3]),
+                    Path::new(&args[4]),
+                )?
+            } else {
+                projection::audit(
+                    Path::new(&args[2]),
+                    Path::new(&args[3]),
+                    Path::new(&args[4]),
+                )?
+            };
+            println!("{}", report.canonical());
+        }
         "security-ingest" | "security-ingest-audit" => {
             if args.len() != 6 {
                 return refuse("Usage: relgit security-ingest[-audit] REPO REPORT DATABASE ENGINE");

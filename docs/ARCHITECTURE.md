@@ -42,6 +42,10 @@ Post-freeze OSV / GitHub advisory scoring and disclosure review
 Rust does not reimplement CodeQL's dataflow engine, Semgrep's rule matching,
 Joern's CPG, or native fuzzers. External reports are **untrusted inputs**.
 
+### Derived repository layouts
+
+A separate, read-only projection capability maps the Git tree and recorded relations into alternate virtual file paths. Dependency projections use the existing `module`/`dependency` index; security projections use imported but **unverified** CodeQL flow steps and findings. Excession materializes regular Git blobs as read-only copies, never as editable links or executable checkouts. Exact source Git identity and a canonical manifest define the output, with independent regeneration and blob audits. See [Repository views](REPOSITORY_VIEWS.md) for contracts and limits. This capability does not promote static candidates into verified vulnerabilities.
+
 ## 3. Existing engines and interface contracts
 
 | Interface | Input | Output | Current support |

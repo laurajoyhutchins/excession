@@ -41,6 +41,21 @@ To run the scanner first, replace `import` with `scan`, providing `--config
 offline tests. Native scan build and execution require isolation when running
 untrusted repository code.
 
+## Queryable repository layouts (read-only)
+
+The same pinned Git revision can now be browsed through deterministic **dependency-focused** or **security-flow-focused** directory trees. Every virtual file maps to an original tracked source blob, including deliberate duplicates in multiple groups. Excession does not relocate source or promise that a materialized view is executable.
+
+```bash
+# First index the source, using the existing static dependency index:
+relgit index /tmp/index.sqlite h11 /path/to/h11 HEAD h11,tests
+relgit view-plan-deps /tmp/index.sqlite h11 HEAD h11._connection > /tmp/dep-view.json
+relgit view-materialize /path/to/h11 /tmp/dep-view.json /tmp/dep-view
+relgit view-plan-replay-deps /tmp/index.sqlite h11 HEAD h11._connection /tmp/dep-view.json
+relgit view-audit /path/to/h11 /tmp/dep-view.json /tmp/dep-view
+```
+
+For security-focused views, first import and independently audit a CodeQL SARIF or Semgrep JSON report, then call `view-plan-security DB SOURCE_REPO RUN_ID`. Scanner flow labels remain **unverified scanner claims**, not confirmed trust boundaries. Views are copies of pinned Git blobs, permissioned read-only, with deterministic manifests and an independent audit. Details, refusal limits and all six CLI commands: [Repository views](docs/REPOSITORY_VIEWS.md).
+
 ## Blind historical protocol
 
 ```bash

@@ -6,6 +6,7 @@ use crate::{Result, digest, git, index, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 mod composition;
 mod workspace;
@@ -18,6 +19,46 @@ const MANIFEST_NAME: &str = "view-manifest.json";
 const MAX_ENTRIES: usize = 5_000;
 const MAX_BLOB_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
+
+// Clock observations are deliberately outside manifest identity and are only
+// enabled by the dedicated profiling command.
+struct PhaseProfile {
+    start: Instant,
+    last: Instant,
+    phases: Vec<(&'static str, u128)>,
+}
+
+impl PhaseProfile {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self { start: now, last: now, phases: Vec::new() }
+    }
+
+    fn mark(&mut self, name: &'static str) {
+        let now = Instant::now();
+        self.phases.push((name, now.duration_since(self.last).as_micros()));
+        self.last = now;
+    }
+
+    fn elapsed_us(&self) -> u128 {
+        self.start.elapsed().as_micros()
+    }
+
+    fn observations(&self) -> Value {
+        Value::array(self.phases.iter().map(|(phase, elapsed_us)| {
+            obj(&[
+                ("phase", Value::string(*phase)),
+                ("elapsed_us", Value::number(elapsed_us)),
+            ])
+        }))
+    }
+}
+
+fn stamp(profile: &mut Option<&mut PhaseProfile>, phase: &'static str) {
+    if let Some(clock) = profile.as_deref_mut() {
+        clock.mark(phase);
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Entry {
@@ -206,8 +247,18 @@ fn source_table(repo: &Path, commit: &str, tree: &str) -> Result<BTreeMap<String
 }
 
 fn authenticate(plan: &Plan, repo: &Path) -> Result<()> {
+    authenticate_profiled(plan, repo, None)
+}
+
+fn authenticate_profiled(
+    plan: &Plan,
+    repo: &Path,
+    mut profile: Option<&mut PhaseProfile>,
+) -> Result<()> {
     plan.check()?;
+    stamp(&mut profile, "validate_plan");
     let actual = source_table(repo, &plan.commit, &plan.tree)?;
+    stamp(&mut profile, "read_git_source_tree");
     for e in &plan.entries {
         let source = actual
             .get(&e.source_path)
@@ -216,6 +267,7 @@ fn authenticate(plan: &Plan, repo: &Path) -> Result<()> {
             return refuse(format!("view source identity mismatch: {}", e.source_path));
         }
     }
+    stamp(&mut profile, "validate_source_bindings");
     Ok(())
 }
 
@@ -269,7 +321,13 @@ fn bfs(seed: &str, graph: &BTreeMap<String, BTreeSet<String>>) -> BTreeMap<Strin
     distance
 }
 
-fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Plan> {
+fn dependency_plan_with_profile(
+    db: &Db,
+    name: &str,
+    revision: &str,
+    seed: &str,
+    mut profile: Option<&mut PhaseProfile>,
+) -> Result<Plan> {
     let id = db
         .scalar(
             "SELECT id FROM repository WHERE name=?",
@@ -286,12 +344,15 @@ fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Pl
         "SELECT tree_oid FROM revision WHERE repo_id=? AND commit_oid=?",
         &[Param::Integer(id), Param::Text(&commit)],
     )?;
+    stamp(&mut profile, "resolve_revision");
     if tree != git::rev(&repo, &format!("{commit}^{{tree}}"))? {
         return refuse("indexed revision tree mismatch");
     }
+    stamp(&mut profile, "check_git_tree");
     if index::reconstruct_tree(db, id, &commit)? != tree {
         return refuse("indexed Git tree reconstruction mismatch");
     }
+    stamp(&mut profile, "reconstruct_index_tree");
     let mut modules = BTreeMap::new();
     for row in db.query("SELECT m.name,m.path,m.blob_oid,t.mode,m.is_test FROM module m JOIN tree_entry t ON t.repo_id=m.repo_id AND t.commit_oid=m.commit_oid AND t.path=m.path WHERE m.repo_id=? AND m.commit_oid=? ORDER BY m.name", &[Param::Integer(id),Param::Text(&commit)])? {
         modules.insert(required(&row,0)?.to_owned(), Module {
@@ -302,6 +363,7 @@ fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Pl
     if !modules.contains_key(seed) {
         return refuse(format!("unknown indexed seed module: {seed}"));
     }
+    stamp(&mut profile, "load_modules");
     let mut forward: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut backward: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for row in db.query("SELECT source_name,target_name FROM dependency WHERE repo_id=? AND commit_oid=? ORDER BY source_name,target_name", &[Param::Integer(id), Param::Text(&commit)])? {
@@ -311,6 +373,7 @@ fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Pl
         forward.entry(from.clone()).or_default().insert(to.clone());
         backward.entry(to).or_default().insert(from);
     }
+    stamp(&mut profile, "load_dependencies");
     let downstream = bfs(seed, &forward);
     let upstream = bfs(seed, &backward);
     let mut entries = Vec::new();
@@ -365,10 +428,37 @@ fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Pl
         role: "focus".into(),
         detail: format!("module={seed}"),
     });
+    stamp(&mut profile, "traverse_and_build_entries");
     db.foreign_keys_valid()?;
     let plan = make_plan("dependencies", seed, commit, tree, entries)?;
-    authenticate(&plan, &repo)?;
+    stamp(&mut profile, "validate_index_and_plan");
+    authenticate_profiled(&plan, &repo, profile)?;
     Ok(plan)
+}
+
+fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Plan> {
+    dependency_plan_with_profile(db, name, revision, seed, None)
+}
+
+/// Profile the exact source-bound dependency path without changing the
+/// production manifest, view identity, SQL queries or refusal rules.
+/// Phase durations are process-local microsecond observations, not guarantees.
+pub fn profile_dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
+    let mut timer = PhaseProfile::new();
+    let plan = dependency_plan_with_profile(db, name, revision, seed, Some(&mut timer))?;
+    let view_id = plan.payload().sha256();
+    timer.mark("canonical_view_id");
+    let elapsed_us = timer.elapsed_us();
+    Ok(obj(&[
+        ("schema", Value::string("excession.projection-phase-profile.v1")),
+        ("source_commit", Value::string(&plan.commit)),
+        ("source_tree", Value::string(&plan.tree)),
+        ("view_id", Value::string(view_id)),
+        ("seed", Value::string(seed)),
+        ("entry_count", Value::number(plan.entries.len())),
+        ("total_us", Value::number(elapsed_us)),
+        ("phases", timer.observations()),
+    ]))
 }
 
 /// Generate the complete authenticated, materializable dependency projection.

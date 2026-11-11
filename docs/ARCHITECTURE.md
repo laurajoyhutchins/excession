@@ -104,7 +104,7 @@ An imported warning is not a verified vulnerability; confirmation requires
 independent behavioral and impact evidence. The discovery protocol and
 security controls below apply to this research use case.
 
-## 3. Existing engines and interface contracts
+## 3. Security analysis engines and interface contracts
 
 | Interface | Input | Output | Current support |
 |---|---|---|---|
@@ -124,7 +124,7 @@ execute untrusted source. CodeQL databases must be created by a separately
 reviewed and isolated build. Reports must use plain repository-relative source
 paths; ambiguous/encoded/absolute paths are refused rather than guessed.
 
-## 4. Authoritative identities
+## 4. Source and scanner evidence identities
 
 * Source authority: pinned Git SHA-1 commit + path + blob SHA. The current
   Rust core explicitly rejects SHA-256 Git object-format repositories.
@@ -144,7 +144,7 @@ A database hash alone does not authenticate remote execution or detect deliberat
 replacement of the entire database and its source inputs. Remote attestations and
 sandbox identity are separately required before trusting third-party agents.
 
-## 5. Relational state and proof obligations
+## 5. Security evidence state and proof obligations
 
 First implementation tables:
 
@@ -170,7 +170,7 @@ A separate `DISCONFIRMED` and `UNSUPPORTED` terminal outcome must remain in
 counts. *No inference from a lower state to a higher state.* A CVE ID is
 metadata only after a post-freeze match, not a security-verdict state.
 
-## 6. Trusted-local ingestion flow (implemented)
+## 6. Trusted-local scanner ingestion (implemented)
 
 1. Require an existing clean SHA-1 Git checkout; record `HEAD`.
 2. Run a named installed scanner without a shell, at bounded time, using
@@ -191,7 +191,7 @@ primary locations with start lines, `tool.driver.name=CodeQL`, and Semgrep
 `results/check_id/path/start.line`. More complicated tool reports must be
 explicitly supported rather than silently truncated.
 
-## 7. Discovery and replay protocol
+## 7. Security discovery evaluation protocol
 
 **Before reading advisories:** Select repositories by publicly articulated
 neutral criteria (language, size, fixed historical date, supported analyzers),
@@ -224,7 +224,7 @@ Excession-enhanced output against CodeQL-only + fuzz-only baselines at similar c
 - Treat analysis tool outputs and their messages as adversarial data.
 - Coordinate disclosure for any actionable new finding; no automatic CVE claim.
 
-## 9. Compute and CI
+## 9. Compute and CI for security experiments
 
 Local commit check (<30s target): Rust formatting/strict Clippy, core unit
 and importer fixture tests, basic Python unittest. It should not trigger a
@@ -234,9 +234,9 @@ Cloud Build/manual deep check: fetch exact source revision, construct CodeQL
 DB, run code scanning, seeded fuzzing in isolation, audit and cost receipts.
 Explicit environment version-pins required. No GitHub Actions minutes assumed.
 
-## 10. Acceptance criteria and implementation status
+## 10. Security research status and acceptance criteria
 
-**Delivered now:** new local git repo; Rust SARIF/Semgrep candidate ingest and
+**Implemented security-evidence handling:** Rust SARIF/Semgrep candidate ingest and
 audit; runner for local CodeQL/Semgrep; label-free benchmark protocol freeze;
 preliminary cross-revision candidate comparison; offline fixture and tampering
 regressions; inherited RelGit v0.19 Git/SQLite/native pilots.
@@ -246,7 +246,7 @@ Semgrep installs; trusted source-built CodeQL DB; native fuzz harness generator;
 replayable authorization impact; OSV post-freeze range matcher; blind historical
 benchmark; measurement against standalone scanners; remote attestations.
 
-## 11. Rejection policy and design choices
+## 11. Security research design choices
 
 - No general-purpose CPG rewrite in Rust. Consume Joern/CodeQL output.
 - No automatic acceptance of "fixed" from absent static findings.

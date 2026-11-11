@@ -392,6 +392,42 @@ fn scip_cross_language_references_are_unverified_and_source_bound() {
     assert_eq!(json::parse(&ok(f.scip_suggest(&index))).unwrap(), report);
 }
 #[test]
+fn scip_omitted_language_is_not_cross_language_evidence() {
+    let fixture = Fixture::new("scip");
+    let mut index = scip_index();
+    let documents = edit(&mut index, "documents");
+    if let Value::Array(values) = documents {
+        for doc in values {
+            doc.entries_mut().unwrap().remove("language");
+        }
+    } else {
+        panic!("SCIP documents must be an array");
+    }
+    let report = json::parse(&ok(fixture.scip_suggest(&index))).unwrap();
+    assert_eq!(
+        items(report.get("coverage").unwrap(), "languages"),
+        &[Value::string("unspecified")]
+    );
+    assert_eq!(
+        items(&report, "candidates")
+            .iter()
+            .filter(|candidate| str_at(candidate, "kind") == "cross_language_symbol_boundary")
+            .count(),
+        0
+    );
+    assert_eq!(
+        report
+            .get("coverage")
+            .unwrap()
+            .get("matched_cross_file_references")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
 fn scip_candidate_edges_require_exact_symbol_identity() {
     let f = Fixture::new("scip");
     let mut index = scip_index();
@@ -559,7 +595,7 @@ fn scip_nested_project_root_and_prefix_are_source_bound() {
         .entries_mut()
         .unwrap()
         .insert("project_root".into(), Value::string(&project_root));
-    edit(&mut item(edit(&mut index, "documents"), 0), "relative_path")
+    edit(item(edit(&mut index, "documents"), 0), "relative_path")
         .clone_from(&Value::string("../lib.rs"));
     fs::write(&f.index, index.canonical()).unwrap();
     denied(cli(&args));

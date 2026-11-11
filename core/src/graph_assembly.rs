@@ -377,6 +377,7 @@ pub fn assemble(
         return refuse("selected target has no bounded tracked C/C++ source set");
     }
     let mut observed = BTreeMap::<String, (String, Value)>::new();
+    let mut receipt_documents = BTreeMap::<String, Value>::new();
     let entries = fs::read_dir(observations)
         .map_err(|e| format!("observation directory unavailable: {e}"))?;
     let mut count = 0;
@@ -394,7 +395,9 @@ pub fn assemble(
         if !source_paths.contains(&source) {
             return refuse("compiler receipt not a selected target source");
         }
-        if observed.insert(source, (id, obs)).is_some() {
+        if observed.insert(source, (id.clone(), obs)).is_some()
+            || receipt_documents.insert(id, raw).is_some()
+        {
             return refuse("ambiguous duplicate compiler observations for selected target");
         }
     }
@@ -538,6 +541,10 @@ pub fn assemble(
         "CREATE TABLE IF NOT EXISTS configured_graph(\
         graph_id TEXT PRIMARY KEY, source_commit TEXT NOT NULL,\
         target TEXT NOT NULL, configuration TEXT NOT NULL, document TEXT NOT NULL);\
+        CREATE TABLE IF NOT EXISTS configured_observation(\
+        graph_id TEXT NOT NULL, report_id TEXT NOT NULL, source_path TEXT NOT NULL,\
+        document TEXT NOT NULL, PRIMARY KEY(graph_id,report_id),\
+        FOREIGN KEY(graph_id) REFERENCES configured_graph(graph_id));\
         CREATE TABLE IF NOT EXISTS configured_entity(\
         graph_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, document TEXT NOT NULL,\
         PRIMARY KEY(graph_id,id), FOREIGN KEY(graph_id) REFERENCES configured_graph(graph_id));\
@@ -559,6 +566,20 @@ pub fn assemble(
                 Param::Text(&body.canonical()),
             ],
         )?;
+        for (source, (receipt, _)) in &observed {
+            let document = receipt_documents
+                .get(receipt)
+                .ok_or("missing in-memory compiler receipt")?;
+            db.execute(
+                "INSERT OR IGNORE INTO configured_observation VALUES(?,?,?,?)",
+                &[
+                    Param::Text(&id),
+                    Param::Text(receipt),
+                    Param::Text(source),
+                    Param::Text(&document.canonical()),
+                ],
+            )?;
+        }
         for (node_id, node) in &nodes {
             db.execute(
                 "INSERT OR IGNORE INTO configured_entity VALUES(?,?,?,?)",

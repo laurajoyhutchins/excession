@@ -206,6 +206,15 @@ def main():
                 "SELECT COUNT(*) FROM configured_edge WHERE graph_id=?",
                 (row["graph_id"],)).fetchone()
             assert nodes == row["nodes"] and edges == row["edges"]
+            receipts, = connection.execute(
+                "SELECT COUNT(*) FROM configured_observation WHERE graph_id=?",
+                (row["graph_id"],)).fetchone()
+            assert receipts == 1
+            raw_receipt, = connection.execute(
+                "SELECT document FROM configured_observation WHERE graph_id=?",
+                (row["graph_id"],)).fetchone()
+            assert json.loads(raw_receipt)["report_id"] == row["compiler_receipt"]
+
     report = {
         "schema": "excession.configured-graph-acceptance.v1",
         "upstream": "madler/zlib v1.3.1",

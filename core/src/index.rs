@@ -18,6 +18,12 @@ pub fn index_revision(
 /// Index the complete Git object/tree/revision identities required by a
 /// bounded integration claim, without doing unrelated language parsing.
 /// The source tree is still independently reconstructed from SQLite rows.
+#[derive(Clone, Copy)]
+enum SemanticMode<'a> {
+    GitOnly,
+    Parse { import_base: Option<&'a str> },
+}
+
 pub fn index_revision_for_evidence(
     db: &Db,
     root: &Path,
@@ -25,16 +31,7 @@ pub fn index_revision_for_evidence(
     commit: &str,
     provenance: &str,
 ) -> Result<i64> {
-    index_revision_inner(
-        db,
-        root,
-        name,
-        commit,
-        provenance,
-        &["h11", "tests"],
-        false,
-        None,
-    )
+    index_revision_inner(db, root, name, commit, provenance, &["h11", "tests"], SemanticMode::GitOnly)
 }
 
 pub fn index_revision_with_roots(
@@ -45,7 +42,15 @@ pub fn index_revision_with_roots(
     provenance: &str,
     roots: &[&str],
 ) -> Result<i64> {
-    index_revision_inner(db, root, name, commit, provenance, roots, true, None)
+    index_revision_inner(
+        db,
+        root,
+        name,
+        commit,
+        provenance,
+        roots,
+        SemanticMode::Parse { import_base: None },
+    )
 }
 
 /// Resolve imports relative to a declared source directory without changing
@@ -74,8 +79,9 @@ pub fn index_revision_with_import_base(
         commit,
         provenance,
         roots,
-        true,
-        Some(import_base),
+        SemanticMode::Parse {
+            import_base: Some(import_base),
+        },
     )
 }
 
@@ -86,9 +92,12 @@ fn index_revision_inner(
     commit: &str,
     provenance: &str,
     roots: &[&str],
-    include_semantics: bool,
-    import_base: Option<&str>,
+    semantics: SemanticMode<'_>,
 ) -> Result<i64> {
+    let import_base = match semantics {
+        SemanticMode::GitOnly => None,
+        SemanticMode::Parse { import_base } => import_base,
+    };
     git::clean(root)?;
     let commit = git::rev(root, commit)?;
     if git::text(root, &["cat-file", "-t", &commit])? != "commit" {
@@ -163,7 +172,7 @@ fn index_revision_inner(
                 "Git/SQLite tree mismatch: expected {tree}, got {reconstructed}"
             ));
         }
-        if include_semantics {
+        if matches!(semantics, SemanticMode::Parse { .. }) {
             crate::semantic::index_sources(
                 db, repo_id, root, &commit, &entries, roots, import_base,
             )?;

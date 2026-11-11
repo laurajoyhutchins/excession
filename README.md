@@ -94,6 +94,27 @@ manifest and receipt checksums, and SQLite rows. It does **not** independently
 establish import-closure completeness or remotely attest to execution.
 See [executable slices](docs/EXECUTABLE_SLICES.md).
 
+## Historical evidence transport
+
+Excession treats commits as repository states, not agent outputs. The same
+source-backed observation can be compared against any retained revision,
+including an old branch, divergent commit or merge. Historical plans use Git
+objects directly without checking out the commit:
+
+```sh
+python3 tools/excession_slice.py plan "$REPO" tests/check.py --revision "$OLD_COMMIT" --history > /tmp/old-slice.json
+python3 tools/excession_slice.py plan "$REPO" tests/check.py --revision "$NEW_COMMIT" --history > /tmp/new-slice.json
+excession evidence transport --repo "$REPO" --source-manifest /tmp/old-slice.json \
+  --target-manifest /tmp/new-slice.json --receipt /tmp/old-receipt.json --db /tmp/evidence.sqlite
+excession evidence transport-audit --repo "$REPO" --source-manifest /tmp/old-slice.json \
+  --target-manifest /tmp/new-slice.json --receipt /tmp/old-receipt.json --db /tmp/evidence.sqlite
+```
+
+The source receipt must have been ingested and audited with `excession slice
+ingest|audit`. `excession evidence trace` reconstructs all direct transport
+edges for a receipt from Git and SQLite. A source match never becomes target
+behavioral verification. See [historical evidence transport](docs/EVIDENCE_HISTORY.md).
+
 ## Research compatibility
 
 Pinned earlier experiments retain their original Git blobs, schema strings,

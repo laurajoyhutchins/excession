@@ -149,6 +149,15 @@ class SliceIntegrationTests(unittest.TestCase):
         with self.assertRaises(slices.Refusal):
             slices.plan(self.repo, "alias.py")
 
+    def test_execution_that_modifies_slice_is_refused(self):
+        self.write("tests/check.py", "from pathlib import Path\nPath('unexpected.txt').write_text('new file')\n")
+        self.commit("mutating test")
+        manifest = slices.plan(self.repo, "tests/check.py")
+        out = self.root / "mutating-slice"
+        slices.materialize(self.repo, manifest, out)
+        with self.assertRaises(slices.Refusal):
+            slices.execute(self.repo, manifest, out, 10)
+
     def test_forged_manifest_rejected(self):
         manifest, _, _ = self.base_run()
         manifest["entries"].pop()

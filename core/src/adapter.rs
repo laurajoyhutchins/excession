@@ -4,6 +4,7 @@ use crate::json::{Value, obj};
 use crate::{Result, refuse};
 use std::ffi::OsString;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 /// Resolve interpreters without relying on Unix-only `python3` executable names.
@@ -37,12 +38,44 @@ pub fn tree_sitter(entries: &[Value]) -> Result<Value> {
     run("python3", code, entries)
 }
 
+/// Load the locked TypeScript parser from a sidecar or an explicitly trusted
+/// location. Never resolve it from the repository being indexed.
+fn typescript_file() -> Result<PathBuf> {
+    if let Some(value) = std::env::var_os("EXCESSION_TYPESCRIPT_JS") {
+        let path = PathBuf::from(value);
+        if !path.is_absolute() || !path.is_file() {
+            return refuse("EXCESSION_TYPESCRIPT_JS must name an existing absolute file");
+        }
+        return path.canonicalize().map_err(|e| e.to_string());
+    }
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let adjacent = executable
+        .parent()
+        .ok_or("executable has no parent")?
+        .join("lib/typescript.js");
+    if adjacent.is_file() {
+        return adjacent.canonicalize().map_err(|e| e.to_string());
+    }
+    // Cargo's development build uses its own locked, locally installed parser.
+    let checkout = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or("crate manifest has no parent")?
+        .join("node_modules/typescript/lib/typescript.js");
+    if checkout.is_file() {
+        return checkout.canonicalize().map_err(|e| e.to_string());
+    }
+    refuse("TypeScript parser missing: install the portable bundle or set EXCESSION_TYPESCRIPT_JS")
+}
+
 fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
     let mut command = if binary == "node" {
         node_command()
     } else {
         python_command()
     };
+    if binary == "node" {
+        command.env("EXCESSION_TYPESCRIPT_JS", typescript_file()?);
+    }
     let mut process = command
         .arg(if binary == "node" { "-e" } else { "-c" })
         .arg(code)

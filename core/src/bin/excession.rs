@@ -1,7 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, index, projection, refuse, security_ingest, views};
+use excession::{Result, git, graph_baseline, index, projection, refuse, security_ingest, views};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -32,6 +32,7 @@ Usage:
       [--codeql-db PREBUILT_DB] [--timeout-seconds 300]
   excession inspect dependencies|manifest --db DB --name NAME --rev REV
   excession inspect impact --db DB --name NAME --rev REV --seed MODULE
+  excession inspect graph --db DB --name NAME --rev REV --seed MODULE --kind KIND
   excession inspect review --db DB --name NAME --old REV --new REV
   excession research COMMAND [historical positional arguments]
 
@@ -259,6 +260,7 @@ fn inspect_cmd(verb: &str, argv: &[String]) -> Result<Response> {
     let (req, extra): (&[&str], &[&str]) = match verb {
         "dependencies" | "manifest" => (&["db", "name", "rev"], &[]),
         "impact" => (&["db", "name", "rev", "seed"], &[]),
+        "graph" => (&["db", "name", "rev", "seed", "kind"], &[]),
         "review" => (&["db", "name", "old", "new"], &[]),
         _ => return refuse(format!("unknown inspection command {verb:?}")),
     };
@@ -279,6 +281,13 @@ fn inspect_cmd(verb: &str, argv: &[String]) -> Result<Response> {
             opt.get("name"),
             &resolve(opt.get("rev"))?,
             opt.get("seed"),
+        )?,
+        "graph" => graph_baseline::query(
+            &db,
+            opt.get("name"),
+            &resolve(opt.get("rev"))?,
+            opt.get("seed"),
+            opt.get("kind"),
         )?,
         "review" => views::review(
             &db,

@@ -39,6 +39,8 @@ jobs:
           fetch-depth: 0
       - name: Install pinned Rust
         run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Resolve locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13.5'

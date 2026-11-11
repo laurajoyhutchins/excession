@@ -50,8 +50,13 @@ those artifacts on failure.
 
 ## Benchmark reports
 
-`python3 benchmarks/reporting.py validate path/to/report.json` verifies the
-Draft 2020-12 schema, report content digest, and referenced raw-artifact
-hashes. The validator dependencies are pinned in `requirements/research.txt`.
+`excession benchmark report --kind relational --directory RESULTS` builds a
+schema-validated Rust report from existing relational receipts and source
+bundles. `excession benchmark report --kind native --directory . --input
+native-calibration.json` produces a separate native calibration envelope.
+
+`excession benchmark validate --report path/to/report.json` verifies the
+Draft 2020-12 schema, content digest, and referenced raw-artifact hashes.
+The Rust `jsonschema` dependency is pinned in `core/Cargo.lock`.
 `make benchmark-schema-check` runs report conversion and negative-case tests.
-This verification is about benchmark evidence, not the installed environment.
+This verification checks benchmark evidence, not the installed environment.

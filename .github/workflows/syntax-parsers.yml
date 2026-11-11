@@ -50,6 +50,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
       - name: Install and prefetch optional grammars with mise
         run: mise run syntax-setup
+      - name: Prefetch locked Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Install locked TypeScript compiler API
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build Excession CLI

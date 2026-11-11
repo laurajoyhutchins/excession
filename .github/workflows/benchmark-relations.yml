@@ -5,10 +5,11 @@ on:
     paths:
       - 'benchmarks/experiments/**'
       - 'benchmarks/protocol.md'
-      - 'benchmarks/reporting.py'
       - 'benchmarks/schemas/**'
-      - 'requirements/research.txt'
-      - 'tests/test_benchmark_reporting.py'
+      - 'core/src/benchmark.rs'
+      - 'core/src/bin/excession.rs'
+      - 'core/Cargo.toml'
+      - 'core/Cargo.lock'
       - 'benchmarks/README.md'
       - 'tests/test_benchmark_experiments.py'
       - '.github/workflows/benchmark-relations.yml'
@@ -25,12 +26,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install Rust 1.99.1
         run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Resolve locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Compile actual Excession binary
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
-      - name: Install pinned JSON Schema validator
-        run: python3 -m pip install --disable-pip-version-check -r requirements/research.txt
-      - name: Validate benchmark schemas and negative cases
-        run: python3 -m unittest discover -s tests -p test_benchmark_reporting.py -v
+      - name: Verify Rust benchmark schema and negative cases
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml benchmark::tests
       - name: Independent oracle and Git fixture tests
         run: python3 -m unittest discover -s tests -p test_benchmark_experiments.py -v
       - name: Measure cross-revision relation queries
@@ -40,7 +41,7 @@ jobs:
             --out "$RUNNER_TEMP/relational" \
             --sizes 8 --fanouts 1,2 --revisions 2 --repetitions 1
           cat "$RUNNER_TEMP/relational/summary.json"
-          python3 benchmarks/reporting.py validate "$RUNNER_TEMP/relational/report.json"
+          core/target/debug/excession benchmark validate --report "$RUNNER_TEMP/relational/report.json"
       - name: Preserve immutable source histories and measurements
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

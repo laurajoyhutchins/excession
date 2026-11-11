@@ -23,6 +23,8 @@ jobs:
         run: rustup show active-toolchain
       - name: Install development dependencies with mise
         run: mise run setup
+      - name: Prefetch locked Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Install pinned Rust test reporter
         uses: taiki-e/install-action@v2
         with:

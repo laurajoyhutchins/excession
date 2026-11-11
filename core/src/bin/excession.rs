@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, native_boundary, native_depinfo, preflight, projection,
-    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, git, graph_baseline, index, native_boundary, native_depinfo, preflight,
+    projection, refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -54,6 +54,9 @@ Usage:
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
   excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
   excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
+  excession benchmark report --kind relational --directory RESULT_DIR
+  excession benchmark report --kind native --directory RESULT_DIR --input RECEIPT.json
+  excession benchmark validate --report SAVED_REPORT_JSON
   excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
@@ -706,6 +709,33 @@ fn execute(args: &[String]) -> Result<Response> {
                 refactor::suggest(&db, opt.get("name"), opt.get("rev"))?
             }))
         }
+        [top, sub, rest @ ..] if top == "benchmark" => match sub.as_str() {
+            "validate" => {
+                let opt = Options::parse(rest, &["report"], &[])?;
+                benchmark::validate(opt.path("report"))?;
+                Ok(Response::Message(format!("VALID {}", opt.get("report"))))
+            }
+            "report" => {
+                let opt = Options::parse(rest, &["kind", "directory"], &["input"])?;
+                let output = match opt.get("kind") {
+                    "relational" => {
+                        if opt.0.contains_key("input") {
+                            return refuse("--input is only valid for native calibration");
+                        }
+                        benchmark::build_relational(opt.path("directory"))?
+                    }
+                    "native" => {
+                        if !opt.0.contains_key("input") {
+                            return refuse("native calibration requires --input");
+                        }
+                        benchmark::build_native(opt.path("directory"), opt.get("input"))?
+                    }
+                    other => return refuse(format!("unknown benchmark report kind {other}")),
+                };
+                Ok(Response::Message(format!("VALID {}", output.display())))
+            }
+            _ => refuse(format!("unknown benchmark command {sub}")),
+        },
         [top, sub, rest @ ..] if top == "inspect" => inspect_cmd(sub, rest),
         [top, sub, rest @ ..] if top == "view" && sub == "replay" => {
             let Some((verb, tail)) = rest.split_first() else {

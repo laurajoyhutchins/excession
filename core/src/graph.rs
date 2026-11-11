@@ -226,12 +226,19 @@ struct Arc {
     kind: String,
     status: String,
     evidence: String,
+    relation: String,
 }
 fn arcs(db: &Db, graph: &str) -> Result<Vec<Arc>> {
-    let rows = db.query(
-        "SELECT source_id,destination_id,kind,status,evidence FROM configured_edge WHERE graph_id=? ORDER BY id",
-        &[Param::Text(graph)]
-    )?;
+    let columns = db.query("PRAGMA table_info(configured_edge)", &[])?;
+    let has_relation = columns.iter().any(|r|
+        r.get(1).and_then(|c| c.as_deref()) == Some("relation")
+    );
+    let statement = if has_relation {
+        "SELECT source_id,destination_id,kind,status,evidence,relation FROM configured_edge WHERE graph_id=? ORDER BY id"
+    } else {
+        "SELECT source_id,destination_id,kind,status,evidence,'unknown' FROM configured_edge WHERE graph_id=? ORDER BY id"
+    };
+    let rows = db.query(statement, &[Param::Text(graph)])?;
     rows.into_iter()
         .map(|r| {
             Ok(Arc {
@@ -240,6 +247,7 @@ fn arcs(db: &Db, graph: &str) -> Result<Vec<Arc>> {
                 kind: r[2].clone().ok_or("missing relationship kind")?,
                 status: r[3].clone().ok_or("missing relationship status")?,
                 evidence: r[4].clone().ok_or("missing relationship evidence")?,
+                relation: r[5].clone().ok_or("missing neutral relationship")?,
             })
         })
         .collect()
@@ -251,7 +259,11 @@ fn arc_value(arc: &Arc) -> Value {
         ("kind", Value::string(&arc.kind)),
         (
             "relation",
-            Value::string(configured_store::relation(&arc.kind)),
+            Value::string(if arc.relation == "unknown" {
+                configured_store::relation(&arc.kind)
+            } else {
+                &arc.relation
+            }),
         ),
         ("status", Value::string(&arc.status)),
         ("evidence", Value::string(&arc.evidence)),
@@ -330,7 +342,7 @@ pub fn neighbors(
     }
     let mut visited = BTreeSet::from([start.clone()]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    let mut shown = BTreeMap::<(String, String, String, String, String), Arc>::new();
+    let mut shown = BTreeMap::<(String, String, String, String, String, String), Arc>::new();
     let mut truncated = false;
     while let Some((current, distance)) = queue.pop_front() {
         if distance == depth { continue; }
@@ -338,7 +350,7 @@ pub fn neighbors(
             for (other, arc) in adjacent {
                 let key = (
                     arc.from.clone(), arc.to.clone(), arc.kind.clone(),
-                    arc.status.clone(), arc.evidence.clone(),
+                    arc.status.clone(), arc.evidence.clone(), arc.relation.clone(),
                 );
                 if !shown.contains_key(&key) && shown.len() >= MAX_QUERY_EDGES {
                     truncated = true;
@@ -385,8 +397,8 @@ pub fn path(
         adjacency.entry(arc.from.clone()).or_default().push(arc);
     }
     for outgoing in adjacency.values_mut() {
-        outgoing.sort_by(|a,b| (&a.to,&a.kind,&a.status,&a.evidence)
-            .cmp(&(&b.to,&b.kind,&b.status,&b.evidence)));
+        outgoing.sort_by(|a,b| (&a.to,&a.kind,&a.status,&a.evidence,&a.relation)
+            .cmp(&(&b.to,&b.kind,&b.status,&b.evidence,&b.relation)));
     }
     let mut visited = BTreeSet::from([start.clone()]);
     let mut queue = VecDeque::from([(start.clone(), 0usize)]);

@@ -49,14 +49,16 @@ Git, and system SQLite/OpenSSL.
 
 ```sh
 rustup component add --toolchain 1.99.1 rust-analyzer rust-src
-go install github.com/scip-code/scip/cmd/scip@v0.10.0
+git clone --filter=blob:none --no-checkout https://github.com/scip-code/scip.git /tmp/scip-source
+git -C /tmp/scip-source checkout --detach 1c2b6db7e560d5233c944f36e4ac1377cc6963fc
+(cd /tmp/scip-source && go build -o /tmp/scip ./cmd/scip)
 cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
 SOURCE="$(mktemp -d)"
 OUT="$(mktemp -d)"
 git worktree add --detach "$SOURCE" HEAD
 export CARGO_TARGET_DIR="$(mktemp -d)"
 rustup run 1.99.1 rust-analyzer scip "$SOURCE/core" --output "$OUT/index.scip"
-scip print --json "$OUT/index.scip" > "$OUT/index.scip.json"
+/tmp/scip print --json "$OUT/index.scip" > "$OUT/index.scip.json"
 python3 tools/self_analysis.py \
   --repo "$SOURCE" --rev HEAD --base-rev HEAD^ \
   --bin "$PWD/core/target/debug/excession" \

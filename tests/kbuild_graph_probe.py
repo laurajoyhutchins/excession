@@ -57,6 +57,33 @@ def main():
     assert any(x["to"] == "source:init/main.c" and x["status"] == "GIT_SOURCE_VERIFIED"
                for x in edges), edges
     assert any(x["kind"] == "HAS_BUILD_RECORD" for x in edges)
+    # Same generic API as the CMake graph, with no Kbuild-specific query.
+    imported = json.loads(run([
+        str(args.binary.resolve()), "graph", "import",
+        "--repo", str(repo), "--build", str(build),
+        "--target", target, "--db", str(db),
+        "--trusted-local", "true",
+    ]).stdout)
+    assert imported["schema"] == "excession.graph-summary.v1"
+    assert imported["provider"] == "kbuild"
+    assert imported["graph_id"] == observed["graph_id"]
+    listed = json.loads(run([
+        str(args.binary.resolve()), "graph", "ls", "--db", str(db),
+    ]).stdout)
+    assert any(row["graph_id"] == imported["graph_id"] for row in listed["graphs"])
+    neighborhood = json.loads(run([
+        str(args.binary.resolve()), "graph", "deps", "--db", str(db),
+        "--node", target, "--id", imported["graph_id"],
+    ]).stdout)
+    assert any(e["relation"] == "contains" and e["to"] == "object:init/main.o"
+               for e in neighborhood["edges"])
+    evidence_path = json.loads(run([
+        str(args.binary.resolve()), "graph", "path", "--db", str(db),
+        "--from", target, "--to", "init/main.c", "--id", imported["graph_id"],
+    ]).stdout)
+    assert evidence_path["status"] == "RECORDED_EVIDENCE_PATH"
+    assert evidence_path["edges"][-1]["relation"] == "reads"
+    assert any(n["role"] == "source" for n in evidence_path["nodes"])
     with sqlite3.connect(db) as connection:
         stored, = connection.execute(
             "SELECT COUNT(*) FROM configured_graph WHERE graph_id=?",

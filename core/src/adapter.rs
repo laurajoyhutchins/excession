@@ -67,6 +67,21 @@ pub fn typescript_file() -> Result<PathBuf> {
     refuse("TypeScript parser missing: install the portable bundle or set EXCESSION_TYPESCRIPT_JS")
 }
 
+pub fn kernel_sources(entries: &[Value]) -> Result<Value> {
+    let code = include_str!("../adapters/kernel_parse.py");
+    run("python3", code, entries)
+}
+
+pub fn clang_ast(request: &Value) -> Result<Value> {
+    let code = include_str!("../adapters/clang_ast.py");
+    let reply = run("python3", code, std::slice::from_ref(request))?;
+    let records = reply.array_ref()?;
+    if records.len() != 1 {
+        return refuse("Clang adapter did not return exactly one result");
+    }
+    Ok(records[0].clone())
+}
+
 fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
     let mut command = if binary == "node" {
         node_command()

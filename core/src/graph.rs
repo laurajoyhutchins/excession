@@ -1,0 +1,681 @@
+//! Language-neutral graph import, inspection and evidence-preserving queries.
+//! Build systems and languages are adapters. This layer never parses source.
+use crate::json::{Value, obj};
+use crate::sqlite::{Db, Param};
+use crate::{Result, configured_store, graph_assembly, kbuild_graph, refuse};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::path::{Path, PathBuf};
+
+const MAX_GRAPHS: usize = 1024;
+const MAX_DEPTH: usize = 8;
+const MAX_QUERY_EDGES: usize = 256;
+
+pub struct Import<'a> {
+    pub repo: &'a Path,
+    pub revision: &'a str,
+    pub build: &'a Path,
+    pub target: &'a str,
+    pub provider: &'a str,
+    pub observations: Option<&'a Path>,
+    pub trusted_local: &'a str,
+    pub archiver: &'a str,
+}
+
+pub fn database_path(db: Option<&Path>, build: Option<&Path>) -> Result<PathBuf> {
+    if let Some(path) = db {
+        return Ok(path.to_path_buf());
+    }
+    if let Some(path) = build {
+        return Ok(path.join("excession.sqlite"));
+    }
+    refuse("provide --db SQLITE or --build BUILD (defaults to BUILD/excession.sqlite)")
+}
+
+fn provider_for(build: &Path, target: &str, requested: &str) -> Result<&'static str> {
+    match requested {
+        "cmake" => Ok("cmake"),
+        "kbuild" => Ok("kbuild"),
+        "auto" => {
+            let cmake = build.join(".cmake/api/v1/reply").is_dir();
+            let kbuild = build.join(".config").is_file() && target.ends_with(".a");
+            match (cmake, kbuild) {
+                (true, false) => Ok("cmake"),
+                (false, true) => Ok("kbuild"),
+                (false, false) => refuse(
+                    "build provider not detected: expected CMake File API reply or a Kbuild .config and .a target; use --provider",
+                ),
+                (true, true) => refuse("ambiguous build provider; specify --provider cmake|kbuild"),
+            }
+        }
+        _ => refuse("unknown build provider: choose auto, cmake, or kbuild"),
+    }
+}
+pub fn import(db: &Db, input: &Import<'_>) -> Result<Value> {
+    if input.target.is_empty() {
+        return refuse("select a nonempty configured build target");
+    }
+    let provider = provider_for(input.build, input.target, input.provider)?;
+    let result = match provider {
+        "cmake" => graph_assembly::assemble(
+            input.repo,
+            input.revision,
+            input.build,
+            input.target,
+            input.observations,
+            db,
+        )?,
+        "kbuild" => {
+            if input.observations.is_some() {
+                return refuse("--observations applies to the cmake adapter, not Kbuild");
+            }
+            kbuild_graph::assemble(
+                input.repo,
+                input.revision,
+                input.build,
+                input.target,
+                input.archiver,
+                input.trusted_local,
+                db,
+            )?
+        }
+        _ => return refuse("unsupported configured build provider"),
+    };
+    let id = result.get("graph_id")?.str()?;
+    // Small interactive response. The complete raw adapter report is stored
+    // immutably in the graph table and queryable without console flooding.
+    let mut summary = summarize(&result, id)?;
+    summary
+        .entries_mut()?
+        .insert("provider".to_owned(), Value::string(provider));
+    Ok(summary)
+}
+
+fn optional<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    value.entries().ok()?.get(key)
+}
+fn provider_name(body: &Value) -> &'static str {
+    match body.get("schema").and_then(Value::str).ok() {
+        Some("excession.configured-graph.v1") => "cmake",
+        Some("excession.kbuild-graph.v1") => "kbuild",
+        _ => "unknown",
+    }
+}
+fn summarize(body: &Value, id: &str) -> Result<Value> {
+    let nodes = body.get("nodes")?.array_ref()?;
+    let edges = body.get("edges")?.array_ref()?;
+    let target = optional(body, "target")
+        .or_else(|| optional(body, "archive"))
+        .ok_or("graph target missing")?
+        .str()?;
+    let status = body.get("status")?.str()?;
+    let config = optional(body, "configuration")
+        .or_else(|| optional(body, "config_sha256"))
+        .ok_or("graph configuration missing")?
+        .str()?;
+    Ok(obj(&[
+        ("schema", Value::string("excession.graph-summary.v1")),
+        ("graph_id", Value::string(id)),
+        ("source_commit", body.get("source_commit")?.clone()),
+        ("target", Value::string(target)),
+        ("configuration", Value::string(config)),
+        ("provider", Value::string(provider_name(body))),
+        ("status", Value::string(status)),
+        ("node_count", Value::number(nodes.len())),
+        ("edge_count", Value::number(edges.len())),
+        (
+            "coverage_note",
+            Value::string(
+                "Configured observations only; not proof of build execution, global symbols, or runtime reachability",
+            ),
+        ),
+    ]))
+}
+fn graphs(db: &Db) -> Result<Vec<(String, String, String)>> {
+    let rows = db.query(
+        "SELECT graph_id, target, document FROM configured_graph ORDER BY target,graph_id",
+        &[],
+    )?;
+    if rows.len() > MAX_GRAPHS {
+        return refuse("more than 1024 graph snapshots; select a smaller database");
+    }
+    rows.into_iter()
+        .map(|row| {
+            let id = row[0].clone().ok_or("missing graph id")?;
+            let target = row[1].clone().ok_or("missing graph target")?;
+            let document = row[2].clone().ok_or("missing graph body")?;
+            Ok((id, target, document))
+        })
+        .collect()
+}
+fn find(db: &Db, graph: Option<&str>, target: Option<&str>) -> Result<(String, Value)> {
+    let mut choices = Vec::new();
+    for (id, name, text) in graphs(db)? {
+        if graph.is_none_or(|needle| id == needle || id.starts_with(needle))
+            && target.is_none_or(|needle| name == needle)
+        {
+            choices.push((id, text));
+        }
+    }
+    if choices.len() != 1 {
+        return refuse(format!(
+            "expected one graph, found {}; use 'excession graph ls' then --id GRAPH_ID or --target TARGET",
+            choices.len()
+        ));
+    }
+    let (id, text) = choices.pop().ok_or("graph snapshot missing")?;
+    let parsed = crate::json::parse(text.as_bytes())?;
+    if parsed.sha256() != id {
+        return refuse("stored graph body digest mismatch");
+    }
+    Ok((id, parsed))
+}
+pub fn list(db: &Db) -> Result<Value> {
+    let entries = graphs(db)?
+        .into_iter()
+        .map(|(id, _, body)| {
+            let parsed = crate::json::parse(body.as_bytes())?;
+            if parsed.sha256() != id {
+                return refuse("stored graph body digest mismatch");
+            }
+            summarize(&parsed, &id)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(obj(&[
+        ("schema", Value::string("excession.graph-list.v1")),
+        ("count", Value::number(entries.len())),
+        ("graphs", Value::array(entries)),
+    ]))
+}
+pub fn show(db: &Db, id: Option<&str>, target: Option<&str>) -> Result<Value> {
+    let (id, body) = find(db, id, target)?;
+    summarize(&body, &id)
+}
+fn resolve_node(db: &Db, graph: &str, name: &str) -> Result<String> {
+    let rows = db.query(
+        "SELECT id FROM configured_entity WHERE graph_id=? ORDER BY id",
+        &[Param::Text(graph)],
+    )?;
+    let names = rows
+        .into_iter()
+        .filter_map(|r| r[0].clone())
+        .collect::<Vec<_>>();
+    if names.iter().any(|id| id == name) {
+        return Ok(name.to_owned());
+    }
+    // Prefer an explicit configured target over an output artifact with the
+    // same basename. This is not a claim that the two nodes are identical.
+    for prefix in ["target:", "archive:", "source:", "object:", "artifact:"] {
+        let full = format!("{prefix}{name}");
+        if names.iter().any(|id| id == &full) {
+            return Ok(full);
+        }
+    }
+    let candidates = names
+        .iter()
+        .filter(|id| {
+            id.rsplit_once(':').is_some_and(|(_, tail)| tail == name)
+                || id.strip_prefix("source:").is_some_and(|tail| tail == name)
+                || id.strip_prefix("target:").is_some_and(|tail| tail == name)
+                || id.strip_prefix("archive:").is_some_and(|tail| tail == name)
+        })
+        .collect::<Vec<_>>();
+    if candidates.len() == 1 {
+        return Ok((*candidates[0]).clone());
+    }
+    refuse(format!(
+        "node {name:?} has {} matches; use the exact ID from the graph or a unique suffix",
+        candidates.len()
+    ))
+}
+#[derive(Clone)]
+struct Arc {
+    from: String,
+    to: String,
+    kind: String,
+    status: String,
+    evidence: String,
+    relation: String,
+}
+fn arcs(db: &Db, graph: &str) -> Result<Vec<Arc>> {
+    let columns = db.query("PRAGMA table_info(configured_edge)", &[])?;
+    let has_relation = columns
+        .iter()
+        .any(|r| r.get(1).and_then(|c| c.as_deref()) == Some("relation"));
+    let statement = if has_relation {
+        "SELECT source_id,destination_id,kind,status,evidence,relation FROM configured_edge WHERE graph_id=? ORDER BY id"
+    } else {
+        "SELECT source_id,destination_id,kind,status,evidence,'__legacy__' FROM configured_edge WHERE graph_id=? ORDER BY id"
+    };
+    let rows = db.query(statement, &[Param::Text(graph)])?;
+    rows.into_iter()
+        .map(|r| {
+            Ok(Arc {
+                from: r[0].clone().ok_or("missing relationship source")?,
+                to: r[1].clone().ok_or("missing relationship destination")?,
+                kind: r[2].clone().ok_or("missing relationship kind")?,
+                status: r[3].clone().ok_or("missing relationship status")?,
+                evidence: r[4].clone().ok_or("missing relationship evidence")?,
+                relation: r[5].clone().ok_or("missing neutral relationship")?,
+            })
+        })
+        .collect()
+}
+fn arc_value(arc: &Arc) -> Value {
+    obj(&[
+        ("from", Value::string(&arc.from)),
+        ("to", Value::string(&arc.to)),
+        ("kind", Value::string(&arc.kind)),
+        (
+            "relation",
+            Value::string(if arc.relation == "__legacy__" {
+                configured_store::relation(&arc.kind)
+            } else {
+                &arc.relation
+            }),
+        ),
+        ("status", Value::string(&arc.status)),
+        ("evidence", Value::string(&arc.evidence)),
+    ])
+}
+fn node_value(db: &Db, graph: &str, name: &str) -> Result<Value> {
+    let rows = db.query(
+        "SELECT document FROM configured_entity WHERE graph_id=? AND id=?",
+        &[Param::Text(graph), Param::Text(name)],
+    )?;
+    if rows.len() != 1 {
+        return refuse("graph node missing");
+    }
+    let encoded = rows[0][0].as_deref().ok_or("missing graph node document")?;
+    let mut node = crate::json::parse(encoded.as_bytes())?;
+    if optional(&node, "role").is_none() {
+        let kind = node.get("kind")?.str()?.to_owned();
+        node.entries_mut()?.insert(
+            "role".to_owned(),
+            Value::string(configured_store::role(&kind)),
+        );
+    }
+    Ok(node)
+}
+fn presentation(
+    db: &Db,
+    graph: &str,
+    nodes: &BTreeSet<String>,
+    edges: &[Arc],
+    status: &str,
+) -> Result<Value> {
+    let mut facts = Vec::new();
+    for name in nodes {
+        facts.push(node_value(db, graph, name)?);
+    }
+    Ok(obj(&[
+        ("schema", Value::string("excession.graph-query.v1")),
+        ("graph_id", Value::string(graph)),
+        ("status", Value::string(status)),
+        ("nodes", Value::array(facts)),
+        ("edges", Value::array(edges.iter().map(arc_value))),
+        (
+            "semantics",
+            Value::string(
+                "Evidence relationships are not automatically runtime reachability or proven causality",
+            ),
+        ),
+    ]))
+}
+pub fn neighbors(
+    db: &Db,
+    graph_id: Option<&str>,
+    target: Option<&str>,
+    node: &str,
+    direction: &str,
+    depth: usize,
+) -> Result<Value> {
+    if depth == 0 || depth > MAX_DEPTH {
+        return refuse("graph depth must be 1..8");
+    }
+    if !matches!(direction, "out" | "in" | "both") {
+        return refuse("graph direction must be out, in, or both");
+    }
+    let (id, _) = find(db, graph_id, target)?;
+    let start = resolve_node(db, &id, node)?;
+    let mut adjacency = BTreeMap::<String, Vec<(String, Arc)>>::new();
+    for arc in arcs(db, &id)? {
+        if direction != "in" {
+            adjacency
+                .entry(arc.from.clone())
+                .or_default()
+                .push((arc.to.clone(), arc.clone()));
+        }
+        if direction != "out" {
+            adjacency
+                .entry(arc.to.clone())
+                .or_default()
+                .push((arc.from.clone(), arc));
+        }
+    }
+    let mut visited = BTreeSet::from([start.clone()]);
+    let mut queue = VecDeque::from([(start, 0usize)]);
+    let mut shown = BTreeMap::<(String, String, String, String, String, String), Arc>::new();
+    let mut truncated = false;
+    while let Some((current, distance)) = queue.pop_front() {
+        if distance == depth {
+            continue;
+        }
+        if let Some(adjacent) = adjacency.get(&current) {
+            for (other, arc) in adjacent {
+                let key = (
+                    arc.from.clone(),
+                    arc.to.clone(),
+                    arc.kind.clone(),
+                    arc.status.clone(),
+                    arc.evidence.clone(),
+                    arc.relation.clone(),
+                );
+                if !shown.contains_key(&key) && shown.len() >= MAX_QUERY_EDGES {
+                    truncated = true;
+                    break;
+                }
+                shown.insert(key, arc.clone());
+                if visited.insert(other.clone()) {
+                    queue.push_back((other.clone(), distance + 1));
+                }
+            }
+        }
+        if truncated {
+            break;
+        }
+    }
+    presentation(
+        db,
+        &id,
+        &visited,
+        &shown.into_values().collect::<Vec<_>>(),
+        if truncated {
+            "PARTIAL_EDGE_LIMIT"
+        } else {
+            "OBSERVED_RELATIONSHIPS"
+        },
+    )
+}
+pub fn path(
+    db: &Db,
+    graph_id: Option<&str>,
+    target: Option<&str>,
+    from: &str,
+    to: &str,
+    depth: usize,
+) -> Result<Value> {
+    if depth == 0 || depth > MAX_DEPTH {
+        return refuse("graph depth must be 1..8");
+    }
+    let (id, _) = find(db, graph_id, target)?;
+    let start = resolve_node(db, &id, from)?;
+    let goal = resolve_node(db, &id, to)?;
+    let mut adjacency = BTreeMap::<String, Vec<Arc>>::new();
+    for arc in arcs(db, &id)? {
+        adjacency.entry(arc.from.clone()).or_default().push(arc);
+    }
+    for outgoing in adjacency.values_mut() {
+        outgoing.sort_by(|a, b| {
+            (&a.to, &a.kind, &a.status, &a.evidence, &a.relation).cmp(&(
+                &b.to,
+                &b.kind,
+                &b.status,
+                &b.evidence,
+                &b.relation,
+            ))
+        });
+    }
+    let mut visited = BTreeSet::from([start.clone()]);
+    let mut queue = VecDeque::from([(start.clone(), 0usize)]);
+    let mut parents = BTreeMap::<String, Arc>::new();
+    while let Some((here, dist)) = queue.pop_front() {
+        if here == goal {
+            break;
+        }
+        if dist == depth {
+            continue;
+        }
+        if let Some(outgoing) = adjacency.get(&here) {
+            for arc in outgoing {
+                if visited.insert(arc.to.clone()) {
+                    parents.insert(arc.to.clone(), arc.clone());
+                    queue.push_back((arc.to.clone(), dist + 1));
+                }
+            }
+        }
+    }
+    if !visited.contains(&goal) {
+        return Ok(obj(&[
+            ("schema", Value::string("excession.graph-query.v1")),
+            ("graph_id", Value::string(id)),
+            (
+                "status",
+                Value::string("NO_RECORDED_PATH_IN_SELECTED_DIRECTION_AND_DEPTH"),
+            ),
+            ("from", Value::string(start)),
+            ("to", Value::string(goal)),
+            ("max_depth", Value::number(depth)),
+            (
+                "warning",
+                Value::string(
+                    "Absence of a recorded path is not evidence of absence of a dependency",
+                ),
+            ),
+        ]));
+    }
+    let mut current = goal;
+    let mut selected = Vec::new();
+    let mut nodes = BTreeSet::from([current.clone()]);
+    while current != start {
+        let arc = parents
+            .get(&current)
+            .ok_or("missing BFS predecessor")?
+            .clone();
+        current = arc.from.clone();
+        nodes.insert(current.clone());
+        selected.push(arc);
+    }
+    selected.reverse();
+    presentation(db, &id, &nodes, &selected, "RECORDED_EVIDENCE_PATH")
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn neutral_vocabulary_is_not_tied_to_one_build_system() {
+        assert_eq!(
+            configured_store::role("git-source"),
+            configured_store::role("kbuild-source")
+        );
+        assert_eq!(
+            configured_store::role("configured-artifact"),
+            configured_store::role("kbuild-object")
+        );
+        assert_eq!(
+            configured_store::relation("PREPROCESSOR_INPUT"),
+            configured_store::relation("COMPILES_SOURCE")
+        );
+        assert_eq!(configured_store::relation("unknown-new-edge"), "unknown");
+        let mut entities = BTreeMap::new();
+        configured_store::push_typed_node(
+            &mut entities,
+            "source:lib.rs".to_owned(),
+            "source",
+            "rust-language-native-source",
+            obj(&[]),
+        )
+        .unwrap();
+        assert_eq!(
+            entities["source:lib.rs"]
+                .get("role")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "source"
+        );
+        assert!(
+            configured_store::push_typed_node(
+                &mut entities,
+                "source:invalid".to_owned(),
+                "invented-role",
+                "rust-language-native-source",
+                obj(&[])
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn common_graph_queries_preserve_source_and_evidence() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "excession-graph-{}-{unique}.sqlite",
+            std::process::id()
+        ));
+        let db = Db::open(&path).expect("database");
+        // A v1 database must gain a neutral relation column without losing
+        // historical graph identity or native relationship names.
+        db.exec("CREATE TABLE configured_edge(            graph_id TEXT, id TEXT, kind TEXT, source_id TEXT,            destination_id TEXT, status TEXT, evidence TEXT);").unwrap();
+        let mut nodes = BTreeMap::new();
+        let mut edges = BTreeMap::new();
+        configured_store::push_node(
+            &mut nodes,
+            "target:app".to_owned(),
+            "configured-target",
+            obj(&[("name", Value::string("app"))]),
+        )
+        .unwrap();
+        configured_store::push_node(
+            &mut nodes,
+            "source:a.c".to_owned(),
+            "git-source",
+            obj(&[("path", Value::string("a.c"))]),
+        )
+        .unwrap();
+        configured_store::push_edge(
+            &mut edges,
+            "target:app",
+            "source:a.c",
+            "TARGET_SOURCE",
+            "CMAKE_CONFIGURED_GIT_VERIFIED",
+            "native-receipt",
+        )
+        .unwrap();
+        let body = obj(&[
+            ("schema", Value::string("excession.configured-graph.v1")),
+            (
+                "source_commit",
+                Value::string("0000000000000000000000000000000000000000"),
+            ),
+            ("target", Value::string("app")),
+            ("configuration", Value::string("Debug")),
+            ("status", Value::string("PARTIAL_TARGET_OBSERVATIONS")),
+            ("nodes", Value::array(nodes.values().cloned())),
+            ("edges", Value::array(edges.values().cloned())),
+        ]);
+        let id = body.sha256();
+        configured_store::persist(configured_store::GraphSnapshot {
+            db: &db,
+            id: &id,
+            commit: "0000000000000000000000000000000000000000",
+            target: "app",
+            configuration: "Debug",
+            graph: &body,
+            nodes: &nodes,
+            edges: &edges,
+            observations: &[],
+        })
+        .unwrap();
+        let listed = list(&db).unwrap();
+        assert_eq!(listed.get("count").unwrap().integer().unwrap(), 1);
+        let shown = show(&db, Some(&id[..12]), None).unwrap();
+        assert_eq!(shown.get("provider").unwrap().str().unwrap(), "cmake");
+        let dependencies = neighbors(&db, None, None, "app", "out", 2).unwrap();
+        let relation = &dependencies.get("edges").unwrap().array_ref().unwrap()[0];
+        assert_eq!(relation.get("relation").unwrap().str().unwrap(), "uses");
+        assert_eq!(
+            relation.get("kind").unwrap().str().unwrap(),
+            "TARGET_SOURCE"
+        );
+        assert_eq!(
+            relation.get("status").unwrap().str().unwrap(),
+            "CMAKE_CONFIGURED_GIT_VERIFIED"
+        );
+        assert_eq!(
+            relation.get("evidence").unwrap().str().unwrap(),
+            "native-receipt"
+        );
+        let walk = super::path(&db, None, None, "app", "a.c", 2).unwrap();
+        assert_eq!(
+            walk.get("status").unwrap().str().unwrap(),
+            "RECORDED_EVIDENCE_PATH"
+        );
+        let unreachable = super::path(&db, None, None, "a.c", "app", 2).unwrap();
+        assert_eq!(
+            unreachable.get("status").unwrap().str().unwrap(),
+            "NO_RECORDED_PATH_IN_SELECTED_DIRECTION_AND_DEPTH"
+        );
+        // A new language adapter supplies its neutral relation directly:
+        // the query must not erase it because its native kind is unfamiliar.
+        let mut provider_edges = BTreeMap::new();
+        configured_store::push_typed_edge(
+            &mut provider_edges,
+            "target:app",
+            "source:a.c",
+            "reads",
+            "unrecognized-rust-kind",
+            "NATIVE_COMPILER_OBSERVED",
+            "rust-receipt",
+        )
+        .unwrap();
+        let provider_body = obj(&[
+            ("schema", Value::string("excession.configured-graph.v1")),
+            (
+                "source_commit",
+                Value::string("0000000000000000000000000000000000000000"),
+            ),
+            ("target", Value::string("rust-target")),
+            ("configuration", Value::string("Debug")),
+            ("status", Value::string("PARTIAL_TARGET_OBSERVATIONS")),
+            ("nodes", Value::array(nodes.values().cloned())),
+            ("edges", Value::array(provider_edges.values().cloned())),
+        ]);
+        let provider_id = provider_body.sha256();
+        configured_store::persist(configured_store::GraphSnapshot {
+            db: &db,
+            id: &provider_id,
+            commit: "0000000000000000000000000000000000000000",
+            target: "rust-target",
+            configuration: "Debug",
+            graph: &provider_body,
+            nodes: &nodes,
+            edges: &provider_edges,
+            observations: &[],
+        })
+        .unwrap();
+        let native = neighbors(&db, Some(&provider_id), None, "app", "out", 1).unwrap();
+        let relationship = &native.get("edges").unwrap().array_ref().unwrap()[0];
+        assert_eq!(
+            relationship.get("relation").unwrap().str().unwrap(),
+            "reads"
+        );
+        assert_eq!(
+            relationship.get("kind").unwrap().str().unwrap(),
+            "unrecognized-rust-kind"
+        );
+        drop(db);
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn provider_detection_is_fail_closed() {
+        assert!(provider_for(Path::new("/does-not-exist"), "lib", "auto").is_err());
+        assert_eq!(
+            provider_for(Path::new("."), "lib", "cmake").unwrap(),
+            "cmake"
+        );
+        assert!(provider_for(Path::new("."), "lib", "ninja").is_err());
+    }
+}

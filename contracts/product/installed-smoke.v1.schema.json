@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/product/installed-smoke.v1.schema.json",
+  "title": "Excession draft installed-smoke.v1.schema.json",
+  "description": "Normative proposed wire shape; not an assertion of implemented behavior.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "case_id",
+    "source_commit",
+    "target",
+    "archive_sha256",
+    "steps",
+    "status"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.installed-smoke.v1"
+    },
+    "case_id": {
+      "$ref": "common.v1.schema.json#/$defs/sha256"
+    },
+    "source_commit": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "archive_sha256": {
+      "$ref": "common.v1.schema.json#/$defs/sha256"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "INSTALL",
+              "DOCTOR",
+              "ANALYZE",
+              "IMPACT",
+              "EXPLAIN",
+              "AUDIT",
+              "UNINSTALL"
+            ]
+          },
+          "status": {
+            "enum": [
+              "NOT_RUN",
+              "PASS",
+              "FAIL",
+              "UNAVAILABLE"
+            ]
+          },
+          "receipt_id": {
+            "$ref": "common.v1.schema.json#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "NOT_RUN",
+        "PASS",
+        "FAIL",
+        "UNAVAILABLE"
+      ]
+    },
+    "execution_environment": {
+      "type": "string",
+      "maxLength": 1024
+    }
+  }
+}

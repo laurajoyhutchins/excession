@@ -207,7 +207,10 @@ fn reconstruct_entries(entries: &[git::Entry], expected: &str) -> Result<String>
     // A path's parent must exist as a tree, not merely as an inferred prefix.
     // In particular, a file may not also serve as a parent directory.
     for path in registered.keys() {
-        let parent = path.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("");
+        let parent = path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or("");
         if !parent.is_empty() && registered.get(parent) != Some(&"tree") {
             return refuse(format!("missing parent tree entry: {parent}"));
         }
@@ -299,12 +302,42 @@ mod tree_tests {
 
     fn fixture() -> Vec<git::Entry> {
         vec![
-            entry("src/sub/run.sh", "100755", "blob", "e37f89b3b76e73e0d000552c897006f0b8ba1b76"),
-            entry("src/link", "120000", "blob", "7444fe0be13f52655ac0ae0b39e50bc6d24562e0"),
-            entry("README.md", "100644", "blob", "e845566c06f9bf557d35e8292c37cf05d97a9769"),
-            entry("src", "040000", "tree", "ca8514f19a977b33644c22919f1dbd8f144e8507"),
-            entry("src/lib.rs", "100644", "blob", "f0d6ccedb89e7e7c1e49694421c1c4530e62ec94"),
-            entry("src/sub", "040000", "tree", "a80548db97f17b12b82cfc7880580bdc4f41ab05"),
+            entry(
+                "src/sub/run.sh",
+                "100755",
+                "blob",
+                "e37f89b3b76e73e0d000552c897006f0b8ba1b76",
+            ),
+            entry(
+                "src/link",
+                "120000",
+                "blob",
+                "7444fe0be13f52655ac0ae0b39e50bc6d24562e0",
+            ),
+            entry(
+                "README.md",
+                "100644",
+                "blob",
+                "e845566c06f9bf557d35e8292c37cf05d97a9769",
+            ),
+            entry(
+                "src",
+                "040000",
+                "tree",
+                "ca8514f19a977b33644c22919f1dbd8f144e8507",
+            ),
+            entry(
+                "src/lib.rs",
+                "100644",
+                "blob",
+                "f0d6ccedb89e7e7c1e49694421c1c4530e62ec94",
+            ),
+            entry(
+                "src/sub",
+                "040000",
+                "tree",
+                "a80548db97f17b12b82cfc7880580bdc4f41ab05",
+            ),
         ]
     }
 
@@ -323,20 +356,35 @@ mod tree_tests {
     #[test]
     fn refuses_tampering_and_invalid_tree_structures() {
         let mut rows = fixture();
-        rows.iter_mut().find(|e| e.path == "src/lib.rs").unwrap().mode = "100755".into();
+        rows.iter_mut()
+            .find(|e| e.path == "src/lib.rs")
+            .unwrap()
+            .mode = "100755".into();
         assert!(reconstruct_entries(&rows, ROOT).is_err());
 
         let mut rows = fixture();
         rows.iter_mut().find(|e| e.path == "src/sub").unwrap().oid = "0".repeat(40);
-        assert!(reconstruct_entries(&rows, ROOT).unwrap_err().contains("subtree mismatch"));
+        assert!(
+            reconstruct_entries(&rows, ROOT)
+                .unwrap_err()
+                .contains("subtree mismatch")
+        );
 
         let mut rows = fixture();
         rows.retain(|e| e.path != "src/sub");
-        assert!(reconstruct_entries(&rows, ROOT).unwrap_err().contains("missing parent tree"));
+        assert!(
+            reconstruct_entries(&rows, ROOT)
+                .unwrap_err()
+                .contains("missing parent tree")
+        );
 
         let mut rows = fixture();
         rows.push(rows[0].clone());
-        assert!(reconstruct_entries(&rows, ROOT).unwrap_err().contains("duplicate"));
+        assert!(
+            reconstruct_entries(&rows, ROOT)
+                .unwrap_err()
+                .contains("duplicate")
+        );
 
         let mut rows = fixture();
         rows[0].path = "src//bad".into();

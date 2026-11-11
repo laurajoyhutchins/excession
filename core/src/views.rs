@@ -32,16 +32,23 @@ fn required_integer(row: &SqlRow, column: usize, name: &str) -> Result<i64> {
 }
 
 pub fn repo_id(db: &Db, name: &str) -> Result<i64> {
-    db.scalar("SELECT id FROM repository WHERE name=?", &[Param::Text(name)])?
-        .parse()
-        .map_err(|e| format!("invalid repo ID: {e}"))
+    db.scalar(
+        "SELECT id FROM repository WHERE name=?",
+        &[Param::Text(name)],
+    )?
+    .parse()
+    .map_err(|e| format!("invalid repo ID: {e}"))
 }
 
 pub fn impact(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
     let repo = repo_id(db, name)?;
     let present = db.query(
         "SELECT 1 FROM module WHERE repo_id=? AND commit_oid=? AND name=?",
-        &[Param::Integer(repo), Param::Text(revision), Param::Text(seed)],
+        &[
+            Param::Integer(repo),
+            Param::Text(revision),
+            Param::Text(seed),
+        ],
     )?;
     if present.len() != 1 {
         return refuse("unknown indexed module");
@@ -91,8 +98,14 @@ pub fn impact(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> 
         .into_iter()
         .map(|row| {
             Ok(obj(&[
-                ("module_name", Value::string(required(&row, 0, "hazard module")?)),
-                ("line", Value::number(required_integer(&row, 1, "hazard line")?)),
+                (
+                    "module_name",
+                    Value::string(required(&row, 0, "hazard module")?),
+                ),
+                (
+                    "line",
+                    Value::number(required_integer(&row, 1, "hazard line")?),
+                ),
                 ("reason", Value::string(required(&row, 2, "hazard reason")?)),
             ]))
         })
@@ -215,10 +228,22 @@ pub fn dependencies(db: &Db, name: &str, revision: &str) -> Result<Value> {
         .into_iter()
         .map(|row| {
             Ok(obj(&[
-                ("source_name", Value::string(required(&row, 0, "dependency source")?)),
-                ("target_name", Value::string(required(&row, 1, "dependency target")?)),
-                ("line", Value::number(required_integer(&row, 2, "dependency line")?)),
-                ("syntax", Value::string(required(&row, 3, "dependency syntax")?)),
+                (
+                    "source_name",
+                    Value::string(required(&row, 0, "dependency source")?),
+                ),
+                (
+                    "target_name",
+                    Value::string(required(&row, 1, "dependency target")?),
+                ),
+                (
+                    "line",
+                    Value::number(required_integer(&row, 2, "dependency line")?),
+                ),
+                (
+                    "syntax",
+                    Value::string(required(&row, 3, "dependency syntax")?),
+                ),
             ]))
         })
         .collect::<Result<Vec<_>>>()?;

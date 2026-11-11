@@ -3,8 +3,7 @@
 // It only rewrites string contents; no regex-based source parsing or formatting.
 const fs = require('node:fs');
 const path = require('node:path');
-const {execFileSync} = require('node:child_process');
-const ts = require(path.join(execFileSync('npm',['root','-g'],{encoding:'utf8'}).trim(),'typescript'));
+const ts = require('typescript');
 const input = JSON.parse(fs.readFileSync(0,'utf8'));
 const entries = new Set(input.paths);
 const moved = new Map(Object.entries(input.moves));

@@ -12,42 +12,51 @@ The producer build must be **trusted local**. Build a pinned checkout with
 CMake/Ninja, leaving the build directory outside the source repository:
 
 ```sh
-REPO=/path/to/fmt
-BUILD=/tmp/fmt-debug
-OUT=/tmp/fmt-observations
+REPO=/path/to/zlib
+BUILD=/tmp/zlib-debug
+OUT=/tmp/zlib-observations
 mkdir -p "$BUILD/.cmake/api/v1/query" "$OUT"
 touch "$BUILD/.cmake/api/v1/query/codemodel-v2"
 
 cmake -S "$REPO" -B "$BUILD" -G Ninja \
-  -DCMAKE_CXX_COMPILER=clang++ \
+  -DCMAKE_C_COMPILER=clang \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug \
-  -DFMT_DOC=OFF -DFMT_TEST=OFF -DFMT_INSTALL=OFF
-cmake --build "$BUILD" --target fmt
+  -DZLIB_BUILD_EXAMPLES=ON
+cmake --build "$BUILD" --target example
 
-# One source-bound receipt for *each* selected C/C++ source file.
+# The same test/example.c is also compiled into example64 on platforms
+# with off64_t. Select the specific object action, not a guessed first entry.
 excession analyze clang \
-  --repo "$REPO" --rev HEAD --source src/format.cc \
+  --repo "$REPO" --rev HEAD --source test/example.c \
   --compile-db "$BUILD/compile_commands.json" \
-  --compiler clang++ --trusted-local true > "$OUT/format.json"
-excession analyze clang \
-  --repo "$REPO" --rev HEAD --source src/os.cc \
-  --compile-db "$BUILD/compile_commands.json" \
-  --compiler clang++ --trusted-local true > "$OUT/os.json"
+  --object-prefix CMakeFiles/example.dir/ \
+  --compiler clang --trusted-local true > "$OUT/example.json"
 ```
 
-The source names above reflect a representative fmt target; check the
-actual CMake File API reply for the selected target instead of assuming these
-are always the complete source set.
+The selected target must have one source-bound receipt for every Git-tracked
+C/C++ translation unit listed in its CMake File API reply. The optional
+`--object-prefix` selects an unambiguous output action when multiple
+configured compilation commands name the same source; Excession refuses
+ambiguous matches rather than picking the first entry. The selected action
+is a local compiler observation, not proof that a linker's symbol identity
+has been resolved.
 
 Then assemble without invoking any compiler or build process:
 
 ```sh
 excession graph assemble \
   --repo "$REPO" --rev HEAD \
-  --build "$BUILD" --target fmt \
+  --build "$BUILD" --target example \
   --observations "$OUT" \
   --db /tmp/excession-configured.sqlite > /tmp/graph.json
 ```
+
+**Upstream source-tree caveat:** zlib 1.3.1's CMake build renames its tracked
+`zconf.h` while preparing generated headers. The CI acceptance test clones
+the pinned checkout into a **separate throwaway source tree for each
+configuration**. Excession authenticates the selected source's Git blob and
+hashes local generated dependencies; it does not assert that the entire
+compiler-time working tree remained clean.
 
 ## Reused authorities and evidence boundaries
 
@@ -92,13 +101,14 @@ provenance cannot be accidentally conflated across builds.
 
 ## Independent acceptance
 
-`.github/workflows/configured-graph.yml` fetches pinned fmt 11.1.4,
-builds the target **for real** in separate Debug and Release directories,
-and uses CMake's own compilation database. It derives the complete
-selected-target C/C++ source list from the File API, obtains a Clang receipt
-for each, assembles the graph twice to test stable identity, compares
-source/artifact closure against Ninja's `-t graph`, verifies SQLite rows,
-and ensures missing or tampered receipts cannot masquerade as complete.
+`.github/workflows/configured-graph.yml` fetches pinned zlib 1.3.1,
+builds its `example` executable and linked `zlib` library **for real** in
+separate Debug and Release source/build directories, and uses CMake's original
+compilation database. It selects the exact `example` compile action,
+assembles the graph twice to test stable identity, checks direct CMake
+`example → zlib` target linkage and source/artifact paths against Ninja's
+`-t graph`, verifies SQLite rows and distinct configurations, and ensures
+missing or tampered receipts cannot masquerade as complete.
 
 This proves configured build structure and local compiler observation
 interoperability for the selected target. It is **not** independent

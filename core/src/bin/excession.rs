@@ -3,7 +3,7 @@
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, evidence_transport, git, index, input_contract, native_discovery, projection, refuse,
-    security_ingest, slice_evidence, views,
+    security_ingest, slice_evidence, slice_runtime, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -31,6 +31,13 @@ Usage:
   excession browse --repo REPO --manifest JSON [--max-bytes 8192]
   excession security ingest|audit --repo REPO --report JSON --db DB --engine codeql|semgrep
   excession slice ingest|audit --repo REPO --manifest JSON --receipt JSON --db DB
+  excession slice plan --repo REPO --rev REV --entry PATH --assets JSON [--history true]
+  excession slice materialize|source-audit --repo REPO --manifest JSON --directory DIR
+  excession slice validate --repo REPO --manifest JSON
+  excession slice run --repo REPO --manifest JSON --directory DIR --trusted-local true
+      [--timeout 10] [--isolated-linux true]
+  excession slice carry --repo REPO --manifest JSON --receipt JSON --rev REV
+      [--replay true --trusted-local true] [--isolated-linux true]
   excession evidence transport|transport-audit --repo REPO --source-manifest JSON --target-manifest JSON --receipt JSON --db DB
   excession evidence trace --repo REPO --receipt-id HEX64 --db DB
   excession evidence discover-native --repo REPO --rev REV --entry PATH --language go|javascript|typescript|rust --trusted-local true
@@ -498,18 +505,96 @@ fn execute(args: &[String]) -> Result<Response> {
             )?))
         }
         [top, sub, rest @ ..] if top == "slice" => {
-            if !matches!(sub.as_str(), "ingest" | "audit") {
-                return refuse(format!("unknown slice command {sub}"));
+            let truth = |value: &str| -> Result<bool> {
+                match value {
+                    "true" => Ok(true),
+                    "false" => Ok(false),
+                    _ => refuse("boolean options require true or false"),
+                }
+            };
+            match sub.as_str() {
+                "ingest" | "audit" => {
+                    let opt = Options::parse(rest, &["repo", "manifest", "receipt", "db"], &[])?;
+                    let db = Db::open(opt.path("db"))?;
+                    Ok(json(slice_evidence::evidence(
+                        opt.path("repo"),
+                        opt.path("manifest"),
+                        opt.path("receipt"),
+                        &db,
+                        sub == "audit",
+                    )?))
+                }
+                "plan" => {
+                    let opt =
+                        Options::parse(rest, &["repo", "rev", "entry"], &["assets", "history"])?;
+                    Ok(json(slice_runtime::plan_cli(
+                        opt.path("repo"),
+                        opt.get("rev"),
+                        opt.get("entry"),
+                        opt.get_or("assets", "[]"),
+                        truth(opt.get_or("history", "false"))?,
+                    )?))
+                }
+                "validate" => {
+                    let opt = Options::parse(rest, &["repo", "manifest"], &[])?;
+                    Ok(json(slice_runtime::validate_cli(
+                        opt.path("repo"),
+                        opt.path("manifest"),
+                    )?))
+                }
+                "materialize" | "source-audit" => {
+                    let opt = Options::parse(rest, &["repo", "manifest", "directory"], &[])?;
+                    Ok(json(if sub == "materialize" {
+                        slice_runtime::materialize_cli(
+                            opt.path("repo"),
+                            opt.path("manifest"),
+                            opt.path("directory"),
+                        )?
+                    } else {
+                        slice_runtime::audit_cli(
+                            opt.path("repo"),
+                            opt.path("manifest"),
+                            opt.path("directory"),
+                        )?
+                    }))
+                }
+                "run" => {
+                    let opt = Options::parse(
+                        rest,
+                        &["repo", "manifest", "directory", "trusted-local"],
+                        &["timeout", "isolated-linux"],
+                    )?;
+                    let timeout = opt
+                        .get_or("timeout", "10")
+                        .parse::<u64>()
+                        .map_err(|_| "timeout must be a number from 1 to 60".to_owned())?;
+                    Ok(json(slice_runtime::run_cli(
+                        opt.path("repo"),
+                        opt.path("manifest"),
+                        opt.path("directory"),
+                        timeout,
+                        truth(opt.get_or("isolated-linux", "false"))?,
+                        truth(opt.get("trusted-local"))?,
+                    )?))
+                }
+                "carry" => {
+                    let opt = Options::parse(
+                        rest,
+                        &["repo", "manifest", "receipt", "rev"],
+                        &["replay", "isolated-linux", "trusted-local"],
+                    )?;
+                    Ok(json(slice_runtime::carry_cli(
+                        opt.path("repo"),
+                        opt.path("manifest"),
+                        opt.path("receipt"),
+                        opt.get("rev"),
+                        truth(opt.get_or("replay", "false"))?,
+                        truth(opt.get_or("isolated-linux", "false"))?,
+                        truth(opt.get_or("trusted-local", "false"))?,
+                    )?))
+                }
+                _ => refuse(format!("unknown slice command {sub}")),
             }
-            let opt = Options::parse(rest, &["repo", "manifest", "receipt", "db"], &[])?;
-            let db = Db::open(opt.path("db"))?;
-            Ok(json(slice_evidence::evidence(
-                opt.path("repo"),
-                opt.path("manifest"),
-                opt.path("receipt"),
-                &db,
-                sub == "audit",
-            )?))
         }
         [top, sub, rest @ ..] if top == "evidence" => {
             if sub == "discover-native" {

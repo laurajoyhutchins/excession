@@ -23,7 +23,7 @@ on:
       - 'tests/test_tree_sitter_bridge.py'
       - 'core/tests/syntax_contracts.rs'
       - 'core/tests/preflight_contracts.rs'
-      - 'tests/test_native_boundary_cli.py'
+      - 'core/tests/native_boundary_contracts.rs'
       - 'docs/SYNTAX_PARSERS.md'
   workflow_dispatch:
 
@@ -61,9 +61,9 @@ jobs:
       - name: Build Excession CLI
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Rust source-bound syntax and preflight contracts
-        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test syntax_contracts --test preflight_contracts
-      - name: Python Tree-sitter bridge and native-boundary checks (JUnit XML)
-        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_native_boundary_cli.py --junitxml=test-results/syntax-parsers.xml
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test syntax_contracts --test preflight_contracts --test native_boundary_contracts
+      - name: Python Tree-sitter bridge checks (JUnit XML)
+        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py --junitxml=test-results/syntax-parsers.xml
       - name: Retain JUnit test report
         if: always()
         uses: actions/upload-artifact@v4

@@ -101,9 +101,10 @@ python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
 cargo test --offline --manifest-path core/Cargo.toml preflight::tests
 ```
 
-`tests/test_preflight_cli.py` exercises the command surface without
+`core/tests/preflight_contracts.rs` exercises the command surface without
 Tree-sitter installed, including accepted-but-untrusted self-consistent
-forgeries. Full integration tests remain separate.
+forgeries. Git-bound syntax and native input-declaration integration run in
+`core/tests/syntax_contracts.rs` and `core/tests/native_boundary_contracts.rs`.
 
 ## Source-bound dependency candidates
 

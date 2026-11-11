@@ -9,7 +9,7 @@ application packaging layer just to manage the tests.
 | Tool | Version source | Purpose |
 | --- | --- | --- |
 | Rust 1.99.1 | `rust-toolchain.toml` | CLI, library, Clippy, rustfmt |
-| Python 3.13.5 | `.python-version` | Standard-library integration tests and optional syntax bridge |
+| Python 3.13.5 | `.python-version` | Python adapters, independently implemented oracles, and optional syntax bridge |
 | Node 22.16.0 / npm 10.9.2 | `.node-version`, `package.json` | Local TypeScript compiler used by JS adapters |
 | Go 1.26.11 | `.go-version` | Optional, standard-library-only Go research adapter |
 
@@ -32,8 +32,11 @@ Cargo commands use both `--locked` and `--offline`. The JS adapters import
 machine-global npm installation. `npm ci` verifies the tarball integrity
 recorded in `package-lock.json`.
 
-The direct Python integration suite uses `unittest`, but Rust adversarial
-checks run a Python research probe that imports pytest. Install the pinned
+Rust integration tests under `core/tests/` own the CLI, Git, SQLite,
+projection, security, refactor, syntax, and preflight contracts. Python tests
+remain for Python-specific tooling and independent verification oracles.
+Rust adversarial checks also run a Python research probe that imports pytest.
+Install the pinned
 `requirements/locks/research-linux-cp313-x86_64.txt` before `make check` (as CI does). The optional Tree-sitter adapter is installed
 separately:
 

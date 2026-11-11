@@ -31,15 +31,17 @@ make check
 ```
 
 `make check` runs Rust tests, formatting, strict Clippy, the JS adapter
-checks, and Python integration tests. Use `make cli` for the development
+checks, and Python tooling/independent-oracle tests. Rust owns source-bound
+CLI, Git, security, preflight, syntax, refactor, and projection integration.
+Use `make cli` for the development
 binary and `make go-check` for the optional Go adapter. See
 [development setup](docs/DEVELOPMENT.md) for toolchain files and separately
 pinned research/grammar dependencies.
 
 For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
 Python research requirements,
-then run `make junit`. This retains the existing `unittest` test cases while
-producing separate Rust and Python reports:
+then run `make junit`. Application integration is in Cargo/nextest; Python
+retains its adapters, research drivers, and independent oracles. The reports are:
 
 - `core/target/nextest/ci/junit.xml` (Rust, including failure output)
 - `test-results/python.xml` (Python, including skipped and failed tests)

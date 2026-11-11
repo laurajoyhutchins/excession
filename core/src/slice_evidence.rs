@@ -28,18 +28,18 @@ CREATE TABLE IF NOT EXISTS executable_slice_source (
 "#;
 const MAX_FILES: usize = 512;
 const MAX_SOURCE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_MANIFEST_BYTES: usize = 5 * 1024 * 1024;
-const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_MANIFEST_BYTES: usize = 5 * 1024 * 1024;
+pub(crate) const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
 
-#[derive(Debug, PartialEq, Eq)]
-struct Source {
-    path: String,
-    blob: String,
-    sha256: String,
-    bytes: i64,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Source {
+    pub(crate) path: String,
+    pub(crate) blob: String,
+    pub(crate) sha256: String,
+    pub(crate) bytes: i64,
 }
 impl Source {
-    fn row(&self, id: &str) -> Vec<Option<String>> {
+    pub(crate) fn row(&self, id: &str) -> Vec<Option<String>> {
         vec![
             Some(id.to_owned()),
             Some(self.path.clone()),
@@ -50,7 +50,7 @@ impl Source {
     }
 }
 
-fn read_json(path: &Path, bound: usize) -> Result<Value> {
+pub(crate) fn read_json(path: &Path, bound: usize) -> Result<Value> {
     let data = fs::read(path).map_err(|e| e.to_string())?;
     if data.len() > bound {
         return refuse("slice evidence input exceeds size limit");
@@ -79,7 +79,7 @@ fn without_identity(value: &Value, key: &str) -> Result<Value> {
     Ok(copy)
 }
 
-fn source_rows(
+pub(crate) fn source_rows(
     repo: &Path,
     manifest: &Value,
 ) -> Result<(String, String, String, String, Vec<Source>)> {
@@ -93,14 +93,17 @@ fn source_rows(
     if without_identity(manifest, "view_id")?.sha256() != view {
         return refuse("manifest view_id does not bind canonical contents");
     }
-    git::clean(repo)?;
+    // The revision is a Git object, not the current checkout. This admits
+    // historical commits, divergent branches and synthetic integration commits
+    // without modifying HEAD or trusting the working tree.
+    git::verify_repo(repo)?;
     let commit = git::oid(manifest.get("commit")?.str()?)?;
-    if commit != git::rev(repo, "HEAD")? {
-        return refuse("manifest commit is not checkout HEAD");
+    if commit != git::rev(repo, &format!("{commit}^{{commit}}"))? {
+        return refuse("manifest does not name a Git commit");
     }
     let tree = git::oid(manifest.get("tree")?.str()?)?;
-    if tree != git::rev(repo, "HEAD^{tree}")? {
-        return refuse("manifest root tree does not match Git");
+    if tree != git::rev(repo, &format!("{commit}^{{tree}}"))? {
+        return refuse("manifest root tree does not match its Git commit");
     }
     let entry = manifest.get("entry")?.str()?.to_owned();
     git::validate_path(&entry)?;
@@ -145,13 +148,13 @@ fn source_rows(
         if total > MAX_SOURCE_BYTES {
             return refuse("slice source budget exceeded");
         }
-        let mode = git::text(repo, &["ls-tree", "HEAD", "--", &path])?;
+        let mode = git::text(repo, &["ls-tree", &commit, "--", &path])?;
         if !mode.starts_with("100644 blob ") {
             return refuse(format!(
                 "source is not a regular tracked nonexecutable blob: {path}"
             ));
         }
-        if git::blob(repo, "HEAD", &path)? != blob {
+        if git::blob(repo, &commit, &path)? != blob {
             return refuse(format!("source Git blob identity differs: {path}"));
         }
         let declared_size = git::text(repo, &["cat-file", "-s", &blob])?
@@ -181,7 +184,7 @@ fn source_rows(
     Ok((view, commit, tree, entry, result))
 }
 
-fn validated_receipt(receipt: &Value, view: &str, commit: &str, entry: &str) -> Result<String> {
+pub(crate) fn validated_receipt(receipt: &Value, view: &str, commit: &str, entry: &str) -> Result<String> {
     if receipt.get("schema")?.str()? != "excession.slice-observation.v1"
         || receipt.get("scope")?.str()? != "FINITE_TRUSTED_LOCAL_EXECUTION"
         || receipt.get("view_id")?.str()? != view

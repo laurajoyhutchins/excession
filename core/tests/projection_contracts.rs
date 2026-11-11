@@ -132,7 +132,18 @@ impl Fixture {
         self.root.join(name)
     }
     fn plan(&self, seed: &str, name: &str) -> (Value, PathBuf) {
-        let output = raw(&["view", "deps", "--db", self.db(), "--name", "h11", "--rev", "HEAD", "--seed", seed]);
+        let output = raw(&[
+            "view",
+            "deps",
+            "--db",
+            self.db(),
+            "--name",
+            "h11",
+            "--rev",
+            "HEAD",
+            "--seed",
+            seed,
+        ]);
         let file = self.path(name);
         fs::write(&file, &output).unwrap();
         (json::parse(&output).unwrap(), file)
@@ -897,7 +908,14 @@ fn pinned_git_materialization_ignores_mutable_worktree() {
 fn virtual_git_navigation_reads_exact_blobs_without_copying() {
     let f = Fixture::new();
     let (plan, manifest) = f.plan("h11._connection", "deps.json");
-    let list = data(&["view", "ls", "--repo", f.repo(), "--manifest", manifest.to_str().unwrap()]);
+    let list = data(&[
+        "view",
+        "ls",
+        "--repo",
+        f.repo(),
+        "--manifest",
+        manifest.to_str().unwrap(),
+    ]);
     assert_eq!(array(&list, "children").len(), 1);
     assert_eq!(field(&array(&list, "children")[0], "name"), "views");
     let groups = data(&[
@@ -1220,7 +1238,18 @@ fn virtual_operations_refuse_invalid_scope_or_empty_composition() {
     let root = f.repo();
     let manifest = dep.to_str().unwrap();
     for args in [
-        vec!["view", "compose", "--repo", root, "--op", "xor", "--left", manifest, "--right", manifest],
+        vec![
+            "view",
+            "compose",
+            "--repo",
+            root,
+            "--op",
+            "xor",
+            "--left",
+            manifest,
+            "--right",
+            manifest,
+        ],
         vec![
             "view",
             "select",
@@ -1245,8 +1274,26 @@ fn virtual_operations_refuse_invalid_scope_or_empty_composition() {
             "--value",
             "../bad",
         ],
-        vec!["view", "ls", "--repo", root, "--manifest", manifest, "--path", "views/../bad"],
-        vec!["view", "ls", "--repo", root, "--manifest", manifest, "--path", "views/nonexistent"],
+        vec![
+            "view",
+            "ls",
+            "--repo",
+            root,
+            "--manifest",
+            manifest,
+            "--path",
+            "views/../bad",
+        ],
+        vec![
+            "view",
+            "ls",
+            "--repo",
+            root,
+            "--manifest",
+            manifest,
+            "--path",
+            "views/nonexistent",
+        ],
         vec![
             "view",
             "cat",
@@ -1257,7 +1304,16 @@ fn virtual_operations_refuse_invalid_scope_or_empty_composition() {
             "--path",
             "views/../../etc/passwd",
         ],
-        vec!["view", "stat", "--repo", root, "--manifest", manifest, "--path", "views/not-a-file"],
+        vec![
+            "view",
+            "stat",
+            "--repo",
+            root,
+            "--manifest",
+            manifest,
+            "--path",
+            "views/not-a-file",
+        ],
         vec![
             "view",
             "compose",
@@ -1273,7 +1329,18 @@ fn virtual_operations_refuse_invalid_scope_or_empty_composition() {
     ] {
         denied(exec(&args));
     }
-    let focus = data(&["view", "select", "--repo", root, "--manifest", manifest, "--axis", "role", "--value", "focus"]);
+    let focus = data(&[
+        "view",
+        "select",
+        "--repo",
+        root,
+        "--manifest",
+        manifest,
+        "--axis",
+        "role",
+        "--value",
+        "focus",
+    ]);
     let tests = data(&[
         "view",
         "select",

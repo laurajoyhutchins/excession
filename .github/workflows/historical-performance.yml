@@ -17,6 +17,10 @@ on:
           - checked-tree
           - projection-phases
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -33,6 +37,8 @@ jobs:
           python-version: '3.13.5'
       - name: Use repository-pinned Rust toolchain
         run: rustup show active-toolchain
+      - name: Prefetch candidate Cargo dependencies for clean runner
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Build candidate once
         run: cargo build --offline --locked --release --manifest-path core/Cargo.toml
       - name: Run selected source-pinned experiment
@@ -72,6 +78,7 @@ jobs:
               ;;
           esac
           git worktree add --detach "$RUNNER_TEMP/excession-before" "$BASE"
+          cargo fetch --manifest-path "$RUNNER_TEMP/excession-before/core/Cargo.toml"
           cargo build --offline --release \
             --manifest-path "$RUNNER_TEMP/excession-before/core/Cargo.toml"
           python3 "$SCRIPT" \

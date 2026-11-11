@@ -35,6 +35,10 @@ on:
       - 'core/src/adapter.rs'
       - 'core/src/bin/excession.rs'
       - 'core/src/lib.rs'
+      - 'core/src/observe/**'
+      - 'core/src/evidence/preflight.rs'
+      - 'core/src/graph/evidence_query.rs'
+      - 'core/src/source/git.rs'
       - 'tests/test_tree_sitter_bridge.py'
       - 'core/tests/syntax_contracts.rs'
       - 'core/tests/preflight_contracts.rs'
@@ -46,6 +50,10 @@ on:
       - 'docs/SYNTAX_PARSERS.md'
       - 'docs/PYTHON_NATIVE_RESOLUTION.md'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -63,6 +71,9 @@ jobs:
       - uses: jdx/mise-action@v5
       - name: Confirm Rust toolchain
         run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
       - name: Fast grammar-independent adapter contract tests
         run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
       - name: Prefetch all recognized syntax grammars with mise
@@ -91,7 +102,7 @@ jobs:
       - name: Python adapter, resolver and independent observation checks (JUnit XML)
         run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_native_inline_cli.py tests/test_python_native_resolution.py tests/test_evidence_query_cli.py tests/test_semantic_contracts.py tests/test_evidence_contracts.py --junitxml=test-results/syntax-parsers.xml
       - name: Retain JUnit test report
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: excession-syntax-parsers-junit

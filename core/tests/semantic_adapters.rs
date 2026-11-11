@@ -206,9 +206,11 @@ fn direct_multi_language_adapter_records_bind_git_sources() {
             "CANDIDATE"
         );
     }
-    assert!(arr(&report, "records").iter().all(|record| {
-        str_field(record.get("subject").unwrap(), "language") != "rust"
-    }));
+    assert!(
+        arr(&report, "records")
+            .iter()
+            .all(|record| { str_field(record.get("subject").unwrap(), "language") != "rust" })
+    );
     assert!(arr(&report, "gaps").iter().any(|gap| {
         str_field(gap, "source_path") == "src/main.rs"
             && str_field(gap, "status") == "NO_RESOLVER_FOR_LANGUAGE"

@@ -1,19 +1,22 @@
 # Portable Excession
 
-Excession has one native Rust executable. The core works independently of its
-source checkout. Git and SQLite remain required for repository/evidence work.
-Python, Node, parsers, Go, CodeQL, and Semgrep are optional capabilities, not
-prerequisites for `excession --help` or commands that never call them.
+Excession has one native Rust executable. Git remains required for
+repository/evidence work, and SQLite is compiled into the executable through
+the maintained rusqlite library. Python, Node, parsers, Go, CodeQL and Semgrep
+remain optional and are not needed for `excession --help` or `excession doctor`.
 
 ## Distribution targets
 
 The Portable CLI workflow builds and tests a release archive on:
 
-| Runner | Binary | Native requirements |
+| Runner | Native binary | Requirements |
 | --- | --- | --- |
-| Ubuntu 24.04, x86-64 | `excession` | Git, system libsqlite3, compatible libc |
-| macOS 15, runner architecture | `excession` | Git, system SQLite |
-| Windows 2025, x86-64/MSVC | `excession.exe` | Git; SQLite statically linked |
+| Ubuntu 24.04 x86-64 | `excession` | Git and compatible glibc |
+| Ubuntu 24.04 ARM64 | `excession` | Git and compatible glibc |
+| macOS 15 Apple Silicon | `excession` | Git |
+| macOS 15 Intel | `excession` | Git |
+| Windows 2025 x86-64/MSVC | `excession.exe` | Git |
+| Linux x86-64 musl | `excession` | Git for repository work; binary tested in network-isolated Alpine |
 
 Archives are named using the actual Rust host target triple and include a
 SHA-256 checksum file. The workflow builds with the pinned Rust toolchain and
@@ -26,7 +29,9 @@ third-party notices. The JavaScript parser is selected by an explicit path,
 **never by searching the target repository's node_modules**.
 
 Archives do not bundle Git, Python, Node, Go, optional native scanners or
-Tree-sitter grammars. Linux/macOS archives also rely on system libraries.
+Tree-sitter grammars. SQLite is compiled in on all supported platforms.
+The conventional Linux binaries still require a compatible libc. The musl
+binary is validated inside a minimal container with networking disabled.
 Portability is not the same as hermetic execution or a sandbox.
 
 ## Install
@@ -38,6 +43,13 @@ Keep `lib/typescript.js` in the same `excession` directory as the binary's
 
 Verify the archive with its adjacent `.sha256` manifest before extracting.
 A checksum detects corruption but is not an authenticated signature.
+
+Check local availability (never downloads anything):
+
+```sh
+excession doctor
+excession doctor --json
+```
 
 From any working directory:
 
@@ -68,15 +80,28 @@ language parsers, not the target project's code.
 - **Further analysis:** Go, Tree-sitter grammars, CodeQL and Semgrep require
   their native tools and separate trust/isolation decisions.
 
+The doctor command uses bounded, two-second version probes and reports
+detected tools, the bundled SQLite version, and available language adapters.
+Its `excession.capabilities.v1` JSON output explicitly identifies unknown
+grammar coverage and project-specific configuration requirements. Detection
+is not proof of correctness, runtime isolation, or complete input discovery.
+
 A missing parser is an error, not a silent fallback to less precise results.
 
 ## Evidence for portability
 
+Ordinary pull requests exercise a Linux release smoke test. Pull requests
+labeled `ci:full-portability` run the complete native OS matrix and musl/Alpine
+validation. Version tags and manually dispatched release workflows also run
+the complete matrix, preserving the fast default for unrelated changes.
+
 The Portable CLI workflow checks SHA-1/SHA-256 standard vectors, runs a
 Rust integration test from paths containing spaces and Unicode, builds the
-release, then extracts the archive *outside the build checkout*. The extracted
-binary indexes a Git fixture in JavaScript using its bundled TypeScript
-parser, exercising Git access, SQLite linkage, and language adapter discovery.
+release for Linux x86-64/ARM64, macOS Intel/Apple Silicon and Windows, then
+extracts each archive *outside the build checkout*. The extracted binary
+indexes a Git fixture in JavaScript using its bundled TypeScript parser,
+exercising Git access, compiled-in SQLite, and language adapter discovery.
+An additional musl binary is tested in network-isolated Alpine.
 
 The existing Linux verify workflow remains authoritative for full Rust,
 Python, JavaScript and historical suites. A green portability build proves
@@ -86,8 +111,9 @@ programs safely.
 
 ## Limits
 
-- Linux and macOS dynamically link system SQLite and platform libc. Older
-  or minimal systems may need compatible libraries or a local build.
+- The conventional Linux binaries require a compatible libc. The separate
+  musl build addresses minimal x86-64 Linux environments. Non-x86-64 musl
+  targets are not yet covered.
 - Some optional Go effect-inference and native research adapters retain
   separately managed toolchain and runtime requirements.
 - Windows has no POSIX file executable modes. Git object/mode identity is
@@ -95,3 +121,12 @@ programs safely.
   and are not executable source checkouts.
 - Paths that cannot be represented on a target filesystem may be refused
   during materialization; a Git view can remain auditable without copying it.
+
+## Evidence and compatibility
+
+The SQL schema and public persisted evidence format are unchanged by the
+migration to rusqlite. Git SHA-1 remains necessary for reading existing SHA-1
+repositories; the implementation now uses maintained RustCrypto crates rather
+than handwritten hash algorithms. SHA-1 is not a secure collision-resistant
+evidence signature and is never promoted to one by this change. SHA-256
+continues to bind the unchanged canonical evidence bytes.

@@ -12,7 +12,14 @@ on:
       - core/src/projection.rs
       - core/src/index.rs
       - core/src/semantic.rs
+      - 'core/src/views/projection.rs'
+      - 'core/src/graph/index.rs'
+      - 'core/src/observe/semantic.rs'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

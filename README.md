@@ -1,224 +1,143 @@
 # Excession
 
-**Git-grounded exploration, source relationships, and auditable security evidence.**
+**Explore a codebase through its relationships, without changing its source tree.**
 
-Excession derives focused, read-only repository views from pinned Git revisions
-and indexed relationships. It also ingests CodeQL SARIF and Semgrep JSON as
-**unverified security candidates** and independently audits their Git source
-identities, SQLite records, and reported flows. A scanner finding is not a
-confirmed vulnerability or a CVE.
+Excession indexes a pinned Git revision, connects source files to recorded
+dependencies and analysis results, and builds focused views of a repository.
+You can browse those views, investigate refactoring candidates, and replay
+reports against the underlying Git objects.
 
-The **only installed Rust executable** is `excession`. The library and Cargo
-package are also named `excession`. The earlier research implementation is
-accessible through the `excession research ...` command family, not through
-an additional binary. See [migration notes](docs/MIGRATION.md), the
-[architecture](docs/ARCHITECTURE.md), and [origins](docs/ORIGINS.md).
+The core is a Rust CLI backed by Git and SQLite. Language-specific work is
+delegated to established parsers, indexers, compilers, and scanners where
+possible.
 
-## Install and verify
+## Try it
 
-The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
-crates. Git (SHA-1 object format) and native SQLite are required for
-repository operations; the digests use portable Rust without OpenSSL.
-Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
-Tree-sitter grammars and security scanners are opt-in adapters.
+Build the CLI with the repository's pinned Rust toolchain:
 
-Prebuilt Linux, macOS and Windows archives carry the binary and the
-locked TypeScript parser sidecar. See [portable installation and supported
-targets](docs/PORTABILITY.md) for runtime dependencies and limitations.
+```sh
+cargo install --locked --path core --bin excession
+excession --help
+```
 
-For full development checks, the pinned mise workflow remains available:
+Git is required. See [portable releases](docs/PORTABILITY.md) for prebuilt
+binaries and [development setup](docs/DEVELOPMENT.md) for toolchains.
+
+For example, index an existing clean checkout of
+[h11](https://github.com/python-hyper/h11), or another Python/JavaScript
+repository with the roots and seed adjusted to match its modules:
+
+```sh
+REPO=/path/to/clean/h11
+OUT=/tmp/excession-h11
+mkdir -p "$OUT"
+
+excession index --repo "$REPO" --db "$OUT/index.sqlite" \
+  --name h11 --rev HEAD --roots h11,tests
+
+excession view deps --db "$OUT/index.sqlite" \
+  --name h11 --rev HEAD --seed h11._connection > "$OUT/deps.json"
+
+excession browse --repo "$REPO" --manifest "$OUT/deps.json"
+
+excession view replay deps --db "$OUT/index.sqlite" \
+  --name h11 --rev HEAD --seed h11._connection \
+  --manifest "$OUT/deps.json"
+```
+
+The index records static module relationships. `view deps` selects a focused
+layout, `browse` explores it, and `view replay` checks that the saved view
+can be regenerated. Virtual views read the original Git blobs on demand;
+they do not copy the checkout.
+
+## What you can investigate
+
+| Question | Excession commands | Evidence |
+| --- | --- | --- |
+| What does this module relate to? | `index`, `inspect dependencies`, `view deps` | Python/JavaScript module relationships at a Git revision |
+| Can I see a smaller, useful slice of the tree? | `view select`, `compose`, `mount`, `browse` | Virtual paths pointing to original Git blobs |
+| Where might refactoring help? | `refactor suggest`, `refactor scip-suggest` | Cycles, repeated bodies, and symbol-reference hypotheses |
+| What syntax and imports can be observed? | `syntax scan`, `syntax resolve`, `semantic scan` | Tree-sitter and language-aware source observations |
+| How do those observations compare with native tools? | `syntax native-run`, `syntax native-compare` | Compiler-declared inputs and source-bound differences |
+| What source supports a scanner result? | `security ingest`, `security audit` | CodeQL SARIF or Semgrep findings tied to Git blobs |
+
+These are different evidence layers, not interchangeable dependency graphs.
+The built-in dependency index currently covers bounded Python/JavaScript
+static relationships. Optional Tree-sitter grammars broaden syntax coverage;
+SCIP brings in references from language-native indexers; native comparison
+supports configured Go, Rust, and JS/TS workflows. Coverage and unresolved
+relationships remain visible rather than being filled in by guesses.
+
+### Find refactoring candidates
+
+Using the index created above:
+
+```sh
+excession refactor suggest --db "$OUT/index.sqlite" \
+  --name h11 --rev HEAD > "$OUT/refactor.json"
+
+excession refactor audit --db "$OUT/index.sqlite" \
+  --name h11 --rev HEAD --report "$OUT/refactor.json"
+```
+
+The report includes source identities and reasons to investigate each
+candidate. For resolved symbols, Excession can consume an index produced
+by an existing SCIP indexer instead of implementing another language parser.
+See [refactoring](docs/REFACTORING.md) and
+[self-analysis](docs/SELF_ANALYSIS.md).
+
+### Inspect scanner evidence
+
+Given an existing CodeQL SARIF report:
+
+```sh
+excession security ingest --repo "$REPO" --report "$OUT/report.sarif" \
+  --db "$OUT/security.sqlite" --engine codeql
+
+excession security audit --repo "$REPO" --report "$OUT/report.sarif" \
+  --db "$OUT/security.sqlite" --engine codeql
+```
+
+The importer records findings and reported flows against exact Git source
+identities. The audit independently checks the imported records against the
+report and source. Excession can also invoke an installed, trusted-local
+scanner; see [CLI usage](docs/CLI.md).
+
+## What an audit establishes
+
+An Excession audit checks **source identity and reproducibility of recorded
+evidence**. It does not prove a parser complete, a refactoring safe, or a
+scanner finding exploitable. Compiler and scanner execution is not sandboxed
+by Excession. Keep untrusted builds in separately isolated environments.
+
+This distinction is part of the data model, not a warning repeated on every
+command. See the [architecture](docs/ARCHITECTURE.md),
+[repository views](docs/REPOSITORY_VIEWS.md), and
+[evidence contract](docs/EVIDENCE_QUERY.md) for precise boundaries.
+
+## Develop
 
 ```sh
 mise install
 mise run setup
 mise run check
 mise run cli
-mise exec -- core/target/debug/excession --help
 ```
 
-`make check` runs Rust tests, formatting, strict Clippy, the JS adapter
-checks, and Python-specific adapter and independent-oracle tests. Git, SQLite,
-projection, security, syntax, and refactoring integration tests run under Cargo.
-Use `make cli` for the development
-binary and `make go-check` for the optional Go adapter. See
-[development setup](docs/DEVELOPMENT.md) for mise tasks, native toolchain
-version files, and optional Tree-sitter grammars. Mise is a convenience layer;
-Cargo, npm, and pip remain usable independently.
+`make check` is the ordinary local validation path. Optional adapters,
+JUnit output, grammar setup, and supported toolchains are documented in
+[development setup](docs/DEVELOPMENT.md).
 
-For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
-Python research requirements,
-then run `make junit`. Rust owns application integration contracts;
-Python retains its adapters and independent reference checks. Reports:
+The older experiments remain available through `excession research ...`
+without a second executable. See [migration notes](docs/MIGRATION.md).
+Benchmarks and their measurement contracts live in
+[benchmarks](benchmarks/README.md).
 
-- `core/target/nextest/ci/junit.xml` (Rust, including failure output)
-- `test-results/python.xml` (Python, including skipped and failed tests)
+## Reference
 
-CI uploads JUnit XML as artifacts, including after a test failure.
-`make check` remains the simpler local validation path without nextest; Rust doctests
-are also checked by `cargo test --doc` in the JUnit workflow.
-
-## One repository, multiple layouts
-
-```sh
-REPO=/path/to/clean/h11
-OUT=/tmp/excession-h11
-mkdir -p "$OUT"
-excession index --repo "$REPO" --db "$OUT/index.sqlite" --name h11 \
-  --rev HEAD --roots h11,tests
-excession view deps --db "$OUT/index.sqlite" --name h11 \
-  --rev HEAD --seed h11._connection > "$OUT/deps.json"
-excession view replay deps --db "$OUT/index.sqlite" --name h11 \
-  --rev HEAD --seed h11._connection --manifest "$OUT/deps.json"
-excession browse --repo "$REPO" --manifest "$OUT/deps.json"
-```
-
-Other view operators include `compose`, `select`, `mount`, `ls`, `stat`, `cat`,
-`materialize`, and `audit`. Views read pinned Git blobs on demand without
-copying code. Materialized views are read-only **and not executable checkouts**.
-See [CLI](docs/CLI.md), [repository views](docs/REPOSITORY_VIEWS.md), and
-[composable views](docs/COMPOSABLE_VIEWS.md).
-
-## Self-analysis (dogfooding)
-
-A dedicated [self-analysis workflow](docs/SELF_ANALYSIS.md) uses
-**rust-analyzer SCIP** for resolved Rust symbols and references, while
-Tree-sitter remains a separate syntax observation path. The SCIP consumer
-checks indexed source against pinned Git, and its results are advisory:
-they **never** authorize skipping tests.
-
-## Multi-language syntax parsing
-
-A separate optional Tree-sitter adapter reuses established grammars for many
-languages. It emits Git-bound structural and import observations, with explicit
-statuses when parsing is incomplete or a grammar is unavailable offline:
-
-```sh
-excession syntax scan --repo "$REPO" --roots src,tests > /tmp/syntax.json
-excession syntax audit --repo "$REPO" --report /tmp/syntax.json
-```
-
-The optional parser package must be installed and grammars prefetched in advance;
-no parser is downloaded during analysis. The existing Python/JS dependency index
-remains a separate, language-aware path. See [syntax parsers](docs/SYNTAX_PARSERS.md)
-for installation, limits and provenance.
-
-## Early report validation
-
-`excession syntax preflight --report /tmp/syntax.json` and
-`excession syntax resolve-preflight --report /tmp/candidates.json` perform
-cheap, parser-free report contract checks before costly regeneration. They
-validate shapes, counts and canonical content digests but **cannot authenticate
-Git sources**. Full `syntax audit` and `syntax resolve-audit` remain required.
-See [syntax parser preflight](docs/SYNTAX_PARSERS.md#fast-preflight-before-expensive-source-replay).
-
-## Candidate import resolution
-
-Parsed imports can be mapped to scoped, Git-bound file candidates with
-`excession syntax resolve --repo "$REPO" --report /tmp/syntax.json`.
-A separate `syntax resolve-audit` command independently replays the mapping.
-Go, JS/TS and Python use language-specific conservative path rules.
-Rust intentionally has no handwritten import resolver: use rust-analyzer SCIP.
-Ambiguous, external, configuration-dependent and unsupported cases remain
-explicit. These are navigation candidates, not compiler-established edges.
-
-## Refactoring candidates
-
-`excession refactor suggest --db INDEX --name PROJECT --rev COMMIT` reports
-deterministic, unverified import-cycle and repeated-body hypotheses from the
-existing Python/JavaScript index. `excession refactor audit` replays the
-indexed query against Git source identities and checks a saved report. It does
-not reparse semantic relations, prove equivalence, or modify source.
-An optional decoded SCIP input enables language-native reference hypotheses
-without a custom Protobuf decoder or Rust language parser. For nested Rust
-projects, use `--source-prefix core` to bind index paths to repository-root Git.
-See [refactoring hypotheses](docs/REFACTORING.md).
-
-## Integrated compiler-backed discovery
-
-For supported Go, Rust and JS/TS projects, run the trusted-local language
-resolver and source-bound comparison together:
-
-```sh
-excession syntax native-run --repo "$REPO" \
-  --syntax-report /tmp/syntax.json \
-  --resolution-report /tmp/candidates.json \
-  --entry src/main.rs --language rust --trusted-local true
-```
-
-The compiler runs only **after** cheap report and Git-revision checks.
-Output preserves the actual native input declaration, runtime statistics and
-a Git-backed boundary report with unresolved and divergent scopes. This is
-trusted-local parsing, not sandboxing or independently attested behavior.
-
-## Native declaration boundary
-
-To compare native compiler-declared inputs with conservative syntax
-candidates **before constructing repository views**, use
-`excession syntax native-preflight --declaration native.json` followed by
-`excession syntax native-compare --repo "$REPO" --syntax-report /tmp/syntax.json
---resolution-report /tmp/candidates.json --declaration native.json`.
-The comparison reports in-scope candidate agreements, scope differences,
-unresolved imports, and exact Git input identities. It never authenticates
-a compiler process or asserts complete dependency closure. See
-[language-specific boundary checks](docs/SYNTAX_PARSERS.md#compiler-declaration-boundary-before-view-assembly).
-
-## Source-bound scanner evidence
-
-```sh
-excession security ingest --repo "$REPO" --report /tmp/report.sarif \
-  --db /tmp/findings.sqlite --engine codeql
-excession security audit --repo "$REPO" --report /tmp/report.sarif \
-  --db /tmp/findings.sqlite --engine codeql
-```
-
-To invoke an already installed Semgrep or CodeQL scanner, use
-`excession security scan ... --trusted-local true` with a reviewed, local
-configuration. This is trusted-local execution, **not a sandbox**; database
-creation and untrusted builds require their own isolation. The executable
-neither downloads scanners nor asserts that a finding is exploitable.
-
-## Research compatibility
-
-Pinned earlier experiments retain their original Git blobs, schema strings,
-identity-forming metadata, and fixture bundles. They can be replayed through
-one binary:
-
-```sh
-excession research --help
-excession research compose SPEC_JSON DATABASE
-excession research compose-audit SPEC_JSON DATABASE
-```
-
-The `research` commands accept historical positional arguments. They are
-separate from the modern named-option CLI and intentionally preserve existing
-research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
-
-## Benchmarks
-
-The [benchmark program](benchmarks/README.md) separates observable relational
-experiments from [single-query microbenchmarks](benchmarks/micro/README.md).
-Reproducible measurements do not claim improved agent productivity.
-
-## Limits
-
-The relational dependency index currently supports bounded Python and JavaScript static
-module relations, with additional Go-native research adapters. A separate optional
-Tree-sitter syntax scan covers more languages without claiming resolved dependencies. It cannot claim
-that absent graph edges do not exist. Scanner source-to-sink flows are unverified
-scanner reports until independent analysis establishes reachability and impact.
-Excession does not automatically confirm CVEs, execute untrusted code safely,
-or generate independently verified executable source reorganizations.
-
-Third-party source fixtures retain their upstream licensing obligations; see
-[third-party material](THIRD_PARTY.md).
-
-## Versioned source evidence contracts
-
-\`excession semantic scan\` emits JSON Schema Draft 2020-12 language-neutral
-syntax candidates and unresolved imports, with replay against Git.
-\`excession inspect evidence\` retains a separately typed, read-only query
-contract that distinguishes static candidates, compiler-declared inputs and
-runtime witnesses. Both datasets use ODCS 3.2.0 metadata and fail closed on
-schema drift without claiming complete dependency discovery. See the
-[semantic contract](docs/SEMANTIC_CONTRACTS.md) and
-[evidence query contract](docs/EVIDENCE_QUERY.md).
+- [Complete CLI](docs/CLI.md)
+- [Composable views](docs/COMPOSABLE_VIEWS.md)
+- [Syntax parsing and native comparison](docs/SYNTAX_PARSERS.md)
+- [Semantic contracts](docs/SEMANTIC_CONTRACTS.md)
+- [Security architecture and evaluation protocol](docs/ARCHITECTURE.md)
+- [Third-party source licenses](THIRD_PARTY.md)

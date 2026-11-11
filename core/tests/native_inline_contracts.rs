@@ -269,7 +269,7 @@ fn javascript_require_and_explicit_trust_gate() {
 }
 #[test]
 fn forged_resolution_revision_is_refused_before_native_invocation() {
-    if !grammars() {
+    if !grammars() || !available("go") {
         return;
     }
     let f = Fixture::new();
@@ -286,16 +286,16 @@ fn forged_resolution_revision_is_refused_before_native_invocation() {
         .insert("resolution_id".into(), Value::string(digest));
     fs::write(&f.resolution, resolution.canonical()).unwrap();
     reject(
-        f.invoke("src/main.rs", "rust", "true"),
+        f.invoke("src/go/main.go", "go", "true"),
         "mismatched syntax/resolution identities",
     );
 }
 #[test]
 fn dirty_checkout_is_refused_before_compiler_execution() {
-    if !grammars() {
+    if !grammars() || !available("go") {
         return;
     }
     let f = Fixture::new();
-    fs::write(f.repo.join("extra.rs"), "fn extra() {}\n").unwrap();
-    reject(f.invoke("src/main.rs", "rust", "true"), "dirty checkout");
+    fs::write(f.repo.join("extra.go"), "package extra\n").unwrap();
+    reject(f.invoke("src/go/main.go", "go", "true"), "dirty checkout");
 }

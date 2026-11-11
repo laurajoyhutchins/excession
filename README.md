@@ -95,6 +95,17 @@ This reports missing translation units explicitly, preserves configuration
 differences, and does not claim complete dynamic or cross-TU call resolution.
 See [configured graph assembly](docs/CONFIGURED_GRAPHS.md).
 
+For Linux Kbuild, use its native saved command records and archive
+membership rather than CMake's File API:
+
+```sh
+excession graph kbuild --repo /path/to/linux --build /tmp/linux-build \
+  --archive init/built-in.a --db /tmp/configured.sqlite --trusted-local true
+```
+
+See [configuration-scoped Kbuild evidence](docs/KBUILD_GRAPHS.md) for the
+real-build test and limitations.
+
 ## Source-bound scanner evidence
 
 ```sh

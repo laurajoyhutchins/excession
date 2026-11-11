@@ -2,14 +2,25 @@
 //! Preserve the existing SQL, schema and string-row facade for callers.
 //! No raw SQLite FFI, platform-specific linking or process-global state.
 use crate::{Result, refuse};
-use rusqlite::types::{Value as SqlValue, ValueRef};
-use rusqlite::{Connection, params_from_iter};
+use rusqlite::types::{ToSqlOutput, ValueRef};
+use rusqlite::{Connection, ToSql, params_from_iter};
 use std::path::Path;
 
 pub enum Param<'a> {
     Null,
     Text(&'a str),
     Integer(i64),
+}
+
+impl ToSql for Param<'_> {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        let value = match self {
+            Self::Null => ValueRef::Null,
+            Self::Text(text) => ValueRef::Text(text.as_bytes()),
+            Self::Integer(value) => ValueRef::Integer(*value),
+        };
+        Ok(ToSqlOutput::Borrowed(value))
+    }
 }
 
 pub struct Db {
@@ -43,18 +54,10 @@ impl Db {
     /// Preserve the existing row contract: every non-NULL SQLite column is
     /// returned as UTF-8 text. Numeric values are decimal strings.
     pub fn query(&self, sql: &str, args: &[Param<'_>]) -> Result<Vec<Vec<Option<String>>>> {
-        let values = args
-            .iter()
-            .map(|param| match param {
-                Param::Null => SqlValue::Null,
-                Param::Text(text) => SqlValue::Text((*text).to_owned()),
-                Param::Integer(value) => SqlValue::Integer(*value),
-            })
-            .collect::<Vec<_>>();
         let mut statement = self.conn.prepare(sql).map_err(|e| e.to_string())?;
         let column_count = statement.column_count();
         let mut cursor = statement
-            .query(params_from_iter(values.iter()))
+            .query(params_from_iter(args.iter()))
             .map_err(|e| e.to_string())?;
         let mut output = Vec::new();
         while let Some(row) = cursor.next().map_err(|e| e.to_string())? {

@@ -64,3 +64,18 @@ The first experiment does not prove that Excession reuses computation between
 queries. It only records a workload where such reuse could be observed. Evidence
 integrity should be independently tested before treating faster unverified
 retrieval as equivalent.
+
+## Versioned reporting
+
+`benchmarks/schemas/benchmark-report.v1.schema.json` is the normative
+Draft 2020-12 schema for normalized reports. Producers must identify the
+executable by SHA-256 and source revisions by Git commit/tree IDs, retain
+raw artifacts with byte counts and SHA-256 hashes, and report metric unit,
+statistic, sample count, and status. Unmeasured or unsupported values require
+an explicit reason, never a fabricated zero.
+
+The validator checks structure, report identity, referenced artifacts and
+passed/failed check consistency. The report ID digests canonical JSON contents
+excluding itself and is **not** a signature. An independently authored oracle
+and a shared-index comparison must never be conflated. Validation cannot
+establish the semantic truth of supplied source or claims.

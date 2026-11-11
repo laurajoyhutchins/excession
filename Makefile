@@ -1,4 +1,4 @@
-.PHONY: check build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli
+.PHONY: check build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli benchmark-schema-check
 
 build:
 	cargo build --offline --locked --manifest-path core/Cargo.toml
@@ -29,6 +29,9 @@ python-junit: build
 	python3 -m pytest -q tests --junitxml=test-results/python.xml
 
 junit: rust-junit python-junit
+
+benchmark-schema-check:
+	python3 -m unittest discover -s tests -p test_benchmark_reporting.py -v
 
 cli:
 	cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession

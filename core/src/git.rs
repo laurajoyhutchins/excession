@@ -158,7 +158,7 @@ impl BlobReader {
         self.stdout
             .read_exact(&mut terminator)
             .map_err(|e| format!("missing Git batch blob separator: {e}"))?;
-        if terminator != [b'\n'] || crate::digest::git_blob(&data) != expected_oid {
+        if terminator != *b"\n" || crate::digest::git_blob(&data) != expected_oid {
             return refuse("Git batch blob identity or framing mismatch");
         }
         Ok(data)

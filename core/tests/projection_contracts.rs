@@ -102,12 +102,16 @@ impl Fixture {
         let tree = git("HEAD^{tree}");
         let db = root.join("index.sqlite");
         raw(&[
-            "research",
             "index",
+            "--db",
             db.to_str().unwrap(),
+            "--name",
             "h11",
+            "--repo",
             repo.to_str().unwrap(),
+            "--rev",
             "HEAD",
+            "--roots",
             "h11,tests",
         ]);
         Self {
@@ -128,7 +132,7 @@ impl Fixture {
         self.root.join(name)
     }
     fn plan(&self, seed: &str, name: &str) -> (Value, PathBuf) {
-        let output = raw(&["research", "view-plan-deps", self.db(), "h11", "HEAD", seed]);
+        let output = raw(&["view", "deps", "--db", self.db(), "--name", "h11", "--rev", "HEAD", "--seed", seed]);
         let file = self.path(name);
         fs::write(&file, &output).unwrap();
         (json::parse(&output).unwrap(), file)
@@ -143,28 +147,39 @@ impl Fixture {
         };
         fs::write(&report, text).unwrap();
         let imported = data(&[
-            "research",
-            "security-ingest",
+            "security",
+            "ingest",
+            "--repo",
             self.repo(),
+            "--report",
             report.to_str().unwrap(),
+            "--db",
             db.to_str().unwrap(),
+            "--engine",
             engine,
         ]);
         assert_eq!(field(&imported, "status"), "UNVERIFIED_STATIC_CANDIDATES");
         data(&[
-            "research",
-            "security-ingest-audit",
+            "security",
+            "audit",
+            "--repo",
             self.repo(),
+            "--report",
             report.to_str().unwrap(),
+            "--db",
             db.to_str().unwrap(),
+            "--engine",
             engine,
         ]);
         let run_id = field(&imported, "run_id").to_string();
         let planned = data(&[
-            "research",
-            "view-plan-security",
+            "view",
+            "security",
+            "--db",
             db.to_str().unwrap(),
+            "--repo",
             self.repo(),
+            "--run",
             &run_id,
         ]);
         let manifest = self.path(&format!("{engine}-view.json"));
@@ -173,10 +188,13 @@ impl Fixture {
     }
     fn materialize(&self, manifest: &Path, output: &Path) -> Value {
         data(&[
-            "research",
-            "view-materialize",
+            "view",
+            "materialize",
+            "--repo",
             self.repo(),
+            "--manifest",
             manifest.to_str().unwrap(),
+            "--output",
             output.to_str().unwrap(),
         ])
     }
@@ -187,12 +205,16 @@ fn dependency_layout_is_deterministic_git_identical_and_readonly() {
     let (plan, manifest) = f.plan("h11._connection", "deps.json");
     assert_eq!(
         raw(&[
-            "research",
-            "view-plan-deps",
+            "view",
+            "deps",
+            "--db",
             f.db(),
+            "--name",
             "h11",
+            "--rev",
             "HEAD",
-            "h11._connection"
+            "--seed",
+            "h11._connection",
         ]),
         fs::read(&manifest).unwrap()
     );
@@ -231,11 +253,14 @@ fn dependency_layout_is_deterministic_git_identical_and_readonly() {
     }
     assert_eq!(
         data(&[
-            "research",
-            "view-audit",
+            "view",
+            "audit",
+            "--repo",
             f.repo(),
+            "--manifest",
             manifest.to_str().unwrap(),
-            dest.to_str().unwrap()
+            "--output",
+            dest.to_str().unwrap(),
         ]),
         receipt
     );
@@ -598,12 +623,18 @@ fn replay_refuses_missing_index_relations() {
     let f = Fixture::new();
     let (plan, manifest) = f.plan("h11._connection", "deps.json");
     let receipt = data(&[
-        "research",
-        "view-plan-replay-deps",
+        "view",
+        "replay",
+        "deps",
+        "--db",
         f.db(),
+        "--name",
         "h11",
+        "--rev",
         "HEAD",
+        "--seed",
         "h11._connection",
+        "--manifest",
         manifest.to_str().unwrap(),
     ]);
     assert_eq!(
@@ -622,12 +653,18 @@ fn replay_refuses_missing_index_relations() {
     db.exec("DELETE FROM dependency WHERE source_name='h11._connection'")
         .unwrap();
     denied(exec(&[
-        "research",
-        "view-plan-replay-deps",
+        "view",
+        "replay",
+        "deps",
+        "--db",
         f.db(),
+        "--name",
         "h11",
+        "--rev",
         "HEAD",
+        "--seed",
         "h11._connection",
+        "--manifest",
         manifest.to_str().unwrap(),
     ]));
 }
@@ -655,18 +692,26 @@ fn codeql_flow_layout_and_semgrep_candidate_are_conservative() {
         4
     );
     data(&[
-        "research",
-        "view-audit",
+        "view",
+        "audit",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         target.to_str().unwrap(),
     ]);
     let replay = data(&[
-        "research",
-        "view-plan-replay-security",
+        "view",
+        "replay",
+        "security",
+        "--db",
         db.to_str().unwrap(),
+        "--repo",
         f.repo(),
+        "--run",
         &run_id,
+        "--manifest",
         manifest.to_str().unwrap(),
     ]);
     assert_eq!(replay.get("view_id").unwrap(), flow.get("view_id").unwrap());
@@ -689,18 +734,24 @@ fn audit_refuses_missing_modified_extra_and_symlink_files() {
     fs::set_permissions(&first, fs::Permissions::from_mode(0o644)).unwrap();
     fs::write(&first, "tampered\n").unwrap();
     denied(exec(&[
-        "research",
-        "view-audit",
+        "view",
+        "audit",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         dest.to_str().unwrap(),
     ]));
     fs::remove_file(&first).unwrap();
     denied(exec(&[
-        "research",
-        "view-audit",
+        "view",
+        "audit",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         dest.to_str().unwrap(),
     ]));
 
@@ -708,10 +759,13 @@ fn audit_refuses_missing_modified_extra_and_symlink_files() {
     f.materialize(&manifest, &extra);
     fs::write(extra.join("views/untracked.txt"), "not in manifest").unwrap();
     denied(exec(&[
-        "research",
-        "view-audit",
+        "view",
+        "audit",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         extra.to_str().unwrap(),
     ]));
     #[cfg(unix)]
@@ -725,10 +779,13 @@ fn audit_refuses_missing_modified_extra_and_symlink_files() {
         )
         .unwrap();
         denied(exec(&[
-            "research",
-            "view-audit",
+            "view",
+            "audit",
+            "--repo",
             f.repo(),
+            "--manifest",
             manifest.to_str().unwrap(),
+            "--output",
             extra.to_str().unwrap(),
         ]));
     }
@@ -750,33 +807,45 @@ fn manifest_tamper_and_unsafe_materialization_are_refused() {
     let changed = f.path("forged.json");
     save(&changed, &plan);
     denied(exec(&[
-        "research",
-        "view-audit",
+        "view",
+        "audit",
+        "--repo",
         f.repo(),
+        "--manifest",
         changed.to_str().unwrap(),
+        "--output",
         dest.to_str().unwrap(),
     ]));
     denied(exec(&[
-        "research",
-        "view-materialize",
+        "view",
+        "materialize",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         dest.to_str().unwrap(),
     ]));
     let inside = f.repo.join("new-view");
     denied(exec(&[
-        "research",
-        "view-materialize",
+        "view",
+        "materialize",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         inside.to_str().unwrap(),
     ]));
     assert!(!inside.exists());
     denied(exec(&[
-        "research",
-        "view-materialize",
+        "view",
+        "materialize",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         "relative-view",
     ]));
 }
@@ -792,11 +861,16 @@ fn security_plan_replay_refuses_deleted_evidence_steps() {
         )
         .unwrap();
     denied(exec(&[
-        "research",
-        "view-plan-replay-security",
+        "view",
+        "replay",
+        "security",
+        "--db",
         db.to_str().unwrap(),
+        "--repo",
         f.repo(),
+        "--run",
         &run_id,
+        "--manifest",
         manifest.to_str().unwrap(),
     ]));
 }
@@ -809,10 +883,13 @@ fn pinned_git_materialization_ignores_mutable_worktree() {
     let dest = f.path("pinned-view");
     f.materialize(&manifest, &dest);
     data(&[
-        "research",
-        "view-audit",
+        "view",
+        "audit",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--output",
         dest.to_str().unwrap(),
     ]);
 }
@@ -820,14 +897,17 @@ fn pinned_git_materialization_ignores_mutable_worktree() {
 fn virtual_git_navigation_reads_exact_blobs_without_copying() {
     let f = Fixture::new();
     let (plan, manifest) = f.plan("h11._connection", "deps.json");
-    let list = data(&["research", "view-ls", f.repo(), manifest.to_str().unwrap()]);
+    let list = data(&["view", "ls", "--repo", f.repo(), "--manifest", manifest.to_str().unwrap()]);
     assert_eq!(array(&list, "children").len(), 1);
     assert_eq!(field(&array(&list, "children")[0], "name"), "views");
     let groups = data(&[
-        "research",
-        "view-ls",
+        "view",
+        "ls",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--path",
         "views",
     ]);
     assert!(
@@ -842,18 +922,24 @@ fn virtual_git_navigation_reads_exact_blobs_without_copying() {
     let vpath = field(entry, "virtual_path");
     let parent = Path::new(vpath).parent().unwrap().to_str().unwrap();
     let children = data(&[
-        "research",
-        "view-ls",
+        "view",
+        "ls",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--path",
         parent,
     ]);
     assert_eq!(array(&children, "children").len(), 1);
     let desc = data(&[
-        "research",
-        "view-stat",
+        "view",
+        "stat",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--path",
         vpath,
     ]);
     assert_eq!(
@@ -865,10 +951,13 @@ fn virtual_git_navigation_reads_exact_blobs_without_copying() {
         entry.get("source_path").unwrap()
     );
     let bytes = raw(&[
-        "research",
-        "view-open",
+        "view",
+        "cat",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--path",
         vpath,
     ]);
     let spec = format!("{}:{}", f.commit, field(entry, "source_path"));
@@ -880,11 +969,15 @@ fn compositions_and_selections_are_replayable() {
     let (deps, dep) = f.plan("h11._connection", "deps.json");
     let (security, sec, _, _) = f.security("codeql");
     let args = [
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         dep.to_str().unwrap(),
+        "--right",
         sec.to_str().unwrap(),
     ];
     let bytes = raw(&args);
@@ -899,12 +992,18 @@ fn compositions_and_selections_are_replayable() {
     let output = f.path("union.json");
     fs::write(&output, &bytes).unwrap();
     let replay = data(&[
-        "research",
-        "view-compose-replay",
+        "view",
+        "replay",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         dep.to_str().unwrap(),
+        "--right",
         sec.to_str().unwrap(),
+        "--output",
         output.to_str().unwrap(),
     ]);
     assert_eq!(
@@ -912,11 +1011,15 @@ fn compositions_and_selections_are_replayable() {
         joined.get("view_id").unwrap()
     );
     let selected = data(&[
-        "research",
-        "view-select",
+        "view",
+        "select",
+        "--repo",
         f.repo(),
+        "--manifest",
         output.to_str().unwrap(),
+        "--axis",
         "role",
+        "--value",
         "scanner-flow-start",
     ]);
     assert_eq!(entries(&selected).len(), 1);
@@ -924,21 +1027,30 @@ fn compositions_and_selections_are_replayable() {
     let filtered = f.path("filtered.json");
     save(&filtered, &selected);
     data(&[
-        "research",
-        "view-select-replay",
+        "view",
+        "replay",
+        "select",
+        "--repo",
         f.repo(),
+        "--manifest",
         output.to_str().unwrap(),
+        "--axis",
         "role",
+        "--value",
         "scanner-flow-start",
+        "--output",
         filtered.to_str().unwrap(),
     ]);
     let dest = f.path("union-view");
     f.materialize(&output, &dest);
     data(&[
-        "research",
-        "view-audit",
+        "view",
+        "audit",
+        "--repo",
         f.repo(),
+        "--manifest",
         output.to_str().unwrap(),
+        "--output",
         dest.to_str().unwrap(),
     ]);
 }
@@ -947,30 +1059,42 @@ fn intersection_difference_and_source_filter_preserve_identity() {
     let f = Fixture::new();
     let (deps, manifest) = f.plan("h11._connection", "deps.json");
     let focus = data(&[
-        "research",
-        "view-select",
+        "view",
+        "select",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--axis",
         "role",
+        "--value",
         "focus",
     ]);
     let chosen = f.path("focus.json");
     save(&chosen, &focus);
     let intersection = data(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "intersection",
+        "--left",
         manifest.to_str().unwrap(),
+        "--right",
         chosen.to_str().unwrap(),
     ]);
     assert_eq!(identities(&intersection), identities(&focus));
     let difference = data(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "difference",
+        "--left",
         manifest.to_str().unwrap(),
+        "--right",
         chosen.to_str().unwrap(),
     ]);
     assert!(identities(&difference).is_disjoint(&identities(&focus)));
@@ -980,11 +1104,15 @@ fn intersection_difference_and_source_filter_preserve_identity() {
         .collect::<BTreeSet<_>>();
     assert_eq!(paths(&deps), both);
     let narrowed = data(&[
-        "research",
-        "view-select",
+        "view",
+        "select",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--axis",
         "source-prefix",
+        "--value",
         "h11",
     ]);
     assert!(!entries(&narrowed).is_empty() && entries(&narrowed).len() < entries(&deps).len());
@@ -994,11 +1122,15 @@ fn intersection_difference_and_source_filter_preserve_identity() {
             .all(|e| field(e, "source_path").starts_with("h11/"))
     );
     let virtual_focus = data(&[
-        "research",
-        "view-select",
+        "view",
+        "select",
+        "--repo",
         f.repo(),
+        "--manifest",
         manifest.to_str().unwrap(),
+        "--axis",
         "virtual-prefix",
+        "--value",
         "views/00-focus",
     ]);
     assert_eq!(entries(&virtual_focus).len(), 1);
@@ -1009,22 +1141,32 @@ fn replay_refuses_changed_inputs_and_output() {
     let (_, dep) = f.plan("h11._connection", "deps.json");
     let (_, sec, _, _) = f.security("codeql");
     let result = data(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         dep.to_str().unwrap(),
+        "--right",
         sec.to_str().unwrap(),
     ]);
     let output = f.path("combined.json");
     save(&output, &result);
     denied(exec(&[
-        "research",
-        "view-compose-replay",
+        "view",
+        "replay",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "difference",
+        "--left",
         dep.to_str().unwrap(),
+        "--right",
         sec.to_str().unwrap(),
+        "--output",
         output.to_str().unwrap(),
     ]));
     let mut altered = json::parse(&fs::read(&dep).unwrap()).unwrap();
@@ -1041,21 +1183,33 @@ fn replay_refuses_changed_inputs_and_output() {
     let bad = f.path("forged.json");
     save(&bad, &altered);
     denied(exec(&[
-        "research",
-        "view-compose-replay",
+        "view",
+        "replay",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         bad.to_str().unwrap(),
+        "--right",
         sec.to_str().unwrap(),
+        "--output",
         output.to_str().unwrap(),
     ]));
     denied(exec(&[
-        "research",
-        "view-select-replay",
+        "view",
+        "replay",
+        "select",
+        "--repo",
         f.repo(),
+        "--manifest",
         dep.to_str().unwrap(),
+        "--axis",
         "role",
+        "--value",
         "focus",
+        "--output",
         output.to_str().unwrap(),
     ]));
 }
@@ -1066,51 +1220,70 @@ fn virtual_operations_refuse_invalid_scope_or_empty_composition() {
     let root = f.repo();
     let manifest = dep.to_str().unwrap();
     for args in [
-        vec!["research", "view-compose", root, "xor", manifest, manifest],
+        vec!["view", "compose", "--repo", root, "--op", "xor", "--left", manifest, "--right", manifest],
         vec![
-            "research",
-            "view-select",
+            "view",
+            "select",
+            "--repo",
             root,
+            "--manifest",
             manifest,
+            "--axis",
             "role",
+            "--value",
             "does-not-exist",
         ],
         vec![
-            "research",
-            "view-select",
+            "view",
+            "select",
+            "--repo",
             root,
+            "--manifest",
             manifest,
+            "--axis",
             "source-prefix",
+            "--value",
             "../bad",
         ],
-        vec!["research", "view-ls", root, manifest, "views/../bad"],
-        vec!["research", "view-ls", root, manifest, "views/nonexistent"],
+        vec!["view", "ls", "--repo", root, "--manifest", manifest, "--path", "views/../bad"],
+        vec!["view", "ls", "--repo", root, "--manifest", manifest, "--path", "views/nonexistent"],
         vec![
-            "research",
-            "view-open",
+            "view",
+            "cat",
+            "--repo",
             root,
+            "--manifest",
             manifest,
+            "--path",
             "views/../../etc/passwd",
         ],
-        vec!["research", "view-stat", root, manifest, "views/not-a-file"],
+        vec!["view", "stat", "--repo", root, "--manifest", manifest, "--path", "views/not-a-file"],
         vec![
-            "research",
-            "view-compose",
+            "view",
+            "compose",
+            "--repo",
             root,
+            "--op",
             "difference",
+            "--left",
             manifest,
+            "--right",
             manifest,
         ],
     ] {
         denied(exec(&args));
     }
-    let focus = data(&["research", "view-select", root, manifest, "role", "focus"]);
+    let focus = data(&["view", "select", "--repo", root, "--manifest", manifest, "--axis", "role", "--value", "focus"]);
     let tests = data(&[
-        "research",
-        "view-select",
+        "view",
+        "select",
+        "--repo",
         root,
+        "--manifest",
         manifest,
+        "--axis",
         "role",
+        "--value",
         "indexed-test",
     ]);
     let a = f.path("focus.json");
@@ -1118,11 +1291,15 @@ fn virtual_operations_refuse_invalid_scope_or_empty_composition() {
     save(&a, &focus);
     save(&b, &tests);
     denied(exec(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         root,
+        "--op",
         "intersection",
+        "--left",
         a.to_str().unwrap(),
+        "--right",
         b.to_str().unwrap(),
     ]));
 }
@@ -1163,38 +1340,54 @@ fn composition_refuses_cross_revision_views() {
     ));
     let db = f.path("alternate.sqlite");
     raw(&[
-        "research",
         "index",
+        "--db",
         db.to_str().unwrap(),
+        "--name",
         "alternate",
+        "--repo",
         root,
+        "--rev",
         "HEAD",
+        "--roots",
         "h11,tests",
     ]);
     let bytes = raw(&[
-        "research",
-        "view-plan-deps",
+        "view",
+        "deps",
+        "--db",
         db.to_str().unwrap(),
+        "--name",
         "alternate",
+        "--rev",
         "HEAD",
+        "--seed",
         "h11._connection",
     ]);
     let other = f.path("different.json");
     fs::write(&other, bytes).unwrap();
     denied(exec(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         first.to_str().unwrap(),
+        "--right",
         other.to_str().unwrap(),
     ]));
     denied(exec(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         root,
+        "--op",
         "union",
+        "--left",
         first.to_str().unwrap(),
+        "--right",
         other.to_str().unwrap(),
     ]));
 }
@@ -1216,11 +1409,15 @@ fn union_conflicts_and_file_directory_collisions_are_refused() {
     let other = f.path("changed-role.json");
     save(&other, &changed);
     denied(exec(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         manifest.to_str().unwrap(),
+        "--right",
         other.to_str().unwrap(),
     ]));
     let mut malformed = json::parse(&fs::read(&manifest).unwrap()).unwrap();
@@ -1240,10 +1437,13 @@ fn union_conflicts_and_file_directory_collisions_are_refused() {
     let wrong = f.path("file-dir.json");
     save(&wrong, &malformed);
     denied(exec(&[
-        "research",
-        "view-ls",
+        "view",
+        "ls",
+        "--repo",
         f.repo(),
+        "--manifest",
         wrong.to_str().unwrap(),
+        "--path",
         "views",
     ]));
 }
@@ -1253,17 +1453,23 @@ fn namespace_mounts_are_disjoint_and_replayable() {
     let (a, a_path) = f.plan("h11._connection", "a.json");
     let (b, b_path) = f.plan("h11._headers", "b.json");
     let mounted_a = data(&[
-        "research",
-        "view-mount",
+        "view",
+        "mount",
+        "--repo",
         f.repo(),
+        "--manifest",
         a_path.to_str().unwrap(),
+        "--namespace",
         "connection",
     ]);
     let mounted_b = data(&[
-        "research",
-        "view-mount",
+        "view",
+        "mount",
+        "--repo",
         f.repo(),
+        "--manifest",
         b_path.to_str().unwrap(),
+        "--namespace",
         "headers",
     ]);
     assert_eq!(entries(&mounted_a).len(), entries(&a).len());
@@ -1283,48 +1489,69 @@ fn namespace_mounts_are_disjoint_and_replayable() {
     save(&left, &mounted_a);
     save(&right, &mounted_b);
     let union = data(&[
-        "research",
-        "view-compose",
+        "view",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         left.to_str().unwrap(),
+        "--right",
         right.to_str().unwrap(),
     ]);
     assert_eq!(entries(&union).len(), entries(&a).len() + entries(&b).len());
     let both = f.path("both.json");
     save(&both, &union);
     data(&[
-        "research",
-        "view-compose-replay",
+        "view",
+        "replay",
+        "compose",
+        "--repo",
         f.repo(),
+        "--op",
         "union",
+        "--left",
         left.to_str().unwrap(),
+        "--right",
         right.to_str().unwrap(),
+        "--output",
         both.to_str().unwrap(),
     ]);
     data(&[
-        "research",
-        "view-mount-replay",
+        "view",
+        "replay",
+        "mount",
+        "--repo",
         f.repo(),
+        "--manifest",
         a_path.to_str().unwrap(),
+        "--namespace",
         "connection",
+        "--output",
         left.to_str().unwrap(),
     ]);
     let branch = data(&[
-        "research",
-        "view-ls",
+        "view",
+        "ls",
+        "--repo",
         f.repo(),
+        "--manifest",
         both.to_str().unwrap(),
+        "--path",
         "views",
     ]);
     let got = BTreeSet::from_iter(array(&branch, "children").iter().map(|v| field(v, "name")));
     assert_eq!(got, BTreeSet::from(["connection", "headers"]));
     for name in ["../bad", "slash/not-allowed", "", "control\nchar"] {
         denied(exec(&[
-            "research",
-            "view-mount",
+            "view",
+            "mount",
+            "--repo",
             f.repo(),
+            "--manifest",
             a_path.to_str().unwrap(),
+            "--namespace",
             name,
         ]));
     }

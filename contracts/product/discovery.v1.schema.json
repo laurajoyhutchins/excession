@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/product/discovery.v1.schema.json",
+  "title": "test/contracts: scaffold zero-config repository discovery (#79)",
+  "description": "Proposed product contract; TDD scaffold only, not an implemented Excession command.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_commit",
+    "source_tree",
+    "repository_path",
+    "roots",
+    "adapters",
+    "index_path",
+    "coverage"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.discovery.v1"
+    },
+    "source_commit": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "repository_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "roots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.v1.schema.json#/$defs/path"
+      }
+    },
+    "adapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "availability"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "availability": {
+            "enum": [
+              "AVAILABLE",
+              "UNAVAILABLE",
+              "UNSUPPORTED"
+            ]
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "index_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "coverage": {
+      "$ref": "common.v1.schema.json#/$defs/coverage"
+    }
+  }
+}

@@ -1,6 +1,8 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
+
 use excession::change_inventory;
+use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
 use excession::semantic_contract;
@@ -487,6 +489,13 @@ fn execute(args: &[String]) -> Result<Response> {
             "clang" => clang_command(opt),
             _ => refuse(format!("unknown kernel command: {sub}")),
         },
+        [top] if top == "discover" => {
+            let found = discovery::inspect(
+                Path::new(opt.get_or("path", ".")),
+                opt.get_or("rev", "HEAD"),
+            )?;
+            Ok(json(found.report()?))
+        }
         [top] if top == "changes" => Ok(json(change_inventory::inventory(
             Path::new(opt.get_or("path", ".")),
             opt.get("base"),

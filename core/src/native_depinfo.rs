@@ -176,9 +176,8 @@ pub fn declaration(
     {
         return refuse("rustc executable is missing or exceeds hash limit");
     }
-    let compiler_sha = digest::sha256(
-        &fs::read(&binary_path).map_err(|e| format!("rustc hash read: {e}"))?,
-    );
+    let compiler_sha =
+        digest::sha256(&fs::read(&binary_path).map_err(|e| format!("rustc hash read: {e}"))?);
     let source_tree = git::rev(&checkout, &format!("{commit}^{{tree}}"))?;
     let payload = obj(&[
         ("schema", Value::string("excession.input-declaration.v1")),

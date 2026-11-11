@@ -584,7 +584,14 @@ mod tests {
         .is_err());
         assert!(execute(&strings(&["index", "--reppo", "a"])).is_err());
         assert!(execute(&strings(&["index", "--repo", "--db", "x"])).is_err());
-        assert!(execute(&strings(&["research"])).is_err());
+
+    }
+    #[test]
+    fn historical_research_still_accepts_positional_help() {
+        assert!(matches!(
+            execute(&strings(&["research", "--help"])),
+            Ok(Response::Bytes(bytes)) if bytes.is_empty()
+        ));
     }
     #[test]
     fn command_help_and_failure_are_ordinary_results() {

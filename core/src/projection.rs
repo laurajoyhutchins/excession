@@ -143,7 +143,9 @@ impl Plan {
     pub fn manifest(&self) -> Value {
         let payload = self.payload();
         let view_id = payload.sha256();
-        let mut fields = payload.entries().expect("payload object").clone();
+        let Value::Object(mut fields) = payload else {
+            unreachable!("projection payload is always a JSON object")
+        };
         fields.insert("view_id".to_owned(), Value::string(view_id));
         Value::Object(fields)
     }

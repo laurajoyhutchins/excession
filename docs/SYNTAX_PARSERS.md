@@ -72,6 +72,49 @@ In particular, a syntactic import target is not automatically an Excession
 dependency edge. Those edges require language-specific, independently validated
 resolvers before they can be inserted into the SQL dependency relation.
 
+## Source-bound dependency candidates
+
+The optional resolver maps syntax imports to tracked files using conservative,
+language-specific rules. The result is a separate **candidate** report. It is
+not installed into the authoritative SQL dependency index and cannot be used
+to justify skipping tests.
+
+```sh
+excession syntax resolve --repo /path/to/checkout \
+  --report /tmp/syntax.json > /tmp/candidates.json
+excession syntax resolve-audit --repo /path/to/checkout \
+  --syntax-report /tmp/syntax.json --report /tmp/candidates.json
+```
+
+`resolve` first independently replays the entire syntax scan and verifies all
+source Git blobs. The resulting `excession.syntax-dependencies.v1` manifest
+contains Git-bound `candidate_edges`, `unresolved_imports`, `skipped_sources`,
+exact `go.mod` metadata identities, and a canonical `resolution_id`.
+`resolve-audit` re-parses and re-resolves both reports and rejects any changed
+observation. Missing imports are never treated as evidence of no dependency.
+
+**Supported candidate rules:**
+
+- **JS/TS:** explicitly relative imports mapped to exactly one tracked file,
+  using listed extension and `index` candidates; ambiguities and bare imports
+  remain unresolved. Does not evaluate `tsconfig` aliases, `package.json`,
+  `exports`, bundler settings or transpiler remapping.
+- **Python:** dotted and relative module strings mapped to exactly one tracked
+  `.py` or `__init__.py` source. Does not evaluate imported members,
+  namespace packages, sys.path changes or dynamic imports.
+- **Go:** only same-module package imports, using the pinned, authenticated
+  nearest `go.mod`. All tracked non-test `.go` package files are candidates;
+  build constraints, workspaces, vendoring, generated files and CGO are not
+  evaluated.
+- **Rust:** direct `crate::foo` import paths matched to a unique local
+  `src/foo.rs` or `src/foo/mod.rs` when a crate root is included. No
+  `mod` validation, macros, cfg variants, or Cargo build dependencies.
+
+A candidate edge means only that a **plausible tracked path** matches a parsed
+import. Native compiler resolution and complete build graphs remain separate
+from this feature. Other languages and missing grammars are explicitly marked
+unsupported, not silently assigned empty dependency sets.
+
 ## Safety and reproducibility
 
 The adapter runs trusted, locally installed parser binaries and grammars, but

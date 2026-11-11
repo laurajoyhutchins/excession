@@ -1,0 +1,44 @@
+name: Real repository projection fixtures
+
+on:
+  pull_request:
+    paths:
+      - benchmarks/real_fixtures.py
+      - benchmarks/fixtures/real-repositories.json
+      - .github/workflows/real-fixtures.yml
+      - core/src/projection.rs
+      - core/src/index.rs
+      - core/src/semantic.rs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install JS parser for JavaScript fixture
+        run: npm install --global typescript@5.9.3
+      - name: Build Excession
+        run: cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
+      - name: Verify immutable upstream fixtures and corruption refusals
+        run: |
+          python3 benchmarks/real_fixtures.py \
+            --bin core/target/release/excession \
+            --manifest benchmarks/fixtures/real-repositories.json \
+            --out real-fixture-results.json
+      - name: Upload fixture receipts even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-projection-fixture-results
+          path: real-fixture-results.json
+          if-no-files-found: warn

@@ -16,8 +16,11 @@ fn committed(root: &Path, rev: &str) -> Result<(String, String)> {
 }
 
 fn blobs(entries: &[Entry]) -> BTreeMap<&str, &Entry> {
-    entries.iter().filter(|e| e.kind == "blob")
-        .map(|e| (e.path.as_str(), e)).collect()
+    entries
+        .iter()
+        .filter(|e| e.kind == "blob")
+        .map(|e| (e.path.as_str(), e))
+        .collect()
 }
 
 fn source(e: &Entry, commit: &str, tree: &str) -> Value {
@@ -33,33 +36,52 @@ fn source(e: &Entry, commit: &str, tree: &str) -> Value {
 /// Reports exact tracked blob path and mode changes. Renames are deliberately
 /// left as add+delete until an independent candidate heuristic is specified.
 fn compare(
-    old: &[Entry], new: &[Entry],
-    old_commit: &str, old_tree: &str,
-    new_commit: &str, new_tree: &str,
+    old: &[Entry],
+    new: &[Entry],
+    old_commit: &str,
+    old_tree: &str,
+    new_commit: &str,
+    new_tree: &str,
 ) -> Vec<Value> {
     let a = blobs(old);
     let b = blobs(new);
     let paths: BTreeSet<_> = a.keys().chain(b.keys()).copied().collect();
-    paths.into_iter().filter_map(|p| {
-        let before = a.get(p).copied();
-        let after = b.get(p).copied();
-        let kind = match (before, after) {
-            (None, Some(_)) => "ADDED",
-            (Some(_), None) => "DELETED",
-            (Some(a), Some(b)) if a.oid != b.oid => "MODIFIED",
-            (Some(a), Some(b)) if a.mode != b.mode => "MODE_CHANGED",
-            _ => return None,
-        };
-        let mut change = obj(&[
-            ("kind", Value::string(kind)),
-            ("before", before.map(|e| source(e, old_commit, old_tree)).unwrap_or(Value::Null)),
-            ("after", after.map(|e| source(e, new_commit, new_tree)).unwrap_or(Value::Null)),
-        ]);
-        let id = change.sha256();
-        // The digest identifies the observation, not a verified semantic result.
-        change.entries_mut().expect("internal object").insert("change_id".into(), Value::string(id));
-        Some(change)
-    }).collect()
+    paths
+        .into_iter()
+        .filter_map(|p| {
+            let before = a.get(p).copied();
+            let after = b.get(p).copied();
+            let kind = match (before, after) {
+                (None, Some(_)) => "ADDED",
+                (Some(_), None) => "DELETED",
+                (Some(a), Some(b)) if a.oid != b.oid => "MODIFIED",
+                (Some(a), Some(b)) if a.mode != b.mode => "MODE_CHANGED",
+                _ => return None,
+            };
+            let mut change = obj(&[
+                ("kind", Value::string(kind)),
+                (
+                    "before",
+                    before
+                        .map(|e| source(e, old_commit, old_tree))
+                        .unwrap_or(Value::Null),
+                ),
+                (
+                    "after",
+                    after
+                        .map(|e| source(e, new_commit, new_tree))
+                        .unwrap_or(Value::Null),
+                ),
+            ]);
+            let id = change.sha256();
+            // The digest identifies the observation, not a verified semantic result.
+            change
+                .entries_mut()
+                .expect("internal object")
+                .insert("change_id".into(), Value::string(id));
+            Some(change)
+        })
+        .collect()
 }
 
 pub fn inventory(path: &Path, base: &str, head: &str) -> Result<Value> {
@@ -69,7 +91,14 @@ pub fn inventory(path: &Path, base: &str, head: &str) -> Result<Value> {
     let (head_commit, head_tree) = committed(&root, head)?;
     let old = git::entries(&root, &base_commit)?;
     let new = git::entries(&root, &head_commit)?;
-    let changes = compare(&old, &new, &base_commit, &base_tree, &head_commit, &head_tree);
+    let changes = compare(
+        &old,
+        &new,
+        &base_commit,
+        &base_tree,
+        &head_commit,
+        &head_tree,
+    );
     let mut report = obj(&[
         ("schema", Value::string("excession.change-inventory.v1")),
         ("base_commit", Value::string(&base_commit)),
@@ -79,7 +108,9 @@ pub fn inventory(path: &Path, base: &str, head: &str) -> Result<Value> {
         ("changes", Value::array(changes)),
     ]);
     let id = report.sha256();
-    report.entries_mut()?.insert("report_id".into(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(id));
     Ok(report)
 }
 
@@ -88,7 +119,12 @@ mod tests {
     use super::*;
 
     fn e(path: &str, oid: &str, mode: &str) -> Entry {
-        Entry { path: path.into(), oid: oid.into(), mode: mode.into(), kind: "blob".into() }
+        Entry {
+            path: path.into(),
+            oid: oid.into(),
+            mode: mode.into(),
+            kind: "blob".into(),
+        }
     }
     #[test]
     fn exact_git_changes_detect_contents_and_mode_without_guessing_renames() {
@@ -103,8 +139,10 @@ mod tests {
             e("new.py", "3", "100644"),
         ];
         let report = compare(&original, &changed, "a", "b", "c", "d");
-        let kinds: Vec<_> = report.iter()
-            .map(|x| x.get("kind").unwrap().str().unwrap()).collect();
+        let kinds: Vec<_> = report
+            .iter()
+            .map(|x| x.get("kind").unwrap().str().unwrap())
+            .collect();
         assert_eq!(kinds, ["MODIFIED", "DELETED", "ADDED", "MODE_CHANGED"]);
         assert_eq!(report[1].get("after").unwrap(), &Value::Null);
         assert_eq!(report[2].get("before").unwrap(), &Value::Null);

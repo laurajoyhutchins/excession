@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/product/working-tree.v1.schema.json",
+  "title": "test/contracts: scaffold dirty-tree-safe committed analysis (#85)",
+  "description": "Proposed product contract; TDD scaffold only, not an implemented Excession command.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_kind",
+    "source_commit",
+    "source_tree",
+    "worktree_status",
+    "changes",
+    "analysis_scope"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.working-tree.v1"
+    },
+    "source_kind": {
+      "const": "COMMITTED_GIT"
+    },
+    "source_commit": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "worktree_status": {
+      "enum": [
+        "CLEAN",
+        "DIRTY",
+        "UNKNOWN"
+      ]
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "state"
+        ],
+        "properties": {
+          "path": {
+            "$ref": "common.v1.schema.json#/$defs/path"
+          },
+          "state": {
+            "enum": [
+              "STAGED",
+              "UNSTAGED",
+              "UNTRACKED",
+              "IGNORED",
+              "DELETED"
+            ]
+          }
+        }
+      }
+    },
+    "analysis_scope": {
+      "const": "COMMITTED_OBJECTS_ONLY"
+    }
+  }
+}

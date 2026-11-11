@@ -107,6 +107,32 @@ class GraphAndManifestUnitTests(unittest.TestCase):
         self.assertEqual(json.loads(run.stdout)["source_paths"], ["p/b.py", "p/c.py"])
 
 
+    def test_measured_output_amplification_and_p95(self) -> None:
+        graph = {"source_paths": ["p/b.py", "p/c.py"]}
+        manifest = {"entries": [
+            {"role": "focus", "source_path": "p/a.py"},
+            {"role": "direct-dependencies", "source_path": "p/b.py"},
+            {"role": "direct-dependents", "source_path": "p/c.py"},
+            {"role": "indexed-test", "source_path": "p/c.py"},
+        ]}
+        self.assertEqual(paired.output_counts(graph, "graph", "dependencies_all"), {
+            "emitted_references": 2, "emitted_unique_files": 2,
+            "emitted_duplicate_references": 0, "selected_references": 2,
+            "selected_duplicate_references": 0,
+        })
+        self.assertEqual(paired.output_counts(manifest, "view", "dependencies_all"), {
+            "emitted_references": 4, "emitted_unique_files": 3,
+            "emitted_duplicate_references": 1, "selected_references": 1,
+            "selected_duplicate_references": 0,
+        })
+        self.assertEqual(paired.nearest_rank_p95([1.0, 5.0, 3.0, 2.0]), 5.0)
+
+    def test_command_timeout_is_measured_and_not_silent(self) -> None:
+        proc, timing = paired.command([sys.executable, "-c", "import time; time.sleep(0.5)"], 0.03)
+        self.assertEqual(proc.returncode, 124)
+        self.assertGreaterEqual(timing["wall_ms"], 25)
+
+
 class RealExcessionSmoke(unittest.TestCase):
     """Runs the actual binary when built; never substitutes a fake view provider."""
 
@@ -136,6 +162,13 @@ class RealExcessionSmoke(unittest.TestCase):
             self.assertEqual(summary["source_parity_pairs"], 2)
             self.assertEqual(summary["total_pairs"], 2)
             self.assertEqual(len((out / "trials.jsonl").read_text().splitlines()), 4)
+            self.assertEqual(summary["counts_by_status"]["graph"]["ok"], 2)
+            self.assertEqual(summary["counts_by_status"]["view"]["ok"], 2)
+            self.assertIn("median_raw_stdout_bytes", summary)
+            self.assertIn("median_duplicate_references", summary)
+            trials = [json.loads(line) for line in (out / "trials.jsonl").read_text().splitlines()]
+            self.assertTrue(all("raw_stdout_sha256" in r for r in trials))
+            self.assertTrue(all("candidate_source_bytes" in r for r in trials))
 
 
 if __name__ == "__main__":

@@ -22,14 +22,18 @@ jobs:
   portability:
     name: Build and smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
             executable: excession
+          - os: ubuntu-24.04-arm
+            executable: excession
           - os: macos-15
+            executable: excession
+          - os: macos-15-intel
             executable: excession
           - os: windows-2025
             executable: excession.exe
@@ -44,29 +48,26 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Build static SQLite on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $root = $env:VCPKG_INSTALLATION_ROOT
-          if (-not $root) { $root = $env:VCPKG_ROOT }
-          if (-not $root) { $root = 'C:\vcpkg' }
-          $vcpkg = Join-Path $root 'vcpkg.exe'
-          if (-not (Test-Path $vcpkg)) { throw "vcpkg unavailable: $vcpkg" }
-          & $vcpkg install sqlite3:x64-windows-static
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $libdir = Join-Path $root 'installed\x64-windows-static\lib'
-          "RUSTFLAGS=-L native=$libdir" >> $env:GITHUB_ENV
       - name: Install locked TypeScript sidecar
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Fetch pinned Cargo dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml
-      - name: Check standard digest vectors
-        run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib digest::tests
+      - name: Check digests, bundled SQLite and capability reporting
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib
       - name: Installed CLI test in independent checkout
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --test portability
       - name: Build release executable
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
+      - name: Check dynamic libraries on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            ! ldd core/target/release/excession | grep -E 'libsqlite3|libcrypto'
+          else
+            ! otool -L core/target/release/excession | grep -E 'libsqlite3|libcrypto'
+          fi
       - name: Construct portable archive and SHA-256 manifest
         run: python tools/package_release.py --binary core/target/release/${{ matrix.executable }} --output dist
       - name: Test extracted archive without repository-side dependencies
@@ -78,9 +79,61 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  musl:
+    name: Minimal Linux (x86-64 musl)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install musl compiler and Rust target
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Compile statically for musl
+        shell: bash
+        env:
+          CC_x86_64_unknown_linux_musl: musl-gcc
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --manifest-path core/Cargo.toml
+          cargo build --offline --locked --release --manifest-path core/Cargo.toml --target x86_64-unknown-linux-musl --bin excession
+          file core/target/x86_64-unknown-linux-musl/release/excession
+      - name: Package musl CLI
+        run: python tools/package_release.py --binary core/target/x86_64-unknown-linux-musl/release/excession --target x86_64-unknown-linux-musl --output dist
+      - name: Check runnable archive on Ubuntu
+        run: python tools/test_portable_archive.py dist
+      - name: Check in minimal network-isolated Alpine
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none -v "$PWD/dist:/archives:ro" alpine:3.21 sh -ec '
+            mkdir -p /tmp/excession-dist
+            tar -xzf /archives/excession-v*-x86_64-unknown-linux-musl.tar.gz -C /tmp/excession-dist
+            /tmp/excession-dist/excession/excession --version
+            /tmp/excession-dist/excession/excession doctor --json > /tmp/doctor.json
+            grep -q "BUNDLED" /tmp/doctor.json
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: excession-musl-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: portability
+    needs: [portability, musl]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

@@ -25,6 +25,7 @@ pub mod security_survey;
 pub mod semantic;
 pub mod sqlite;
 pub mod syntax;
+pub mod syntax_resolution;
 pub mod transactions;
 pub mod transform;
 pub mod views;

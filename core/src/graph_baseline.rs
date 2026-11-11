@@ -11,12 +11,18 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
 const KINDS: &[&str] = &[
-    "focus", "dependencies_direct", "dependencies_all",
-    "dependents_direct", "dependents_all", "tests",
+    "focus",
+    "dependencies_direct",
+    "dependencies_all",
+    "dependents_direct",
+    "dependents_all",
+    "tests",
 ];
 
 fn required(row: &[Option<String>], idx: usize) -> Result<&str> {
-    row.get(idx).and_then(Option::as_deref).ok_or_else(|| "NULL indexed graph value".into())
+    row.get(idx)
+        .and_then(Option::as_deref)
+        .ok_or_else(|| "NULL indexed graph value".into())
 }
 
 fn distances(seed: &str, edges: &BTreeMap<String, BTreeSet<String>>) -> BTreeMap<String, usize> {
@@ -43,11 +49,16 @@ pub fn query(db: &Db, name: &str, revision: &str, seed: &str, kind: &str) -> Res
     if !KINDS.contains(&kind) {
         return refuse(format!("unknown graph query kind: {kind}"));
     }
-    let rows = db.query("SELECT id,git_dir FROM repository WHERE name=?", &[Param::Text(name)])?;
+    let rows = db.query(
+        "SELECT id,git_dir FROM repository WHERE name=?",
+        &[Param::Text(name)],
+    )?;
     if rows.len() != 1 {
         return refuse("unknown indexed repository");
     }
-    let id: i64 = required(&rows[0], 0)?.parse().map_err(|_| "invalid repository ID")?;
+    let id: i64 = required(&rows[0], 0)?
+        .parse()
+        .map_err(|_| "invalid repository ID")?;
     let root = Path::new(required(&rows[0], 1)?);
     let commit = git::rev(root, revision)?;
     let tree = db.scalar(
@@ -71,7 +82,10 @@ pub fn query(db: &Db, name: &str, revision: &str, seed: &str, kind: &str) -> Res
             "1" => true,
             _ => return refuse("invalid indexed test flag"),
         };
-        modules.insert(required(&row, 0)?.to_owned(), (required(&row, 1)?.to_owned(), is_test));
+        modules.insert(
+            required(&row, 0)?.to_owned(),
+            (required(&row, 1)?.to_owned(), is_test),
+        );
     }
     if !modules.contains_key(seed) {
         return refuse("unknown indexed seed module");
@@ -87,8 +101,14 @@ pub fn query(db: &Db, name: &str, revision: &str, seed: &str, kind: &str) -> Res
         if !modules.contains_key(source) || !modules.contains_key(target) {
             return refuse("dependency references unknown indexed module");
         }
-        forward.entry(source.to_owned()).or_default().insert(target.to_owned());
-        reverse.entry(target.to_owned()).or_default().insert(source.to_owned());
+        forward
+            .entry(source.to_owned())
+            .or_default()
+            .insert(target.to_owned());
+        reverse
+            .entry(target.to_owned())
+            .or_default()
+            .insert(source.to_owned());
     }
 
     let mut paths = BTreeSet::new();
@@ -107,7 +127,11 @@ pub fn query(db: &Db, name: &str, revision: &str, seed: &str, kind: &str) -> Res
         }
         other => {
             let direct = other.ends_with("_direct");
-            let graph = if other.starts_with("dependencies_") { &forward } else { &reverse };
+            let graph = if other.starts_with("dependencies_") {
+                &forward
+            } else {
+                &reverse
+            };
             for (module, depth) in distances(seed, graph) {
                 if depth > 0 && (!direct || depth == 1) {
                     paths.insert(modules[&module].0.clone());
@@ -117,6 +141,6 @@ pub fn query(db: &Db, name: &str, revision: &str, seed: &str, kind: &str) -> Res
     }
     Ok(obj(&[(
         "source_paths",
-        Value::array(paths.into_iter().map(Value::string).collect()),
+        Value::array(paths.into_iter().map(Value::string)),
     )]))
 }

@@ -1,12 +1,12 @@
-# RelGit Security: architectural specification
+# Excession: architectural specification
 
 **Status:** implemented first vertical slice, not an autonomous CVE discovery system.
-**Version:** 0.1.0. **Authority:** Git for source objects; Rust + SQLite for evidence relations.
+**Version:** 0.1.x. **Authority:** Git for source objects; Rust + SQLite for evidence relations.
 **Scope:** local authorized analysis of version-pinned software. No untrusted native execution on a shared host.
 
 ## 1. Problem and falsifiable hypothesis
 
-Given a revision `R`, a set of scanner outputs `S`, a source revision graph `G`, and
+Excession uses the existing RelGit Rust Git/SQLite core as an evidence authority. Given a revision `R`, a set of scanner outputs `S`, a source revision graph `G`, and
 native tests `T`, identify security invariant violations with independently replayable
 evidence. We want to learn whether relationships across revisions and between
 components discover additional *real* vulnerabilities over CodeQL + native

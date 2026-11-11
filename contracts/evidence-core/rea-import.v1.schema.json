@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/rea-import.v1.schema.json",
+  "title": "contracts: import REA Evidence bundles without source or semantic promotion",
+  "description": "Contract scaffold; shape validity alone does not establish evidence or semantic truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "producer",
+    "format",
+    "bundle_sha256",
+    "artifact_sha256",
+    "native_record_ids",
+    "import_status",
+    "raw_retention",
+    "source_binding",
+    "coverage",
+    "security"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.rea-import.v1"
+    },
+    "producer": {
+      "const": "REA"
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "EVIDENCE_V2_EXPORT"
+      ]
+    },
+    "bundle_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifact_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "native_record_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^ev_[A-Za-z0-9_-]+$"
+      }
+    },
+    "import_status": {
+      "type": "string",
+      "enum": [
+        "ACCEPTED_ARTIFACT_ONLY",
+        "ACCEPTED_WITH_VERIFIED_SOURCE_LINK",
+        "PARTIAL",
+        "UNSUPPORTED"
+      ]
+    },
+    "raw_retention": {
+      "const": "RETAIN_ORIGINAL_PAYLOAD"
+    },
+    "source_binding": {
+      "type": "string",
+      "enum": [
+        "ARTIFACT_ONLY",
+        "INDEPENDENT_BUILD_EVIDENCE"
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "limitations"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "PARTIAL",
+            "UNKNOWN",
+            "COMPLETE_DECLARED_SCOPE",
+            "UNSUPPORTED"
+          ]
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "security": {
+      "const": "IMPORT_ONLY_NO_UNTRUSTED_EXECUTION"
+    }
+  }
+}

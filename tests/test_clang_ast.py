@@ -18,7 +18,8 @@ class ClangDatabaseTests(unittest.TestCase):
         cwd = Path("/tmp")
         src = cwd / "sample.c"
         args = ["clang", "-DTEST=1", "-I", "include", "-c", "sample.c",
-                "-o", "sample.o", "-MMD", "-MF", "sample.d"]
+                "-o", "sample.o", "-MMD", "-MF", "sample.d",
+                "-Wp,-MMD,build/.sample.o.d"]
         flags = clang.analysis_flags(args, src, cwd)
         self.assertIn("-DTEST=1", flags)
         self.assertIn("include", flags)
@@ -27,6 +28,7 @@ class ClangDatabaseTests(unittest.TestCase):
         self.assertNotIn("sample.o", flags)
         self.assertNotIn("sample.d", flags)
         self.assertNotIn("-MMD", flags)
+        self.assertNotIn("-Wp,-MMD,build/.sample.o.d", flags)
 
     def test_reject_compiler_extensions_and_response_files(self):
         src, cwd = Path("/tmp/a.c"), Path("/tmp")

@@ -124,6 +124,11 @@ def analysis_flags(argv, source, directory):
         if arg in single_drop or arg.startswith(("-o", "-MF", "-MT", "-MQ", "-MJ")):
             i += 1
             continue
+        # Linux Kbuild often embeds depfile writes in driver-prefixed options.
+        if arg.startswith(("-Wp,-MD,", "-Wp,-MMD,", "-Wp,-MF,",
+                           "-Wp,-MT,", "-Wp,-MQ,")):
+            i += 1
+            continue
         if arg.startswith("-"):
             result.append(arg)
         else:
@@ -287,6 +292,12 @@ def analyze(item):
     db_path = Path(item["compile_db"]).resolve(strict=True)
     db_digest, entry, directory, original = load_command(db_path, source)
     flags = analysis_flags(original, source, directory)
+    config_path = item.get("config")
+    config = None
+    if config_path is not None:
+        config_file = Path(config_path).resolve(strict=True)
+        config_sha, _ = digest_file(config_file, 4 * 1024 * 1024)
+        config = {"path": str(config_file), "sha256": config_sha}
     compiler_name = item.get("compiler") or "clang"
     if not re.fullmatch(r"(?:clang|clang-[0-9]+|/[\w./-]*clang(?:-[0-9]+)?)", compiler_name):
         raise ValueError("compiler must be an explicitly selected clang binary")
@@ -309,12 +320,17 @@ def analyze(item):
     except (UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("Clang did not return a valid JSON AST") from error
     symbols, calls = extract_symbols(ast, source, source_bytes)
-    config_path = item.get("config")
-    config = None
-    if config_path is not None:
-        config_file = Path(config_path).resolve(strict=True)
-        config_sha, _ = digest_file(config_file, 4 * 1024 * 1024)
-        config = {"path": str(config_file), "sha256": config_sha}
+    # Ensure all identity-bearing data stayed fixed across both subprocesses.
+    _, end_bytes = digest_file(source, 1024 * 1024)
+    if end_bytes != source_bytes:
+        raise ValueError("pinned Git source changed during Clang analysis")
+    if digest_file(db_path, MAX_DB_BYTES)[0] != db_digest:
+        raise ValueError("compilation database changed during Clang analysis")
+    if header_observations(
+            make_dependencies(dep_output.decode("utf-8")), directory, repo) != dependencies:
+        raise ValueError("observed dependencies changed during Clang analysis")
+    if config is not None and digest_file(config_file, 4 * 1024 * 1024)[0] != config["sha256"]:
+        raise ValueError("configuration changed during Clang analysis")
     entry_digest = digest(json.dumps(entry, sort_keys=True,
                                      separators=(",", ":")).encode("utf-8"))
     return {

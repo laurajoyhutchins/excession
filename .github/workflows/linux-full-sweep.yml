@@ -1,13 +1,9 @@
 name: One-off full Linux v6.12 syntax sweep
 
+# Full source scanning is intentionally opt-in because a pinned Linux
+# checkout and 500+ parsing partitions are substantially more expensive than
+# normal checkpoint CI. Independent bounded coverage tests run on each PR.
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/linux-full-sweep.yml'
-      - 'tests/linux_partition_sweep.py'
-      - 'core/adapters/kernel_parse.py'
-      - 'core/src/kernel.rs'
-      - 'core/src/kernel_coverage.rs'
   workflow_dispatch:
 
 permissions:
@@ -15,9 +11,6 @@ permissions:
 
 jobs:
   full-source-sweep:
-    # Limit automated execution to the source coverage experiment PR.
-    # Subsequent PRs must opt in via workflow_dispatch.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.number == 62
     runs-on: ubuntu-24.04
     timeout-minutes: 28
     steps:

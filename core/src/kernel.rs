@@ -285,7 +285,8 @@ fn scan_impl(
     }
     reader.finish()?;
     let mut links = kernel_links::derive(&results, &tracked)?;
-    let links_bounded = links.len() <= MAX_OBSERVATIONS.saturating_sub(fact_count + diagnostic_count);
+    let links_bounded =
+        links.len() <= MAX_OBSERVATIONS.saturating_sub(fact_count + diagnostic_count);
     if !links_bounded {
         if partition.is_none() {
             return refuse("kernel link count exceeded observation budget");
@@ -316,11 +317,14 @@ fn scan_impl(
         let count = partition_count(total_eligible, size)?;
         fields.extend([
             ("unsupported", Value::array(unsupported)),
-            ("candidate_links_status", Value::string(if links_bounded {
-                "PARTITION_LOCAL_DERIVED"
-            } else {
-                "OMITTED_OBSERVATION_BUDGET"
-            })),
+            (
+                "candidate_links_status",
+                Value::string(if links_bounded {
+                    "PARTITION_LOCAL_DERIVED"
+                } else {
+                    "OMITTED_OBSERVATION_BUDGET"
+                }),
+            ),
             ("selected_source_count", Value::number(selected.len())),
             ("total_eligible_source_count", Value::number(total_eligible)),
             (

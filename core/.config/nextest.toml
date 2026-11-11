@@ -1,0 +1,9 @@
+# JUnit report is written to core/target/nextest/ci/junit.xml.
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+report-name = "excession-rust"
+report-skipped = "ignored"
+store-failure-output = true

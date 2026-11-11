@@ -1,0 +1,4 @@
+# Optional C/C++ build tooling; system Clang/GCC and compilation databases
+# remain the native source of compilation semantics.
+[tools]
+cmake = "3.31"

@@ -97,6 +97,17 @@ excession view audit --repo "$REPO" --manifest "$OUT/combined.json" \
 
 Materialization requires a new **absolute** destination outside the source checkout, produces mode-0444 regular files, and audits every file against its original Git blob. Materialized views are **not runnable checkouts** and cannot be used to claim test or security equivalence.
 
+## Refactoring hypotheses
+
+```sh
+excession refactor suggest --db /tmp/index.sqlite --name project --rev HEAD > /tmp/refactor.json
+excession refactor audit --db /tmp/index.sqlite --name project --rev HEAD --report /tmp/refactor.json
+```
+
+Both commands require an indexed Git revision. Results are unverified
+refactoring hypotheses, not safe edits. The audit recomputes indexed relations
+without rerunning the language parsers. See [refactoring hypotheses](REFACTORING.md).
+
 ## Scanner evidence
 
 For an already installed Semgrep scanner and a reviewed, local ruleset, the CLI can execute the scanner without a shell, then import and independently replay the resulting evidence:
@@ -131,6 +142,7 @@ The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL
 ## Complete command families
 
 - `excession index`: index an exact Git revision and configured dependency roots.
+- `excession refactor suggest|audit`: emit or replay bounded source-bound refactoring hypotheses.
 - `excession inspect dependencies|manifest|impact|review`: query indexed relations. Revision flags accept Git refs such as `HEAD`, resolved to commit IDs.
 - `excession security scan|ingest|audit`: run an installed trusted scanner, or import and independently recheck CodeQL SARIF or Semgrep JSON.
 - `excession view deps|security`: derive deterministic, source-bound views.

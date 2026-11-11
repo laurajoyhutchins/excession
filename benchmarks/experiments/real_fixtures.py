@@ -70,8 +70,42 @@ def git_blobs(repo: Path, commit: str) -> dict[str, tuple[str, str]]:
     return entries
 
 
+SYNTHETIC_IMPORTS = {
+    "src/pkg/__init__.py": "# package initializer\n",
+    "src/pkg/first.py": (
+        "from pkg import second\n"
+        "from . import third\n"
+        "import pkg.third\n"
+    ),
+    "src/pkg/second.py": "VALUE = 2\n",
+    "src/pkg/third.py": "VALUE = 3\n",
+    "lib/main.js": (
+        "import util from './util.cjs';\n"
+        "import {value} from './sub/index.ts';\n"
+        "export {other} from './alt/index.cjs';\n"
+        "const a = require('./alt');\n"
+        "const b = import('./sub');\n"
+    ),
+    "lib/util.cjs": "module.exports = 1;\n",
+    "lib/sub/index.ts": "export const value = 2;\n",
+    "lib/alt/index.cjs": "exports.other = 3;\n",
+    "README.md": "An intentionally small import-resolution adversary.\n",
+}
+
+
 def checkout(fixture: dict, destination: Path) -> tuple[str, str]:
-    if fixture["source"] == "bundle":
+    if fixture["source"] == "synthetic":
+        destination.mkdir()
+        call(["git", "init", "-q", str(destination)])
+        for path, contents in SYNTHETIC_IMPORTS.items():
+            target = destination / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(contents)
+        call(["git", "-C", str(destination), "add", "."])
+        call(["git", "-C", str(destination), "-c", "user.name=Excession fixture",
+              "-c", "user.email=fixture@example.invalid", "commit", "-qm",
+              "Pinned synthetic import cases"])
+    elif fixture["source"] == "bundle":
         call(["git", "clone", "-q", str(BUNDLE), str(destination)])
     elif fixture["source"] == "github":
         repo = fixture["repository"]

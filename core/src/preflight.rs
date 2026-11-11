@@ -21,7 +21,7 @@ fn keys(value: &Value, expected: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn bounded_string<'a>(value: &'a Value, limit: usize) -> Result<&'a str> {
+fn bounded_string(value: &Value, limit: usize) -> Result<&str> {
     let s = value.str()?;
     if s.is_empty() || s.len() > limit {
         return refuse("preflight: empty or oversized string");

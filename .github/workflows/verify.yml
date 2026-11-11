@@ -27,8 +27,11 @@ jobs:
           cache: npm
       - name: Install locked JavaScript parser
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Install pinned Python test dependencies
-        run: python3 -m pip install --disable-pip-version-check -r requirements/research.txt
+      - name: Install SHA-256-locked Python wheels
+        run: >-
+          python3 -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements/locks/research-linux-cp313-x86_64.txt
+      - name: Observe loaded native library ABIs
+        run: python3 tools/native_runtime.py
       - name: Install pinned Rust test reporter
         uses: taiki-e/install-action@v2
         with:

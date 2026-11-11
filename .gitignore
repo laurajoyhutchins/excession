@@ -25,6 +25,8 @@ node_modules/
 /outputs/
 /artifacts/
 /reports/
+/wheelhouse/
+/.grammar-cache/
 *.sqlite
 *.sqlite-*
 *.db

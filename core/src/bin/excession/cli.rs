@@ -228,7 +228,37 @@ pub(super) fn command() -> Command {
             &["rev", "compiler", "config", "object-prefix"],
         )
     };
-    let analyze = group("analyze", vec![clang()]).about("Compiler-backed source analysis");
+    let analyze = Command::new("analyze")
+        .about("Index supported source candidates or perform configured Clang analysis")
+        .arg(
+            Arg::new("path")
+                .index(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("rev")
+                .long("rev")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("roots")
+                .long("roots")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("db")
+                .long("db")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .subcommand(clang());
     let kernel = group(
         "kernel",
         vec![
@@ -248,6 +278,21 @@ pub(super) fn command() -> Command {
              findings are unverified candidates. See subcommand --help for exact options.",
         )
         .subcommand_required(true)
+        .subcommand(
+            Command::new("discover")
+                .about("Read-only Git revision and supported source-root discovery")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("rev")
+                        .long("rev")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                ),
+        )
         .subcommand(
             Command::new("doctor")
                 .about("Report local toolchain and bundled storage capabilities")

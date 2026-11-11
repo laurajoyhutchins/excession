@@ -460,6 +460,9 @@ mod tests {
             b"package test\n"
         );
         audit_snapshot(&restored, &entries).unwrap();
+        // The staged blob is intentionally read-only. Replace its directory
+        // entry to simulate tampering without relying on root privileges.
+        fs::remove_file(restored.join("main.go")).unwrap();
         fs::write(restored.join("main.go"), "changed").unwrap();
         assert!(audit_snapshot(&restored, &entries).is_err());
     }

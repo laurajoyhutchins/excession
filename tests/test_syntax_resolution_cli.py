@@ -79,10 +79,15 @@ class SyntaxResolutionCLI(unittest.TestCase):
             ("src/ui.ts", "src/util.ts"),
             ("src/pkg/entry.py", "src/pkg/util.py"),
             ("src/go/main.go", "src/gohelper/helper.go"),
-            ("src/main.rs", "src/widget.rs"),
         ]:
             self.assertIn((source, target), edges, msg=json.dumps({"imports": [(x["source_path"], x["language"], x["status"], x["imports"]) for x in json.loads(self.syntax_path.read_text())["sources"]], "unresolved": report["unresolved_imports"], "edges": report["candidate_edges"]}, sort_keys=True))
         self.assertNotIn(("src/go/main.go", "src/gohelper/helper_test.go"), edges)
+        self.assertFalse(any(src.endswith(".rs") or target.endswith(".rs")
+                             for src, target in edges))
+        self.assertIn(
+            {"source_path": "src/main.rs", "status": "NO_RESOLVER_FOR_LANGUAGE"},
+            report["skipped_sources"],
+        )
         self.assertFalse(any(x["source_path"] == "src/ambiguous_user.ts"
                              for x in report["candidate_edges"]))
         unresolved = {(x["source_path"], x["reason"]) for x in report["unresolved_imports"]}

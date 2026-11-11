@@ -45,9 +45,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: '.go-version'
-      - name: Install pinned official SCIP decoder
+      - name: Build official SCIP decoder from immutable upstream commit
         run: |
-          GOBIN="$RUNNER_TEMP/scip-bin" go install github.com/scip-code/scip/cmd/scip@v0.10.0
+          git clone --filter=blob:none --no-checkout https://github.com/scip-code/scip.git "$RUNNER_TEMP/scip-source"
+          git -C "$RUNNER_TEMP/scip-source" checkout --detach 1c2b6db7e560d5233c944f36e4ac1377cc6963fc
+          mkdir -p "$RUNNER_TEMP/scip-bin"
+          (cd "$RUNNER_TEMP/scip-source" && go build -o "$RUNNER_TEMP/scip-bin/scip" ./cmd/scip)
           "$RUNNER_TEMP/scip-bin/scip" --version
       - name: Resolve locked Rust dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml

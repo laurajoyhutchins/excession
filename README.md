@@ -132,6 +132,15 @@ unresolved imports, and exact Git input identities. It never authenticates
 a compiler process or asserts complete dependency closure. See
 [language-specific boundary checks](docs/SYNTAX_PARSERS.md#compiler-declaration-boundary-before-view-assembly).
 
+## Versioned semantic observation contracts
+
+`excession semantic export` normalizes independently replayed syntax-resolution
+candidates into a shared JSON Schema Draft 2020-12 envelope with explicit gaps,
+source identities, and candidate-only statuses. The dataset contract uses ODCS
+v3.1.0. Neither document claims complete build/runtime dependencies. See
+[semantic contracts](docs/SEMANTIC_CONTRACTS.md). The existing pinned research
+requirements include JSON Schema validation dependencies; run `make contracts-check`.
+
 ## Source-bound scanner evidence
 
 ```sh

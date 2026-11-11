@@ -81,6 +81,20 @@ but does not prove build or execution. `excession kernel clang` remains a
 compatibility alias. See [generic C/C++ compiler analysis](docs/COMPILER_ANALYSIS.md)
 and [Linux compilation database details](docs/CLANG_TU.md).
 
+To **assemble** these compiler observations with a real configured target,
+Excession consumes CMake's File API codemodel and persists typed,
+provenance-bearing graph edges in SQLite:
+
+```sh
+excession graph assemble --repo /path/to/repository --rev HEAD \
+  --build /path/to/build --target fmt --observations /tmp/clang-receipts \
+  --db /tmp/configured.sqlite > /tmp/configured-graph.json
+```
+
+This reports missing translation units explicitly, preserves configuration
+differences, and does not claim complete dynamic or cross-TU call resolution.
+See [configured graph assembly](docs/CONFIGURED_GRAPHS.md).
+
 ## Source-bound scanner evidence
 
 ```sh

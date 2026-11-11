@@ -128,10 +128,23 @@ Third-party source fixtures retain their upstream licensing obligations; see
 
 ## Native dependency resolution (opt-in)
 
-For a pinned historical Git revision, `tools/excession_native.py` uses
-`go list`, Node/TypeScript resolution, or `rustc --emit dep-info` to discover
-tracked inputs and create the same language-independent declaration consumed
-by `excession evidence contract-plan`. It is local and offline, with explicit
-`--trusted-local` consent and refusals for unsupported compiler semantics.
-The output is still `DECLARED_INPUTS_ONLY`, not proof of behavioral preservation
-or a safe test skip. See [native dependency resolution and benchmarks](docs/NATIVE_DEPENDENCY_RESOLUTION.md).
+For a pinned historical Git revision, **Rust now owns native source
+staging, path and source validation, toolchain identity, input declarations,
+limits and snapshot auditing**. The `excession evidence discover-native`
+command invokes narrow language-native adapters: `go list`, Node/TypeScript
+resolution, or `rustc --emit dep-info`. The old
+`tools/excession_native.py` entrypoint remains only as a thin compatibility
+wrapper for tests and benchmarks.
+
+```sh
+excession evidence discover-native --repo "$REPO" --rev "$COMMIT" \
+  --entry src/lib.rs --language rust --trusted-local true \
+  > /tmp/native.json
+```
+
+Use the result's `declaration` field with `excession evidence contract-plan`.
+This remains a local, explicitly trusted compiler invocation, **not an
+untrusted-code sandbox**. The output remains `DECLARED_INPUTS_ONLY`, not
+proof of behavioral preservation or permission to skip tests.
+See [Rust native discovery authority](docs/NATIVE_RUST_AUTHORITY.md) and
+[native dependency benchmarks](docs/NATIVE_DEPENDENCY_RESOLUTION.md).

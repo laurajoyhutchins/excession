@@ -15,6 +15,7 @@ pub mod index;
 pub mod input_contract;
 pub mod integration;
 pub mod json;
+pub mod native_discovery;
 pub mod optimizer;
 pub mod overlap;
 pub mod projection;

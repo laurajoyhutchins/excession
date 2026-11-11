@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, evidence_transport, git, index, input_contract, projection, refuse, security_ingest,
-    slice_evidence, views,
+    Result, evidence_transport, git, index, input_contract, native_discovery, projection, refuse,
+    security_ingest, slice_evidence, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -33,6 +33,7 @@ Usage:
   excession slice ingest|audit --repo REPO --manifest JSON --receipt JSON --db DB
   excession evidence transport|transport-audit --repo REPO --source-manifest JSON --target-manifest JSON --receipt JSON --db DB
   excession evidence trace --repo REPO --receipt-id HEX64 --db DB
+  excession evidence discover-native --repo REPO --rev REV --entry PATH --language go|javascript|typescript|rust --trusted-local true
   excession evidence contract-plan --repo REPO --rev REV --declaration JSON
   excession evidence contract-compare|contract-audit --repo REPO --source-contract JSON --target-contract JSON --db DB
   excession security scan --repo REPO --report NEW_JSON --db DB --engine codeql|semgrep
@@ -511,6 +512,25 @@ fn execute(args: &[String]) -> Result<Response> {
             )?))
         }
         [top, sub, rest @ ..] if top == "evidence" => {
+            if sub == "discover-native" {
+                let opt = Options::parse(
+                    rest,
+                    &["repo", "rev", "entry", "language", "trusted-local"],
+                    &[],
+                )?;
+                let trusted = match opt.get("trusted-local") {
+                    "true" => true,
+                    "false" => false,
+                    _ => return refuse("--trusted-local requires true or false"),
+                };
+                return Ok(json(native_discovery::discover(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.get("entry"),
+                    opt.get("language"),
+                    trusted,
+                )?));
+            }
             if sub == "contract-plan" {
                 let opt = Options::parse(rest, &["repo", "rev", "declaration"], &[])?;
                 return Ok(json(input_contract::plan_file(

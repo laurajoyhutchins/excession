@@ -1,0 +1,45 @@
+name: Excession benchmark smoke
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/**'
+      - 'tests/test_benchmarks.py'
+      - '.github/workflows/benchmark-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pinned source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install Rust 1.99.1
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Compile real Excession CLI
+        run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Unit tests and real-binary smoke
+        run: python3 -m unittest discover -s tests -p test_benchmarks.py -v
+      - name: Full 24-task paired calibration
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          git clone -q core/fixtures/h11-crossrepo.bundle "$RUNNER_TEMP/h11"
+          python3 benchmarks/paired.py run \
+            --repo "$RUNNER_TEMP/h11" \
+            --bin ./core/target/debug/excession \
+            --tasks benchmarks/calibration-h11.json \
+            --out "$RUNNER_TEMP/excession-benchmark" \
+            --name h11 --roots h11,tests --repetitions 3
+          cat "$RUNNER_TEMP/excession-benchmark/summary.json"
+      - name: Retain reproducible calibration receipts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: excession-paired-calibration
+          path: ${{ runner.temp }}/excession-benchmark/
+          if-no-files-found: error

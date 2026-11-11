@@ -10,10 +10,12 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shlex
 import shutil
 import subprocess
 import sys
+import time
 
 MAX_DB_BYTES = 32 * 1024 * 1024
 MAX_AST_BYTES = 192 * 1024 * 1024
@@ -46,20 +48,56 @@ def digest_file(path, limit):
 
 
 def invoke(argv, cwd, max_bytes, timeout=TIMEOUT_SECONDS):
+    """Run trusted-local Clang without shells or unbounded output buffering.
+
+    Drain stdout and stderr concurrently so diagnostics cannot deadlock a
+    compiler writing a large AST. Terminate on byte or wall-clock limits.
+    """
     if not argv:
         raise ValueError("empty compiler invocation")
+    out_parts, err_parts = [], []
+    counts = [0, 0]
+    limits = [max_bytes, 65536]
+    deadline = time.monotonic() + timeout
     try:
-        proc = subprocess.run(argv, cwd=str(cwd), stdin=subprocess.DEVNULL,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              timeout=timeout, check=False)
+        with subprocess.Popen(
+                argv, cwd=str(cwd), stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+            try:
+                with selectors.DefaultSelector() as channels:
+                    channels.register(proc.stdout, selectors.EVENT_READ, 0)
+                    channels.register(proc.stderr, selectors.EVENT_READ, 1)
+                    while channels.get_map():
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise ValueError("clang invocation timed out")
+                        for key, _ in channels.select(remaining):
+                            chunk = os.read(key.fileobj.fileno(), 65536)
+                            if not chunk:
+                                channels.unregister(key.fileobj)
+                                continue
+                            channel = key.data
+                            counts[channel] += len(chunk)
+                            if counts[channel] > limits[channel]:
+                                raise ValueError("clang output exceeded byte budget")
+                            (out_parts if channel == 0 else err_parts).append(chunk)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError("clang invocation timed out")
+                proc.wait(timeout=remaining)
+            except (ValueError, subprocess.TimeoutExpired):
+                proc.kill()
+                proc.wait()
+                raise
+            status = proc.returncode
     except subprocess.TimeoutExpired as error:
         raise ValueError("clang invocation timed out") from error
-    if len(proc.stdout) > max_bytes or len(proc.stderr) > 65536:
-        raise ValueError("clang output exceeded byte budget")
-    if proc.returncode:
+    stdout = b"".join(out_parts)
+    stderr = b"".join(err_parts)
+    if status:
         raise ValueError("clang exited %d: %s" %
-                         (proc.returncode, proc.stderr.decode("utf-8", "replace")[-5000:]))
-    return proc.stdout, proc.stderr.decode("utf-8", "replace")[-8192:]
+                         (status, stderr.decode("utf-8", "replace")[-5000:]))
+    return stdout, stderr.decode("utf-8", "replace")[-8192:]
 
 
 def load_command(path, source):

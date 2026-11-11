@@ -1,7 +1,7 @@
 //! End-to-end rejection controls against the real two-branch h11 Git bundle.
-use relgit::integration::{Observations, bounded_carry, compare_reference};
-use relgit::json::{self, Value};
-use relgit::sqlite::{Db, Param};
+use excession::integration::{Observations, bounded_carry, compare_reference};
+use excession::json::{self, Value};
+use excession::sqlite::{Db, Param};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -129,7 +129,7 @@ fn real_history_and_cross_boundary_refusals() {
     expect_refusal(&f, &wrong, "missing cross-boundary");
     let mut wrong = pristine.clone();
     let boundary = boundary_mut(&mut wrong.headers);
-    boundary.push(relgit::json::obj(&[
+    boundary.push(excession::json::obj(&[
         ("kind", Value::string("reader-method")),
         ("name", Value::string("ChunkedReader.__call__")),
     ]));
@@ -174,11 +174,11 @@ fn exact_git_tree_sql_and_reference_guard() {
             .unwrap()
             .parse()
             .unwrap();
-        let commit = relgit::git::rev(&f.root.join(dir), "HEAD").unwrap();
-        let tree = relgit::index::reconstruct_tree(&db, repo_id, &commit).unwrap();
+        let commit = excession::git::rev(&f.root.join(dir), "HEAD").unwrap();
+        let tree = excession::index::reconstruct_tree(&db, repo_id, &commit).unwrap();
         assert_eq!(
             tree,
-            relgit::git::rev(&f.root.join(dir), "HEAD^{tree}").unwrap()
+            excession::git::rev(&f.root.join(dir), "HEAD^{tree}").unwrap()
         );
     }
     assert!(db.execute("INSERT INTO premise(integration_key,ordinal,statement,satisfied) VALUES('not-real',99,'forged',1)",&[]).is_err(),"foreign key must reject bogus integration");
@@ -188,13 +188,13 @@ fn exact_git_tree_sql_and_reference_guard() {
         .unwrap()
         .parse()
         .unwrap();
-    let merged_commit = relgit::git::rev(&f.root.join("integration"), "HEAD").unwrap();
+    let merged_commit = excession::git::rev(&f.root.join("integration"), "HEAD").unwrap();
     db.execute(
         "UPDATE tree_entry SET mode='100755' WHERE repo_id=? AND commit_oid=? AND path='h11/_headers.py'",
         &[Param::Integer(merged_id), Param::Text(&merged_commit)],
     ).unwrap();
     assert!(
-        relgit::index::reconstruct_tree(&db, merged_id, &merged_commit).is_err(),
+        excession::index::reconstruct_tree(&db, merged_id, &merged_commit).is_err(),
         "tampered file mode must change Git root hash"
     );
     let mut falsified = reference.clone();

@@ -1,12 +1,14 @@
-//! Dedicated public CLI. The historical `relgit` executable remains compatible;
-//! both binaries call the same Rust source/provenance/evidence authority.
-use relgit::sqlite::{Db, Param};
-use relgit::{Result, git, index, projection, refuse, security_ingest, views};
+//! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
+//! Historical experiments run under `excession research` without a second CLI.
+use excession::sqlite::{Db, Param};
+use excession::{Result, git, index, projection, refuse, security_ingest, views};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
+#[path = "excession/research.rs"]
+mod research;
 #[path = "excession/scan.rs"]
 mod scan;
 
@@ -31,11 +33,12 @@ Usage:
   excession inspect dependencies|manifest --db DB --name NAME --rev REV
   excession inspect impact --db DB --name NAME --rev REV --seed MODULE
   excession inspect review --db DB --name NAME --old REV --new REV
+  excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
 UNVERIFIED_STATIC_CANDIDATES. JSON is written to stdout, errors to stderr;
 `view cat` writes exact Git blob bytes to stdout. Redirect view-plan JSON to a file
-before using it as a manifest. The historical `relgit` CLI remains available.
+before using it as a manifest. `research` preserves pinned legacy experiments.
 
 Use `excession --version` or `excession help`. No network access is required.
 "#;
@@ -82,7 +85,7 @@ impl Options {
 }
 
 enum Response {
-    Json(relgit::json::Value),
+    Json(excession::json::Value),
     Message(String),
     Bytes(Vec<u8>),
 }
@@ -97,7 +100,7 @@ impl Response {
         .map_err(|e| format!("stdout write failed: {e}"))
     }
 }
-fn json(v: relgit::json::Value) -> Response {
+fn json(v: excession::json::Value) -> Response {
     Response::Json(v)
 }
 
@@ -426,6 +429,10 @@ fn execute(args: &[String]) -> Result<Response> {
         {
             Ok(Response::Message(HELP.to_owned()))
         }
+        [top, tail @ ..] if top == "research" => {
+            research::run(tail)?;
+            Ok(Response::Bytes(Vec::new()))
+        }
         [top, tail @ ..] if top == "index" => {
             let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots"])?;
             let roots = opt
@@ -449,11 +456,11 @@ fn execute(args: &[String]) -> Result<Response> {
             )?;
             let commit = git::rev(repo, rev)?;
             let tree = index::reconstruct_tree(&db, id, &commit)?;
-            Ok(json(relgit::json::obj(&[
-                ("name", relgit::json::Value::string(opt.get("name"))),
-                ("source_commit", relgit::json::Value::string(commit)),
-                ("source_tree", relgit::json::Value::string(tree)),
-                ("status", relgit::json::Value::string("GIT_TREE_INDEXED")),
+            Ok(json(excession::json::obj(&[
+                ("name", excession::json::Value::string(opt.get("name"))),
+                ("source_commit", excession::json::Value::string(commit)),
+                ("source_tree", excession::json::Value::string(tree)),
+                ("status", excession::json::Value::string("GIT_TREE_INDEXED")),
             ])))
         }
         [top, sub, rest @ ..] if top == "security" => {

@@ -31,7 +31,7 @@ console.log('PostCSS compatibility OK');'''])]:
           'adapter_script':str(ROOT/'adapters'/('python_rewrite.py' if lang=='python' else 'js_transform.cjs'))}
     path=work/(name+'.json');path.write_text(json.dumps(spec))
     db=work/(name+'.sqlite');dest=work/(name+'-projected')
-    result=subprocess.run([str(ROOT/'target/debug/relgit'),'project',str(path),str(db),str(dest)],capture_output=True,text=True)
+    result=subprocess.run([str(ROOT/'target/debug/excession'),'research','project',str(path),str(db),str(dest)],capture_output=True,text=True)
     print(name,'exit',result.returncode,'stderr',result.stderr[-1000:]);print(result.stdout[:1000]);
     if result.returncode:sys.exit(1)
     got=json.loads(result.stdout)

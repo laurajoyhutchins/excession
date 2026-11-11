@@ -514,7 +514,7 @@ pub fn import(db: &Db, spec: &Spec) -> Result<Value> {
     let new = json::parse(&fs::read(&spec.candidate_observations).map_err(|e| e.to_string())?)?;
     let certificate = json::parse(&fs::read(&spec.certificate).map_err(|e| e.to_string())?)?;
     let base_dir = spec.baseline.parent().ok_or("baseline has no parent")?;
-    let scratch = base_dir.join(format!(".relgit-contract-check-{}", std::process::id()));
+    let scratch = base_dir.join(format!(".excession-contract-check-{}", std::process::id()));
     if scratch.exists() {
         return refuse("contract scratch directory exists");
     }

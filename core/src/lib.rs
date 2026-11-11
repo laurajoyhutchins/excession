@@ -1,4 +1,4 @@
-//! RelGit's Rust core. Git is authoritative for objects, SQLite for relations.
+//! Excession's Rust core. Git is authoritative for objects, SQLite for relations.
 //! Evidence here is bounded and local, not an unrestricted proof or signed attestation.
 #![deny(unsafe_op_in_unsafe_fn)]
 

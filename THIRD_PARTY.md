@@ -1,6 +1,6 @@
 # Third-party material
 
-RelGit Security extends the prior RelGit v0.19.0 Rust release, which was
+Excession incorporates historical source fixtures from the previous RelGit research project, which was
 packaged with historical open-source test fixtures. Fixture bundles in
 `core/fixtures/` contain code from third-party projects including h11,
 Requests, Click, and PostCSS. Older native pilot materials reference

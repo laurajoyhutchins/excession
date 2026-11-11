@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-BIN = ROOT / 'core/target/debug/relgit'
+BIN = ROOT / 'core/target/debug/excession'
 
 
 def module(name: str, file: str):
@@ -21,9 +21,9 @@ def module(name: str, file: str):
     spec.loader.exec_module(obj)
     return obj
 
-pipeline = module('relgit_pipeline','pipeline.py')
-protocol = module('relgit_protocol','protocol.py')
-comparison = module('relgit_compare','compare.py')
+pipeline = module('excession_pipeline','pipeline.py')
+protocol = module('excession_protocol','protocol.py')
+comparison = module('excession_compare','compare.py')
 
 
 def cmd(*args: str, cwd: Path | None = None, ok: bool=True) -> subprocess.CompletedProcess[str]:
@@ -36,14 +36,14 @@ def cmd(*args: str, cwd: Path | None = None, ok: bool=True) -> subprocess.Comple
 class ScannerIntegration(unittest.TestCase):
     def setUp(self):
         if not BIN.is_file(): self.skipTest('build Rust binary first (cargo build)')
-        self.tmp = tempfile.TemporaryDirectory(prefix='relgit-security-test-')
+        self.tmp = tempfile.TemporaryDirectory(prefix='excession-security-test-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.repo = self.root/'project'
         self.repo.mkdir()
         cmd('git','init','-q','-b','main',str(self.repo))
         cmd('git','-C',str(self.repo),'config','user.name','Test')
-        cmd('git','-C',str(self.repo),'config','user.email','relgit-test@example.invalid')
+        cmd('git','-C',str(self.repo),'config','user.email','excession-test@example.invalid')
         (self.repo/'app.go').write_text('package app\nfunc Process(x string) string {\n return x\n}\n')
         self.commit()
         self.report = self.root/'report.json'
@@ -65,8 +65,9 @@ class ScannerIntegration(unittest.TestCase):
                                             'extra':{'message':'bounded candidate','severity':'WARNING'}}], 'errors':[]}
 
     def ingest(self,engine:str='codeql',audit:bool=False):
-        return cmd(str(BIN), 'security-ingest-audit' if audit else 'security-ingest',
-                   str(self.repo), str(self.report), str(self.db), engine, ok=False)
+        return cmd(str(BIN), 'security', 'audit' if audit else 'ingest',
+                   '--repo', str(self.repo), '--report', str(self.report),
+                   '--db', str(self.db), '--engine', engine, ok=False)
 
     def test_codeql_roundtrip_and_unverified_status(self):
         self.report.write_text(json.dumps(self.codeql()))
@@ -166,10 +167,10 @@ class ScannerIntegration(unittest.TestCase):
         self.commit()
         second=self.root/'second.json'
         second.write_text(json.dumps({'version':'1.0','results':[], 'errors':[]}))
-        after=cmd(str(BIN),'security-ingest',str(self.repo),str(second),str(self.db),'semgrep',ok=False)
+        after=cmd(str(BIN), 'security', 'ingest', '--repo', str(self.repo), '--report', str(second), '--db', str(self.db), '--engine', 'semgrep', ok=False)
         self.assertEqual(after.returncode,0,after.stderr)
         self.assertEqual(json.loads(after.stdout)['candidate_count'],0)
-        audit=cmd(str(BIN),'security-ingest-audit',str(self.repo),str(second),str(self.db),'semgrep',ok=False)
+        audit=cmd(str(BIN), 'security', 'audit', '--repo', str(self.repo), '--report', str(second), '--db', str(self.db), '--engine', 'semgrep', ok=False)
         self.assertEqual(audit.returncode,0,audit.stderr)
         # A missing static warning on the second revision must not imply a security fix.
         left=comparison.get(self.db,before['run_id'])

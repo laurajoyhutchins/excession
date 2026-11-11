@@ -72,6 +72,38 @@ In particular, a syntactic import target is not automatically an Excession
 dependency edge. Those edges require language-specific, independently validated
 resolvers before they can be inserted into the SQL dependency relation.
 
+## Fast preflight before expensive source replay
+
+Run a **parser-free** structural and digest check on saved reports first:
+
+```sh
+excession syntax preflight --report /tmp/syntax.json
+excession syntax resolve-preflight --report /tmp/candidates.json
+```
+
+Preflight validates canonical SHA-256 payload digests, explicit schema/status
+values, Git path/OID *formats*, bounded nesting and line offsets, permitted
+record fields, source identities, and count limits. It never starts a parser,
+opens a Git repository or executes source code. Use it at the point a report
+is received, before sending work to a compiler, remote worker, or reviewer.
+
+A preflight result is **`SHAPE_AND_DIGEST_ONLY`**, not proof that source blobs
+really exist or that dependencies resolve. Anyone can edit a report and
+recompute an unkeyed digest. `syntax audit` and `syntax resolve-audit` still
+replay authenticated Git objects and parser results; both now reject malformed
+reports **before** replay begins.
+
+Local parser-boundary unit tests can run without grammars:
+
+```sh
+python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
+cargo test --offline --manifest-path core/Cargo.toml preflight::tests
+```
+
+`tests/test_preflight_cli.py` exercises the command surface without
+Tree-sitter installed, including accepted-but-untrusted self-consistent
+forgeries. Full integration tests remain separate.
+
 ## Source-bound dependency candidates
 
 The optional resolver maps syntax imports to tracked files using conservative,

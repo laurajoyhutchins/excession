@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, evidence_transport, git, index, projection, refuse, security_ingest, slice_evidence,
-    views,
+    Result, evidence_transport, git, index, input_contract, projection, refuse, security_ingest,
+    slice_evidence, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -33,6 +33,8 @@ Usage:
   excession slice ingest|audit --repo REPO --manifest JSON --receipt JSON --db DB
   excession evidence transport|transport-audit --repo REPO --source-manifest JSON --target-manifest JSON --receipt JSON --db DB
   excession evidence trace --repo REPO --receipt-id HEX64 --db DB
+  excession evidence contract-plan --repo REPO --rev REV --declaration JSON
+  excession evidence contract-compare|contract-audit --repo REPO --source-contract JSON --target-contract JSON --db DB
   excession security scan --repo REPO --report NEW_JSON --db DB --engine codeql|semgrep
       --config LOCAL_RULES --trusted-local true [--scanner EXECUTABLE]
       [--codeql-db PREBUILT_DB] [--timeout-seconds 300]
@@ -509,6 +511,29 @@ fn execute(args: &[String]) -> Result<Response> {
             )?))
         }
         [top, sub, rest @ ..] if top == "evidence" => {
+            if sub == "contract-plan" {
+                let opt = Options::parse(rest, &["repo", "rev", "declaration"], &[])?;
+                return Ok(json(input_contract::plan_file(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("declaration"),
+                )?));
+            }
+            if matches!(sub.as_str(), "contract-compare" | "contract-audit") {
+                let opt = Options::parse(
+                    rest,
+                    &["repo", "source-contract", "target-contract", "db"],
+                    &[],
+                )?;
+                let db = Db::open(opt.path("db"))?;
+                return Ok(json(input_contract::transport(
+                    opt.path("repo"),
+                    opt.path("source-contract"),
+                    opt.path("target-contract"),
+                    &db,
+                    sub == "contract-audit",
+                )?));
+            }
             if sub == "trace" {
                 let opt = Options::parse(rest, &["repo", "receipt-id", "db"], &[])?;
                 let db = Db::open(opt.path("db"))?;

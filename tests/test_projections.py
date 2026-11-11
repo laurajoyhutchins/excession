@@ -128,6 +128,32 @@ class ProjectionIntegration(unittest.TestCase):
         # Compact results are not authenticatable materialization manifests.
         self.assertNotIn("entries", selected)
 
+    def test_native_graph_baseline_matches_dependency_view(self):
+        plan, _ = self.plan_deps()
+        role_map = {
+            "focus": {"focus"},
+            "dependencies_direct": {"direct-dependencies"},
+            "dependencies_all": {"direct-dependencies", "transitive-dependencies"},
+            "dependents_direct": {"direct-dependents"},
+            "dependents_all": {"direct-dependents", "transitive-dependents"},
+            "tests": {"indexed-test"},
+        }
+        for kind, roles in role_map.items():
+            result = json.loads(run(
+                BIN, "view", "graph", "--db", self.catalog, "--name", "h11",
+                "--rev", "HEAD", "--seed", "h11._connection", "--kind", kind,
+            ).stdout)
+            expected = sorted({e["source_path"] for e in plan["entries"] if e["role"] in roles})
+            self.assertEqual(result["schema"], "excession.graph-baseline.v1")
+            self.assertEqual((result["source_commit"], result["source_tree"]), (self.commit, self.tree))
+            self.assertEqual(result["kind"], kind)
+            self.assertEqual(result["source_paths"], expected)
+        self.assertNotEqual(run(
+            BIN, "view", "graph", "--db", self.catalog, "--name", "h11",
+            "--rev", "HEAD", "--seed", "h11._connection", "--kind", "bad-kind",
+            ok=False,
+        ).returncode, 0)
+
     def test_focus_changes_layout_not_source_revision(self):
         a, _ = self.plan_deps("h11._connection")
         b, _ = self.plan_deps("h11._headers")

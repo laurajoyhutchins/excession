@@ -81,7 +81,10 @@ pub fn scan(
         ),
         ("compiler", Value::string(compiler)),
         ("config", config_json),
-        ("object_prefix", object_prefix.map_or(Value::Null, Value::string)),
+        (
+            "object_prefix",
+            object_prefix.map_or(Value::Null, Value::string),
+        ),
         ("trusted_local", Value::Bool(true)),
     ]);
     let observation = adapter::clang_ast(&request)?;

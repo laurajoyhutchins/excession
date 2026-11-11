@@ -1,7 +1,6 @@
 """Adversarial tests for the independent Git-bound self-analysis summary."""
 from __future__ import annotations
 
-import copy
 import subprocess
 import tempfile
 from pathlib import Path
@@ -116,6 +115,15 @@ class SelfAnalysisTests(unittest.TestCase):
                          ["core/src/bin/excession.rs"])
         self.assertFalse(report["assurance"]["test_skipping_authorized"])
         self.assertIn("Not established", report_markdown(report))
+
+    def test_unavailable_parser_is_reported_not_silently_ignored(self) -> None:
+        self.syntax["sources"][2]["status"] = "GRAMMAR_NOT_INSTALLED"
+        report = self.summarize()
+        self.assertEqual(
+            report["syntax"]["nonfully_parsed_sources"],
+            [{"path": "tools/helper.py", "status": "GRAMMAR_NOT_INSTALLED"}],
+        )
+        self.assertEqual(report["dependencies"]["completeness"], "NOT_ESTABLISHED")
 
     def test_forged_git_blob_is_refused(self) -> None:
         self.syntax["sources"][0]["source_blob"] = "0" * 40

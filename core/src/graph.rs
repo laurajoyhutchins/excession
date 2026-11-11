@@ -55,9 +55,6 @@ fn provider_for(build: &Path, target: &str, requested: &str) -> Result<&'static 
 pub fn import(db: &Db, input: &Import<'_>) -> Result<Value> {
     if input.target.is_empty() { return refuse("select a nonempty configured build target"); }
     let provider = provider_for(input.build, input.target, input.provider)?;
-    if provider == "cmake" && input.trusted_local == "true" {
-        // CMake import only reads existing metadata and receipts; no execution.
-    }
     let result = match provider {
         "cmake" => graph_assembly::assemble(input.repo, input.revision,
             input.build, input.target, input.observations, db)?,
@@ -74,14 +71,9 @@ pub fn import(db: &Db, input: &Import<'_>) -> Result<Value> {
     // Small interactive response. The complete raw adapter report is stored
     // immutably in the graph table and queryable without console flooding.
     let mut summary = summarize(&result, id)?;
-    let fields = summary.entries_mut()?;
-    fields.insert("database".to_owned(), Value::string(database_path_hint(db)));
-    fields.insert("provider".to_owned(), Value::string(provider));
+    summary.entries_mut()?.insert("provider".to_owned(), Value::string(provider));
     Ok(summary)
 }
-// The SQLite wrapper intentionally has no visible path accessor. The CLI
-// prints the selected path; the graph's content identity never includes it.
-fn database_path_hint(_db: &Db) -> &'static str { "SELECTED_DATABASE" }
 
 fn optional<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value.entries().ok()?.get(key)

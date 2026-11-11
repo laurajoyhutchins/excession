@@ -340,6 +340,23 @@ fn execute(args: &[String]) -> Result<Response> {
     let opt = &parsed.options;
     match parsed.path.as_slice() {
         [top, sub] if top == "concepts" => {
+            if sub == "review" {
+                let trusted = opt.get("trusted-local") == "true";
+                let db = Db::open(opt.path("db"))?;
+                return Ok(json(excession::concepts_review::append_file(
+                    &db,
+                    opt.path("event"),
+                    trusted,
+                )?));
+            }
+            if sub == "reviews" {
+                let db = Db::open(opt.path("db"))?;
+                return Ok(json(excession::concepts_review::list(
+                    &db,
+                    opt.get("snapshot"),
+                    opt.get("concept"),
+                )?));
+            }
             if sub == "query" {
                 let db = Db::open(opt.path("db"))?;
                 return Ok(json(excession::concepts_query::run_file(

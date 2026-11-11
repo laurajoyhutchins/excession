@@ -90,6 +90,11 @@ A missing parser is an error, not a silent fallback to less precise results.
 
 ## Evidence for portability
 
+Ordinary pull requests exercise a Linux release smoke test. Pull requests
+labeled `ci:full-portability` run the complete native OS matrix and musl/Alpine
+validation. Version tags and manually dispatched release workflows also run
+the complete matrix, preserving the fast default for unrelated changes.
+
 The Portable CLI workflow checks SHA-1/SHA-256 standard vectors, runs a
 Rust integration test from paths containing spaces and Unicode, builds the
 release for Linux x86-64/ARM64, macOS Intel/Apple Silicon and Windows, then

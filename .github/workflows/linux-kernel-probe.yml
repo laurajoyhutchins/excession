@@ -1,11 +1,7 @@
 name: Linux kernel Excession probe
 
+# Pinned Linux clone is an on-demand experiment, not a commit checkpoint.
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/linux-kernel-probe.yml'
-      - 'tests/linux_kernel_probe.py'
-      - 'core/**'
   workflow_dispatch:
 
 permissions:
@@ -18,9 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Excession without third-party Cargo downloads
+      - name: Build Excession from locked dependencies
         run: |
           rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
 
       - name: Checkout exact upstream Linux commit with sparse working tree

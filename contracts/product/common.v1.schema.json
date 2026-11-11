@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/product/common.v1.schema.json",
+  "title": "Excession public product evidence primitives v1 (draft)",
+  "description": "Reusable wire primitives; Git/source validity, producer observation, semantic truth and scope completeness remain separate.",
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_line",
+        "end_line"
+      ],
+      "properties": {
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "encoding": {
+          "enum": [
+            "LINE_ONLY",
+            "UTF8",
+            "UTF16",
+            "UTF32"
+          ]
+        }
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "source_tree",
+        "path",
+        "blob",
+        "mode"
+      ],
+      "properties": {
+        "source_commit": {
+          "$ref": "#/$defs/oid"
+        },
+        "source_tree": {
+          "$ref": "#/$defs/oid"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "blob": {
+          "$ref": "#/$defs/oid"
+        },
+        "mode": {
+          "enum": [
+            "100644",
+            "100755",
+            "120000"
+          ]
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    },
+    "evidence_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "producer",
+        "observation_kind",
+        "assessment"
+      ],
+      "properties": {
+        "receipt_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "observation_kind": {
+          "enum": [
+            "SCIP_REFERENCE",
+            "STATIC_IMPORT_CANDIDATE",
+            "COMPILER_DECLARATION",
+            "CONFIGURED_GRAPH_RELATION",
+            "RUNTIME_WITNESS",
+            "SCANNER_FINDING",
+            "NATIVE_VERIFICATION",
+            "REVIEW_EVENT"
+          ]
+        },
+        "assessment": {
+          "enum": [
+            "OBSERVED",
+            "DECLARED",
+            "CANDIDATE",
+            "UNRESOLVED",
+            "UNSUPPORTED"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "configuration_id": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "coverage_gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "UNSUPPORTED_LANGUAGE",
+            "MISSING_ADAPTER",
+            "UNRESOLVED_RELATIONSHIP",
+            "DYNAMIC_RELATIONSHIP",
+            "EXCLUDED_SCOPE",
+            "MISSING_CONFIGURATION",
+            "RESOURCE_LIMIT",
+            "TRUNCATED",
+            "UNKNOWN"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "analyzed_sources",
+        "gaps"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PARTIAL",
+            "DECLARED_SCOPE_COMPLETE",
+            "UNKNOWN"
+          ]
+        },
+        "analyzed_sources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/coverage_gap"
+          }
+        }
+      }
+    },
+    "ontology_link_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot_id",
+        "link_report_id",
+        "assessment"
+      ],
+      "properties": {
+        "snapshot_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "link_report_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assessment": {
+          "const": "ANNOTATION_ONLY"
+        },
+        "role": {
+          "enum": [
+            "CONCEPT_ANNOTATION",
+            "INVESTIGATION_HYPOTHESIS"
+          ]
+        }
+      }
+    }
+  }
+}

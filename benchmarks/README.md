@@ -14,27 +14,10 @@ queries and Git revisions, while preserving a stated verification guarantee?**
 | --- | --- | --- |
 | [Observable protocol](protocol.md) | Defined | Equal information contracts, independent oracle and four cost axes |
 | [Relational experiments](experiments/README.md) | Executable | Source-written oracle, multi-revision retrieval, size/fanout/revision variation |
-| [Checked-tree A/B](experiments/checked_tree_ab.py) | Existing | Reusable source-binding checks with adversarial refusal parity |
 | [Real repository fixtures](experiments/real_fixtures.py) | Existing | Pinned Git objects and independent bounded import-edge oracle; dynamic imports unsupported |
 | [Single-query microbenchmarks](micro/README.md) | Existing, preserved | Git, ripgrep, clangd, graph-only and view phase diagnostics |
-| [Historical reports](results/) | Retained | Original measured results and GitHub Actions artifact pointers |
 
 **No agent task-completion or subjective productivity metric is used.**
-
-## Historical performance experiments
-
-The one-off A/B experiments remain reproducible, but are no longer separate
-pull-request CI gates. Run **Actions → Historical performance experiments →
-Run workflow**, choose `manifest-output`, `direct-id`, `canonical-json`,
-`checked-tree`, or `projection-phases`. One manually selected experiment
-runs on a pinned Rust toolchain and uploads its raw JSON measurements.
-
-The matching source scripts and past receipts in [results/](results/) are
-preserved. The baselines intentionally use historical commits; do not treat
-differences across many intervening commits as attribution to one optimization.
-Ordinary PR CI still checks serialization identity and Git/SQLite refusals.
-Native retrieval calibration and the relational benchmark retain their own
-path-scoped workflows because they validate actively maintained protocols.
 
 ## First executable experiment
 
@@ -60,8 +43,8 @@ in any end-to-end comparison. The compact view authenticates a source-bound
 projection; the simple graph query does not authenticate an equivalent view.
 The difference must not be presented as a comparison of equal guarantees.
 
-Existing `micro/` scripts remain separately runnable and have their original
-results under `results/`. They are not inputs to a global "Excession wins" score.
+Diagnostic `micro/` scripts remain separately runnable. They are not
+inputs to a global "Excession wins" score.
 
 See [experiment details](experiments/README.md) and
 [protocol and limitations](protocol.md).
@@ -85,7 +68,7 @@ The Rust CLI refuses missing or tampered artifacts, unavailable measurements
 encoded as zeros, duplicate metrics, unsafe paths, and false success labels.
 Report IDs are digests, **not signatures**. A native calibration explicitly
 declares a shared-index oracle, while relational experiments declare
-independently authored source relationships. Historical JSON is preserved.
+independently authored source relationships. Store raw measurements with the run rather than committing stale benchmark receipts.
 
 ## Full indexed-query audit: independently implemented
 

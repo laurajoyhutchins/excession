@@ -50,8 +50,8 @@ A separate, read-only projection capability maps the Git tree and recorded relat
 
 The `excession` Rust executable is the supported user-facing CLI (see
 [`CLI.md`](CLI.md)). It uses the existing Rust library directly for Git/SQLite
-authority and read-only repository projections. The historical `excession research` command family
-is retained for reproducibility of earlier experiments. The optional trusted-local
+authority and read-only repository projections. `clap` parses all supported
+commands once. The optional trusted-local
 `excession security scan` command invokes installed CodeQL/Semgrep programs and
 immediately performs source-bound import plus independent replay. Its explicit
 `--trusted-local true` flag does **not** provide sandbox isolation, remote
@@ -64,7 +64,7 @@ attestation, or a security verdict. Python tool adapters remain optional helpers
 | CodeQL | existing language-specific DB + query suite | SARIF 2.1.0 | CLI invocation, Rust report validation and import |
 | Semgrep | clean source checkout + local pinned rules | JSON `results` | CLI invocation, Rust report validation and import |
 | Joern | source checkout and CPG | candidate edges with provenance | planned; no working adapter |
-| Go fuzzing / libFuzzer / AFL++ | explicit trusted native harness + seed corpus | bounded native traces/crashes | research integration planned; existing RelGit native pilot retained |
+| Go fuzzing / libFuzzer / AFL++ | explicit trusted native harness + seed corpus | bounded native traces/crashes | not integrated into the supported CLI; no implied runtime proof |
 | OSV / GitHub advisories | frozen finding IDs + exact package/revision | CVE match candidates | planned post-freeze evaluation, not part of discovery |
 | Excession | exact Git commit and tool output | canonical candidate and audit receipts | implemented |
 

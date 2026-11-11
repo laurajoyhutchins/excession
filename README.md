@@ -8,17 +8,18 @@ and indexed relationships. It also ingests CodeQL SARIF and Semgrep JSON as
 identities, SQLite records, and reported flows. A scanner finding is not a
 confirmed vulnerability or a CVE.
 
-The **only installed Rust executable** is `excession`. The library and Cargo
-package are also named `excession`. The earlier research implementation is
-accessible through the `excession research ...` command family, not through
-an additional binary. See [migration notes](docs/MIGRATION.md), the
-[architecture](docs/ARCHITECTURE.md), and [origins](docs/ORIGINS.md).
+The **only installed executable** is `excession`, backed by one Rust crate
+and one `clap` command tree. Use `excession --help` or any command's
+`--help` for supported options. See [architecture](docs/ARCHITECTURE.md)
+and the [CLI reference](docs/CLI.md).
 
 ## Install and verify
 
-The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
-crates. Git (SHA-1 object format) and native SQLite are required for
-repository operations; the digests use portable Rust without OpenSSL.
+The Rust CLI uses Rust 1.99.1 and Cargo.lock-pinned dependencies including
+`clap` and offline JSON Schema validation. Fetch dependencies once with
+`cargo fetch --locked --manifest-path core/Cargo.toml`; subsequent builds
+can use `--offline --locked`. Git (SHA-1 object format) and native SQLite
+are required for repository operations.
 Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
 Tree-sitter grammars and security scanners are opt-in adapters.
 
@@ -44,7 +45,7 @@ version files, and optional Tree-sitter grammars. Mise is a convenience layer;
 Cargo, npm, and pip remain usable independently.
 
 For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
-Python research requirements,
+Python test requirements,
 then run `make junit`. This retains the existing `unittest` test cases while
 producing separate Rust and Python reports:
 
@@ -175,22 +176,6 @@ configuration. This is trusted-local execution, **not a sandbox**; database
 creation and untrusted builds require their own isolation. The executable
 neither downloads scanners nor asserts that a finding is exploitable.
 
-## Research compatibility
-
-Pinned earlier experiments retain their original Git blobs, schema strings,
-identity-forming metadata, and fixture bundles. They can be replayed through
-one binary:
-
-```sh
-excession research --help
-excession research compose SPEC_JSON DATABASE
-excession research compose-audit SPEC_JSON DATABASE
-```
-
-The `research` commands accept historical positional arguments. They are
-separate from the modern named-option CLI and intentionally preserve existing
-research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
-
 ## Benchmarks
 
 The [benchmark program](benchmarks/README.md) separates observable relational
@@ -200,7 +185,7 @@ Reproducible measurements do not claim improved agent productivity.
 ## Limits
 
 The relational dependency index currently supports bounded Python and JavaScript static
-module relations, with additional Go-native research adapters. A separate optional
+module relations, with additional Go-native language adapters. A separate optional
 Tree-sitter syntax scan covers more languages without claiming resolved dependencies. It cannot claim
 that absent graph edges do not exist. Scanner source-to-sink flows are unverified
 scanner reports until independent analysis establishes reachability and impact.

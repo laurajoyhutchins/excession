@@ -69,6 +69,14 @@ copying code. Materialized views are read-only **and not executable checkouts**.
 See [CLI](docs/CLI.md), [repository views](docs/REPOSITORY_VIEWS.md), and
 [composable views](docs/COMPOSABLE_VIEWS.md).
 
+## Self-analysis (dogfooding)
+
+A dedicated [self-analysis workflow](docs/SELF_ANALYSIS.md) runs Excession on
+its own clean, pinned Git source, audits syntax and conservative dependency
+candidates, and independently verifies source identities using Git. It keeps
+unresolved and unsupported observations visible. The resulting change-impact
+hints are advisory and **never** authorize skipping tests.
+
 ## Multi-language syntax parsing
 
 A separate optional Tree-sitter adapter reuses established grammars for many

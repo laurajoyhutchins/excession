@@ -50,8 +50,9 @@ Python code from the selected Linux source tree; it therefore requires
 `--trusted-local true`. Use `--provider cmake|kbuild` if auto-detection is
 ambiguous. Explicit `--db` shares multiple builds or configurations in one
 database. When more than one graph matches, specify `--id GRAPH_ID` or
-`--target TARGET` on query commands. Abbreviated graph IDs and unique
-node suffixes are accepted; ambiguous matches are refused, never guessed.
+`--target TARGET` on query commands. Abbreviated graph IDs and unique node suffixes are accepted. For
+short names shared by targets and outputs, the configured target takes
+precedence; otherwise ambiguous matches are refused, never guessed.
 
 The former `graph assemble` and `graph kbuild` commands remain compatible
 provider-specific entry points, but are not the recommended interface.
@@ -80,9 +81,12 @@ need to be interpreted by the query machinery.
 
 The storage tables remain `configured_graph`, `configured_entity`,
 `configured_edge` and `configured_observation`; no parallel graph
-database is introduced. Existing persisted snapshots missing neutral
-`role`/`relation` fields are projected into the common vocabulary during
-queries. Their original JSON bytes and SHA-256 graph IDs remain unchanged.
+database is introduced. A backward-compatible `relation` column on
+`configured_edge` persists the shared semantic relation even when its
+source-native kind is unknown to Excession. Existing persisted snapshots
+missing neutral `role`/`relation` fields are projected into the common
+vocabulary during queries. Their original JSON bytes and SHA-256 graph IDs
+remain unchanged.
 
 `graph deps` traverses **recorded relationships**, not dynamic call
 reachability. It defaults to two outgoing hops and can traverse incoming

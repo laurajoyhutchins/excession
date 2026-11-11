@@ -313,12 +313,15 @@ fn dependency_candidates_replay_exact_tracked_sources() {
             .iter()
             .any(|e| text(e, "source_path") == "src/ambiguous_user.ts")
     );
-    assert!(!edges.iter().any(|e|
-        text(e, "source_path").ends_with(".rs") ||
-        text(e, "target_path").ends_with(".rs")));
-    assert!(items(&report, "skipped_sources").iter().any(|e|
-        text(e, "source_path") == "src/main.rs" &&
-        text(e, "status") == "NO_RESOLVER_FOR_LANGUAGE"));
+    assert!(!edges.iter().any(
+        |e| text(e, "source_path").ends_with(".rs") || text(e, "target_path").ends_with(".rs")
+    ));
+    assert!(
+        items(&report, "skipped_sources")
+            .iter()
+            .any(|e| text(e, "source_path") == "src/main.rs"
+                && text(e, "status") == "NO_RESOLVER_FOR_LANGUAGE")
+    );
     let unresolved = items(&report, "unresolved_imports");
     for (source, why) in [
         ("src/ambiguous_user.ts", "AMBIGUOUS_TRACKED_TARGETS"),

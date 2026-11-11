@@ -15,6 +15,11 @@ pub fn javascript(entries: &[Value]) -> Result<Value> {
     run("node", code, entries)
 }
 
+pub fn kernel_sources(entries: &[Value]) -> Result<Value> {
+    let code = include_str!("../adapters/kernel_parse.py");
+    run("python3", code, entries)
+}
+
 fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
     let mut process = Command::new(binary)
         .arg(if binary == "node" { "-e" } else { "-c" })

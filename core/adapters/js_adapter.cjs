@@ -3,10 +3,7 @@
 // TypeScript's production parser is used for JS/TS syntax, never regex rewrites.
 const fs = require('node:fs');
 const crypto = require('node:crypto');
-const path = require('node:path');
-const { execFileSync } = require('node:child_process');
-const globalRoot = execFileSync('npm', ['root', '-g'], {encoding:'utf8'}).trim();
-const ts = require(path.join(globalRoot,'typescript'));
+const ts = require('typescript');
 const items = JSON.parse(fs.readFileSync(0,'utf8'));
 const printer = ts.createPrinter({removeComments:true});
 const out=[];

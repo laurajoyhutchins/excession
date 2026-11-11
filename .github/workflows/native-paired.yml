@@ -3,7 +3,7 @@ name: Native retrieval calibration
 on:
   pull_request:
     paths:
-      - benchmarks/native_paired.py
+      - benchmarks/micro/native_paired.py
       - .github/workflows/native-paired.yml
       - core/src/graph_baseline.rs
       - core/src/projection.rs
@@ -23,19 +23,19 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal
+        run: rustup show active-toolchain
       - name: Compile native CLI
-        run: cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
+        run: cargo build --offline --locked --release --manifest-path core/Cargo.toml
       - name: Measure pinned h11 source queries (candidate)
-        run: python3 benchmarks/native_paired.py core/target/release/excession native-calibration.json
+        run: python3 benchmarks/micro/native_paired.py core/target/release/excession native-calibration.json
       - name: Compile and measure unmodified baseline on same runner
         if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git worktree add --detach "$RUNNER_TEMP/excession-baseline" "$BASE_SHA"
-          cargo +1.99.1 build --offline --release --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
-          python3 benchmarks/native_paired.py "$RUNNER_TEMP/excession-baseline/core/target/release/excession" baseline-calibration.json
+          cargo build --offline --locked --release --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
+          python3 benchmarks/micro/native_paired.py "$RUNNER_TEMP/excession-baseline/core/target/release/excession" baseline-calibration.json
       - name: Retain raw paired timings and source-parity receipt
         if: always()
         uses: actions/upload-artifact@v4

@@ -17,7 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = ROOT / "core/fixtures/h11-crossrepo.bundle"
 ROLES = (
     "focus", "direct-dependencies", "transitive-dependencies",

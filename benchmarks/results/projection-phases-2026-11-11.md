@@ -34,7 +34,7 @@ The measurements do **not** establish an algorithmic asymptotic bound, improved 
 To reproduce, build the release CLI using Rust 1.99.1 and run:
 
 ```bash
-python3 benchmarks/projection_phases.py core/target/release/excession projection-phases.json
+python3 benchmarks/micro/projection_phases.py core/target/release/excession projection-phases.json
 ```
 
 The dedicated workflow retains `projection-phases.json` as a CI artifact, outside ordinary fast commit checks.

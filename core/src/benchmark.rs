@@ -121,7 +121,7 @@ fn validate_value(report: &Value, base: &Path) -> Result<()> {
     if let Err(error) = validator.validate(report) {
         return refuse(format!(
             "invalid benchmark report: {error} at {}",
-            error.instance_path
+            error.instance_path()
         ));
     }
     if string(report, "run_id")? != identity(report)? {
@@ -424,7 +424,7 @@ pub fn build_relational(directory: &Path) -> Result<std::path::PathBuf> {
         {
             if found
                 .iter()
-                .filter(|trial| trial["status"] == state)
+                .filter(|trial| trial["status"] == *state)
                 .count() as u64
                 != amount.as_u64().ok_or("invalid status count")?
             {

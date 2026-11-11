@@ -18,7 +18,8 @@ const ROW: c_int = 100;
 const DONE: c_int = 101;
 const NULL: c_int = 5;
 
-#[link(name = "sqlite3")]
+#[cfg_attr(windows, link(name = "sqlite3", kind = "static"))]
+#[cfg_attr(not(windows), link(name = "sqlite3"))]
 unsafe extern "C" {
     fn sqlite3_open(path: *const c_char, db: *mut *mut Sqlite) -> c_int;
     fn sqlite3_close(db: *mut Sqlite) -> c_int;

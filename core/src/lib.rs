@@ -12,6 +12,7 @@ pub mod historical;
 pub mod identity;
 pub mod impact;
 pub mod index;
+pub mod input_contract;
 pub mod integration;
 pub mod json;
 pub mod optimizer;

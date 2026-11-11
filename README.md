@@ -105,10 +105,20 @@ are merged, `carry` compares the historical and integrated closures and can
 optionally rerun the target slice to produce **fresh**, separate evidence.
 
 A matching slice reports `SOURCE_MATCH_ONLY`, never proof of behavioral
-preservation. Changes report `REVERIFY_REQUIRED`. Dynamic import patterns,
-unresolved packages, symlinks and unsupported layouts are refused. It is not
-a secure executor for untrusted source. See
-[Executable slices and evidence carry](docs/EXECUTABLE_SLICES.md).
+preservation. Changes report `REVERIFY_REQUIRED`. The optional
+`--isolated-linux` worker uses fail-closed local namespaces and a read-only
+source mount. Its receipts remain unsigned. Rust binds those receipts to exact
+Git blobs in SQLite and independently audits them via:
+
+```bash
+excession slice ingest --repo /src/repo --manifest /tmp/base-slice.json \
+  --receipt /tmp/base-receipt.json --db /tmp/slice.sqlite
+excession slice audit --repo /src/repo --manifest /tmp/base-slice.json \
+  --receipt /tmp/base-receipt.json --db /tmp/slice.sqlite
+```
+
+This is not proof of cross-branch behavioral equivalence or trusted remote
+execution. See [Executable slices and evidence carry](docs/EXECUTABLE_SLICES.md).
 
 ## Blind historical protocol
 

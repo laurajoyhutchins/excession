@@ -77,6 +77,9 @@ def create_fixture(root):
     # This oversized eligible source must be accounted for, not silently
     # discarded or claimed to be parsed.
     (repo / "src" / "huge.h").write_bytes(b"a" * (1024 * 1024 + 5))
+    # 102,000 short declarations fit inside 1 MiB but exceed the bounded
+    # fact budget. The file must be explicitly unsupported, not truncated.
+    (repo / "src" / "budget.c").write_bytes(b"#define X\\n" * 102_000)
     (repo / "src" / "README.md").write_text("Not part of kernel source syntax\n")
     command(["git", "-C", str(repo), "add", "."])
     command(["git", "-C", str(repo), "commit", "-qm", "fixture"])
@@ -86,11 +89,11 @@ def create_fixture(root):
 def fixture_test(binary, root):
     repo = create_fixture(root)
     entries = tracked(repo)
-    assert len(entries) == 6
+    assert len(entries) == 7
     size = 2
     inv = cli(binary, "inventory", "--repo", str(repo), "--size", str(size))
     assert inv["eligible_source_count"] == len(entries)
-    assert inv["partition_count"] == 3
+    assert inv["partition_count"] == 4
     assert inv["inventory_sha256"] == expected_digest(entries)
     assert inv["status"] == "GIT_INVENTORY_ONLY_NOT_PARSED"
     directory = root / "receipts"
@@ -105,10 +108,11 @@ def fixture_test(binary, root):
         (directory / f"part-{index:05}.json").write_text(json.dumps(receipt, sort_keys=True))
     audit_args = ("audit", "--repo", str(repo), "--size", str(size), "--dir", str(directory))
     audited = cli(binary, *audit_args)
-    assert audited["eligible_sources"] == 6
+    assert audited["eligible_sources"] == 7
     assert audited["observed_sources"] == 5
-    assert audited["unsupported_sources"] == 1
+    assert audited["unsupported_sources"] == 2
     assert audited["unsupported_reasons"]["SOURCE_EXCEEDS_1_MIB"] == 1
+    assert audited["unsupported_reasons"]["OBSERVATION_BUDGET"] == 1
     assert audited["status"] == "ALL_ELIGIBLE_SOURCES_ACCOUNTED_PARTIAL_SYNTAX"
     assert audited["report_id"] == cli(binary, *audit_args)["report_id"]
     # Omission, changed source identity and record duplication must fail.
@@ -133,7 +137,7 @@ def fixture_test(binary, root):
         assert duplicated.returncode, "duplicate source accepted"
         victim.write_bytes(original)
     outside = command([str(binary), "kernel", "partition", "--repo", str(repo),
-                       "--size", str(size), "--index", "3"], okay=False)
+                       "--size", str(size), "--index", "4"], okay=False)
     assert outside.returncode
     runner = Path(__file__).with_name("linux_partition_sweep.py")
     output = root / "orchestrated"
@@ -146,8 +150,8 @@ def fixture_test(binary, root):
     assert full["coverage"]["report_id"] == audited["report_id"]
     assert full["status"] == "ALL_ELIGIBLE_SOURCES_ACCOUNTED_PARTIAL_SYNTAX"
     assert json.loads(command(base).stdout)["coverage"]["report_id"] == audited["report_id"]
-    return {"eligible_sources": 6, "observed_sources": 5,
-            "unsupported_sources": 1, "partitions": 3,
+    return {"eligible_sources": 7, "observed_sources": 5,
+            "unsupported_sources": 2, "partitions": 4,
             "integrity_refusals": 4, "checkpoint_resume_verified": True}
 
 

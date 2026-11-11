@@ -47,6 +47,13 @@ def cmake_target(build, repo):
 
 
 def one_configuration(repo, base, variant, binary, db):
+    # zlib 1.3.1's CMake intentionally renames tracked zconf.h in its
+    # source directory. Isolate each build so it cannot alter the canonical
+    # pinned checkout or contaminate the other configuration.
+    source = base / (variant.lower() + "-source")
+    run(["git", "clone", "--quiet", str(repo), str(source)])
+    assert run(["git", "-C", str(source), "rev-parse", "HEAD"]) == COMMIT
+    repo = source.resolve()
     build = base / variant.lower()
     (build / ".cmake/api/v1/query").mkdir(parents=True)
     (build / ".cmake/api/v1/query/codemodel-v2").touch()
@@ -130,7 +137,9 @@ def one_configuration(repo, base, variant, binary, db):
     assert failed.returncode != 0
     assert "receipt" in failed.stderr.lower()
 
-    assert run(["git", "-C", str(repo), "status", "--porcelain"]) == ""
+    # The fixture may be dirty from zlib's own build preparation. Only
+    # the selected C source blob is claimed to be Git-authenticated.
+    changed_checkout = run(["git", "-C", str(repo), "status", "--porcelain"])
     return {
         "configuration": variant,
         "source": SOURCE,
@@ -145,6 +154,8 @@ def one_configuration(repo, base, variant, binary, db):
         "direct_cmake_target_dependency": "zlib",
         "compiler_receipt": receipt["report_id"],
         "actual_build": True,
+        "build_mutated_temporary_source_clone": bool(changed_checkout),
+        "source_tree_scope": "selected file Git bytes; generated headers local hash only",
     }
 
 

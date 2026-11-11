@@ -487,6 +487,9 @@ mod tests {
             "excession-graph-{}-{unique}.sqlite", std::process::id()
         ));
         let db = Db::open(&path).expect("database");
+        // A v1 database must gain a neutral relation column without losing
+        // historical graph identity or native relationship names.
+        db.exec("CREATE TABLE configured_edge(            graph_id TEXT, id TEXT, kind TEXT, source_id TEXT,            destination_id TEXT, status TEXT, evidence TEXT);").unwrap();
         let mut nodes = BTreeMap::new();
         let mut edges = BTreeMap::new();
         configured_store::push_node(
@@ -531,6 +534,31 @@ mod tests {
         let unreachable = super::path(&db, None, None, "a.c", "app", 2).unwrap();
         assert_eq!(unreachable.get("status").unwrap().str().unwrap(),
             "NO_RECORDED_PATH_IN_SELECTED_DIRECTION_AND_DEPTH");
+        // A new language adapter supplies its neutral relation directly:
+        // the query must not erase it because its native kind is unfamiliar.
+        let mut provider_edges = BTreeMap::new();
+        configured_store::push_typed_edge(
+            &mut provider_edges, "target:app", "source:a.c", "reads",
+            "unrecognized-rust-kind", "NATIVE_COMPILER_OBSERVED", "rust-receipt",
+        ).unwrap();
+        let provider_body = obj(&[
+            ("schema", Value::string("excession.configured-graph.v1")),
+            ("source_commit", Value::string("0000000000000000000000000000000000000000")),
+            ("target", Value::string("rust-target")),
+            ("configuration", Value::string("Debug")),
+            ("status", Value::string("PARTIAL_TARGET_OBSERVATIONS")),
+            ("nodes", Value::array(nodes.values().cloned())),
+            ("edges", Value::array(provider_edges.values().cloned())),
+        ]);
+        let provider_id = provider_body.sha256();
+        configured_store::persist(
+            &db, &provider_id, "0000000000000000000000000000000000000000",
+            "rust-target", "Debug", &provider_body, &nodes, &provider_edges, &[],
+        ).unwrap();
+        let native = neighbors(&db, Some(&provider_id), None, "app", "out", 1).unwrap();
+        let relationship = &native.get("edges").unwrap().array_ref().unwrap()[0];
+        assert_eq!(relationship.get("relation").unwrap().str().unwrap(), "reads");
+        assert_eq!(relationship.get("kind").unwrap().str().unwrap(), "unrecognized-rust-kind");
         drop(db);
         std::fs::remove_file(path).unwrap();
     }

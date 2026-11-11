@@ -25,7 +25,12 @@ def main():
     target = "init/built-in.a"
     assert run(["git", "-C", str(repo), "rev-parse", "HEAD"]).stdout.strip() == LINUX
     assert (build / target).is_file(), "real built-in archive was not built"
-    members = run(["ar", "t", str(build / target)]).stdout.splitlines()
+    raw_members = run(["ar", "t", str(build / target)]).stdout.splitlines()
+    members = [
+        (Path(name).resolve().relative_to(build).as_posix()
+         if Path(name).is_absolute() else name)
+        for name in raw_members
+    ]
     assert members and "init/main.o" in members, members
     assert (build / "init/.main.o.cmd").is_file()
     db = args.out.resolve() / "configured.sqlite"

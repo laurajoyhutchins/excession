@@ -211,3 +211,14 @@ or generate independently verified executable source reorganizations.
 
 Third-party source fixtures retain their upstream licensing obligations; see
 [third-party material](THIRD_PARTY.md).
+
+## Versioned source evidence contracts
+
+\`excession semantic scan\` emits JSON Schema Draft 2020-12 language-neutral
+syntax candidates and unresolved imports, with replay against Git.
+\`excession inspect evidence\` retains a separately typed, read-only query
+contract that distinguishes static candidates, compiler-declared inputs and
+runtime witnesses. Both datasets use ODCS 3.2.0 metadata and fail closed on
+schema drift without claiming complete dependency discovery. See the
+[semantic contract](docs/SEMANTIC_CONTRACTS.md) and
+[evidence query contract](docs/EVIDENCE_QUERY.md).

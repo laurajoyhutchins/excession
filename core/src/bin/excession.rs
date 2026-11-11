@@ -1,6 +1,7 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::evidence_query;
+use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
@@ -26,6 +27,10 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
+  excession semantic scan --repo REPO --roots src[,tests] [--rev HEAD]
+  excession semantic audit --repo REPO --roots src[,tests] --report SHARED_JSON
+  excession semantic resolve --repo REPO --syntax-report JSON
+  excession semantic export --repo REPO --syntax-report JSON --resolution-report JSON
   excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust|python --import-roots ROOTS(PYTHON) --trusted-local true
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
@@ -468,7 +473,14 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "syntax" | "refactor"
+                    "view"
+                        | "security"
+                        | "inspect"
+                        | "index"
+                        | "browse"
+                        | "syntax"
+                        | "semantic"
+                        | "refactor"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -477,7 +489,7 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "syntax" | "refactor"
+                    "view" | "security" | "inspect" | "syntax" | "semantic" | "refactor"
                 )
                 && !sub.is_empty() =>
         {
@@ -487,6 +499,43 @@ fn execute(args: &[String]) -> Result<Response> {
             research::run(tail)?;
             Ok(Response::Bytes(Vec::new()))
         }
+        [top, sub, tail @ ..] if top == "semantic" => match sub.as_str() {
+            "scan" => {
+                let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(semantic_contract::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
+                )?))
+            }
+            "audit" => {
+                let opt = Options::parse(tail, &["repo", "roots", "report"], &[])?;
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(semantic_contract::audit_scan(
+                    opt.path("repo"),
+                    &roots,
+                    opt.path("report"),
+                )?))
+            }
+            "resolve" => {
+                let opt = Options::parse(tail, &["repo", "syntax-report"], &[])?;
+                Ok(json(semantic_contract::resolve(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                )?))
+            }
+            "export" => {
+                let opt =
+                    Options::parse(tail, &["repo", "syntax-report", "resolution-report"], &[])?;
+                Ok(json(semantic_contract::export(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("resolution-report"),
+                )?))
+            }
+            _ => refuse(format!("unknown semantic command {sub}")),
+        },
         [top, sub, tail @ ..] if top == "syntax" => match sub.as_str() {
             "scan" => {
                 let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;

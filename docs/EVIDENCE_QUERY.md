@@ -90,3 +90,30 @@ trusted Python program with a dynamic import, and a synthetic native input
 **declaration shape**. Its synthetic declaration does not claim actual
 compilation. The Cargo depfile self-analysis workflow supplies separate real
 compiler input evidence.
+
+## Versioned wire and dataset contracts
+
+The command preserves the existing `excession.evidence-query.v1` output format
+and now checks the full result against
+[JSON Schema Draft 2020-12](../contracts/evidence/evidence-query.v1.schema.json)
+before printing it. The corresponding
+[ODCS v3.2.0 dataset](../contracts/evidence/evidence-query.odcs.json)
+lists every field and states the non-promotion and non-completeness rules.
+
+The separate [semantic observations v1 contract](../contracts/semantic/semantic-observations.v1.schema.json)
+continues to mean `CANDIDATE` or `UNRESOLVED` **static** imports.
+The contract validator projects only the query's static import rows to that
+vocabulary. Compiler source inputs remain `DECLARED_INPUTS_ONLY` with
+`UNATTESTED_NATIVE_DECLARATION` provenance, and runtime records remain
+`OBSERVED_RUNTIME_ONLY` with `SELF_HASHED_UNATTESTED_EXECUTION` provenance.
+An absent optional receipt remains JSON `null` rather than negative evidence.
+
+The Python contract validator checks consistency and versioning, not the truth
+of a compiler or interpreter invocation. The Rust query's source replay remains
+the required authority for pinned Git relationships. A query ID is a
+reproducible unkeyed digest, not an attestation.
+
+```sh
+python3 tools/validate_evidence_contract.py /tmp/saved-evidence-query.json
+```
+

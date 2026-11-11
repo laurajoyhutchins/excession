@@ -1,0 +1,156 @@
+{
+  "version": "1.1.0",
+  "apiVersion": "v3.2.0",
+  "kind": "DataContract",
+  "id": "excession_semantic_observations_v1",
+  "name": "Excession semantic observations",
+  "status": "active",
+  "domain": "source-analysis",
+  "description": {
+    "purpose": "Exchange language-neutral semantic relationship candidates and explicit analysis gaps, bound to exact Git revisions.",
+    "limitations": "Only conservative candidates; schemas and digests cannot establish Git source authenticity, complete dependency closure, build configuration, compiler semantics or runtime behavior."
+  },
+  "schema": [
+    {
+      "name": "semantic_observations",
+      "logicalType": "object",
+      "physicalType": "application/json",
+      "description": "One canonical source-bound observation report per analyzed Git revision.",
+      "properties": [
+        {
+          "name": "schema",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "report_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "source_commit",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "source_tree",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "syntax_report_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "resolution_report_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "completeness",
+          "logicalType": "string",
+          "required": true,
+          "enum": [
+            {
+              "value": "PARTIAL_CANDIDATES_ONLY",
+              "label": "Partial candidates only",
+              "description": "The producer does not claim complete source dependency coverage."
+            }
+          ]
+        },
+        {
+          "name": "record_count",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "gap_count",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "records",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "gaps",
+          "logicalType": "array",
+          "required": true
+        }
+      ],
+      "quality": [
+        {
+          "name": "strict_json_schema",
+          "type": "text",
+          "dimension": "conformity",
+          "severity": "error",
+          "description": "Each report must validate against semantic-observations.v1.schema.json, including closed object shapes and explicit candidate statuses."
+        },
+        {
+          "name": "receipt_identity",
+          "type": "text",
+          "dimension": "consistency",
+          "severity": "error",
+          "description": "Recompute canonical record IDs and report digest, enforce declared counts and uniqueness. This checks consistency, not authenticity."
+        },
+        {
+          "name": "source_replay",
+          "type": "text",
+          "dimension": "accuracy",
+          "severity": "error",
+          "description": "Independently re-parse pinned Git source blobs and reproduce resolver output before accepting provenance."
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "jsonSchemaPath",
+      "value": "contracts/semantic/semantic-observations.v1.schema.json"
+    },
+    {
+      "property": "sourceObjectFormat",
+      "value": "git-sha1"
+    },
+    {
+      "property": "completenessPolicy",
+      "value": "missing-facts-are-not-negative-evidence"
+    }
+  ],
+  "team": {
+    "id": "excession_maintainers",
+    "name": "Excession maintainers",
+    "description": "Maintenance responsibility for the public, versioned semantic observation data contract."
+  },
+  "context": {
+    "instructions": "Use this dataset only to navigate source-bound semantic import candidates. Before relying on any relationship, independently audit the Git source and language-native resolver. The JSON Schema receipt and ODCS metadata alone do not authenticate source or execution.",
+    "verifiedStatements": [
+      {
+        "id": "candidate_meaning",
+        "question": "What does CANDIDATE mean in this dataset?",
+        "answer": "A conservative syntax-derived file candidate tied to a pinned Git source. It is not a compiler-confirmed or runtime-observed dependency."
+      },
+      {
+        "id": "gap_meaning",
+        "question": "Does an empty gaps array establish complete coverage?",
+        "answer": "No. Missing observations are not negative evidence, including when no explicit parser gap was reported."
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no_safe_omissions",
+        "constraint": "Do not use missing edges or empty gaps as permission to skip tests, build validation, or security review."
+      },
+      {
+        "id": "no_verification_promotion",
+        "constraint": "Do not promote CANDIDATE or UNRESOLVED observations into compiler-verified, runtime-observed, or behaviorally guaranteed relations."
+      },
+      {
+        "id": "no_digest_trust",
+        "constraint": "Do not interpret an unkeyed canonical digest or JSON Schema validation as source authentication or an execution attestation."
+      }
+    ]
+  }
+}

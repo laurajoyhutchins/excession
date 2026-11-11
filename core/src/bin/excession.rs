@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, compiler_clang, git, graph_assembly, kbuild_graph, index, kernel, projection, refuse,
+    Result, compiler_clang, git, graph_assembly, index, kbuild_graph, kernel, projection, refuse,
     security_ingest, views,
 };
 use std::collections::BTreeMap;
@@ -10,12 +10,12 @@ use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
+#[path = "excession/graph.rs"]
+mod graph_cli;
 #[path = "excession/research.rs"]
 mod research;
 #[path = "excession/scan.rs"]
 mod scan;
-#[path = "excession/graph.rs"]
-mod graph_cli;
 
 const HELP: &str = r#"Excession | Git-authenticated repository exploration and security evidence
 
@@ -486,14 +486,20 @@ fn execute(args: &[String]) -> Result<Response> {
         [top, sub, tail @ ..] if top == "graph" => match sub.as_str() {
             "import" | "ls" | "show" | "deps" | "path" => graph_cli::run(sub, tail),
             "kbuild" => {
-                let opt = Options::parse(tail,
+                let opt = Options::parse(
+                    tail,
                     &["repo", "build", "archive", "db", "trusted-local"],
-                    &["rev", "ar"])?;
+                    &["rev", "ar"],
+                )?;
                 let db = Db::open(opt.path("db"))?;
                 Ok(json(kbuild_graph::assemble(
-                    opt.path("repo"), opt.get_or("rev", "HEAD"),
-                    opt.path("build"), opt.get("archive"),
-                    opt.get_or("ar", "ar"), opt.get("trusted-local"), &db,
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.path("build"),
+                    opt.get("archive"),
+                    opt.get_or("ar", "ar"),
+                    opt.get("trusted-local"),
+                    &db,
                 )?))
             }
             "assemble" => {

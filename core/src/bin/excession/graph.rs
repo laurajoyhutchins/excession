@@ -15,7 +15,8 @@ fn database(opt: &Options) -> Result<(Db, String)> {
 }
 fn depth(opt: &Options, default: usize) -> Result<usize> {
     opt.get_or("depth", if default == 8 { "8" } else { "2" })
-        .parse::<usize>().map_err(|_| "invalid graph query depth".into())
+        .parse::<usize>()
+        .map_err(|_| "invalid graph query depth".into())
 }
 fn optional<'a>(opt: &'a Options, key: &str) -> Option<&'a str> {
     opt.0.get(key).map(String::as_str)
@@ -23,8 +24,19 @@ fn optional<'a>(opt: &'a Options, key: &str) -> Option<&'a str> {
 pub(super) fn run(verb: &str, argv: &[String]) -> Result<Response> {
     Ok(match verb {
         "import" => {
-            let opt = Options::parse(argv, &["build", "target"],
-                &["repo", "rev", "db", "provider", "observations", "trusted-local", "ar"])?;
+            let opt = Options::parse(
+                argv,
+                &["build", "target"],
+                &[
+                    "repo",
+                    "rev",
+                    "db",
+                    "provider",
+                    "observations",
+                    "trusted-local",
+                    "ar",
+                ],
+            )?;
             let (db, path) = database(&opt)?;
             let input = graph::Import {
                 repo: Path::new(opt.get_or("repo", ".")),
@@ -37,8 +49,9 @@ pub(super) fn run(verb: &str, argv: &[String]) -> Result<Response> {
                 archiver: opt.get_or("ar", "ar"),
             };
             let mut result = graph::import(&db, &input)?;
-            result.entries_mut()?.insert("database".to_owned(),
-                excession::json::Value::string(path));
+            result
+                .entries_mut()?
+                .insert("database".to_owned(), excession::json::Value::string(path));
             json(result)
         }
         "ls" => {
@@ -47,27 +60,44 @@ pub(super) fn run(verb: &str, argv: &[String]) -> Result<Response> {
             json(graph::list(&db)?)
         }
         "show" => {
-            let opt = Options::parse(argv, &[],
-                &["db", "build", "id", "target"])?;
+            let opt = Options::parse(argv, &[], &["db", "build", "id", "target"])?;
             let (db, _) = database(&opt)?;
-            json(graph::show(&db, optional(&opt, "id"), optional(&opt, "target"))?)
+            json(graph::show(
+                &db,
+                optional(&opt, "id"),
+                optional(&opt, "target"),
+            )?)
         }
         "deps" => {
-            let opt = Options::parse(argv, &["node"],
-                &["db", "build", "id", "target", "direction", "depth"])?;
+            let opt = Options::parse(
+                argv,
+                &["node"],
+                &["db", "build", "id", "target", "direction", "depth"],
+            )?;
             let (db, _) = database(&opt)?;
             json(graph::neighbors(
-                &db, optional(&opt, "id"), optional(&opt, "target"), opt.get("node"),
-                opt.get_or("direction", "out"), depth(&opt, 2)?,
+                &db,
+                optional(&opt, "id"),
+                optional(&opt, "target"),
+                opt.get("node"),
+                opt.get_or("direction", "out"),
+                depth(&opt, 2)?,
             )?)
         }
         "path" => {
-            let opt = Options::parse(argv, &["from", "to"],
-                &["db", "build", "id", "target", "depth"])?;
+            let opt = Options::parse(
+                argv,
+                &["from", "to"],
+                &["db", "build", "id", "target", "depth"],
+            )?;
             let (db, _) = database(&opt)?;
             json(graph::path(
-                &db, optional(&opt, "id"), optional(&opt, "target"),
-                opt.get("from"), opt.get("to"), depth(&opt, 8)?,
+                &db,
+                optional(&opt, "id"),
+                optional(&opt, "target"),
+                opt.get("from"),
+                opt.get("to"),
+                depth(&opt, 8)?,
             )?)
         }
         _ => return excession::refuse("unknown graph verb"),

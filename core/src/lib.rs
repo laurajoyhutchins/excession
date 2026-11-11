@@ -4,20 +4,20 @@
 
 pub mod adapter;
 pub mod compiler_clang;
+pub mod configured_store;
 pub mod contracts;
 pub mod digest;
 pub mod effects;
 pub mod git;
-pub mod graph_assembly;
-pub mod configured_store;
 pub mod graph;
-pub mod kbuild_graph;
+pub mod graph_assembly;
 pub mod historical;
 pub mod identity;
 pub mod impact;
 pub mod index;
 pub mod integration;
 pub mod json;
+pub mod kbuild_graph;
 pub mod kernel;
 pub mod kernel_clang;
 pub mod kernel_links;

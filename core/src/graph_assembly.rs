@@ -71,14 +71,20 @@ fn as_path(source: &Path, build: &Path, name: &str) -> Result<PathBuf> {
     Ok(build.join(original))
 }
 fn push_node(
-    nodes: &mut BTreeMap<String, Value>, id: String,
-    kind: &str, payload: Value,
+    nodes: &mut BTreeMap<String, Value>,
+    id: String,
+    kind: &str,
+    payload: Value,
 ) -> Result<()> {
     crate::configured_store::push_node(nodes, id, kind, payload)
 }
 fn push_edge(
     edges: &mut BTreeMap<String, Value>,
-    from: &str, to: &str, kind: &str, status: &str, evidence: &str,
+    from: &str,
+    to: &str,
+    kind: &str,
+    status: &str,
+    evidence: &str,
 ) -> Result<()> {
     crate::configured_store::push_edge(edges, from, to, kind, status, evidence)
 }
@@ -510,13 +516,25 @@ pub fn assemble(
         ),
     ]);
     let id = body.sha256();
-    let receipts = observed.iter().map(|(source, (receipt, _))| {
-        let document = receipt_documents
-            .get(receipt).ok_or("missing in-memory compiler receipt")?;
-        Ok((source.clone(), receipt.clone(), document.clone()))
-    }).collect::<Result<Vec<_>>>()?;
+    let receipts = observed
+        .iter()
+        .map(|(source, (receipt, _))| {
+            let document = receipt_documents
+                .get(receipt)
+                .ok_or("missing in-memory compiler receipt")?;
+            Ok((source.clone(), receipt.clone(), document.clone()))
+        })
+        .collect::<Result<Vec<_>>>()?;
     crate::configured_store::persist(
-        db, &id, &commit, target_name, config_name, &body, &nodes, &edges, &receipts
+        db,
+        &id,
+        &commit,
+        target_name,
+        config_name,
+        &body,
+        &nodes,
+        &edges,
+        &receipts,
     )?;
     let mut result = body.entries()?.clone();
     result.insert("graph_id".to_owned(), Value::string(id));

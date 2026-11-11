@@ -3,7 +3,7 @@
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, git, graph_baseline, index, native_boundary, preflight, projection, refactor, refuse,
-    security_ingest, syntax, syntax_resolution, views,
+    security_ingest, semantic_contract, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -25,6 +25,7 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
+  excession semantic export --repo REPO --syntax-report JSON --resolution-report JSON
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
   excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
@@ -461,7 +462,7 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "syntax" | "refactor"
+                    "view" | "security" | "inspect" | "index" | "browse" | "syntax" | "semantic" | "refactor"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -470,7 +471,7 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "syntax" | "refactor"
+                    "view" | "security" | "inspect" | "syntax" | "semantic" | "refactor"
                 )
                 && !sub.is_empty() =>
         {
@@ -479,6 +480,21 @@ fn execute(args: &[String]) -> Result<Response> {
         [top, tail @ ..] if top == "research" => {
             research::run(tail)?;
             Ok(Response::Bytes(Vec::new()))
+        }
+        [top, sub, tail @ ..] if top == "semantic" => {
+            if sub != "export" {
+                return refuse(format!("unknown semantic command {sub}"));
+            }
+            let opt = Options::parse(
+                tail,
+                &["repo", "syntax-report", "resolution-report"],
+                &[],
+            )?;
+            Ok(json(semantic_contract::export(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+                opt.path("resolution-report"),
+            )?))
         }
         [top, sub, tail @ ..] if top == "syntax" => match sub.as_str() {
             "scan" => {

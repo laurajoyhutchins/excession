@@ -164,7 +164,7 @@ pub fn persist(
         CREATE TABLE IF NOT EXISTS configured_edge(\
         graph_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL,\
         source_id TEXT NOT NULL, destination_id TEXT NOT NULL, status TEXT NOT NULL,\
-        evidence TEXT NOT NULL, relation TEXT NOT NULL DEFAULT 'unknown',\
+        evidence TEXT NOT NULL, relation TEXT NOT NULL DEFAULT '__legacy__',\
         PRIMARY KEY(graph_id,id),\
         FOREIGN KEY(graph_id,source_id) REFERENCES configured_entity(graph_id,id),\
         FOREIGN KEY(graph_id,destination_id) REFERENCES configured_entity(graph_id,id));",
@@ -173,7 +173,7 @@ pub fn persist(
     // changing immutable graph bodies or graph IDs.
     let columns = db.query("PRAGMA table_info(configured_edge)", &[])?;
     if !columns.iter().any(|row| row.get(1).and_then(|value| value.as_deref()) == Some("relation")) {
-        db.exec("ALTER TABLE configured_edge ADD COLUMN relation TEXT NOT NULL DEFAULT 'unknown'")?;
+        db.exec("ALTER TABLE configured_edge ADD COLUMN relation TEXT NOT NULL DEFAULT '__legacy__'")?;
     }
     db.transaction(|db| {
         db.execute(

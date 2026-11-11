@@ -236,7 +236,7 @@ fn arcs(db: &Db, graph: &str) -> Result<Vec<Arc>> {
     let statement = if has_relation {
         "SELECT source_id,destination_id,kind,status,evidence,relation FROM configured_edge WHERE graph_id=? ORDER BY id"
     } else {
-        "SELECT source_id,destination_id,kind,status,evidence,'unknown' FROM configured_edge WHERE graph_id=? ORDER BY id"
+        "SELECT source_id,destination_id,kind,status,evidence,'__legacy__' FROM configured_edge WHERE graph_id=? ORDER BY id"
     };
     let rows = db.query(statement, &[Param::Text(graph)])?;
     rows.into_iter()
@@ -259,7 +259,7 @@ fn arc_value(arc: &Arc) -> Value {
         ("kind", Value::string(&arc.kind)),
         (
             "relation",
-            Value::string(if arc.relation == "unknown" {
+            Value::string(if arc.relation == "__legacy__" {
                 configured_store::relation(&arc.kind)
             } else {
                 &arc.relation

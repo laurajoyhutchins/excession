@@ -260,10 +260,10 @@ fn reconstruct_entries(entries: &[git::Entry], expected: &str) -> Result<String>
         }
 
         let actual = digest::git_tree(&payload);
-        if let Some(&declared) = declared_trees.get(directory) {
-            if actual != declared {
-                return refuse(format!("subtree mismatch: {directory}"));
-            }
+        if let Some(&declared) = declared_trees.get(directory)
+            && actual != declared
+        {
+            return refuse(format!("subtree mismatch: {directory}"));
         }
         if directory.is_empty() {
             if actual != expected {
@@ -281,6 +281,35 @@ fn reconstruct_entries(entries: &[git::Entry], expected: &str) -> Result<String>
         });
     }
     refuse("missing computed root")
+}
+
+pub type FileChange = (String, Option<String>, Option<String>);
+
+pub fn changed_paths(db: &Db, repo: i64, old: &str, new: &str) -> Result<Vec<FileChange>> {
+    let mut a = BTreeMap::new();
+    let mut b = BTreeMap::new();
+    for (rev, into) in [(old, &mut a), (new, &mut b)] {
+        for row in db.query(
+            "SELECT path,oid FROM tree_entry WHERE repo_id=? AND commit_oid=? AND kind='blob'",
+            &[Param::Integer(repo), Param::Text(rev)],
+        )? {
+            into.insert(
+                row[0].clone().ok_or("path NULL")?,
+                row[1].clone().ok_or("oid NULL")?,
+            );
+        }
+    }
+    let mut paths = BTreeSet::new();
+    paths.extend(a.keys().cloned());
+    paths.extend(b.keys().cloned());
+    Ok(paths
+        .into_iter()
+        .filter_map(|p| {
+            let x = a.get(&p).cloned();
+            let y = b.get(&p).cloned();
+            if x == y { None } else { Some((p, x, y)) }
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -392,33 +421,4 @@ mod tree_tests {
 
         assert!(reconstruct_entries(&[], ROOT).is_err());
     }
-}
-
-pub type FileChange = (String, Option<String>, Option<String>);
-
-pub fn changed_paths(db: &Db, repo: i64, old: &str, new: &str) -> Result<Vec<FileChange>> {
-    let mut a = BTreeMap::new();
-    let mut b = BTreeMap::new();
-    for (rev, into) in [(old, &mut a), (new, &mut b)] {
-        for row in db.query(
-            "SELECT path,oid FROM tree_entry WHERE repo_id=? AND commit_oid=? AND kind='blob'",
-            &[Param::Integer(repo), Param::Text(rev)],
-        )? {
-            into.insert(
-                row[0].clone().ok_or("path NULL")?,
-                row[1].clone().ok_or("oid NULL")?,
-            );
-        }
-    }
-    let mut paths = BTreeSet::new();
-    paths.extend(a.keys().cloned());
-    paths.extend(b.keys().cloned());
-    Ok(paths
-        .into_iter()
-        .filter_map(|p| {
-            let x = a.get(&p).cloned();
-            let y = b.get(&p).cloned();
-            if x == y { None } else { Some((p, x, y)) }
-        })
-        .collect())
 }

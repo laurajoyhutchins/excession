@@ -240,7 +240,7 @@ pub fn neighbors(db: &Db, graph_id: Option<&str>, target: Option<&str>,
     let all = arcs(db, &id)?;
     let mut visited = BTreeSet::from([start.clone()]);
     let mut queue = VecDeque::from([(start, 0usize)]);
-    let mut shown = BTreeMap::<(String, String, String), Arc>::new();
+    let mut shown = BTreeMap::<(String, String, String, String, String), Arc>::new();
     let mut truncated = false;
     while let Some((current, distance)) = queue.pop_front() {
         if distance == depth { continue; }
@@ -255,7 +255,10 @@ pub fn neighbors(db: &Db, graph_id: Option<&str>, target: Option<&str>,
                     truncated = true;
                     break;
                 }
-                shown.insert((arc.from.clone(), arc.to.clone(), arc.kind.clone()), arc.clone());
+                shown.insert((
+                    arc.from.clone(), arc.to.clone(), arc.kind.clone(),
+                    arc.status.clone(), arc.evidence.clone(),
+                ), arc.clone());
                 if visited.insert(other.clone()) {
                     queue.push_back((other.clone(), distance + 1));
                 }

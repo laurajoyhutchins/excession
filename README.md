@@ -88,6 +88,16 @@ See [language-neutral input contracts](docs/INPUT_CONTRACTS.md) for the schema,
 limits, and real Go/JavaScript historical tests. The earlier Python slice
 transport remains intact and shares the same changed-path comparison primitive.
 
+## Historical dependency discovery adapters
+
+The optional Git-native adapter `tools/excession_discover.py` proposes bounded
+Go, JavaScript, TypeScript and Rust input declarations at any retained commit.
+Use the same Rust `evidence contract-plan|contract-compare|contract-audit`
+commands to authenticate and compare their Git identities. The adapter refuses
+unsupported dependency resolution and does not certify effect completeness or
+behavioral equivalence. See [dependency discovery](docs/DEPENDENCY_DISCOVERY.md)
+for examples and precisely bounded coverage.
+
 ## Research compatibility
 
 Pinned earlier experiments retain their original Git blobs, schema strings,

@@ -7,8 +7,8 @@ use std::path::Path;
 
 fn database(opt: &Options) -> Result<(Db, String)> {
     let path = graph::database_path(
-        opt.0.get("db").map(|p| Path::new(p)),
-        opt.0.get("build").map(|p| Path::new(p)),
+        opt.0.get("db").map(Path::new),
+        opt.0.get("build").map(Path::new),
     )?;
     let db = Db::open(&path)?;
     Ok((db, path.to_string_lossy().into_owned()))

@@ -2,6 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::evidence_query;
 use excession::sqlite::{Db, Param};
+use excession::doctor;
 use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
     refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
@@ -19,6 +20,7 @@ mod scan;
 const HELP: &str = r#"Excession | Git-authenticated repository exploration and security evidence
 
 Usage:
+  excession doctor [--json]
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
   excession syntax audit --repo REPO --report SAVED_JSON
@@ -464,6 +466,8 @@ fn execute(args: &[String]) -> Result<Response> {
             "excession {}",
             env!("CARGO_PKG_VERSION")
         ))),
+        [a] if a == "doctor" => Ok(Response::Message(doctor::format_human(&doctor::report())?)),
+        [a, flag] if a == "doctor" && flag == "--json" => Ok(json(doctor::report())),
         [top, a]
             if a == "--help"
                 && matches!(

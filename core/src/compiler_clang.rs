@@ -18,6 +18,7 @@ pub fn scan(
     compile_db: &Path,
     compiler: &str,
     config: Option<&Path>,
+    object_prefix: Option<&str>,
     trusted_local: &str,
 ) -> Result<Value> {
     if trusted_local != "true" {
@@ -80,6 +81,7 @@ pub fn scan(
         ),
         ("compiler", Value::string(compiler)),
         ("config", config_json),
+        ("object_prefix", object_prefix.map_or(Value::Null, Value::string)),
         ("trusted_local", Value::Bool(true)),
     ]);
     let observation = adapter::clang_ast(&request)?;
@@ -120,6 +122,7 @@ mod tests {
             Path::new("compile_commands.json"),
             "clang",
             None,
+            None,
             "false",
         );
         assert!(result.unwrap_err().contains("--trusted-local true"));
@@ -133,6 +136,7 @@ mod tests {
             "src/missing.rs",
             Path::new("compile_commands.json"),
             "clang",
+            None,
             None,
             "true",
         );

@@ -22,7 +22,7 @@ Usage:
   excession graph assemble --repo REPO --rev HEAD --build BUILD_DIR
       --target CMAKE_TARGET --observations JSON_DIRECTORY --db SQLITE
   excession analyze clang --repo REPO --source PATH --compile-db JSON --trusted-local true
-      [--rev HEAD] [--compiler clang|clang++] [--config CONFIG]
+      [--rev HEAD] [--compiler clang|clang++] [--config CONFIG] [--object-prefix PREFIX]
   excession kernel clang --repo REPO --source PATH --compile-db JSON --trusted-local true
       [--rev HEAD] [--compiler clang] [--config .config]
   excession view deps --db DB --name NAME --rev REV --seed MODULE
@@ -418,7 +418,7 @@ fn clang_command(tail: &[String]) -> Result<Response> {
     let opt = Options::parse(
         tail,
         &["repo", "source", "compile-db", "trusted-local"],
-        &["rev", "compiler", "config"],
+        &["rev", "compiler", "config", "object-prefix"],
     )?;
     let default_compiler = if opt.get("source").ends_with(".c") {
         "clang"
@@ -432,6 +432,7 @@ fn clang_command(tail: &[String]) -> Result<Response> {
         opt.path("compile-db"),
         opt.get_or("compiler", default_compiler),
         opt.0.get("config").map(Path::new),
+        opt.0.get("object-prefix").map(String::as_str),
         opt.get("trusted-local"),
     )?))
 }

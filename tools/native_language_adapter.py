@@ -37,7 +37,8 @@ def find(name):
     executable = shutil.which(name)
     if executable is None:
         raise Unsupported(f"native adapter requires {name}")
-    return Path(executable).resolve()
+    # Keep invocation path and argv[0] intact: rustc is often a rustup shim.
+    return Path(executable).absolute()
 
 
 def relative(root, filename):
@@ -98,7 +99,8 @@ def go(root, entry):
 
 
 def typescript(root, entry, helper):
-    tsc = find("tsc")
+    # Resolve only for locating TypeScript's adjacent library, not execution.
+    tsc = find("tsc").resolve()
     ts_api = tsc.parent.parent / "lib" / "typescript.js"
     if not ts_api.is_file():
         raise Unsupported("TypeScript compiler API missing beside tsc")

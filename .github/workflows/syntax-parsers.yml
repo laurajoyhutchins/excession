@@ -7,6 +7,8 @@ on:
       - 'rust-toolchain.toml'
       - '.python-version'
       - 'mise.toml'
+      - 'mise.*.toml'
+      - 'tests/test_polyglot_grammars.py'
       - 'requirements/syntax.txt'
       - 'requirements/research.txt'
       - 'core/adapters/tree_sitter.py'
@@ -35,7 +37,7 @@ permissions:
 
 jobs:
   grammar-smoke:
-    name: Rust, Go, C, Java grammar smoke
+    name: Multi-language syntax grammar smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -48,8 +50,15 @@ jobs:
         run: rustup show active-toolchain
       - name: Fast grammar-independent adapter contract tests
         run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
-      - name: Install and prefetch optional grammars with mise
-        run: mise run syntax-setup
+      - name: Prefetch all recognized syntax grammars with mise
+        run: mise run syntax-setup-all
+      - name: Check optional mise profiles without installing extra toolchains
+        run: |
+          for profile in jvm dotnet ruby php beam swift native; do
+            mise -E "$profile" config >/dev/null
+          done
+      - name: Check polyglot parser availability (offline)
+        run: python3 -m unittest discover -s tests -p test_polyglot_grammars.py -v
       - name: Prefetch locked Cargo dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Install locked TypeScript compiler API

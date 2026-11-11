@@ -32,3 +32,9 @@ run = [
   "python -m pip install --disable-pip-version-check -r requirements/research.txt -r requirements/syntax.txt",
   "python -c 'from tree_sitter_language_pack import prefetch; prefetch([\"rust\",\"go\",\"c\",\"java\",\"python\",\"javascript\",\"typescript\"])'",
 ]
+
+# Extended syntax support is opt-in. Compilers are not needed to parse Git blobs.
+[tasks.syntax-setup-all]
+description = "Prefetch grammars for all Excession syntax extensions"
+depends = ["syntax-setup"]
+run = "python -c 'import sys; from tree_sitter_language_pack import prefetch; prefetch(sys.argv[1:])' cpp kotlin csharp ruby php swift scala bash elixir json yaml toml sql"

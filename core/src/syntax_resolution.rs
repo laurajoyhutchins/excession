@@ -339,8 +339,10 @@ fn import_target(language: &str, statement: &str) -> Option<String> {
     let text = statement.trim();
     match language {
         "javascript" | "typescript" | "tsx" => {
-            if text.starts_with("import ") || text.starts_with("export ")
-                || text.starts_with("import\n") || text.starts_with("export\n")
+            if text.starts_with("import ")
+                || text.starts_with("export ")
+                || text.starts_with("import\n")
+                || text.starts_with("export\n")
             {
                 quoted_literal(text)
             } else if text.starts_with("./") || text.starts_with("../") {
@@ -364,14 +366,18 @@ fn import_target(language: &str, statement: &str) -> Option<String> {
             }
         }
         "rust" => {
-            let value = text.strip_prefix("pub use ")
+            let value = text
+                .strip_prefix("pub use ")
                 .or_else(|| text.strip_prefix("use "))
                 .unwrap_or(text)
-                .trim_end_matches(';').trim();
+                .trim_end_matches(';')
+                .trim();
             if value.starts_with("crate::")
                 && value.split("::").all(|segment| {
-                    !segment.is_empty() &&
-                    segment.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                    !segment.is_empty()
+                        && segment
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || c == b'_')
                 })
             {
                 Some(value.to_owned())
@@ -467,7 +473,10 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
             let line = import.get("line")?.integer()?;
             let Some(spec) = import_target(source.language, raw_spec) else {
                 unresolved_imports.push(unresolved(
-                    source, raw_spec, line, "UNSUPPORTED_IMPORT_SHAPE",
+                    source,
+                    raw_spec,
+                    line,
+                    "UNSUPPORTED_IMPORT_SHAPE",
                 ));
                 continue;
             };
@@ -612,14 +621,35 @@ mod tests {
 
     #[test]
     fn grammar_pack_import_statements_are_normalized_only_when_unambiguous() {
-        assert_eq!(import_target("typescript", "import {x} from './util';"), Some("./util".into()));
-        assert_eq!(import_target("typescript", "import './side_effect';"), Some("./side_effect".into()));
-        assert_eq!(import_target("typescript", "import x from 'a' with {type: 'json'};"), None);
-        assert_eq!(import_target("go", "\"example.org/pkg\""), Some("example.org/pkg".into()));
-        assert_eq!(import_target("rust", "use crate::widget::answer;"), Some("crate::widget::answer".into()));
+        assert_eq!(
+            import_target("typescript", "import {x} from './util';"),
+            Some("./util".into())
+        );
+        assert_eq!(
+            import_target("typescript", "import './side_effect';"),
+            Some("./side_effect".into())
+        );
+        assert_eq!(
+            import_target("typescript", "import x from 'a' with {type: 'json'};"),
+            None
+        );
+        assert_eq!(
+            import_target("go", "\"example.org/pkg\""),
+            Some("example.org/pkg".into())
+        );
+        assert_eq!(
+            import_target("rust", "use crate::widget::answer;"),
+            Some("crate::widget::answer".into())
+        );
         assert_eq!(import_target("rust", "use crate::{a,b};"), None);
-        assert_eq!(import_target("python", "import pkg.util"), Some("pkg.util".into()));
-        assert_eq!(import_target("python", "from .util import answer"), Some(".util".into()));
+        assert_eq!(
+            import_target("python", "import pkg.util"),
+            Some("pkg.util".into())
+        );
+        assert_eq!(
+            import_target("python", "from .util import answer"),
+            Some(".util".into())
+        );
     }
 
     #[test]

@@ -1239,15 +1239,7 @@ fn virtual_operations_refuse_invalid_scope_or_empty_composition() {
     let manifest = dep.to_str().unwrap();
     for args in [
         vec![
-            "view",
-            "compose",
-            "--repo",
-            root,
-            "--op",
-            "xor",
-            "--left",
-            manifest,
-            "--right",
+            "view", "compose", "--repo", root, "--op", "xor", "--left", manifest, "--right",
             manifest,
         ],
         vec![

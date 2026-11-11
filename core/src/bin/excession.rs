@@ -41,7 +41,6 @@ fn json(v: excession::json::Value) -> Response {
 
 fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
     if (verb, replay) == ("deps", false) {
-
         let db = Db::open(opt.path("db"))?;
         return Ok(Response::CanonicalJson(projection::dependencies_canonical(
             &db,
@@ -52,19 +51,16 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
     }
     let v = match (verb, replay) {
         ("deps", true) => {
-
             let db = Db::open(opt.path("db"))?;
             let plan =
                 projection::dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?;
             projection::replay(&plan, opt.path("manifest"))?
         }
         ("profile-deps", false) => {
-
             let db = Db::open(opt.path("db"))?;
             projection::profile_dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?
         }
         ("graph", false) => {
-
             let db = Db::open(opt.path("db"))?;
             graph_baseline::paths(
                 &db,
@@ -75,7 +71,6 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
             )?
         }
         ("paths", false) => {
-
             let db = Db::open(opt.path("db"))?;
             projection::dependency_paths(
                 &db,
@@ -86,7 +81,6 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
             )?
         }
         ("security", false) | ("security", true) => {
-
             let db = Db::open(opt.path("db"))?;
             let plan = projection::security(&db, opt.path("repo"), opt.get("run"))?;
             if replay {
@@ -96,7 +90,6 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
             }
         }
         ("compose", false) | ("compose", true) => {
-
             if replay {
                 projection::compose_replay(
                     opt.path("repo"),
@@ -115,7 +108,6 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
             }
         }
         ("select", false) | ("select", true) => {
-
             if replay {
                 projection::select_replay(
                     opt.path("repo"),
@@ -134,7 +126,6 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
             }
         }
         ("mount", false) | ("mount", true) => {
-
             if replay {
                 projection::mount_replay(
                     opt.path("repo"),
@@ -146,20 +137,15 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
                 projection::mount(opt.path("repo"), opt.path("manifest"), opt.get("namespace"))?
             }
         }
-        ("ls", false) => {
-
-            projection::list(
-                opt.path("repo"),
-                opt.path("manifest"),
-                opt.get_or("path", ""),
-            )?
-        }
+        ("ls", false) => projection::list(
+            opt.path("repo"),
+            opt.path("manifest"),
+            opt.get_or("path", ""),
+        )?,
         ("stat", false) => {
-
             projection::describe(opt.path("repo"), opt.path("manifest"), opt.get("path"))?
         }
         ("cat", false) => {
-
             return Ok(Response::Bytes(projection::open(
                 opt.path("repo"),
                 opt.path("manifest"),
@@ -167,7 +153,6 @@ fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
             )?));
         }
         ("materialize", false) | ("audit", false) => {
-
             if verb == "materialize" {
                 projection::materialize(opt.path("repo"), opt.path("manifest"), opt.path("output"))?
             } else {
@@ -361,7 +346,6 @@ fn execute(args: &[String]) -> Result<Response> {
         },
         [top, sub] if top == "syntax" => match sub.as_str() {
             "scan" => {
-
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();
                 Ok(json(syntax::scan(
                     opt.path("repo"),
@@ -369,20 +353,10 @@ fn execute(args: &[String]) -> Result<Response> {
                     &roots,
                 )?))
             }
-            "audit" => {
-
-                Ok(json(syntax::audit(opt.path("repo"), opt.path("report"))?))
-            }
-            "preflight" => {
-
-                Ok(json(preflight::syntax_file(opt.path("report"))?))
-            }
-            "resolve-preflight" => {
-
-                Ok(json(preflight::resolution_file(opt.path("report"))?))
-            }
+            "audit" => Ok(json(syntax::audit(opt.path("repo"), opt.path("report"))?)),
+            "preflight" => Ok(json(preflight::syntax_file(opt.path("report"))?)),
+            "resolve-preflight" => Ok(json(preflight::resolution_file(opt.path("report"))?)),
             "native-run" => {
-
                 let trusted = match opt.get("trusted-local") {
                     "true" => true,
                     "false" => false,
@@ -398,46 +372,31 @@ fn execute(args: &[String]) -> Result<Response> {
                     trusted,
                 )?))
             }
-            "native-preflight" => {
-
-                Ok(json(native_boundary::preflight_file(
-                    opt.path("declaration"),
-                )?))
-            }
-            "native-compare" => {
-
-                Ok(json(native_boundary::compare(
-                    opt.path("repo"),
-                    opt.path("syntax-report"),
-                    opt.path("resolution-report"),
-                    opt.path("declaration"),
-                )?))
-            }
-            "native-audit" => {
-
-                Ok(json(native_boundary::audit(
-                    opt.path("repo"),
-                    opt.path("syntax-report"),
-                    opt.path("resolution-report"),
-                    opt.path("declaration"),
-                    opt.path("report"),
-                )?))
-            }
-            "resolve" => {
-
-                Ok(json(syntax_resolution::candidates(
-                    opt.path("repo"),
-                    opt.path("report"),
-                )?))
-            }
-            "resolve-audit" => {
-
-                Ok(json(syntax_resolution::audit(
-                    opt.path("repo"),
-                    opt.path("syntax-report"),
-                    opt.path("report"),
-                )?))
-            }
+            "native-preflight" => Ok(json(native_boundary::preflight_file(
+                opt.path("declaration"),
+            )?)),
+            "native-compare" => Ok(json(native_boundary::compare(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+                opt.path("resolution-report"),
+                opt.path("declaration"),
+            )?)),
+            "native-audit" => Ok(json(native_boundary::audit(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+                opt.path("resolution-report"),
+                opt.path("declaration"),
+                opt.path("report"),
+            )?)),
+            "resolve" => Ok(json(syntax_resolution::candidates(
+                opt.path("repo"),
+                opt.path("report"),
+            )?)),
+            "resolve-audit" => Ok(json(syntax_resolution::audit(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+                opt.path("report"),
+            )?)),
             _ => refuse(format!("unknown syntax command {sub}")),
         },
         [top] if top == "doctor" => {
@@ -448,7 +407,6 @@ fn execute(args: &[String]) -> Result<Response> {
             }
         }
         [top] if top == "index" => {
-
             let roots = opt
                 .get_or("roots", "src,tests")
                 .split(',')
@@ -479,7 +437,6 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub] if top == "security" => {
             if sub == "scan" {
-
                 return Ok(json(scan::run(opt)?));
             }
             if !matches!(sub.as_str(), "ingest" | "audit") {
@@ -498,7 +455,6 @@ fn execute(args: &[String]) -> Result<Response> {
         [top, sub]
             if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
         {
-
             Ok(json(if sub == "scip-audit" {
                 scip_refactor::audit_with_prefix(
                     opt.path("repo"),
@@ -530,12 +486,10 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub] if top == "benchmark" => match sub.as_str() {
             "validate" => {
-
                 benchmark::validate(opt.path("report"))?;
                 Ok(Response::Message(format!("VALID {}", opt.get("report"))))
             }
             "report" => {
-
                 let output = match opt.get("kind") {
                     "relational" => {
                         if opt.0.contains_key("input") {
@@ -555,23 +509,19 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
-        [top, sub] if top == "inspect" && sub == "evidence" => {
-
-            Ok(json(evidence_query::query(
-                opt.path("repo"),
-                opt.get_or("rev", "HEAD"),
-                opt.get("focus"),
-                opt.path("syntax-report"),
-                opt.path("resolution-report"),
-                opt.0.get("declaration").map(|s| Path::new(s.as_str())),
-                opt.0.get("runtime-report").map(|s| Path::new(s.as_str())),
-            )?))
-        }
+        [top, sub] if top == "inspect" && sub == "evidence" => Ok(json(evidence_query::query(
+            opt.path("repo"),
+            opt.get_or("rev", "HEAD"),
+            opt.get("focus"),
+            opt.path("syntax-report"),
+            opt.path("resolution-report"),
+            opt.0.get("declaration").map(|s| Path::new(s.as_str())),
+            opt.0.get("runtime-report").map(|s| Path::new(s.as_str())),
+        )?)),
         [top, sub] if top == "inspect" => inspect_cmd(sub, opt),
         [top, sub, verb] if top == "view" && sub == "replay" => view_cmd(verb, opt, true),
         [top, verb] if top == "view" => view_cmd(verb, opt, false),
         [top] if top == "browse" => {
-
             let max = opt
                 .get_or("max-bytes", "8192")
                 .parse::<usize>()
@@ -605,13 +555,22 @@ mod tests {
     }
     #[test]
     fn options_are_validated_once_by_clap() {
-        assert!(execute(&strings(&[
-            "index", "--repo", "a", "--db", "x", "--name", "n", "--db", "duplicate"
-        ]))
-        .is_err());
+        assert!(
+            execute(&strings(&[
+                "index",
+                "--repo",
+                "a",
+                "--db",
+                "x",
+                "--name",
+                "n",
+                "--db",
+                "duplicate"
+            ]))
+            .is_err()
+        );
         assert!(execute(&strings(&["index", "--reppo", "a"])).is_err());
         assert!(execute(&strings(&["index", "--repo", "--db", "x"])).is_err());
-
     }
     #[test]
     fn retired_research_subcommand_is_rejected() {

@@ -118,7 +118,11 @@ pub(super) fn command() -> Command {
             leaf("scan", &["repo", "roots"], &["rev"]),
             leaf("audit", &["repo", "roots", "report"], &[]),
             leaf("resolve", &["repo", "syntax-report"], &[]),
-            leaf("export", &["repo", "syntax-report", "resolution-report"], &[]),
+            leaf(
+                "export",
+                &["repo", "syntax-report", "resolution-report"],
+                &[],
+            ),
         ],
     )
     .about("Versioned semantic candidate observations and ODCS contracts");
@@ -163,8 +167,16 @@ pub(super) fn command() -> Command {
         vec![
             leaf("suggest", &["db", "name", "rev"], &[]),
             leaf("audit", &["db", "name", "rev", "report"], &[]),
-            leaf("scip-suggest", &["repo", "rev", "index"], &["source-prefix"]),
-            leaf("scip-audit", &["repo", "rev", "index", "report"], &["source-prefix"]),
+            leaf(
+                "scip-suggest",
+                &["repo", "rev", "index"],
+                &["source-prefix"],
+            ),
+            leaf(
+                "scip-audit",
+                &["repo", "rev", "index", "report"],
+                &["source-prefix"],
+            ),
         ],
     )
     .about("Source-bound refactoring hypotheses");
@@ -179,7 +191,11 @@ pub(super) fn command() -> Command {
         .subcommand(
             Command::new("doctor")
                 .about("Report local toolchain and bundled storage capabilities")
-                .arg(Arg::new("json").long("json").action(clap::ArgAction::SetTrue)),
+                .arg(
+                    Arg::new("json")
+                        .long("json")
+                        .action(clap::ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             leaf("index", &["repo", "db", "name"], &["rev", "roots"])
@@ -196,7 +212,6 @@ pub(super) fn command() -> Command {
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
                 .about("Read-only virtual source browser"),
         )
-
 }
 
 /// Clap is the sole authority for parsing, required values, help and subcommands.
@@ -213,7 +228,9 @@ pub(super) struct Parsed {
 pub(super) fn parse(args: &[String]) -> Result<ParseOutcome> {
     let mut cli = command();
     if args.is_empty() {
-        return Ok(ParseOutcome::Help(cli.render_help().to_string().trim_end().to_owned()));
+        return Ok(ParseOutcome::Help(
+            cli.render_help().to_string().trim_end().to_owned(),
+        ));
     }
     let argv = iter::once("excession").chain(args.iter().map(String::as_str));
     match cli.try_get_matches_from(argv) {
@@ -234,7 +251,10 @@ pub(super) fn parse(args: &[String]) -> Result<ParseOutcome> {
                     }
                 }
             }
-            Ok(ParseOutcome::Command(Parsed { path, options: Options(values) }))
+            Ok(ParseOutcome::Command(Parsed {
+                path,
+                options: Options(values),
+            }))
         }
         Err(err)
             if matches!(
@@ -275,11 +295,17 @@ mod tests {
 
     #[test]
     fn nested_help_is_generated_from_the_actual_command_grammar() {
-        let ParseOutcome::Help(text) = parse(&strings(&["view", "replay", "deps", "--help"])).unwrap() else { panic!("help expected"); };
+        let ParseOutcome::Help(text) =
+            parse(&strings(&["view", "replay", "deps", "--help"])).unwrap()
+        else {
+            panic!("help expected");
+        };
         assert!(text.contains("--manifest"));
         assert!(text.contains("--seed"));
         assert!(!text.contains("--output"));
-        let ParseOutcome::Help(syntax) = parse(&strings(&["syntax", "--help"])).unwrap() else { panic!("help expected"); };
+        let ParseOutcome::Help(syntax) = parse(&strings(&["syntax", "--help"])).unwrap() else {
+            panic!("help expected");
+        };
         assert!(syntax.contains("native-audit"));
     }
 

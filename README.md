@@ -16,17 +16,22 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-Requirements: Rust 1.99.1, Python 3.13.5, Node 22.16.0/npm 10.9.2,
-Git with SHA-1 repositories, and native `libsqlite3` / `libcrypto`.
-Go 1.26.11 is optional for the Go research adapter. The Rust crate has
-no third-party Cargo dependencies and builds offline. JS/TS parsing uses
-the locally locked TypeScript package, not a global npm installation.
+The native CLI builds offline with Rust 1.99.1 and no third-party Cargo
+crates. Git (SHA-1 object format) and SQLite remain required for repository
+operations. Digests use portable Rust and no longer require OpenSSL.
+Python 3.13.5 and Node 22.16.0 are optional language runtimes; Go 1.26.11,
+Tree-sitter grammars and native scanners are separate opt-in adapters.
+
+Prebuilt Linux, macOS and Windows archives package the binary and the
+locked TypeScript parser sidecar. See [portable installation, supported
+targets and limitations](docs/PORTABILITY.md).
 
 ```sh
-npm ci --ignore-scripts --no-audit --no-fund
-python3 -m pip install -r requirements/research.txt
 cargo install --offline --locked --path core --bin excession
 excession --help
+# For development and the complete language-adapter test suite:
+npm ci --ignore-scripts --no-audit --no-fund
+python3 -m pip install -r requirements/research.txt
 make check
 ```
 

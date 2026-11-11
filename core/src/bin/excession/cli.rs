@@ -180,6 +180,30 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Source-bound refactoring hypotheses");
+    let configured_graph = group(
+        "graph",
+        vec![
+            leaf("import", &["build", "target"], &["repo", "rev", "db", "provider", "observations", "trusted-local", "ar"]),
+            leaf("ls", &[], &["db", "build"]),
+            leaf("show", &[], &["db", "build", "id", "target"]),
+            leaf("deps", &["node"], &["db", "build", "id", "target", "direction", "depth"]),
+            leaf("path", &["from", "to"], &["db", "build", "id", "target", "depth"]),
+            leaf("kbuild", &["repo", "build", "archive", "db", "trusted-local"], &["rev", "ar"]),
+            leaf("assemble", &["repo", "build", "target", "observations", "db"], &["rev"]),
+        ],
+    )
+    .about("Configuration-bound build and source evidence");
+    let clang = || leaf(
+        "clang",
+        &["repo", "source", "compile-db", "trusted-local"],
+        &["rev", "compiler", "config", "object-prefix"],
+    );
+    let analyze = group("analyze", vec![clang()])
+        .about("Compiler-backed source analysis");
+    let kernel = group("kernel", vec![
+        leaf("scan", &["repo", "roots"], &["rev"]),
+        clang(),
+    ]).about("Bounded Linux source observations");
     Command::new("excession")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Excession | Git-authenticated repository exploration and security evidence")
@@ -208,6 +232,9 @@ pub(super) fn command() -> Command {
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)
+        .subcommand(configured_graph)
+        .subcommand(analyze)
+        .subcommand(kernel)
         .subcommand(
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
                 .about("Read-only virtual source browser"),

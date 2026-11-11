@@ -1,0 +1,63 @@
+name: Linux native syntax adapters
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/linux-native-parsers.yml'
+      - 'core/adapters/kernel_parse.py'
+      - 'core/src/kernel.rs'
+      - 'core/src/kernel_links.rs'
+      - 'core/src/adapter.rs'
+      - 'core/src/bin/excession.rs'
+      - 'core/src/lib.rs'
+      - 'tests/test_kernel_parsers.py'
+      - 'tests/kernel_linux_probe.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-rtc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unit-test C, Kbuild and Kconfig parsers
+        run: python3 -m unittest discover -s tests -p test_kernel_parsers.py -v
+
+      - name: Build native Excession CLI
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+
+      - name: Fetch pinned Linux RTC sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --sparse --branch v6.12 \
+            https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
+          git -C "$RUNNER_TEMP/linux" sparse-checkout set drivers/rtc
+          test "$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)" = "adc218676eef25575469234709c2d87185ca223a"
+          test -z "$(git -C "$RUNNER_TEMP/linux" status --porcelain)"
+
+      - name: Audit Linux RTC syntax and deterministic source receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/kernel_linux_probe.py \
+            --repo "$RUNNER_TEMP/linux" \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --output "$RUNNER_TEMP/linux-kernel-parse-summary.json"
+          cat "$RUNNER_TEMP/linux-kernel-parse-summary.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bounded summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-linux-rtc-parse
+          path: ${{ runner.temp }}/linux-kernel-parse-summary.json
+          if-no-files-found: warn
+          retention-days: 7

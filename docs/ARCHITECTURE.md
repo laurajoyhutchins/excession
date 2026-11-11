@@ -86,9 +86,11 @@ sandbox identity are separately required before trusting third-party agents.
 
 First implementation tables:
 
-- `security_ingest_run(run_id, source_commit, report_sha256, engine, candidate_count, status)`
+- `security_ingest_run(run_id, source_commit, report_sha256, engine, candidate_count, flow_step_count, status)`
 - `security_ingest_candidate(run_id, candidate_id, logical_key, source_path,
   source_blob, line, rule_id, raw_evidence)`
+- `security_ingest_flow_step(run_id, candidate_id, flow_index, thread_index, step_index,
+  source_path, source_blob, line)` (SARIF code-flow location chain)
 
 Implemented status is exclusively `UNVERIFIED_STATIC_CANDIDATES`.
 
@@ -115,9 +117,11 @@ metadata only after a post-freeze match, not a security-verdict state.
 4. Parse SARIF 2.1.0 or Semgrep JSON in Rust using strict duplicate-key-rejecting
    JSON parser. Refuse unsupported URI encodings and untracked paths.
 5. Resolve each candidate to a tracked regular file blob and validate line span.
-6. Insert canonical evidence into SQLite in a single transaction; no CVE label
+6. Bind every supported CodeQL path-query step to a tracked source blob and
+   store ordered thread-flow relations in the same SQLite transaction.
+7. Insert canonical evidence into SQLite in a single transaction; no CVE label
    is applied.
-7. Independently rerun source validation and report parsing; verify exact
+8. Independently rerun source validation and report parsing; verify exact
    rows, row counts, statuses and FK constraints. Fail on forged extra rows.
 
 The importer deliberately supports a narrow subset: one CodeQL run,

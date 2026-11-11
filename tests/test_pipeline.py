@@ -80,6 +80,32 @@ class ScannerIntegration(unittest.TestCase):
         self.assertTrue(replay['independently_replayed'])
         self.assertEqual(len(comparison.get(self.db,first['run_id'])),1)
 
+    def test_codeql_path_flows_relate_tracked_source_blobs(self):
+        report=self.codeql()
+        report['runs'][0]['results'][0]['codeFlows']=[{'threadFlows':[{'locations':[
+            {'location':{'physicalLocation':{'artifactLocation':{'uri':'app.go'},'region':{'startLine':2}}}},
+            {'location':{'physicalLocation':{'artifactLocation':{'uri':'app.go'},'region':{'startLine':3}}}},
+        ]}]}]
+        self.report.write_text(json.dumps(report))
+        imported=self.ingest()
+        self.assertEqual(imported.returncode,0,imported.stderr)
+        self.assertEqual(json.loads(imported.stdout)['flow_step_count'],2)
+        self.assertEqual(self.ingest(audit=True).returncode,0)
+        with sqlite3.connect(self.db) as conn:
+            steps=conn.execute('SELECT source_path,line,source_blob FROM security_ingest_flow_step ORDER BY step_index').fetchall()
+            self.assertEqual([(x[0],x[1]) for x in steps],[('app.go',2),('app.go',3)])
+            self.assertEqual(steps[0][2],steps[1][2])
+            conn.execute('UPDATE security_ingest_flow_step SET line=1 WHERE step_index=1')
+        self.assertNotEqual(self.ingest(audit=True).returncode,0)
+
+    def test_codeql_flow_to_untracked_path_is_refused(self):
+        report=self.codeql()
+        report['runs'][0]['results'][0]['codeFlows']=[{'threadFlows':[{'locations':[
+            {'location':{'physicalLocation':{'artifactLocation':{'uri':'hidden.go'},'region':{'startLine':1}}}}
+        ]}]}]
+        self.report.write_text(json.dumps(report))
+        self.assertNotEqual(self.ingest().returncode,0)
+
     def test_semgrep_roundtrip(self):
         self.report.write_text(json.dumps(self.semgrep()))
         self.assertEqual(self.ingest('semgrep').returncode,0)

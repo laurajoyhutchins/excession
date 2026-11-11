@@ -3,7 +3,7 @@
 Git-authenticated vulnerability *research evidence*, built on RelGit's Rust core.
 
 **Current implementation:** import and independently audit CodeQL SARIF 2.1.0
-and Semgrep JSON against exact source blobs; execute trusted local scanners;
+and Semgrep JSON against exact source blobs, plus CodeQL path flow relations; execute trusted local scanners;
 freeze an advisory-blind protocol and compare candidate sets across revisions.
 **Not yet implemented:** an automatic exploitable-vulnerability detector,
 custom CodeQL security-flow queries, or a verified-new-CVE claim.

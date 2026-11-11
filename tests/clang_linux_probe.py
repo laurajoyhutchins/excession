@@ -82,7 +82,7 @@ def main():
     assert source_file.is_file()
     (out_build / ".empty.o.cmd").write_text(
         "savedcmd_empty.o := clang -c -o " +
-        str(out_build / "empty.o") + " " + str(source_file) + "\\n"
+        str(out_build / "empty.o") + " " + str(source_file) + chr(10)
     )
     generated_db = output / "linux-generator-compile_commands.json"
     generator = repo / "scripts/clang-tools/gen_compile_commands.py"

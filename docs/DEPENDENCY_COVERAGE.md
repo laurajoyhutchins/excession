@@ -2,7 +2,7 @@
 
 The view-parity suite alone cannot establish dependency completeness: both
 views and graph retrieval consume the same SQLite `dependency` relation.
-`benchmarks/dependency_oracle.py` independently reads **pinned Git objects**,
+`benchmarks/experiments/dependency_oracle.py` independently reads **pinned Git objects**,
 derives module identities from file paths, parses import declarations, and
 resolves in-repository targets without consulting Excession's parser output or
 stored edges. A separate Node script uses TypeScript syntax nodes and a
@@ -22,9 +22,10 @@ generated adversarial source tree.
 
 Exact recovery of the **observed statically resolvable, indexed,
 in-repository** Python import declarations and JS import/export/require/
-literal-import() references for these particular fixtures. Absolute Python
-imports in conventional `src/` layouts are mapped to their SQL module names,
-without changing existing indexed identifiers. JS `.cjs`, `index.cjs`,
+literal-import() references for these particular fixtures. Python static imports within observed regular packages are resolved from
+tracked `__init__.py` package boundaries rather than from a hard-coded `src/`
+prefix. SQLite's source-path-based module identifiers remain unchanged. See
+[Python importable names](PYTHON_IMPORT_NAMES.md) for the trust boundary. JS `.cjs`, `index.cjs`,
 and `index.ts` candidates are considered.
 
 The verifier also records unproven sites: computed/dynamic imports, wildcard

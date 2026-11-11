@@ -1,0 +1,27 @@
+{
+  "original": {
+    "cross_package_edges": 7,
+    "median_runtime_ms": 747.192,
+    "merge_conflicts": 0,
+    "migration_paths": 0,
+    "source_edit_paths": 1,
+    "verified": true
+  },
+  "policy": {
+    "cross_boundary_weight": 1.0,
+    "edit_path_weight": 1.0,
+    "future_edits": 100,
+    "merge_conflict_weight": 20.0,
+    "migration_weight": 1.0,
+    "runtime_100ms_weight": 1.0,
+    "runtime_noise_fraction": 0.15
+  },
+  "projected": {
+    "cross_package_edges": 12,
+    "median_runtime_ms": 758.832,
+    "merge_conflicts": 1,
+    "migration_paths": 7,
+    "source_edit_paths": 1,
+    "verified": true
+  }
+}

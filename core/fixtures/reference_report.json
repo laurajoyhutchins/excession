@@ -1,0 +1,51 @@
+{
+  "agent_observations": {
+    "headers": {
+      "cases": 3,
+      "cross_reader_calls": 0
+    },
+    "reader": {
+      "cases": 13,
+      "cross_header_calls": 4,
+      "cross_header_inputs": "[]"
+    }
+  },
+  "assumptions": [
+    "Finite deterministic execution and same interpreter/toolchain",
+    "No untracked runtime influences, unexpected imports or hidden side effects",
+    "Class method-body changes are inert until called",
+    "Source and observation authenticity depend on pinned Git and local execution, not signed attestations"
+  ],
+  "carried_tests": 16,
+  "caution": "All 16 original tests are independently rerun later as a hold-out audit; the carry decision itself does not rerun them",
+  "decision_ms": 2015.531,
+  "guard_sha256": "1c9aeb621962526acc4c49c69e95da123b89cab77b8ab739244416d6913016da",
+  "merge_tree": "68bf59f5ebdcd5c8d7cb59d3faa26e4ed7217c17",
+  "new_joint_tests_required": 2,
+  "ordinary_git_merge": "clean_no_relgit_needed",
+  "outcome": "BOUNDED_CARRY_ELIGIBLE",
+  "premises": [
+    "Both agent commits share one exact pinned parent",
+    "The three historical implementation and regression blobs match GitHub upstream OIDs",
+    "Native Git two-parent merge retains exact branch source and test blobs",
+    "Reader change is confined to two undecorated class method bodies",
+    "Header claim observed no calls to changed reader methods",
+    "Reader claim observed exactly four calls with empty headers and _parsed=False",
+    "Old and new header implementations return equal results on the witnessed empty input",
+    "Both branch-native test groups passed without failures or skips in the pinned environment"
+  ],
+  "pytest": "9.0.2",
+  "python": "3.13.5",
+  "revision": {
+    "A": "4889db56f340433f4601b7729440d84987ab2747",
+    "B": "332a2a2f4d62401f1b7d73fa875243f7398cf0e6",
+    "base": "92f17988e2b36b8da77570c63465a20b3ca2d410",
+    "merged": "73bc1cab5086c319b6f402baea338127518372e1"
+  },
+  "scope": "Only the executed independent regression domains, conditional on trace and source-shape premises; no unrestricted semantic proof",
+  "sqlite_foreign_keys": "passed",
+  "upstream_origins": [
+    "python-hyper/h11@60782ad107e538b9312aac7e1c119c8358bf797c",
+    "python-hyper/h11@dff7cc397a26ed4acdedd92d1bda6c8f18a6ed9f"
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "h11": {
+    "upstream_repository": "python-hyper/h11",
+    "upstream_parent": "31e626c64e1e28db3cd73a6aa0ac057f1b915c18",
+    "upstream_commit": "60782ad107e538b9312aac7e1c119c8358bf797c",
+    "scope": "exact_changed_blobs",
+    "paths": [
+      "h11/_headers.py",
+      "h11/tests/test_headers.py"
+    ],
+    "old_blobs": [
+      "b97d020b634a9f47f5ae6aa3b30e2bd13a6c48c4",
+      "ba53d088f6f8d22dede47873a03b70a7103da7ea"
+    ],
+    "new_blobs": [
+      "31da3e2b23b55a624b36f105e62a6902e63286aa",
+      "b57274cbbfee8fce3e89f012b6d0f4206f768f67"
+    ],
+    "fixture_patch": "h11-60782ad.patch"
+  },
+  "postcss": {
+    "upstream_repository": "postcss/postcss",
+    "upstream_parent": "27c8be378b451838222a4cdcf019953f99533280",
+    "upstream_commit": "55a4edfc3f839611e1e02366073b82b2f1a6c886",
+    "scope": "historical_patch_transplant",
+    "paths": [
+      "postcss/lib/parser.js",
+      "postcss/test/location.test.ts"
+    ],
+    "old_blobs": [
+      "2a16584c7fdf2a9b2f685b220f914b0cf4281e20",
+      "6c41aeffd83d8a9f6bc2b9888038a6ca36340995"
+    ],
+    "new_blobs": [
+      "f549f56d1d13a75e45f524ceb7543e243b94f998",
+      "b3db4dca858434e7c5d69ff40acca8f24d9e0c64"
+    ],
+    "fixture_patch": "postcss-55a4edf.patch"
+  }
+}

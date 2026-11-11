@@ -2,8 +2,25 @@
 //! Rust owns integrity, input OIDs, persistence and impact queries.
 use crate::json::{Value, obj};
 use crate::{Result, refuse};
+use std::ffi::OsString;
 use std::io::Write;
 use std::process::{Command, Stdio};
+
+/// Resolve interpreters without relying on Unix-only `python3` executable names.
+/// Overrides are executable paths, not shell commands.
+pub fn python_command() -> Command {
+    let program = std::env::var_os("EXCESSION_PYTHON")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| OsString::from(if cfg!(windows) { "python" } else { "python3" }));
+    Command::new(program)
+}
+
+pub fn node_command() -> Command {
+    let program = std::env::var_os("EXCESSION_NODE")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| OsString::from("node"));
+    Command::new(program)
+}
 
 pub fn python(entries: &[Value]) -> Result<Value> {
     let code = include_str!("../adapters/python_ast.py");
@@ -21,7 +38,12 @@ pub fn tree_sitter(entries: &[Value]) -> Result<Value> {
 }
 
 fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
-    let mut process = Command::new(binary)
+    let mut command = if binary == "node" {
+        node_command()
+    } else {
+        python_command()
+    };
+    let mut process = command
         .arg(if binary == "node" { "-e" } else { "-c" })
         .arg(code)
         .stdin(Stdio::piped())

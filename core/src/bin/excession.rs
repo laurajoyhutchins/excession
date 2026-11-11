@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, compiler_clang, git, graph_assembly, index, kernel, projection, refuse,
+    Result, compiler_clang, git, graph_assembly, kbuild_graph, index, kernel, projection, refuse,
     security_ingest, views,
 };
 use std::collections::BTreeMap;
@@ -20,6 +20,8 @@ const HELP: &str = r#"Excession | Git-authenticated repository exploration and s
 Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession graph kbuild --repo LINUX --build BUILD_DIR --archive init/built-in.a
+      --db SQLITE --trusted-local true [--rev HEAD] [--ar ar|llvm-ar]
   excession graph assemble --repo REPO --rev HEAD --build BUILD_DIR
       --target CMAKE_TARGET --observations JSON_DIRECTORY --db SQLITE
   excession analyze clang --repo REPO --source PATH --compile-db JSON --trusted-local true
@@ -474,6 +476,17 @@ fn execute(args: &[String]) -> Result<Response> {
             Ok(Response::Message(HELP.to_owned()))
         }
         [top, sub, tail @ ..] if top == "graph" => match sub.as_str() {
+            "kbuild" => {
+                let opt = Options::parse(tail,
+                    &["repo", "build", "archive", "db", "trusted-local"],
+                    &["rev", "ar"])?;
+                let db = Db::open(opt.path("db"))?;
+                Ok(json(kbuild_graph::assemble(
+                    opt.path("repo"), opt.get_or("rev", "HEAD"),
+                    opt.path("build"), opt.get("archive"),
+                    opt.get_or("ar", "ar"), opt.get("trusted-local"), &db,
+                )?))
+            }
             "assemble" => {
                 let opt = Options::parse(
                     tail,

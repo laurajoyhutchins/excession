@@ -1,0 +1,24 @@
+name: Temporary source transfer for local differential verification
+on:
+  push:
+    branches: [tmp/source-transfer-rust-slice-20261111]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Pack pinned source
+        run: |
+          git archive --format=tar 7824b7c649864ddbde3a3821ab29b3a048e3bef7 | gzip -9 > /tmp/excession-source.tar.gz
+          sha256sum /tmp/excession-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: excession-source-pinned-7824b7c
+          path: /tmp/excession-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1

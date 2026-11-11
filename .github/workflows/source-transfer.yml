@@ -11,11 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 098906c50c9d6a635bd6f17f3df00f1449f63721
+          ref: 0185c8f8a3e47e8c1398aeb0b2a18463f65aa85e
           fetch-depth: 1
           persist-credentials: false
       - name: Verify pinned checkout
-        run: test "$(git rev-parse HEAD)" = 098906c50c9d6a635bd6f17f3df00f1449f63721
+        run: test "$(git rev-parse HEAD)" = 0185c8f8a3e47e8c1398aeb0b2a18463f65aa85e
       - name: Restore pinned compiler and lint components
         run: |
           rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy

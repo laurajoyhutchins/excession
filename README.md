@@ -73,12 +73,12 @@ retaining their original package layout. It can execute a trusted entrypoint
 and conservatively compare historical evidence with a later integrated revision.
 A source match is **not** proof that the merged program passed its tests.
 
-On supported Linux machines, \`--isolated-linux\` runs the slice inside an
+On supported Linux machines, `--isolated-linux` runs the slice inside an
 unprivileged, fail-closed namespace worker with read-only source, limited
 resources, and no network namespace access. This does not authenticate a
 remote worker, and the receipts remain unsigned.
 
-\`\`\`sh
+```sh
 python3 tools/excession_slice.py plan "$REPO" tests/check.py > /tmp/slice.json
 python3 tools/excession_slice.py materialize "$REPO" /tmp/slice.json /tmp/excession-slice
 python3 tools/excession_slice.py run "$REPO" /tmp/slice.json /tmp/excession-slice \
@@ -87,7 +87,7 @@ excession slice ingest --repo "$REPO" --manifest /tmp/slice.json \
   --receipt /tmp/slice-receipt.json --db /tmp/slice-evidence.sqlite
 excession slice audit --repo "$REPO" --manifest /tmp/slice.json \
   --receipt /tmp/slice-receipt.json --db /tmp/slice-evidence.sqlite
-\`\`\`
+```
 
 Rust independently checks the Git object identities, declared blob bytes,
 manifest and receipt checksums, and SQLite rows. It does **not** independently

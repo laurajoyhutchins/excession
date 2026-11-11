@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/build-provenance.v1.schema.json",
+  "title": "contracts: source-to-binary build provenance and artifact digest binding",
+  "description": "Proposed wire shape only; no source, execution or semantic proof from schema validity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_commit",
+    "source_tree",
+    "artifact",
+    "build",
+    "source_artifact_relation",
+    "execution_security"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.build-provenance.v1"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "source_tree": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "size_bytes",
+        "representation"
+      ],
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "representation": {
+          "type": "string",
+          "enum": [
+            "EXECUTABLE",
+            "OBJECT",
+            "ARCHIVE",
+            "WASM",
+            "OTHER"
+          ]
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "toolchain_digest",
+        "configuration_digest",
+        "source_input_receipts",
+        "invocation_receipt_id",
+        "authority"
+      ],
+      "properties": {
+        "toolchain_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "configuration_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "source_input_receipts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "invocation_receipt_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authority": {
+          "type": "string",
+          "enum": [
+            "DECLARED_RECIPE_ONLY",
+            "OBSERVED_UNATTESTED_EXECUTION",
+            "INDEPENDENTLY_ATTESTED_EXECUTION"
+          ]
+        }
+      }
+    },
+    "source_artifact_relation": {
+      "const": "REQUIRES_BUILD_EXECUTION_EVIDENCE"
+    },
+    "execution_security": {
+      "const": "UNTRUSTED_BUILDS_REQUIRE_ISOLATION"
+    }
+  }
+}

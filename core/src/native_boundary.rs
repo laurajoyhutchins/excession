@@ -32,7 +32,11 @@ fn exactly(value: &Value, expected: &[&str]) -> Result<()> {
 
 fn hex_sha256(value: &Value) -> Result<()> {
     let value = value.str()?;
-    if value.len() != 64 || !value.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    {
         return refuse("native toolchain fingerprint is not lowercase SHA-256");
     }
     Ok(())
@@ -48,7 +52,17 @@ fn nonempty(value: &Value, max: usize) -> Result<()> {
 
 /// Does not read Git, load grammars, execute compilers, or authenticate a worker.
 pub fn declaration_preflight(value: &Value) -> Result<Value> {
-    exactly(value, &["schema", "coverage", "language", "subject", "inputs", "assumptions"])?;
+    exactly(
+        value,
+        &[
+            "schema",
+            "coverage",
+            "language",
+            "subject",
+            "inputs",
+            "assumptions",
+        ],
+    )?;
     if value.get("schema")?.str()? != "excession.input-declaration.v1"
         || value.get("coverage")?.str()? != "DECLARED_INPUTS_ONLY"
     {
@@ -97,14 +111,26 @@ pub fn declaration_preflight(value: &Value) -> Result<Value> {
         }
         nonempty(val, 4096)?;
     }
-    if assumptions.get("dependency-discovery").ok_or("native resolver provenance missing")?.str()?
+    if assumptions
+        .get("dependency-discovery")
+        .ok_or("native resolver provenance missing")?
+        .str()?
         != "excession-toolchain-native-v1"
     {
         return refuse("unsupported native resolver identity");
     }
-    nonempty(assumptions.get("toolchain-version").ok_or("missing toolchain version")?, 180)?;
+    nonempty(
+        assumptions
+            .get("toolchain-version")
+            .ok_or("missing toolchain version")?,
+        180,
+    )?;
     nonempty(assumptions.get("platform").ok_or("missing platform")?, 180)?;
-    hex_sha256(assumptions.get("toolchain-sha256").ok_or("missing toolchain SHA-256")?)?;
+    hex_sha256(
+        assumptions
+            .get("toolchain-sha256")
+            .ok_or("missing toolchain SHA-256")?,
+    )?;
     Ok(obj(&[
         ("status", Value::string("DECLARATION_SHAPE_ONLY")),
         ("declaration_id", Value::string(value.sha256())),
@@ -126,7 +152,12 @@ fn language_matches(declared: &str, observed: &str) -> bool {
     }
 }
 
-fn report(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_file: &Path) -> Result<Value> {
+fn report(
+    root: &Path,
+    syntax_file: &Path,
+    candidates_file: &Path,
+    declaration_file: &Path,
+) -> Result<Value> {
     // Check declared shapes and identities before invoking Tree-sitter.
     let declaration = read(declaration_file)?;
     declaration_preflight(&declaration)?;
@@ -139,7 +170,9 @@ fn report(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_f
         || candidates.get("source_tree")?.str()? != syntax.get("source_tree")?.str()?
         || candidates.get("syntax_report_id")?.str()? != syntax.get("report_id")?.str()?
     {
-        return refuse("native boundary: syntax and resolution reports have different source identities");
+        return refuse(
+            "native boundary: syntax and resolution reports have different source identities",
+        );
     }
     let language = declaration.get("language")?.str()?;
     let subject = declaration.get("subject")?.str()?;
@@ -155,9 +188,10 @@ fn report(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_f
     }
     let mut scanned_paths = BTreeMap::new();
     for entry in syntax.get("sources")?.array_ref()? {
-        scanned_paths.insert(entry.get("source_path")?.str()?, (
-            entry.get("language")?.str()?, entry.get("status")?.str()?
-        ));
+        scanned_paths.insert(
+            entry.get("source_path")?.str()?,
+            (entry.get("language")?.str()?, entry.get("status")?.str()?),
+        );
     }
     if !matches!(scanned_paths.get(subject), Some((lang, "PARSED"))
         if language_matches(language, lang))
@@ -173,10 +207,15 @@ fn report(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_f
         return refuse("native boundary source tree mismatch");
     }
     let entries = git::entries(root, &revision)?;
-    let by_path = entries.into_iter().map(|entry| (entry.path.clone(), entry)).collect::<BTreeMap<_, _>>();
+    let by_path = entries
+        .into_iter()
+        .map(|entry| (entry.path.clone(), entry))
+        .collect::<BTreeMap<_, _>>();
     let mut pinned_inputs = Vec::new();
     for (path, role) in &input_roles {
-        let entry = by_path.get(path).ok_or_else(|| format!("native input is not tracked at the selected Git revision: {path}"))?;
+        let entry = by_path.get(path).ok_or_else(|| {
+            format!("native input is not tracked at the selected Git revision: {path}")
+        })?;
         if entry.kind != "blob" || !matches!(entry.mode.as_str(), "100644" | "100755") {
             return refuse("native input is not a regular Git blob");
         }
@@ -233,7 +272,10 @@ fn report(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_f
         "REVIEW_STATIC_NATIVE_SCOPE_DIFFERENCE"
     };
     let payload = obj(&[
-        ("schema", Value::string("excession.native-syntax-boundary.v1")),
+        (
+            "schema",
+            Value::string("excession.native-syntax-boundary.v1"),
+        ),
         ("source_commit", syntax.get("source_commit")?.clone()),
         ("source_tree", syntax.get("source_tree")?.clone()),
         ("syntax_report_id", syntax.get("report_id")?.clone()),
@@ -256,11 +298,22 @@ fn report(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_f
     Ok(Value::Object(fields))
 }
 
-pub fn compare(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_file: &Path) -> Result<Value> {
+pub fn compare(
+    root: &Path,
+    syntax_file: &Path,
+    candidates_file: &Path,
+    declaration_file: &Path,
+) -> Result<Value> {
     report(root, syntax_file, candidates_file, declaration_file)
 }
 
-pub fn audit(root: &Path, syntax_file: &Path, candidates_file: &Path, declaration_file: &Path, saved: &Path) -> Result<Value> {
+pub fn audit(
+    root: &Path,
+    syntax_file: &Path,
+    candidates_file: &Path,
+    declaration_file: &Path,
+    saved: &Path,
+) -> Result<Value> {
     let original = read(saved)?;
     let regenerated = report(root, syntax_file, candidates_file, declaration_file)?;
     if original.canonical() != regenerated.canonical() {
@@ -282,16 +335,31 @@ mod tests {
             ("coverage", Value::string("DECLARED_INPUTS_ONLY")),
             ("language", Value::string("go")),
             ("subject", Value::string("src/main.go")),
-            ("inputs", Value::array([
-                obj(&[("path", Value::string("src/main.go")), ("role", Value::string("source"))]),
-                obj(&[("path", Value::string("go.mod")), ("role", Value::string("configuration"))]),
-            ])),
-            ("assumptions", obj(&[
-                ("dependency-discovery", Value::string("excession-toolchain-native-v1")),
-                ("toolchain-version", Value::string("go test")),
-                ("toolchain-sha256", Value::string("a".repeat(64))),
-                ("platform", Value::string("linux-x86_64")),
-            ])),
+            (
+                "inputs",
+                Value::array([
+                    obj(&[
+                        ("path", Value::string("src/main.go")),
+                        ("role", Value::string("source")),
+                    ]),
+                    obj(&[
+                        ("path", Value::string("go.mod")),
+                        ("role", Value::string("configuration")),
+                    ]),
+                ]),
+            ),
+            (
+                "assumptions",
+                obj(&[
+                    (
+                        "dependency-discovery",
+                        Value::string("excession-toolchain-native-v1"),
+                    ),
+                    ("toolchain-version", Value::string("go test")),
+                    ("toolchain-sha256", Value::string("a".repeat(64))),
+                    ("platform", Value::string("linux-x86_64")),
+                ]),
+            ),
         ])
     }
 
@@ -299,19 +367,31 @@ mod tests {
     fn declaration_has_no_attestation() {
         let claim = sample();
         let checked = declaration_preflight(&claim).unwrap();
-        assert_eq!(checked.get("status").unwrap().str().unwrap(), "DECLARATION_SHAPE_ONLY");
-        assert_eq!(checked.get("declaration_id").unwrap().str().unwrap(), claim.sha256());
+        assert_eq!(
+            checked.get("status").unwrap().str().unwrap(),
+            "DECLARATION_SHAPE_ONLY"
+        );
+        assert_eq!(
+            checked.get("declaration_id").unwrap().str().unwrap(),
+            claim.sha256()
+        );
     }
 
     #[test]
     fn missing_subject_or_invalid_fingerprint_is_refused() {
         let mut claim = sample();
-        claim.entries_mut().unwrap().insert("subject".into(), Value::string("src/absent.go"));
+        claim
+            .entries_mut()
+            .unwrap()
+            .insert("subject".into(), Value::string("src/absent.go"));
         assert!(declaration_preflight(&claim).is_err());
         let mut claim = sample();
         let mut assumptions = claim.get("assumptions").unwrap().entries().unwrap().clone();
         assumptions.insert("toolchain-sha256".into(), Value::string("not-a-hash"));
-        claim.entries_mut().unwrap().insert("assumptions".into(), Value::Object(assumptions));
+        claim
+            .entries_mut()
+            .unwrap()
+            .insert("assumptions".into(), Value::Object(assumptions));
         assert!(declaration_preflight(&claim).is_err());
     }
 
@@ -320,12 +400,21 @@ mod tests {
         let mut claim = sample();
         let mut entries = claim.get("inputs").unwrap().array_ref().unwrap().to_vec();
         entries.push(entries[0].clone());
-        claim.entries_mut().unwrap().insert("inputs".into(), Value::array(entries));
+        claim
+            .entries_mut()
+            .unwrap()
+            .insert("inputs".into(), Value::array(entries));
         assert!(declaration_preflight(&claim).is_err());
         let mut claim = sample();
         let mut entries = claim.get("inputs").unwrap().array_ref().unwrap().to_vec();
-        entries[0] = obj(&[("path", Value::string("src/main.go")), ("role", Value::string("configuration"))]);
-        claim.entries_mut().unwrap().insert("inputs".into(), Value::array(entries));
+        entries[0] = obj(&[
+            ("path", Value::string("src/main.go")),
+            ("role", Value::string("configuration")),
+        ]);
+        claim
+            .entries_mut()
+            .unwrap()
+            .insert("inputs".into(), Value::array(entries));
         assert!(declaration_preflight(&claim).is_err());
     }
 }

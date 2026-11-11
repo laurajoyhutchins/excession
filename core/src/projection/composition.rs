@@ -20,9 +20,14 @@ pub fn compose(repo: &Path, operator: &str, left: &Path, right: &Path) -> Result
     if !matches!(operator, "union" | "intersection" | "difference") {
         return refuse("view composition supports union, intersection, difference only");
     }
-    let a = checked_plan(repo, left)?;
-    let b = checked_plan(repo, right)?;
+    let a = read_plan(left)?;
+    let b = read_plan(right)?;
     same_revision(&a, &b)?;
+    // A single pinned commit/tree authenticates one reusable Git enumeration.
+    // Every manifest is checked independently; shared data is not a cached verdict.
+    let sources = source_table(repo, &a.commit, &a.tree)?;
+    authenticate_from_table(&a, &sources)?;
+    authenticate_from_table(&b, &sources)?;
     let a_id = a.payload().sha256();
     let b_id = b.payload().sha256();
     let left_sources = a

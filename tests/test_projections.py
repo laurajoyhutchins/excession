@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -143,12 +144,82 @@ class ProjectionIntegration(unittest.TestCase):
         self.assertEqual([p["phase"] for p in phases], [
             "resolve_revision", "check_git_tree", "reconstruct_index_tree",
             "load_modules", "load_dependencies", "traverse_and_build_entries",
-            "validate_index_and_plan", "validate_plan", "read_git_source_tree",
+            "validate_index_and_plan", "validate_plan", "reuse_indexed_tree",
             "validate_source_bindings", "canonical_view_id",
         ])
         self.assertTrue(all(isinstance(p["elapsed_us"], int) and p["elapsed_us"] >= 0 for p in phases))
         self.assertGreaterEqual(profile["total_us"], sum(p["elapsed_us"] for p in phases))
         self.assertNotIn("entries", profile)
+
+    def test_reused_index_proof_refuses_corrupted_module_and_tree(self):
+        full, manifest = self.plan_deps()
+        for label, change in (
+            ("module", """UPDATE module SET blob_oid = (
+                SELECT blob_oid FROM module WHERE name = 'h11._headers'
+            ) WHERE name = 'h11._connection'"""),
+            ("tree", """UPDATE tree_entry SET oid = (
+                SELECT oid FROM tree_entry WHERE path = 'h11/_headers.py'
+            ) WHERE path = 'h11/_connection.py'"""),
+        ):
+            with self.subTest(label=label):
+                tampered = self.case / f"corrupt-{label}.sqlite"
+                with sqlite3.connect(self.catalog) as original, sqlite3.connect(tampered) as copy:
+                    original.backup(copy)
+                with sqlite3.connect(tampered) as db:
+                    db.execute(change)
+                rejected = run(
+                    BIN, "view", "paths", "--db", tampered, "--name", "h11",
+                    "--rev", self.commit, "--seed", "h11._connection",
+                    "--role", "focus", ok=False,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("REFUSED:", rejected.stderr)
+        # External view authentication must still be independent of SQLite.
+        stat = json.loads(run(
+            BIN, "view", "stat", "--repo", self.source,
+            "--manifest", manifest, "--path", full["entries"][0]["virtual_path"],
+        ).stdout)
+        self.assertEqual(stat["entry"]["blob"], full["entries"][0]["blob"])
+
+    def test_composition_shares_git_enumeration_not_source_verdict(self):
+        _, left_input = self.plan_deps("h11._connection")
+        _, right_input = self.plan_deps("h11._headers")
+        # Mount into disjoint namespaces: a direct union of different focused
+        # views may legitimately refuse a conflicting virtual pathname.
+        left = self.case / "mounted-left.json"
+        right = self.case / "mounted-right.json"
+        for source_manifest, destination, namespace in (
+            (left_input, left, "left"),
+            (right_input, right, "right"),
+        ):
+            destination.write_text(run(
+                BIN, "view", "mount", "--repo", self.source,
+                "--manifest", source_manifest, "--namespace", namespace,
+            ).stdout)
+        query = [
+            str(BIN), "view", "compose", "--repo", str(self.source),
+            "--op", "union", "--left", str(left), "--right", str(right),
+        ]
+        env = dict(os.environ, EXCESSION_TIMING="1")
+        valid = subprocess.run(query, text=True, capture_output=True, env=env, check=False)
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        # There is one ls-tree for the two independently authenticated manifests.
+        scans = [line for line in valid.stderr.splitlines() if " ls-tree " in line]
+        self.assertEqual(len(scans), 1, valid.stderr)
+
+        forged = json.loads(right.read_text())
+        forged["entries"][0]["blob"] = "0" * 40
+        from hashlib import sha256
+        payload = {key: value for key, value in forged.items() if key != "view_id"}
+        forged["view_id"] = sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        bad = self.case / "forged-right.json"
+        bad.write_text(json.dumps(forged))
+        query[-1] = str(bad)
+        rejected = subprocess.run(query, text=True, capture_output=True, env=env, check=False)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("view source identity mismatch", rejected.stderr)
 
     def test_native_graph_baseline_matches_dependency_view(self):
         plan, _ = self.plan_deps()

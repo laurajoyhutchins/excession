@@ -182,8 +182,20 @@ class ProjectionIntegration(unittest.TestCase):
         self.assertEqual(stat["entry"]["blob"], full["entries"][0]["blob"])
 
     def test_composition_shares_git_enumeration_not_source_verdict(self):
-        _, left = self.plan_deps("h11._connection")
-        _, right = self.plan_deps("h11._headers")
+        _, left_input = self.plan_deps("h11._connection")
+        _, right_input = self.plan_deps("h11._headers")
+        # Mount into disjoint namespaces: a direct union of different focused
+        # views may legitimately refuse a conflicting virtual pathname.
+        left = self.case / "mounted-left.json"
+        right = self.case / "mounted-right.json"
+        for source_manifest, destination, namespace in (
+            (left_input, left, "left"),
+            (right_input, right, "right"),
+        ):
+            destination.write_text(run(
+                BIN, "view", "mount", "--repo", self.source,
+                "--manifest", source_manifest, "--namespace", namespace,
+            ).stdout)
         query = [
             str(BIN), "view", "compose", "--repo", str(self.source),
             "--op", "union", "--left", str(left), "--right", str(right),

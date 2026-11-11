@@ -291,10 +291,7 @@ pub fn discover(
     if language == "rust" {
         return refuse("Rust semantics use rust-analyzer SCIP; native Rust resolver removed");
     }
-    if !matches!(
-        language,
-        "go" | "javascript" | "typescript" | "python"
-    ) {
+    if !matches!(language, "go" | "javascript" | "typescript" | "python") {
         return refuse("unsupported native language");
     }
     if (language == "python") != import_roots.is_some() {

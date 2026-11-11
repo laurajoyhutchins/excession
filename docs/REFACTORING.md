@@ -62,6 +62,15 @@ source binding, tool/version provenance, and independent validation.
 cycle/duplicate detection, Git identities, deterministic replay, report and
 SQL-relation tampering, and unindexed-revision rejection.
 
+## SCIP fixture migration
+
+Pinned real and historical repositories are evaluated using upstream SCIP
+indexers and the existing source-bound SCIP replay. The acceptance contract is
+**Git binding, replay, and explicit scope accounting**, not agreement with the
+former Python/JavaScript import resolver. The old import oracle continues to
+test a separate contract, and SCIP symbol references are not promoted to import
+edges. See [SCIP fixture migration](../benchmarks/experiments/SCIP_MIGRATION.md).
+
 ## Optional SCIP symbol evidence
 
 SCIP is Excession's preferred interchange format for definitions and references

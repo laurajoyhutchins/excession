@@ -261,9 +261,15 @@ pub fn suggest_with_prefix(
         let entry = tracked
             .get(path)
             .ok_or_else(|| format!("SCIP document not a tracked regular Git file: {path}"))?;
-        let language = doc.get("language")?.str()?;
-        if language.is_empty() || language.len() > 64 {
-            return refuse("SCIP document has no valid language");
+        // Upstream SCIP may omit an unspecified Document.language. Keep
+        // unknown explicit rather than fabricating a language identity.
+        let language = opt(doc, "language")
+            .map(Value::str)
+            .transpose()?
+            .filter(|language| !language.is_empty())
+            .unwrap_or("unspecified");
+        if language.len() > 64 {
+            return refuse("SCIP document language exceeds 64 bytes");
         }
         if documents.contains_key(path) {
             return refuse("duplicate SCIP source document path");
@@ -389,7 +395,10 @@ pub fn suggest_with_prefix(
     for edge in &matched {
         let from = &documents[&edge.from];
         let to = &documents[&edge.to];
-        if from.language != to.language {
+        if from.language != "unspecified"
+            && to.language != "unspecified"
+            && from.language != to.language
+        {
             candidates.push(candidate(obj(&[
                 ("kind", Value::string("cross_language_symbol_boundary")),
                 ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESIS")),

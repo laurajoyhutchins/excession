@@ -179,6 +179,11 @@ def independently_verify(
     status_counts = Counter(item["status"] for item in sources.values())
     language_counts = Counter(item["language"] for item in sources.values())
     unresolved_counts = Counter(item["reason"] for item in unresolved)
+    unavailable_sources = [
+        {"path": path, "status": item["status"]}
+        for path, item in sorted(sources.items())
+        if item["status"] != "PARSED"
+    ]
     return {
         "schema": "excession.self-analysis.v1",
         "source_commit": commit,
@@ -192,6 +197,7 @@ def independently_verify(
             "observed_imports": sum(len(item["imports"]) for item in sources.values()),
             "statuses": dict(sorted(status_counts.items())),
             "languages": dict(sorted(language_counts.items())),
+            "nonfully_parsed_sources": unavailable_sources,
         },
         "dependencies": {
             "resolution_id": resolved["resolution_id"],
@@ -225,15 +231,17 @@ def report_markdown(summary: dict[str, Any]) -> str:
     lines = [
         "## Excession self-analysis",
         "",
-        f"Git commit: \`{summary['source_commit']}\`",
+        f"Git commit: `{summary['source_commit']}`",
         "",
         f"- Scanned: {syntax['source_count']} files "
         f"({syntax['essential_rust_python_files']} tracked Rust/Python source files).",
         f"- Syntax observations: {syntax['observed_imports']} imports; "
-        f"statuses: \`{json.dumps(syntax['statuses'], sort_keys=True)}\`.",
+        f"statuses: `{json.dumps(syntax['statuses'], sort_keys=True)}`.",
         f"- Conservative dependency candidates: {dependencies['candidate_edges']}; "
         f"unresolved imports: {dependencies['unresolved_imports']}; "
         f"skipped sources: {dependencies['skipped_sources']}.",
+        f"- Unresolved reasons: `{json.dumps(dependencies['unresolved_reasons'], sort_keys=True)}`.",
+        f"- Non-fully-parsed sources: `{json.dumps(syntax['nonfully_parsed_sources'], sort_keys=True)}`.",
         f"- Independent source binding: {summary['assurance']['source_binding']}.",
         f"- Excession replay: {syntax['audit']} / {dependencies['audit']}.",
         f"- Changed paths: {len(impact['changed_paths'])}; "

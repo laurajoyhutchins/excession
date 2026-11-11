@@ -271,7 +271,7 @@ mod tests {
             "dependencies",
             "src/source",
             oid.clone(),
-            oid,
+            oid.clone(),
             vec![
                 make_entry("views/20-last/src/source.rs"),
                 make_entry("views/00-first/src/source.rs"),

@@ -3,9 +3,9 @@
 Git is authoritative for source objects; SQLite stores indexed relations and
 scoped evidence. This crate's package and library are both named `excession`.
 The **one** binary is `excession`. It exposes read-only projection operations,
-scanner ingestion and independent audit, and a `research` subgroup for exact
-historical reproductions. The Rust engine does not claim to infer arbitrary
-language semantics or confirm exploitable vulnerabilities.
+scanner ingestion and independent audit. The former positional `research`
+command is not part of the supported CLI. The Rust engine does not claim to
+infer arbitrary language semantics or confirm exploitable vulnerabilities.
 
 ## Optional multi-language parsing
 
@@ -31,16 +31,12 @@ with `cargo-nextest` 0.9.151 and `pytest` 9.0.2 installed. The reports are
 written to `core/target/nextest/ci/junit.xml` and
 `test-results/python.xml`; the tests and assertions are unchanged.
 
-Historical differential checks remain available from inside `core/`:
-
-```sh
-bash scripts/reproduce.sh /tmp/excession-v10-fresh
-python3 scripts/reproduce_v11.py /tmp/excession-v11-fresh
-```
-
-Both outputs must be empty or nonexistent. These use version-pinned bundled
-Git histories, adapters, and test oracles, including immutable historical
-protocol and Git attribution bytes. They are not general security tests.
+The historical reproduction scripts under `scripts/` are archival and
+reference retired positional commands. They are **not executable against the
+current CLI**. Run them only from their matching historical Git revision and
+pinned environment. Historical Git histories, fixtures, and source-identity
+receipts remain available for independent comparison; these are not general
+security tests.
 
 ## Responsibility boundaries
 

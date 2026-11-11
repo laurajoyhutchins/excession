@@ -160,6 +160,13 @@ class ScannerIntegration(unittest.TestCase):
         self.report.write_text('{"version":"2.1.0","version":"2.1.0","runs":[]}')
         self.assertNotEqual(self.ingest().returncode,0)
 
+    def test_compare_preserves_duplicate_logical_anchors(self):
+        a={'key':[{'candidate_id':'one'},{'candidate_id':'two'}]}
+        b={'key':[{'candidate_id':'one'}]}
+        delta=comparison.compare(a,b)
+        self.assertEqual(len(delta['changed']['key']['before']),2)
+        self.assertEqual(len(delta['changed']['key']['after']),1)
+
     def test_protocol_freeze(self):
         dest=self.root/'frozen.json'
         digest=protocol.freeze([self.repo],['authorization','parsing'],dest)

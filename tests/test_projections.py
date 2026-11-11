@@ -206,6 +206,198 @@ class ProjectionIntegration(unittest.TestCase):
         finally:
             dirty.unlink()
 
+    def test_virtual_navigation_reads_exact_git_objects_without_copies(self):
+        dependency, dep_manifest = self.plan_deps()
+        listing = json.loads(run(BIN, "view-ls", self.source, dep_manifest).stdout)
+        self.assertEqual([c["name"] for c in listing["children"]], ["views"])
+        groups = json.loads(run(BIN, "view-ls", self.source, dep_manifest, "views").stdout)
+        self.assertIn("00-focus", {c["name"] for c in groups["children"]})
+        self.assertTrue(all(c["type"] == "directory" for c in groups["children"]))
+
+        entry = next(e for e in dependency["entries"] if e["role"] == "focus")
+        parent = str(Path(entry["virtual_path"]).parent)
+        leaf = Path(entry["virtual_path"]).name
+        children = json.loads(run(BIN, "view-ls", self.source, dep_manifest, parent).stdout)
+        self.assertEqual(children["children"], [{"name": leaf, "type": "file", "references": 1}])
+        describe = json.loads(run(BIN, "view-stat", self.source, dep_manifest, entry["virtual_path"]).stdout)
+        self.assertEqual(describe["entry"]["source_path"], entry["source_path"])
+        self.assertEqual(describe["entry"]["blob"], entry["blob"])
+        self.assertEqual(describe["source_commit"], self.commit)
+        contents = run(BIN, "view-open", self.source, dep_manifest, entry["virtual_path"]).stdout
+        original = run("git", "-C", self.source, "show", f"{self.commit}:{entry['source_path']}").stdout
+        self.assertEqual(contents, original)
+        self.assertEqual(run("git", "-C", self.source, "status", "--porcelain").stdout, "")
+        self.assertFalse(any(self.case.glob("*view")))
+
+    def test_composed_views_are_deterministic_and_replayable(self):
+        dependency, dep_manifest = self.plan_deps()
+        security, sec_manifest, _, _ = self.plan_security()
+        output = run(BIN, "view-compose", self.source, "union", dep_manifest, sec_manifest).stdout
+        self.assertEqual(output, run(BIN, "view-compose", self.source, "union", dep_manifest, sec_manifest).stdout)
+        composed = json.loads(output)
+        self.assertEqual(composed["kind"], "composed")
+        self.assertEqual(composed["source_commit"], self.commit)
+        self.assertEqual(len(composed["entries"]), len(dependency["entries"]) + len(security["entries"]))
+        path = self.case / "union.json"
+        path.write_text(output)
+        replay = json.loads(run(BIN, "view-compose-replay", self.source, "union", dep_manifest, sec_manifest, path).stdout)
+        self.assertEqual(replay["view_id"], composed["view_id"])
+        # The union can be selected and queried repeatedly without ever being copied.
+        selected = json.loads(run(BIN, "view-select", self.source, path, "role", "scanner-flow-start").stdout)
+        self.assertEqual(len(selected["entries"]), 1)
+        self.assertEqual(selected["entries"][0]["role"], "scanner-flow-start")
+        filtered = self.case / "filtered.json"
+        filtered.write_text(json.dumps(selected))
+        run(BIN, "view-select-replay", self.source, path, "role", "scanner-flow-start", filtered)
+        self.assertEqual(json.loads(run(BIN, "view-ls", self.source, filtered).stdout)["children"][0]["name"], "views")
+        plan = self.case / "union-physical"
+        run(BIN, "view-materialize", self.source, path, plan)
+        run(BIN, "view-audit", self.source, path, plan)
+
+    def test_intersection_and_difference_use_source_identity(self):
+        dep, manifest = self.plan_deps()
+        focus = json.loads(run(BIN, "view-select", self.source, manifest, "role", "focus").stdout)
+        focus_file = self.case / "focus.json"
+        focus_file.write_text(json.dumps(focus))
+        overlap = json.loads(run(BIN, "view-compose", self.source, "intersection", manifest, focus_file).stdout)
+        self.assertEqual({(e["source_path"], e["blob"]) for e in overlap["entries"]},
+                         {(e["source_path"], e["blob"]) for e in focus["entries"]})
+        rest = json.loads(run(BIN, "view-compose", self.source, "difference", manifest, focus_file).stdout)
+        focus_sources = {(e["source_path"], e["blob"]) for e in focus["entries"]}
+        self.assertTrue(all((e["source_path"], e["blob"]) not in focus_sources for e in rest["entries"]))
+        self.assertEqual(
+            {(e["virtual_path"], e["source_path"]) for e in dep["entries"]},
+            {(e["virtual_path"], e["source_path"]) for e in overlap["entries"] + rest["entries"]},
+        )
+        narrowed = json.loads(run(BIN, "view-select", self.source, manifest, "source-prefix", "h11").stdout)
+        self.assertTrue(all(entry["source_path"].startswith("h11/") for entry in narrowed["entries"]))
+        self.assertTrue(0 < len(narrowed["entries"]) < len(dep["entries"]))
+        narrowed = json.loads(run(BIN, "view-select", self.source, manifest, "virtual-prefix", "views/00-focus").stdout)
+        self.assertEqual(len(narrowed["entries"]), 1)
+
+    def test_query_replay_rejects_changed_inputs_and_output(self):
+        _, dep = self.plan_deps()
+        _, sec, _, _ = self.plan_security()
+        expected = json.loads(run(BIN, "view-compose", self.source, "union", dep, sec).stdout)
+        out = self.case / "combined.json"
+        out.write_text(json.dumps(expected))
+        self.assertNotEqual(run(BIN, "view-compose-replay", self.source, "difference", dep, sec, out, ok=False).returncode, 0)
+        edited = json.loads(dep.read_text())
+        edited["entries"][0]["role"] = "fabricated-role"
+        edited.pop("view_id")
+        import hashlib
+        edited["view_id"] = hashlib.sha256(json.dumps(edited, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        forged = self.case / "forged-input.json"
+        forged.write_text(json.dumps(edited))
+        self.assertNotEqual(run(BIN, "view-compose-replay", self.source, "union", forged, sec, out, ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-select-replay", self.source, dep, "role", "focus", out, ok=False).returncode, 0)
+
+    def test_virtual_view_fail_closed_controls(self):
+        dep, manifest = self.plan_deps()
+        self.assertNotEqual(run(BIN, "view-compose", self.source, "xor", manifest, manifest, ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-select", self.source, manifest, "role", "does-not-exist", ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-select", self.source, manifest, "source-prefix", "../bad", ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-ls", self.source, manifest, "views/../bad", ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-ls", self.source, manifest, "views/nonexistent", ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-open", self.source, manifest, "views/../../etc/passwd", ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-stat", self.source, manifest, "views/not-a-file", ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-compose", self.source, "difference", manifest, manifest, ok=False).returncode, 0)
+        focus = json.loads(run(BIN, "view-select", self.source, manifest, "role", "focus").stdout)
+        tests = json.loads(run(BIN, "view-select", self.source, manifest, "role", "indexed-test").stdout)
+        focus_path = self.case / "focus-only.json"
+        tests_path = self.case / "tests-only.json"
+        focus_path.write_text(json.dumps(focus))
+        tests_path.write_text(json.dumps(tests))
+        self.assertNotEqual(run(BIN, "view-compose", self.source, "intersection", focus_path,
+                                tests_path, ok=False).returncode, 0)
+
+    def test_composition_refuses_mismatched_git_revision(self):
+        _, first = self.plan_deps()
+        alternate = self.case / "different-revision-repo"
+        run("git", "clone", "-q", BUNDLE, alternate)
+        changed = alternate / "h11/_util.py"
+        changed.write_bytes(changed.read_bytes() + b"\n# alternate revision\n")
+        run("git", "-C", alternate, "add", "h11/_util.py")
+        run("git", "-C", alternate, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "alternate source")
+        database = self.case / "alternate-index.sqlite"
+        run(BIN, "index", database, "alternate", alternate, "HEAD", "h11,tests")
+        result = run(BIN, "view-plan-deps", database, "alternate", "HEAD", "h11._connection")
+        manifest = self.case / "different.json"
+        manifest.write_text(result.stdout)
+        self.assertNotEqual(run(BIN, "view-compose", self.source, "union", first, manifest, ok=False).returncode, 0)
+        self.assertNotEqual(run(BIN, "view-compose", alternate, "union", first, manifest, ok=False).returncode, 0)
+
+    def test_union_conflict_and_file_directory_collision_are_refused(self):
+        _, manifest = self.plan_deps()
+        modified = json.loads(manifest.read_text())
+        modified["entries"][0]["role"] = "different-role"
+        modified.pop("view_id")
+        import hashlib
+        modified["view_id"] = hashlib.sha256(json.dumps(modified, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        changed = self.case / "changed-role.json"
+        changed.write_text(json.dumps(modified))
+        self.assertNotEqual(run(BIN, "view-compose", self.source, "union", manifest, changed, ok=False).returncode, 0)
+        # Add a valid source reference with a virtual pathname that is itself the
+        # parent directory of another virtual file, and recompute its view ID.
+        malformed = json.loads(manifest.read_text())
+        extra = dict(malformed["entries"][0])
+        extra["virtual_path"] = "views/00-focus"
+        malformed["entries"].append(extra)
+        malformed["entries"].sort(key=lambda e: e["virtual_path"])
+        malformed.pop("view_id")
+        malformed["view_id"] = hashlib.sha256(json.dumps(malformed, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        bad = self.case / "file-directory.json"
+        bad.write_text(json.dumps(malformed))
+        self.assertNotEqual(run(BIN, "view-ls", self.source, bad, "views", ok=False).returncode, 0)
+
+    def test_virtual_browser_navigates_without_materialization(self):
+        _, manifest = self.plan_deps()
+        commands = "ls\ncd views\nls\ncd 00-focus\npwd\nls\nquit\n"
+        completed = subprocess.run([
+            "python3", ROOT / "tools/view_browser.py", self.source, manifest,
+            "--rust", BIN,
+        ], input=commands, text=True, capture_output=True, check=False, timeout=15)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("'views'/", completed.stdout)
+        self.assertIn("'00-focus'/", completed.stdout)
+        self.assertIn("/views/00-focus", completed.stdout)
+        self.assertFalse((self.source / "views").exists())
+        invalid = subprocess.run([
+            "python3", ROOT / "tools/view_browser.py", self.source, manifest,
+            "--rust", BIN,
+        ], input="cd ..\n", text=True, capture_output=True, check=False, timeout=15)
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertIn("above virtual root", invalid.stderr)
+
+
+    def test_namespaced_mounts_allow_distinct_focus_layouts_to_coexist(self):
+        left, left_manifest = self.plan_deps("h11._connection")
+        right, right_manifest = self.plan_deps("h11._headers")
+        left_view = json.loads(run(BIN, "view-mount", self.source, left_manifest, "connection").stdout)
+        right_view = json.loads(run(BIN, "view-mount", self.source, right_manifest, "headers").stdout)
+        self.assertEqual(len(left_view["entries"]), len(left["entries"]))
+        self.assertEqual(len(right_view["entries"]), len(right["entries"]))
+        self.assertTrue(all(e["virtual_path"].startswith("views/connection/") for e in left_view["entries"]))
+        self.assertTrue(all(e["virtual_path"].startswith("views/headers/") for e in right_view["entries"]))
+        a = self.case / "connection.json"
+        b = self.case / "headers.json"
+        a.write_text(json.dumps(left_view))
+        b.write_text(json.dumps(right_view))
+        union = json.loads(run(BIN, "view-compose", self.source, "union", a, b).stdout)
+        self.assertEqual(len(union["entries"]), len(left["entries"]) + len(right["entries"]))
+        composed = self.case / "both.json"
+        composed.write_text(json.dumps(union))
+        run(BIN, "view-compose-replay", self.source, "union", a, b, composed)
+        run(BIN, "view-mount-replay", self.source, left_manifest, "connection", a)
+        branches = json.loads(run(BIN, "view-ls", self.source, composed, "views").stdout)
+        self.assertEqual({item["name"] for item in branches["children"]}, {"connection", "headers"})
+        for namespace in ("../bad", "slash/not-allowed", "", "control\nchar"):
+            self.assertNotEqual(
+                run(BIN, "view-mount", self.source, left_manifest, namespace, ok=False).returncode,
+                0,
+            )
+
+
 
 if __name__ == "__main__":
     unittest.main()

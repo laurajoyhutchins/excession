@@ -10,6 +10,8 @@ custom CodeQL security-flow queries, or a verified-new-CVE claim.
 
 See [the architectural specification](docs/ARCHITECTURE.md).
 
+**Repository exploration:** generate dependency/security-flow views, compose them by original Git source identity, filter or namespace them, and browse their virtual files without a copied checkout. See [composable views](docs/COMPOSABLE_VIEWS.md) and [repository projections](docs/REPOSITORY_VIEWS.md).
+
 ## Build and test (offline, no external dependencies)
 
 ```bash

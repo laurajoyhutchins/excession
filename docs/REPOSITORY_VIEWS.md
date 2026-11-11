@@ -1,6 +1,6 @@
 # Repository projections: derived layouts over one Git tree
 
-**Status:** working, read-only, bounded v1. This is not a source move, a compiled workspace, or a security proof.
+**Status:** working, read-only, bounded v1, including composable queries and virtual browsing. This is not a source move, a compiled workspace, or a security proof.
 
 A conventional checkout chooses one directory layout. Excession derives alternative navigable trees from the Git-backed relation index. Each virtual file is a reference to a **specific commit, source pathname, regular-file mode, and Git blob OID**. Different views of the same source have the same Git source identities; they are not diverging copies of the program.
 
@@ -49,6 +49,8 @@ relgit view-audit "$REPO" "$OUT/security.json" "$OUT/security-view"
 
 The view groups `00-findings`, `10-flow-starts`, `20-flow-intermediate`, and `30-flow-ends`; a single-step thread uses `10-flow-single`. Group names indicate **positions reported by the scanner**, not confirmed sources, sinks, authority boundaries, exploitability, or CVEs. Semgrep candidates lacking CodeQL flows appear only in `00-findings`. Each individual thread step is separately addressable through its candidate, flow, thread, and step numbers.
 
+For filtering, composition, namespaced layouts and interactive browsing, see [composable views](COMPOSABLE_VIEWS.md).
+
 ## Deterministic manifest
 
 `view-plan-*` emits strict canonical JSON to standard output, with:
@@ -94,7 +96,7 @@ All these tests are offline and require no CodeQL or Semgrep installation. They 
 ## Next stages (not implemented)
 
 1. Generalize the language-native dependency/index adapters beyond the existing Python/JavaScript support, including Go, Rust, and multi-module repositories.
-2. Expose more relationship families as composable query operators, then design stable human-readable group names for large source graphs.
-3. Add a virtual file provider so editors can browse views without copying content; make all edits map explicitly back to original source locations or reject them.
+2. Extend the implemented union/intersection/difference/selection query operators with more relationship families and stable human-readable group names for large graphs.
+3. Adapt the implemented read-only virtual file operations and terminal browser to native editor providers; reject edits unless unambiguously mapped to original sources.
 4. Independently verified *executable* projections with language-specific import rewrites, integration tests, and Git tree comparisons. This must be a separate opt-in mode with explicit unsupported cases.
 5. Benchmark whether focus layouts improve real review tasks, not simply whether a view can be generated.

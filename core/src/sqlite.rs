@@ -72,8 +72,10 @@ impl Db {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let cpath =
-            CString::new(path.to_string_lossy().as_bytes()).map_err(|_| "NUL in db path")?;
+        // SQLite accepts UTF-8 filenames on Unix and Windows. Never silently
+        // replace unrepresentable path characters when opening evidence stores.
+        let pathname = path.to_str().ok_or("non-UTF-8 database path")?;
+        let cpath = CString::new(pathname).map_err(|_| "NUL in db path")?;
         let mut raw = ptr::null_mut();
         // SAFETY: sqlite3_open initializes raw or returns an error handle; path is NUL-terminated.
         let rc = unsafe { sqlite3_open(cpath.as_ptr(), &mut raw) };

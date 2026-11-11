@@ -11,7 +11,7 @@ A source-authenticated executable slice binds a selected test entrypoint to a
 specific Git commit and the statically resolved local Python import closure.
 Materialization copies exact Git blobs into a new read-only directory while
 keeping original Python paths, so import rewriting is unnecessary for the
-supported layout. An independent audit rederives the complete manifest and
+supported layout. A local audit rederives the complete manifest and
 checks every materialized file before trusted-local execution.
 
 The execution receipt captures only a finite observed process exit and digests

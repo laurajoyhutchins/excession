@@ -6,6 +6,7 @@ pub mod adapter;
 pub mod contracts;
 pub mod digest;
 pub mod effects;
+pub mod evidence_transport;
 pub mod git;
 pub mod historical;
 pub mod identity;

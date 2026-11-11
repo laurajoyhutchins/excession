@@ -31,12 +31,17 @@ struct PhaseProfile {
 impl PhaseProfile {
     fn new() -> Self {
         let now = Instant::now();
-        Self { start: now, last: now, phases: Vec::new() }
+        Self {
+            start: now,
+            last: now,
+            phases: Vec::new(),
+        }
     }
 
     fn mark(&mut self, name: &'static str) {
         let now = Instant::now();
-        self.phases.push((name, now.duration_since(self.last).as_micros()));
+        self.phases
+            .push((name, now.duration_since(self.last).as_micros()));
         self.last = now;
     }
 
@@ -450,7 +455,10 @@ pub fn profile_dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> 
     timer.mark("canonical_view_id");
     let elapsed_us = timer.elapsed_us();
     Ok(obj(&[
-        ("schema", Value::string("excession.projection-phase-profile.v1")),
+        (
+            "schema",
+            Value::string("excession.projection-phase-profile.v1"),
+        ),
         ("source_commit", Value::string(&plan.commit)),
         ("source_tree", Value::string(&plan.tree)),
         ("view_id", Value::string(view_id)),

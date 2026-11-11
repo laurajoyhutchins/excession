@@ -1,0 +1,3 @@
+# Optional native Swift compiler for Linux/macOS (not supported on Windows).
+[tools]
+swift = "6.4"

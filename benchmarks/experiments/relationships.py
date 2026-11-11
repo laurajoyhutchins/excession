@@ -275,10 +275,8 @@ def report(binary: Path, out: Path, sizes: list[int], fanouts: list[int],
     (out / "summary.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     # Publish a validated report even on nonpassing observations; do not drop
     # failures from the denominator or replace raw source-bound receipts.
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from reporting import build_relational
-    build_relational(out)
+    # The benchmark orchestrates observations; the Rust CLI owns reporting.
+    checked([str(binary), "benchmark", "report", "--kind", "relational", "--directory", str(out)])
     print(json.dumps({k: v for k, v in result.items() if k != "workloads"}, indent=2, sort_keys=True))
     if any(row["status"] != "ok" for row in rows):
         raise RuntimeError("relational benchmark had query failures")

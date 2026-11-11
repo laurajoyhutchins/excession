@@ -17,9 +17,11 @@ The parser package is optional and must be installed into the Python environment
 used by the Excession executable:
 
 ```sh
-mise run syntax-setup
-# Or without mise, install requirements/syntax.txt and prefetch grammars
-# through the tree-sitter-language-pack API in a trusted setup step.
+mise run syntax-setup       # fast default: Rust, Go, C, Java, Python, JS/TS
+mise run syntax-setup-all   # opt-in: also C++, Kotlin, C#, Ruby, PHP,
+                            # Swift, Scala, shell, Elixir, JSON/YAML/TOML/SQL
+# Without mise, install requirements/syntax.txt and prefetch grammars with
+# the tree-sitter-language-pack Python API in a trusted setup step.
 ```
 
 Prefetch happens in a **trusted setup step**, before analysis. Scans never
@@ -54,6 +56,9 @@ reported as examined. Non-UTF-8 sources are refused.
 The current initial extension selection covers Python, JS/TS, Rust, Go, C/C++,
 Java, Kotlin, C#, Ruby, PHP, Swift, Scala, shell, Elixir, JSON, YAML, TOML, and
 SQL. Actual parser availability and extraction depth differ by language.
+Prefetching a grammar does not install its language compiler or establish
+compiler-level dependency resolution. Optional compiler environments are
+listed in [development setup](DEVELOPMENT.md#other-supported-languages).
 
 Each included file has an explicit status:
 

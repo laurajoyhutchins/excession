@@ -69,7 +69,10 @@ pub fn declaration_preflight(value: &Value) -> Result<Value> {
         return refuse("unsupported native input declaration contract");
     }
     let language = value.get("language")?.str()?;
-    if !matches!(language, "go" | "rust" | "javascript" | "typescript") {
+    if !matches!(
+        language,
+        "go" | "rust" | "javascript" | "typescript" | "python"
+    ) {
         return refuse("native declaration language unsupported");
     }
     let subject = value.get("subject")?.str()?;
@@ -146,6 +149,7 @@ fn language_matches(declared: &str, observed: &str) -> bool {
     match declared {
         "go" => observed == "go",
         "rust" => observed == "rust",
+        "python" => observed == "python",
         "javascript" => observed == "javascript",
         "typescript" => matches!(observed, "typescript" | "tsx" | "javascript"),
         _ => false,
@@ -337,6 +341,7 @@ pub fn discover_and_compare(
     candidates_file: &Path,
     entry: &str,
     language: &str,
+    import_roots: Option<&str>,
     trusted: bool,
 ) -> Result<Value> {
     if !trusted {
@@ -380,7 +385,7 @@ pub fn discover_and_compare(
     if git::rev(root, &format!("{commit}^{{tree}}"))? != syntax_report.get("source_tree")?.str()? {
         return refuse("native execution refused: Git tree does not match syntax report");
     }
-    let native = native_discovery::discover(root, &commit, entry, language, true)?;
+    let native = native_discovery::discover(root, &commit, entry, language, import_roots, true)?;
     let declaration = native.get("declaration")?;
     declaration_preflight(declaration)?;
     if declaration.get("subject")?.str()? != entry
@@ -390,7 +395,7 @@ pub fn discover_and_compare(
         return refuse("native resolver returned a different subject, language or revision");
     }
     let boundary = report(root, syntax_file, candidates_file, declaration)?;
-    Ok(obj(&[
+    let mut output = obj(&[
         ("schema", Value::string("excession.native-syntax-inline.v1")),
         (
             "status",
@@ -400,7 +405,13 @@ pub fn discover_and_compare(
         ("declaration", declaration.clone()),
         ("stats", native.get("stats")?.clone()),
         ("boundary", boundary),
-    ]))
+    ]);
+    if language == "python" {
+        output
+            .entries_mut()?
+            .insert("resolution".into(), native.get("resolution")?.clone());
+    }
+    Ok(output)
 }
 
 #[cfg(test)]

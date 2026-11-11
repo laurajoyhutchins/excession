@@ -1,7 +1,6 @@
 //! Read-only navigation and bounded materialization of verified Git view manifests.
 //! Materialized files are not executable checkouts.
 use super::*;
-use std::os::unix::fs::PermissionsExt;
 
 fn get_entry<'a>(plan: &'a Plan, virtual_path: &str) -> Result<&'a Entry> {
     git::validate_path(virtual_path)?;
@@ -158,8 +157,11 @@ pub fn materialize(repo: &Path, manifest: &Path, target: &Path) -> Result<Value>
             fs::create_dir_all(path.parent().ok_or("invalid view path")?)
                 .map_err(|e| e.to_string())?;
             fs::write(&path, data).map_err(|e| e.to_string())?;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o444))
-                .map_err(|e| e.to_string())?;
+            let mut permissions = fs::metadata(&path)
+                .map_err(|e| e.to_string())?
+                .permissions();
+            permissions.set_readonly(true);
+            fs::set_permissions(&path, permissions).map_err(|e| e.to_string())?;
         }
         let receipt = plan.manifest().canonical();
         fs::write(target.join(MANIFEST_NAME), receipt.as_bytes()).map_err(|e| e.to_string())?;

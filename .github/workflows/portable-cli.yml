@@ -1,0 +1,103 @@
+name: Portable CLI
+
+on:
+  pull_request:
+    paths:
+      - "core/**"
+      - "tools/package_release.py"
+      - "tools/test_portable_archive.py"
+      - "docs/PORTABILITY.md"
+      - ".github/workflows/portable-cli.yml"
+      - "package-lock.json"
+      - "rust-toolchain.toml"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portability:
+    name: Build and smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            executable: excession
+          - os: macos-15
+            executable: excession
+          - os: windows-2025
+            executable: excession.exe
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select pinned Rust toolchain
+        run: rustup show active-toolchain
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Build static SQLite on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $root) { $root = $env:VCPKG_ROOT }
+          if (-not $root) { $root = 'C:\vcpkg' }
+          $vcpkg = Join-Path $root 'vcpkg.exe'
+          if (-not (Test-Path $vcpkg)) { throw "vcpkg unavailable: $vcpkg" }
+          & $vcpkg install sqlite3:x64-windows-static
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $libdir = Join-Path $root 'installed\x64-windows-static\lib'
+          "RUSTFLAGS=-L native=$libdir" >> $env:GITHUB_ENV
+      - name: Install locked TypeScript sidecar
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Fetch pinned Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Check standard digest vectors
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib digest::tests
+      - name: Installed CLI test in independent checkout
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test portability
+      - name: Build release executable
+        run: cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
+      - name: Construct portable archive and SHA-256 manifest
+        run: python tools/package_release.py --binary core/target/release/${{ matrix.executable }} --output dist
+      - name: Test extracted archive without repository-side dependencies
+        run: python tools/test_portable_archive.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: excession-${{ runner.os }}-${{ runner.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: portability
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: excession-*
+          merge-multiple: true
+          path: dist
+      - name: Publish archives and their SHA-256 checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
+          fi

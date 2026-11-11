@@ -1,9 +1,10 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
+use excession::evidence_query;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, native_boundary, native_depinfo, preflight, projection,
-    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, git, graph_baseline, index, native_boundary, native_depinfo, preflight,
+    projection, refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -25,7 +26,7 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
-  excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust --trusted-local true
+  excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust|python --import-roots ROOTS(PYTHON) --trusted-local true
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
   excession syntax cargo-depfile --repo REPO --package-root core --depfile CARGO_D --subject core/src/lib.rs --rustc RUSTC --rustc-version VERSION [--rev HEAD]
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
@@ -47,6 +48,7 @@ Usage:
   excession security scan --repo REPO --report NEW_JSON --db DB --engine codeql|semgrep
       --config LOCAL_RULES --trusted-local true [--scanner EXECUTABLE]
       [--codeql-db PREBUILT_DB] [--timeout-seconds 300]
+  excession inspect evidence --repo REPO --focus FILE --syntax-report JSON --resolution-report JSON [--rev HEAD] [--declaration JSON] [--runtime-report JSON]
   excession inspect dependencies|manifest --db DB --name NAME --rev REV
   excession inspect impact --db DB --name NAME --rev REV --seed MODULE
   excession inspect review --db DB --name NAME --old REV --new REV
@@ -54,6 +56,9 @@ Usage:
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
   excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
   excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
+  excession benchmark report --kind relational --directory RESULT_DIR
+  excession benchmark report --kind native --directory RESULT_DIR --input RECEIPT.json
+  excession benchmark validate --report SAVED_REPORT_JSON
   excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
@@ -539,7 +544,7 @@ fn execute(args: &[String]) -> Result<Response> {
                         "language",
                         "trusted-local",
                     ],
-                    &[],
+                    &["import-roots"],
                 )?;
                 let trusted = match opt.get("trusted-local") {
                     "true" => true,
@@ -552,6 +557,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.path("resolution-report"),
                     opt.get("entry"),
                     opt.get("language"),
+                    opt.0.get("import-roots").map(String::as_str),
                     trusted,
                 )?))
             }
@@ -705,6 +711,49 @@ fn execute(args: &[String]) -> Result<Response> {
             } else {
                 refactor::suggest(&db, opt.get("name"), opt.get("rev"))?
             }))
+        }
+        [top, sub, rest @ ..] if top == "benchmark" => match sub.as_str() {
+            "validate" => {
+                let opt = Options::parse(rest, &["report"], &[])?;
+                benchmark::validate(opt.path("report"))?;
+                Ok(Response::Message(format!("VALID {}", opt.get("report"))))
+            }
+            "report" => {
+                let opt = Options::parse(rest, &["kind", "directory"], &["input"])?;
+                let output = match opt.get("kind") {
+                    "relational" => {
+                        if opt.0.contains_key("input") {
+                            return refuse("--input is only valid for native calibration");
+                        }
+                        benchmark::build_relational(opt.path("directory"))?
+                    }
+                    "native" => {
+                        if !opt.0.contains_key("input") {
+                            return refuse("native calibration requires --input");
+                        }
+                        benchmark::build_native(opt.path("directory"), opt.get("input"))?
+                    }
+                    other => return refuse(format!("unknown benchmark report kind {other}")),
+                };
+                Ok(Response::Message(format!("VALID {}", output.display())))
+            }
+            _ => refuse(format!("unknown benchmark command {sub}")),
+        },
+        [top, sub, rest @ ..] if top == "inspect" && sub == "evidence" => {
+            let opt = Options::parse(
+                rest,
+                &["repo", "focus", "syntax-report", "resolution-report"],
+                &["rev", "declaration", "runtime-report"],
+            )?;
+            Ok(json(evidence_query::query(
+                opt.path("repo"),
+                opt.get_or("rev", "HEAD"),
+                opt.get("focus"),
+                opt.path("syntax-report"),
+                opt.path("resolution-report"),
+                opt.0.get("declaration").map(|s| Path::new(s.as_str())),
+                opt.0.get("runtime-report").map(|s| Path::new(s.as_str())),
+            )?))
         }
         [top, sub, rest @ ..] if top == "inspect" => inspect_cmd(sub, rest),
         [top, sub, rest @ ..] if top == "view" && sub == "replay" => {

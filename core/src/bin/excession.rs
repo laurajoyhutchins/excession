@@ -5,8 +5,9 @@ use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
-    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
+    kernel, native_boundary, preflight, projection, refactor, refuse, scip_refactor,
+    security_ingest, syntax, syntax_resolution, views,
 };
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -14,6 +15,8 @@ use std::path::Path;
 
 #[path = "excession/cli.rs"]
 mod cli;
+#[path = "excession/graph.rs"]
+mod graph_cli;
 #[path = "excession/scan.rs"]
 mod scan;
 use cli::{Options, ParseOutcome};
@@ -309,6 +312,26 @@ fn browse(repo: &Path, manifest: &Path, max: usize) -> Result<()> {
     Ok(())
 }
 
+fn clang_command(opt: &Options) -> Result<Response> {
+    let default_compiler = if opt.get("source").ends_with(".c") {
+        "clang"
+    } else {
+        "clang++"
+    };
+    Ok(json(compiler_clang::scan(
+        opt.path("repo"),
+        opt.get_or("rev", "HEAD"),
+        opt.get("source"),
+        opt.path("compile-db"),
+        opt.get_or("compiler", default_compiler),
+        compiler_clang::ClangOptions {
+            config: opt.0.get("config").map(|s| Path::new(s.as_str())),
+            object_prefix: opt.0.get("object-prefix").map(String::as_str),
+        },
+        opt.get("trusted-local"),
+    )?))
+}
+
 fn execute(args: &[String]) -> Result<Response> {
     let parsed = match cli::parse(args)? {
         ParseOutcome::Help(message) => return Ok(Response::Message(message)),
@@ -398,6 +421,46 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.path("report"),
             )?)),
             _ => refuse(format!("unknown syntax command {sub}")),
+        },
+        [top, sub] if top == "graph" => match sub.as_str() {
+            "import" | "ls" | "show" | "deps" | "path" => graph_cli::run(sub, opt),
+            "kbuild" => {
+                let db = Db::open(opt.path("db"))?;
+                Ok(json(kbuild_graph::assemble(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.path("build"),
+                    opt.get("archive"),
+                    opt.get_or("ar", "ar"),
+                    opt.get("trusted-local"),
+                    &db,
+                )?))
+            }
+            "assemble" => {
+                let db = Db::open(opt.path("db"))?;
+                Ok(json(graph_assembly::assemble(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.path("build"),
+                    opt.get("target"),
+                    Some(opt.path("observations")),
+                    &db,
+                )?))
+            }
+            _ => refuse(format!("unknown graph command: {sub}")),
+        },
+        [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
+        [top, sub] if top == "kernel" => match sub.as_str() {
+            "scan" => {
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(kernel::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
+                )?))
+            }
+            "clang" => clang_command(opt),
+            _ => refuse(format!("unknown kernel command: {sub}")),
         },
         [top] if top == "doctor" => {
             if opt.get_or("json", "false") == "true" {

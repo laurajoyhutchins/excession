@@ -387,10 +387,10 @@ fn native_scope_audit_detects_changed_report_bytes() {
     }
     let f = Fixture::new();
     let mut report = f.evaluate(&declaration(
-        "rust",
-        "src/main.rs",
-        &["src/main.rs", "src/math.rs"],
-        &["Cargo.toml"],
+        "go",
+        "src/go/main.go",
+        &["src/go/main.go", "src/lib/lib.go"],
+        &["go.mod"],
     ));
     let mut edges = arr(&report, "matching_edges").to_vec();
     edges[0]

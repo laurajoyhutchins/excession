@@ -14,11 +14,7 @@ fn set_source_permissions(path: &Path, mode: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let permissions = fs::Permissions::from_mode(if mode == "100755" {
-            0o755
-        } else {
-            0o644
-        });
+        let permissions = fs::Permissions::from_mode(if mode == "100755" { 0o755 } else { 0o644 });
         fs::set_permissions(path, permissions).map_err(|e| e.to_string())
     }
     #[cfg(not(unix))]

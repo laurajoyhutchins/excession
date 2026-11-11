@@ -50,3 +50,25 @@ results under `results/`. They are not inputs to a global "Excession wins" score
 
 See [experiment details](experiments/README.md) and
 [protocol and limitations](protocol.md).
+
+## Machine-readable reports
+
+Relational runs now produce a Draft 2020-12 JSON Schema validated `report.json`
+alongside the **unchanged** `summary.json`, `trials.jsonl`, and Git bundles.
+See [report schema](schemas/benchmark-report.v1.schema.json). The envelope records
+source revisions, executable digest, independently assessed checks, unit-bearing
+metrics, and SHA-256 digests of referenced artifacts.
+
+```sh
+python3 -m pip install -r requirements/research.txt
+make benchmark-schema-check
+python3 benchmarks/reporting.py validate /tmp/excession-relational-v1/report.json
+python3 benchmarks/reporting.py build-native . native-calibration.json
+python3 benchmarks/reporting.py validate native-calibration.report.json
+```
+
+The CLI refuses missing or tampered artifacts, unavailable measurements
+encoded as zeros, duplicate metrics, unsafe paths, and false success labels.
+Report IDs are digests, **not signatures**. A native calibration explicitly
+declares a shared-index oracle, while relational experiments declare
+independently authored source relationships. Historical JSON is preserved.

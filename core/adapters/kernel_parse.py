@@ -17,11 +17,19 @@ KCONFIG_SYMBOL = re.compile(r"^\s*(?:menuconfig|config)\s+([A-Za-z_][A-Za-z_0-9]
 CONFIG_REF = re.compile(r"^\$\(CONFIG_([A-Za-z_0-9]+)\)$")
 
 
+def physical_line_count(text):
+    """C/Git physical line numbers are LF-delimited, not Python splitlines()."""
+    return max(1, text.count("\n") + (0 if text.endswith("\n") else 1))
+
+
 def logical_lines(text):
-    """Track original starting line for backslash-newline continuations."""
+    """Track LF-based original line numbers across continued lines."""
     buf = ""
     start = 1
-    for number, line in enumerate(text.splitlines(), 1):
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()  # Do not add a phantom physical line after final LF.
+    for number, line in enumerate(lines, 1):
         if not buf:
             start = number
         piece = line.rstrip()
@@ -165,7 +173,7 @@ def c_facts(text):
                 facts.append(fact(line, "c_macro", word, "", cond(stack),
                                   "LEXICAL_CANDIDATE"))
     if stack:
-        diagnostics.append(dict(line=len(text.splitlines()) or 1,
+        diagnostics.append(dict(line=physical_line_count(text),
                                 reason="unterminated C preprocessor condition"))
     return facts, diagnostics
 
@@ -228,7 +236,7 @@ def build_facts(text):
         if op not in ("+=", ":=", "="):
             diagnostics.append(dict(line=line, reason="unusual make assignment: " + op))
     if condition_stack:
-        diagnostics.append(dict(line=len(text.splitlines()) or 1,
+        diagnostics.append(dict(line=physical_line_count(text),
                                 reason="unterminated make conditional"))
     return facts, diagnostics
 
@@ -286,7 +294,7 @@ def kconfig_facts(text):
         elif source in ("endmenu", "endchoice"):
             symbol = ""
     if stack:
-        diagnostics.append(dict(line=len(text.splitlines()) or 1,
+        diagnostics.append(dict(line=physical_line_count(text),
                                 reason="unterminated Kconfig if"))
     return facts, diagnostics
 

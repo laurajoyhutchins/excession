@@ -242,7 +242,13 @@ fn scan_impl(
             let facts = item.get("facts")?.array_ref()?;
             let diagnostics = item.get("diagnostics")?.array_ref()?;
             for value in facts {
-                checked_fact(value, line_count)?;
+                checked_fact(value, line_count).map_err(|err| {
+                    format!(
+                        "{err}: source {}, fact line {}, physical lines {line_count}",
+                        entry.path,
+                        value.get("line").and_then(Value::integer).unwrap_or(-1)
+                    )
+                })?;
             }
             for value in diagnostics {
                 let line = value.get("line")?.integer()?;

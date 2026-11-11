@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/linux-full-sweep.yml'
       - 'tests/linux_partition_sweep.py'
+      - 'core/adapters/kernel_parse.py'
+      - 'core/src/kernel.rs'
+      - 'core/src/kernel_coverage.rs'
   workflow_dispatch:
 
 permissions:

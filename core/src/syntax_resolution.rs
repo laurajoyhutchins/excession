@@ -411,6 +411,11 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
     }
     let mut seen_edges = BTreeSet::new();
     for source in files.values() {
+        // Rust semantic resolution belongs to rust-analyzer/SCIP; syntactic
+        // declarations remain available, but are not treated as graph edges.
+        if !matches!(source.language, "python" | "javascript" | "typescript" | "tsx" | "go") {
+            continue;
+        }
         for import in source.imports {
             if candidate_edges.len() + unresolved_imports.len() >= MAX_RELATIONS {
                 return refuse("resolution exceeds 10,000 observations; narrow --roots");

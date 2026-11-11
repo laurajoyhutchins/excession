@@ -16,18 +16,37 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-Requirements: Rust 1.99.1, Git with SHA-1 repositories, native `libsqlite3` and
-`libcrypto`, and Python 3 for the repository integration tests. The Rust crate
-has no third-party Cargo dependencies; a network connection is not required.
+Requirements: Rust 1.99.1, Python 3.13.5, Node 22.16.0/npm 10.9.2,
+Git with SHA-1 repositories, and native `libsqlite3` / `libcrypto`.
+Go 1.26.11 is optional for the Go research adapter. The Rust crate has
+no third-party Cargo dependencies and builds offline. JS/TS parsing uses
+the locally locked TypeScript package, not a global npm installation.
 
 ```sh
+npm ci --ignore-scripts --no-audit --no-fund
+python3 -m pip install -r requirements/research.txt
 cargo install --offline --locked --path core --bin excession
 excession --help
 make check
 ```
 
-`make check` runs Rust tests, Rust formatting and strict Clippy, plus the Python
-integration suite. Use `make cli` for a local development binary.
+`make check` runs Rust tests, formatting, strict Clippy, the JS adapter
+checks, and Python integration tests. Use `make cli` for the development
+binary and `make go-check` for the optional Go adapter. See
+[development setup](docs/DEVELOPMENT.md) for toolchain files and separately
+pinned research/grammar dependencies.
+
+For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
+Python research requirements,
+then run `make junit`. This retains the existing `unittest` test cases while
+producing separate Rust and Python reports:
+
+- `core/target/nextest/ci/junit.xml` (Rust, including failure output)
+- `test-results/python.xml` (Python, including skipped and failed tests)
+
+CI uploads JUnit XML as artifacts, including after a test failure.
+`make check` remains the simpler local validation path without nextest; Rust doctests
+are also checked by `cargo test --doc` in the JUnit workflow.
 
 ## One repository, multiple layouts
 
@@ -66,6 +85,24 @@ no parser is downloaded during analysis. The existing Python/JS dependency index
 remains a separate, language-aware path. See [syntax parsers](docs/SYNTAX_PARSERS.md)
 for installation, limits and provenance.
 
+## Early report validation
+
+`excession syntax preflight --report /tmp/syntax.json` and
+`excession syntax resolve-preflight --report /tmp/candidates.json` perform
+cheap, parser-free report contract checks before costly regeneration. They
+validate shapes, counts and canonical content digests but **cannot authenticate
+Git sources**. Full `syntax audit` and `syntax resolve-audit` remain required.
+See [syntax parser preflight](docs/SYNTAX_PARSERS.md#fast-preflight-before-expensive-source-replay).
+
+## Candidate import resolution
+
+Parsed imports can be mapped to scoped, Git-bound file candidates with
+`excession syntax resolve --repo "$REPO" --report /tmp/syntax.json`.
+A separate `syntax resolve-audit` command independently replays the mapping.
+Go, Rust, JS/TS and Python use language-specific conservative path rules.
+Ambiguous, external, configuration-dependent and unsupported cases remain
+explicit. These are **navigation candidates, not compiler-established edges**.
+
 ## Source-bound scanner evidence
 
 ```sh
@@ -96,6 +133,12 @@ excession research compose-audit SPEC_JSON DATABASE
 The `research` commands accept historical positional arguments. They are
 separate from the modern named-option CLI and intentionally preserve existing
 research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
+
+## Benchmarks
+
+The [benchmark program](benchmarks/README.md) separates observable relational
+experiments from [single-query microbenchmarks](benchmarks/micro/README.md).
+Reproducible measurements do not claim improved agent productivity.
 
 ## Limits
 

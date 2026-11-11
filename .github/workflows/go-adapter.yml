@@ -1,0 +1,24 @@
+name: Go research adapter
+
+on:
+  pull_request:
+    paths:
+      - '.go-version'
+      - '.github/workflows/go-adapter.yml'
+      - 'core/adapters/*.go'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .go-version
+      - name: Standard-library-only adapter tests
+        run: GO111MODULE=off go test ./core/adapters

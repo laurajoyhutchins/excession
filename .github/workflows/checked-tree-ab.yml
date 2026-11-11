@@ -1,0 +1,44 @@
+name: Checked tree proof A/B
+
+on:
+  pull_request:
+    paths:
+      - benchmarks/experiments/checked_tree_ab.py
+      - .github/workflows/checked-tree-ab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Install pinned Rust compiler
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Restore pre-reuse source independently
+        run: git worktree add --detach "$RUNNER_TEMP/excession-before" fa1d15248210ee6ec2a4c744603b271d613fa7b5
+      - name: Build both release binaries with identical Rust compiler
+        run: |
+          cargo +1.99.1 build --offline --release --manifest-path "$RUNNER_TEMP/excession-before/core/Cargo.toml"
+          cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
+      - name: Pair authenticated outputs, tamper refusals, and timing
+        run: |
+          python3 benchmarks/experiments/checked_tree_ab.py \
+            "$RUNNER_TEMP/excession-before/core/target/release/excession" \
+            core/target/release/excession \
+            checked-tree-ab.json
+      - name: Retain reproducible query and refusal receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checked-tree-ab
+          path: checked-tree-ab.json
+          if-no-files-found: warn

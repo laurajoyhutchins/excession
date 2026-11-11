@@ -17,7 +17,7 @@ The parser package is optional and must be installed into the Python environment
 used by the Excession executable:
 
 ```sh
-python3 -m pip install tree-sitter-language-pack==1.25.0
+python3 -m pip install -r requirements/syntax.txt
 python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust","go","c","java","python","javascript","typescript"])'
 ```
 
@@ -71,6 +71,81 @@ or runtime. The package may extract fewer categories for certain languages.
 In particular, a syntactic import target is not automatically an Excession
 dependency edge. Those edges require language-specific, independently validated
 resolvers before they can be inserted into the SQL dependency relation.
+
+## Fast preflight before expensive source replay
+
+Run a **parser-free** structural and digest check on saved reports first:
+
+```sh
+excession syntax preflight --report /tmp/syntax.json
+excession syntax resolve-preflight --report /tmp/candidates.json
+```
+
+Preflight validates canonical SHA-256 payload digests, explicit schema/status
+values, Git path/OID *formats*, bounded nesting and line offsets, permitted
+record fields, source identities, and count limits. It never starts a parser,
+opens a Git repository or executes source code. Use it at the point a report
+is received, before sending work to a compiler, remote worker, or reviewer.
+
+A preflight result is **`SHAPE_AND_DIGEST_ONLY`**, not proof that source blobs
+really exist or that dependencies resolve. Anyone can edit a report and
+recompute an unkeyed digest. `syntax audit` and `syntax resolve-audit` still
+replay authenticated Git objects and parser results; both now reject malformed
+reports **before** replay begins.
+
+Local parser-boundary unit tests can run without grammars:
+
+```sh
+python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
+cargo test --offline --manifest-path core/Cargo.toml preflight::tests
+```
+
+`tests/test_preflight_cli.py` exercises the command surface without
+Tree-sitter installed, including accepted-but-untrusted self-consistent
+forgeries. Full integration tests remain separate.
+
+## Source-bound dependency candidates
+
+The optional resolver maps syntax imports to tracked files using conservative,
+language-specific rules. The result is a separate **candidate** report. It is
+not installed into the authoritative SQL dependency index and cannot be used
+to justify skipping tests.
+
+```sh
+excession syntax resolve --repo /path/to/checkout \
+  --report /tmp/syntax.json > /tmp/candidates.json
+excession syntax resolve-audit --repo /path/to/checkout \
+  --syntax-report /tmp/syntax.json --report /tmp/candidates.json
+```
+
+`resolve` first independently replays the entire syntax scan and verifies all
+source Git blobs. The resulting `excession.syntax-dependencies.v1` manifest
+contains Git-bound `candidate_edges`, `unresolved_imports`, `skipped_sources`,
+exact `go.mod` metadata identities, and a canonical `resolution_id`.
+`resolve-audit` re-parses and re-resolves both reports and rejects any changed
+observation. Missing imports are never treated as evidence of no dependency.
+
+**Supported candidate rules:**
+
+- **JS/TS:** explicitly relative imports mapped to exactly one tracked file,
+  using listed extension and `index` candidates; ambiguities and bare imports
+  remain unresolved. Does not evaluate `tsconfig` aliases, `package.json`,
+  `exports`, bundler settings or transpiler remapping.
+- **Python:** dotted and relative module strings mapped to exactly one tracked
+  `.py` or `__init__.py` source. Does not evaluate imported members,
+  namespace packages, sys.path changes or dynamic imports.
+- **Go:** only same-module package imports, using the pinned, authenticated
+  nearest `go.mod`. All tracked non-test `.go` package files are candidates;
+  build constraints, workspaces, vendoring, generated files and CGO are not
+  evaluated.
+- **Rust:** direct `crate::foo` import paths matched to a unique local
+  `src/foo.rs` or `src/foo/mod.rs` when a crate root is included. No
+  `mod` validation, macros, cfg variants, or Cargo build dependencies.
+
+A candidate edge means only that a **plausible tracked path** matches a parsed
+import. Native compiler resolution and complete build graphs remain separate
+from this feature. Other languages and missing grammars are explicitly marked
+unsupported, not silently assigned empty dependency sets.
 
 ## Safety and reproducibility
 

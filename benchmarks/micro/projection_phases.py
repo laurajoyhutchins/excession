@@ -21,14 +21,14 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = ROOT / "core/fixtures/h11-crossrepo.bundle"
 SCALES = (32, 128, 512)
 REPETITIONS = 12
 PHASES = (
     "resolve_revision", "check_git_tree", "reconstruct_index_tree",
     "load_modules", "load_dependencies", "traverse_and_build_entries",
-    "validate_index_and_plan", "validate_plan", "read_git_source_tree",
+    "validate_index_and_plan", "validate_plan", "reuse_indexed_tree",
     "validate_source_bindings", "canonical_view_id",
 )
 

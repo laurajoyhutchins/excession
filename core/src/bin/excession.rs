@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
+    Result, benchmark, git, graph_baseline, index, native_boundary, native_depinfo, preflight, projection,
     refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
@@ -26,6 +26,7 @@ Usage:
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
+  excession syntax cargo-depfile --repo REPO --package-root core --depfile CARGO_D --subject core/src/lib.rs --rustc RUSTC --rustc-version VERSION [--rev HEAD]
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
   excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
@@ -505,6 +506,29 @@ fn execute(args: &[String]) -> Result<Response> {
             "resolve-preflight" => {
                 let opt = Options::parse(tail, &["report"], &[])?;
                 Ok(json(preflight::resolution_file(opt.path("report"))?))
+            }
+            "cargo-depfile" => {
+                let opt = Options::parse(
+                    tail,
+                    &[
+                        "repo",
+                        "package-root",
+                        "depfile",
+                        "subject",
+                        "rustc",
+                        "rustc-version",
+                    ],
+                    &["rev"],
+                )?;
+                Ok(json(native_depinfo::declaration(
+                    opt.path("repo"),
+                    opt.get("package-root"),
+                    opt.path("depfile"),
+                    opt.get("subject"),
+                    opt.path("rustc"),
+                    opt.get("rustc-version"),
+                    opt.get_or("rev", "HEAD"),
+                )?))
             }
             "native-preflight" => {
                 let opt = Options::parse(tail, &["declaration"], &[])?;

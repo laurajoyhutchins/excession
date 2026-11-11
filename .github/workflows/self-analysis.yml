@@ -52,17 +52,39 @@ jobs:
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Adversarial self-analysis reporting tests
         run: python3 -m unittest discover -s tests -p 'test_self_analysis.py' -v
+      - name: Create clean source snapshot for self-analysis
+        run: git worktree add --detach "$RUNNER_TEMP/excession-self-source" "$GITHUB_SHA"
+      - name: Compile pinned snapshot and capture real Cargo dep-info
+        run: |
+          SOURCE="$RUNNER_TEMP/excession-self-source"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/excession-native-target"
+          cargo +1.99.1 build --offline --locked --manifest-path "$SOURCE/core/Cargo.toml" --lib --bin excession
+          ls -l "$CARGO_TARGET_DIR/debug/"*.d
+          RUSTC="$(rustup which rustc --toolchain 1.99.1)"
+          RUSTC_VERSION="$("$RUSTC" --version)"
+          BIN="$GITHUB_WORKSPACE/core/target/debug/excession"
+          OUT="$GITHUB_WORKSPACE/self-analysis-artifacts"
+          mkdir -p "$OUT"
+          "$BIN" syntax cargo-depfile --repo "$SOURCE" --package-root core \
+            --depfile "$CARGO_TARGET_DIR/debug/libexcession.d" \
+            --subject core/src/lib.rs --rustc "$RUSTC" --rustc-version "$RUSTC_VERSION" \
+            > "$OUT/native-lib.json"
+          "$BIN" syntax cargo-depfile --repo "$SOURCE" --package-root core \
+            --depfile "$CARGO_TARGET_DIR/debug/excession.d" \
+            --subject core/src/bin/excession.rs --rustc "$RUSTC" --rustc-version "$RUSTC_VERSION" \
+            > "$OUT/native-bin.json"
       - name: Analyze detached, clean source at the exact workflow commit
         run: |
           SOURCE="$RUNNER_TEMP/excession-self-source"
-          git worktree add --detach "$SOURCE" "$GITHUB_SHA"
           BASE="$(git -C "$SOURCE" rev-parse "$GITHUB_SHA^1")"
           python3 tools/self_analysis.py \
             --repo "$SOURCE" \
             --bin "$GITHUB_WORKSPACE/core/target/debug/excession" \
             --out "$GITHUB_WORKSPACE/self-analysis-artifacts" \
             --rev "$GITHUB_SHA" \
-            --base-rev "$BASE"
+            --base-rev "$BASE" \
+            --native-lib "$GITHUB_WORKSPACE/self-analysis-artifacts/native-lib.json" \
+            --native-bin "$GITHUB_WORKSPACE/self-analysis-artifacts/native-bin.json"
       - name: Report advisory observations
         run: cat self-analysis-artifacts/summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Retain self-analysis evidence and refusal diagnostics

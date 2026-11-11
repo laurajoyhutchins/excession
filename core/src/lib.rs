@@ -6,6 +6,7 @@ pub mod adapter;
 pub mod benchmark;
 pub mod contracts;
 pub mod digest;
+pub mod doctor;
 pub mod effects;
 pub mod evidence_query;
 pub mod git;

@@ -1,11 +1,18 @@
 # Excession Rust core
 
-Git is authoritative for source objects; SQLite stores indexed relations and
-scoped evidence. This crate's package and library are both named `excession`.
+Git is authoritative for source objects; bundled SQLite via rusqlite stores
+indexed relations and scoped evidence. This crate's package and library are both named `excession`.
 The **one** binary is `excession`. It exposes read-only projection operations,
 scanner ingestion and independent audit, and a `research` subgroup for exact
 historical reproductions. The Rust engine does not claim to infer arbitrary
 language semantics or confirm exploitable vulnerabilities.
+
+## Local capabilities
+
+`excession doctor` shows detected Git, language runtimes, scanners and the
+bundled SQLite version without fetching toolchains. `excession doctor --json`
+emits the versioned `excession.capabilities.v1` report. Parser presence is
+not evidence of complete dependency resolution.
 
 ## Optional multi-language parsing
 

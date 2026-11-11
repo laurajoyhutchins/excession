@@ -129,8 +129,10 @@ class UnifiedEvidenceQuery(unittest.TestCase):
         self.assertEqual({x["path"] for x in rust["compiler_inputs"]},
                          {"src/main.rs", "src/helper.rs"})
         self.assertEqual(rust["runtime_witnesses"], [])
-        self.assertTrue(any(x["target_path"] == "src/helper.rs"
-                            for x in rust["static_candidates"]))
+        # Rust compiler inputs remain separate from syntax candidates.
+        # Resolved Rust relationships require rust-analyzer SCIP evidence.
+        self.assertFalse(any(x["target_path"] == "src/helper.rs"
+                             for x in rust["static_candidates"]))
 
     def test_omitted_evidence_is_null_not_absence_assertion(self):
         result = self.query("src/main.rs", native=False, runtime=False)

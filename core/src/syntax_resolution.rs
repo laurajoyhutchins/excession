@@ -465,7 +465,7 @@ where
     F: FnMut(&ImportEvent) -> Result<()>,
 {
     let revision = git::oid(report.get("source_commit")?.str()?)?;
-    let files = paths(&report)?;
+    let files = paths(report)?;
     let modules = go_modules(root, &revision)?;
     let mut candidate_edges = Vec::new();
     let mut unresolved_imports = Vec::new();

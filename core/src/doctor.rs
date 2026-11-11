@@ -55,6 +55,7 @@ fn probe(name: &str, required: bool, mut command: Command, args: &[&str]) -> Pro
     };
     Probe {
         json: obj(&[
+            ("name", Value::string(name)),
             ("executable", Value::string(executable)),
             ("required", Value::Bool(required)),
             ("status", Value::string(status)),

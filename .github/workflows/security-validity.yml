@@ -113,6 +113,16 @@ jobs:
           RUN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$OUT/ingest.json")
           python3 tools/assess_security_findings.py --repo "$PWD" --db "$OUT/findings.sqlite" --run-id "$RUN_ID" --report "$OUT/codeql.sarif" --ground-truth "$PWD/benchmarks/security-validity/ground-truth.json" --excession "$EX" --trusted-local true > "$OUT/validity.json"
           python3 -m json.tool "$OUT/validity.json"
+          python3 - "$OUT/validity.json" <<'PY'
+          import json, sys
+          summary = json.load(open(sys.argv[1], encoding="utf-8"))["summary"]
+          assert summary == {
+              "reproduced_boundaries": 1,
+              "safe_control_hits": 1,
+              "unjudged_candidates": 0,
+              "known_positive_cases_without_hit": 0,
+          }, f"CodeQL benchmark detection contract failed: {summary}"
+          PY
           git rev-parse HEAD > "$OUT/commit.txt"
       - name: Retain CodeQL reports and adjudication
         if: always()

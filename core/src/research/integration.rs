@@ -93,7 +93,7 @@ struct LocalWitness {
 /// monitoring. The results are captured from this child process, never loaded
 /// as externally supplied unsigned evidence. This is a LOCAL-ONLY mode.
 fn run_local_branch_probe(repo: &Path, claim: &str) -> Result<(Value, String)> {
-    const CODE: &str = include_str!("../adapters/probe_monitor.py");
+    const CODE: &str = include_str!("../../adapters/probe_monitor.py");
     let out = crate::adapter::python_command()
         .arg("-c")
         .arg(CODE)

@@ -9,7 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "transactions/execution.rs"]
 mod execution;
+#[path = "transactions/verification.rs"]
 mod verification;
 
 pub use execution::compose;

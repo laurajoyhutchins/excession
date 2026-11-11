@@ -24,8 +24,8 @@ const MAX_INPUT_FILES: usize = 512;
 const MAX_INPUT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_PROCESS_TIME: Duration = Duration::from_secs(55);
-const RESOLVER: &str = include_str!("../../tools/native_language_adapter.py");
-const TYPESCRIPT_HELPER: &str = include_str!("../../tools/excession_ts_resolve.cjs");
+const RESOLVER: &str = include_str!("../../../tools/native_language_adapter.py");
+const TYPESCRIPT_HELPER: &str = include_str!("../../../tools/excession_ts_resolve.cjs");
 static NONCE: AtomicU64 = AtomicU64::new(0);
 type PinnedFiles = BTreeMap<String, (usize, String)>;
 

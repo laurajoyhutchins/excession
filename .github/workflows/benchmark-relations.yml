@@ -6,7 +6,7 @@ on:
       - 'benchmarks/experiments/**'
       - 'benchmarks/protocol.md'
       - 'benchmarks/schemas/**'
-      - 'core/src/benchmark.rs'
+      - 'core/src/research/benchmark.rs'
       - 'core/src/bin/excession.rs'
       - 'core/Cargo.toml'
       - 'core/Cargo.lock'

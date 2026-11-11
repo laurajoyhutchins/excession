@@ -8,7 +8,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+#[path = "projection/composition.rs"]
 mod composition;
+#[path = "projection/workspace.rs"]
 mod workspace;
 
 pub use composition::{compose, compose_replay, mount, mount_replay, select, select_replay};

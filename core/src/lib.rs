@@ -18,6 +18,7 @@ pub mod optimizer;
 pub mod overlap;
 pub mod preflight;
 pub mod projection;
+pub mod refactor;
 pub mod scoped;
 pub mod security;
 pub mod security_discovery;

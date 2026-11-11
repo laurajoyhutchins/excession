@@ -103,6 +103,15 @@ Go, Rust, JS/TS and Python use language-specific conservative path rules.
 Ambiguous, external, configuration-dependent and unsupported cases remain
 explicit. These are **navigation candidates, not compiler-established edges**.
 
+## Refactoring candidates
+
+`excession refactor suggest --db INDEX --name PROJECT --rev COMMIT` reports
+deterministic, unverified import-cycle and repeated-body hypotheses from the
+existing Python/JavaScript index. `excession refactor audit` replays the
+indexed query against Git source identities and checks a saved report. It does
+not reparse semantic relations, prove equivalence, or modify source.
+See [refactoring hypotheses](docs/REFACTORING.md).
+
 ## Source-bound scanner evidence
 
 ```sh

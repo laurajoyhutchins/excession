@@ -67,18 +67,19 @@ resolution, or prove that a dependency is compiled. See the
 [Linux parser contract](docs/KERNEL_PARSERS.md) and
 [reproducible kernel experiment](docs/LINUX_KERNEL_EXPERIMENT.md).
 
-For a **trusted, already-built** C translation unit, Excession can reuse a
-compilation database and Clang's own AST/dependency machinery:
+For a **trusted, configuration-selected** C/C++ translation unit,
+Excession reuses a standard compilation database and Clang's AST/dependency
+machinery in **any Git repository**:
 
 ```sh
-excession kernel clang --repo /path/to/linux --source drivers/rtc/rtc-cmos.c \
+excession analyze clang --repo /path/to/repository --source src/example.cpp \
   --compile-db /path/to/build/compile_commands.json --trusted-local true
 ```
 
-This records configuration-specific C declarations, calls and header hashes,
-but does not prove kernel build or execution. Generate the compilation
-database with Linux's own `scripts/clang-tools/gen_compile_commands.py` after
-building the intended configuration. See [Clang integration](docs/CLANG_TU.md).
+This records translation-unit-specific declarations, calls and header hashes,
+but does not prove build or execution. `excession kernel clang` remains a
+compatibility alias. See [generic C/C++ compiler analysis](docs/COMPILER_ANALYSIS.md)
+and [Linux compilation database details](docs/CLANG_TU.md).
 
 ## Source-bound scanner evidence
 

@@ -5,6 +5,9 @@ intelligence. It indexes relationships at a pinned revision, assembles source
 views, inspects evidence from other analysis tools, and audits recorded results
 against their stated inputs.
 
+One `clap` command tree defines strict named options and nested help. There is
+no second positional command interface.
+
 The command families correspond to different evidence layers:
 
 | Work | Commands | Output |
@@ -146,11 +149,11 @@ The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL
 - `excession view materialize|audit`: generate a read-only physical tree or verify it.
 - `excession browse`: terminal browser, without a Python process or copied checkout.
 
-All file contents and view identities remain grounded in Git objects. The CLI does not silently turn a candidate into a vulnerability, execute untrusted code, install scanners, or claim that unindexed edges do not exist. JSON commands write canonical JSON to standard output; `view cat` writes raw bytes. Errors and refusals go to standard error and return a nonzero exit code. The CLI uses strict named options and refuses unknown or duplicate flags.
+All file contents and view identities remain grounded in Git objects. The CLI does not silently turn a candidate into a vulnerability, execute untrusted code, install scanners, or claim that unindexed edges do not exist. JSON commands write canonical JSON to standard output; `view cat` writes raw bytes. Errors and refusals go to standard error and return a nonzero exit code. The CLI uses one `clap` grammar with strict named options and refuses unknown or duplicate flags.
 
-**Historical compatibility:** use `excession research COMMAND [historical arguments]`
-for bounded reproduction operations such as `carry`, `compose`, `replay`,
-`contracts-import`, `identity`, `contract-impact`, `score`, and `project`.
-There is no separately installed legacy binary, and the crate is named
-`excession`. Versioned on-disk protocols and exact-replay fixture identities
-are retained. See [migration notes](MIGRATION.md).
+**Historical experiments:** The positional `excession research` command family
+is retired. Reproduce an earlier protocol from its pinned historical Git
+revision and environment; modern `view` and `inspect` commands are not assumed
+to be byte-for-byte replacements. The source history, versioned on-disk
+protocols, and exact-replay fixture identities remain retained. See
+[migration notes](MIGRATION.md).

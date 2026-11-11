@@ -3,8 +3,8 @@
 Git is authoritative for source objects; bundled SQLite via rusqlite stores
 indexed relations and scoped evidence. This crate's package and library are both named `excession`.
 The **one** binary is `excession`. It exposes read-only projection operations,
-scanner ingestion and independent audit, and a `research` subgroup for exact
-historical reproductions. The Rust engine does not claim to infer arbitrary
+scanner ingestion and independent audit. The retired positional `research`
+commands remain available only at their pinned historical revisions. The Rust engine does not claim to infer arbitrary
 language semantics or confirm exploitable vulnerabilities.
 
 ## Local capabilities

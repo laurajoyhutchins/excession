@@ -38,7 +38,14 @@ fn installed_binary_works_outside_build_tree_with_unicode_paths() {
     let version = run(binary, &["--version"], &working);
     assert!(String::from_utf8_lossy(&version.stdout).contains("excession "));
     let help = run(binary, &["--help"], &working);
-    assert!(String::from_utf8_lossy(&help.stdout).contains("excession index"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("index"));
+    let index_help = run(binary, &["index", "--help"], &working);
+    let index_usage = String::from_utf8_lossy(&index_help.stdout);
+    assert!(
+        index_usage.contains("--repo")
+            && index_usage.contains("--db")
+            && index_usage.contains("--name")
+    );
     let doctor = run(binary, &["doctor", "--json"], &working);
     let diagnostics: serde_json::Value =
         serde_json::from_slice(&doctor.stdout).expect("valid doctor JSON");

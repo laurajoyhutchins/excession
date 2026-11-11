@@ -41,6 +41,8 @@ class ScipRefactor(unittest.TestCase):
         self.repo.mkdir()
         run("git", "-C", self.repo, "init", "-q")
         (self.repo / "lib.rs").write_text("pub fn emit() {}\n")
+        (self.repo / "core/src").mkdir(parents=True)
+        (self.repo / "core/src/lib.rs").write_text("pub fn emit() {}\n")
         (self.repo / "app.py").write_text("def parse():\n    return 1\n")
         run("git", "-C", self.repo, "add", ".")
         run(
@@ -125,6 +127,47 @@ class ScipRefactor(unittest.TestCase):
         self.assertEqual(receipt["report_id"], report["report_id"])
         self.assertFalse(receipt["indexer_independently_executed"])
         self.assertEqual(self.suggest(), report)
+
+    def test_nested_cargo_scip_project_root_is_source_bound(self) -> None:
+        index = {
+            "metadata": {
+                "tool_info": {"name": "rust-analyzer", "version": "1.99.1"},
+                "project_root": "file://" + str(self.repo / "core"),
+            },
+            "documents": [{
+                "relative_path": "src/lib.rs",
+                "language": "rust",
+                "position_encoding": 1,
+                "occurrences": [
+                    {"range": [0, 7, 11], "symbol": SYM_RUST, "symbol_roles": 1},
+                ],
+            }],
+        }
+        self.source.write_text(json.dumps(index))
+        args = (
+            BIN, "refactor", "scip-suggest", "--repo", self.repo,
+            "--rev", self.commit, "--index", self.source,
+            "--source-prefix", "core",
+        )
+        report = json.loads(run(*args).stdout)
+        self.assertEqual(report["source_commit"], self.commit)
+        self.assertEqual(report["coverage"]["indexed_documents"], 1)
+        self.assertEqual(report["coverage"]["languages"], ["rust"])
+        self.report.write_text(json.dumps(report))
+        receipt = json.loads(run(
+            BIN, "refactor", "scip-audit", "--repo", self.repo,
+            "--rev", self.commit, "--index", self.source,
+            "--report", self.report, "--source-prefix", "core",
+        ).stdout)
+        self.assertEqual(receipt["report_id"], report["report_id"])
+
+        index["metadata"]["project_root"] = "file:///unrelated/checkout"
+        self.source.write_text(json.dumps(index))
+        self.assertNotEqual(run(*args, check=False).returncode, 0)
+        index["metadata"]["project_root"] = "file://" + str(self.repo / "core")
+        index["documents"][0]["relative_path"] = "../lib.rs"
+        self.source.write_text(json.dumps(index))
+        self.assertNotEqual(run(*args, check=False).returncode, 0)
 
     def test_no_name_based_cross_language_invention(self) -> None:
         index = self.index()

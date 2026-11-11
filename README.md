@@ -65,6 +65,35 @@ configuration. This is trusted-local execution, **not a sandbox**; database
 creation and untrusted builds require their own isolation. The executable
 neither downloads scanners nor asserts that a finding is exploitable.
 
+## Executable slices and integration evidence
+
+The Python adapter can derive a bounded static import closure from a clean,
+pinned SHA-1 Git checkout and materialize only those exact source blobs while
+retaining their original package layout. It can execute a trusted entrypoint
+and conservatively compare historical evidence with a later integrated revision.
+A source match is **not** proof that the merged program passed its tests.
+
+On supported Linux machines, \`--isolated-linux\` runs the slice inside an
+unprivileged, fail-closed namespace worker with read-only source, limited
+resources, and no network namespace access. This does not authenticate a
+remote worker, and the receipts remain unsigned.
+
+\`\`\`sh
+python3 tools/excession_slice.py plan "$REPO" tests/check.py > /tmp/slice.json
+python3 tools/excession_slice.py materialize "$REPO" /tmp/slice.json /tmp/excession-slice
+python3 tools/excession_slice.py run "$REPO" /tmp/slice.json /tmp/excession-slice \
+  --trusted-local --isolated-linux > /tmp/slice-receipt.json
+excession slice ingest --repo "$REPO" --manifest /tmp/slice.json \
+  --receipt /tmp/slice-receipt.json --db /tmp/slice-evidence.sqlite
+excession slice audit --repo "$REPO" --manifest /tmp/slice.json \
+  --receipt /tmp/slice-receipt.json --db /tmp/slice-evidence.sqlite
+\`\`\`
+
+Rust independently checks the Git object identities, declared blob bytes,
+manifest and receipt checksums, and SQLite rows. It does **not** independently
+establish import-closure completeness or remotely attest to execution.
+See [executable slices](docs/EXECUTABLE_SLICES.md).
+
 ## Research compatibility
 
 Pinned earlier experiments retain their original Git blobs, schema strings,

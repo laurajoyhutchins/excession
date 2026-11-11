@@ -237,28 +237,34 @@ pub fn neighbors(db: &Db, graph_id: Option<&str>, target: Option<&str>,
     }
     let (id, _) = find(db, graph_id, target)?;
     let start = resolve_node(db, &id, node)?;
-    let all = arcs(db, &id)?;
+    let mut adjacency = BTreeMap::<String, Vec<(String, Arc)>>::new();
+    for arc in arcs(db, &id)? {
+        if direction != "in" {
+            adjacency.entry(arc.from.clone()).or_default()
+                .push((arc.to.clone(), arc.clone()));
+        }
+        if direction != "out" {
+            adjacency.entry(arc.to.clone()).or_default()
+                .push((arc.from.clone(), arc));
+        }
+    }
     let mut visited = BTreeSet::from([start.clone()]);
     let mut queue = VecDeque::from([(start, 0usize)]);
     let mut shown = BTreeMap::<(String, String, String, String, String), Arc>::new();
     let mut truncated = false;
     while let Some((current, distance)) = queue.pop_front() {
         if distance == depth { continue; }
-        for arc in &all {
-            let other = if (direction == "out" || direction == "both") && arc.from == current {
-                Some(&arc.to)
-            } else if (direction == "in" || direction == "both") && arc.to == current {
-                Some(&arc.from)
-            } else { None };
-            if let Some(other) = other {
-                if shown.len() >= MAX_QUERY_EDGES {
+        if let Some(adjacent) = adjacency.get(&current) {
+            for (other, arc) in adjacent {
+                let key = (
+                    arc.from.clone(), arc.to.clone(), arc.kind.clone(),
+                    arc.status.clone(), arc.evidence.clone(),
+                );
+                if !shown.contains_key(&key) && shown.len() >= MAX_QUERY_EDGES {
                     truncated = true;
                     break;
                 }
-                shown.insert((
-                    arc.from.clone(), arc.to.clone(), arc.kind.clone(),
-                    arc.status.clone(), arc.evidence.clone(),
-                ), arc.clone());
+                shown.insert(key, arc.clone());
                 if visited.insert(other.clone()) {
                     queue.push_back((other.clone(), distance + 1));
                 }
@@ -275,18 +281,26 @@ pub fn path(db: &Db, graph_id: Option<&str>, target: Option<&str>,
     let (id, _) = find(db, graph_id, target)?;
     let start = resolve_node(db, &id, from)?;
     let goal = resolve_node(db, &id, to)?;
-    let mut all = arcs(db, &id)?;
-    all.sort_by(|a,b| (&a.from,&a.to,&a.kind).cmp(&(&b.from,&b.to,&b.kind)));
+    let mut adjacency = BTreeMap::<String, Vec<Arc>>::new();
+    for arc in arcs(db, &id)? {
+        adjacency.entry(arc.from.clone()).or_default().push(arc);
+    }
+    for outgoing in adjacency.values_mut() {
+        outgoing.sort_by(|a,b| (&a.to,&a.kind,&a.status,&a.evidence)
+            .cmp(&(&b.to,&b.kind,&b.status,&b.evidence)));
+    }
     let mut visited = BTreeSet::from([start.clone()]);
     let mut queue = VecDeque::from([(start.clone(), 0usize)]);
     let mut parents = BTreeMap::<String, Arc>::new();
     while let Some((here, dist)) = queue.pop_front() {
         if here == goal { break; }
         if dist == depth { continue; }
-        for arc in all.iter().filter(|arc| arc.from == here) {
-            if visited.insert(arc.to.clone()) {
-                parents.insert(arc.to.clone(), arc.clone());
-                queue.push_back((arc.to.clone(), dist + 1));
+        if let Some(outgoing) = adjacency.get(&here) {
+            for arc in outgoing {
+                if visited.insert(arc.to.clone()) {
+                    parents.insert(arc.to.clone(), arc.clone());
+                    queue.push_back((arc.to.clone(), dist + 1));
+                }
             }
         }
     }

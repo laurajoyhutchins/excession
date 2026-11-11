@@ -12,6 +12,8 @@ pub mod effects;
 pub mod evidence_query;
 pub mod git;
 pub mod graph_assembly;
+pub mod configured_store;
+pub mod kbuild_graph;
 pub mod graph_baseline;
 pub mod historical;
 pub mod identity;

@@ -9,6 +9,7 @@ on:
       - core/src/projection.rs
       - core/src/index.rs
       - core/src/semantic.rs
+      - core/src/adapter.rs
   workflow_dispatch:
 
 permissions:

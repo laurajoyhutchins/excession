@@ -23,6 +23,8 @@ jobs:
           python-version: '3.13.5'
       - name: Install pinned Rust compiler
         run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Resolve locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Restore pre-reuse source independently
         run: git worktree add --detach "$RUNNER_TEMP/excession-before" fa1d15248210ee6ec2a4c744603b271d613fa7b5
       - name: Build both release binaries with identical Rust compiler

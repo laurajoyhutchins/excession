@@ -19,6 +19,7 @@ Usage:
   excession view deps --db DB --name NAME --rev REV --seed MODULE
   excession view paths --db DB --name NAME --rev REV --seed MODULE --role ROLE
   excession view graph --db DB --name NAME --rev REV --seed MODULE --kind KIND
+  excession view profile-deps --db DB --name NAME --rev REV --seed MODULE
   excession view security --db DB --repo REPO --run RUN_ID
   excession view compose --repo REPO --op union|intersection|difference --left JSON --right JSON
   excession view select --repo REPO --manifest JSON --axis role|source-prefix|virtual-prefix --value TEXT
@@ -126,6 +127,16 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             } else {
                 plan
             }
+        }
+        ("profile-deps", false) => {
+            let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
+            let db = Db::open(opt.path("db"))?;
+            projection::profile_dependencies(
+                &db,
+                opt.get("name"),
+                opt.get("rev"),
+                opt.get("seed"),
+            )?
         }
         ("graph", false) => {
             let opt = Options::parse(argv, &["db", "name", "rev", "seed", "kind"], &[])?;

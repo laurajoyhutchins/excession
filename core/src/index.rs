@@ -39,8 +39,8 @@ pub fn index_revision_with_roots(
     index_revision_inner(db, root, name, commit, provenance, roots, true, None)
 }
 
-/// Resolve Python imports relative to a declared source root, without changing
-/// the underlying Git paths or blob identities.
+/// Resolve imports relative to a declared source directory without changing
+/// physical Git paths, file modes, or blob identities.
 pub fn index_revision_with_import_base(
     db: &Db,
     root: &Path,
@@ -52,10 +52,15 @@ pub fn index_revision_with_import_base(
 ) -> Result<i64> {
     git::validate_path(import_base)?;
     let prefix = format!("{import_base}/");
-    if roots.iter().any(|root| *root != import_base && !root.starts_with(&prefix)) {
+    if roots
+        .iter()
+        .any(|root| *root != import_base && !root.starts_with(&prefix))
+    {
         return refuse("every module root must be inside --import-base");
     }
-    index_revision_inner(db, root, name, commit, provenance, roots, true, Some(import_base))
+    index_revision_inner(
+        db, root, name, commit, provenance, roots, true, Some(import_base),
+    )
 }
 
 fn index_revision_inner(
@@ -76,36 +81,120 @@ fn index_revision_inner(
     let tree = git::rev(root, &format!("{commit}^{{tree}}"))?;
     let entries = git::entries(root, &commit)?;
     db.init_schema()?;
+
     db.transaction(|db| {
-        db.execute("INSERT OR IGNORE INTO repository(name,git_dir,provenance) VALUES(?,?,?)",&[Param::Text(name),Param::Text(&root.to_string_lossy()),Param::Text(provenance)])?;
-        let id=db.scalar("SELECT id FROM repository WHERE name=?",&[Param::Text(name)])?.parse::<i64>().map_err(|e|e.to_string())?;
-        // A registered name is one logical checkout. Moving it requires a new name.
-        let old_root=db.scalar("SELECT git_dir FROM repository WHERE id=?",&[Param::Integer(id)])?;
-        if std::fs::canonicalize(&old_root).map_err(|e|e.to_string())?!=std::fs::canonicalize(root).map_err(|e|e.to_string())?{
-            return refuse(format!("repository name {name} already registered for another checkout"));
-        }
-        for (oid,kind) in [(&commit,"commit"),(&tree,"tree")] {
-            db.execute("INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",&[Param::Integer(id),Param::Text(oid),Param::Text(kind)])?;
-        }
-        db.execute("INSERT OR IGNORE INTO revision(repo_id,commit_oid,tree_oid) VALUES(?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&tree)])?;
-        for e in &entries {
-            db.execute("INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",&[Param::Integer(id),Param::Text(&e.oid),Param::Text(&e.kind)])?;
-            db.execute("INSERT OR IGNORE INTO tree_entry(repo_id,commit_oid,path,mode,kind,oid) VALUES(?,?,?,?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&e.path),Param::Text(&e.mode),Param::Text(&e.kind),Param::Text(&e.oid)])?;
-            if e.kind=="blob" && let Some((module,is_test))=module_name_with_import_base(&e.path,roots,import_base) {
-                db.execute("INSERT OR IGNORE INTO module(repo_id,commit_oid,name,path,blob_oid,is_test) VALUES(?,?,?,?,?,?)",&[Param::Integer(id),Param::Text(&commit),Param::Text(&module),Param::Text(&e.path),Param::Text(&e.oid),Param::Integer(i64::from(is_test))])?;
+        let repo_id = register_repository(db, root, name, provenance)?;
+        let mut recorded_objects = BTreeSet::new();
+
+        // Multiple paths may have identical contents. Persist each distinct
+        // (object ID, type) once while retaining every tree-entry relationship.
+        for (oid, kind) in [(&commit, "commit"), (&tree, "tree")] {
+            if recorded_objects.insert((oid.as_str(), kind)) {
+                record_object(db, repo_id, oid, kind)?;
             }
         }
-        if db.scalar("SELECT tree_oid FROM revision WHERE repo_id=? AND commit_oid=?",&[Param::Integer(id),Param::Text(&commit)])?!=tree{
+        db.execute(
+            "INSERT OR IGNORE INTO revision(repo_id,commit_oid,tree_oid) VALUES(?,?,?)",
+            &[
+                Param::Integer(repo_id),
+                Param::Text(&commit),
+                Param::Text(&tree),
+            ],
+        )?;
+
+        for entry in &entries {
+            if recorded_objects.insert((entry.oid.as_str(), entry.kind.as_str())) {
+                record_object(db, repo_id, &entry.oid, &entry.kind)?;
+            }
+            db.execute(
+                "INSERT OR IGNORE INTO tree_entry(repo_id,commit_oid,path,mode,kind,oid) VALUES(?,?,?,?,?,?)",
+                &[
+                    Param::Integer(repo_id),
+                    Param::Text(&commit),
+                    Param::Text(&entry.path),
+                    Param::Text(&entry.mode),
+                    Param::Text(&entry.kind),
+                    Param::Text(&entry.oid),
+                ],
+            )?;
+            if entry.kind == "blob"
+                && let Some((module, is_test)) = module_name_with_import_base(&entry.path, roots, import_base)
+            {
+                db.execute(
+                    "INSERT OR IGNORE INTO module(repo_id,commit_oid,name,path,blob_oid,is_test) VALUES(?,?,?,?,?,?)",
+                    &[
+                        Param::Integer(repo_id),
+                        Param::Text(&commit),
+                        Param::Text(&module),
+                        Param::Text(&entry.path),
+                        Param::Text(&entry.oid),
+                        Param::Integer(i64::from(is_test)),
+                    ],
+                )?;
+            }
+        }
+
+        let stored_tree = db.scalar(
+            "SELECT tree_oid FROM revision WHERE repo_id=? AND commit_oid=?",
+            &[Param::Integer(repo_id), Param::Text(&commit)],
+        )?;
+        if stored_tree != tree {
             return refuse("existing revision changed root tree");
         }
-        let computed=reconstruct_tree(db,id,&commit)?;
-        if computed!=tree{return refuse(format!("Git/SQLite tree mismatch: expected {tree}, got {computed}"));}
+        let reconstructed = reconstruct_tree(db, repo_id, &commit)?;
+        if reconstructed != tree {
+            return refuse(format!(
+                "Git/SQLite tree mismatch: expected {tree}, got {reconstructed}"
+            ));
+        }
         if include_semantics {
-            crate::semantic::index_sources(db,id,root,&commit,&entries,roots,import_base)?;
+            crate::semantic::index_sources(
+                db, repo_id, root, &commit, &entries, roots, import_base,
+            )?;
         }
         db.foreign_keys_valid()?;
-        Ok(id)
+        Ok(repo_id)
     })
+}
+
+fn register_repository(db: &Db, root: &Path, name: &str, provenance: &str) -> Result<i64> {
+    db.execute(
+        "INSERT OR IGNORE INTO repository(name,git_dir,provenance) VALUES(?,?,?)",
+        &[
+            Param::Text(name),
+            Param::Text(&root.to_string_lossy()),
+            Param::Text(provenance),
+        ],
+    )?;
+    let repo_id = db
+        .scalar(
+            "SELECT id FROM repository WHERE name=?",
+            &[Param::Text(name)],
+        )?
+        .parse::<i64>()
+        .map_err(|err| err.to_string())?;
+
+    // A registered name identifies one logical checkout. It must not be
+    // silently rebound to a different repository on a later indexing call.
+    let existing_root = db.scalar(
+        "SELECT git_dir FROM repository WHERE id=?",
+        &[Param::Integer(repo_id)],
+    )?;
+    let existing = std::fs::canonicalize(existing_root).map_err(|err| err.to_string())?;
+    let current = std::fs::canonicalize(root).map_err(|err| err.to_string())?;
+    if existing != current {
+        return refuse(format!(
+            "repository name {name} already registered for another checkout"
+        ));
+    }
+    Ok(repo_id)
+}
+
+fn record_object(db: &Db, repo_id: i64, oid: &str, kind: &str) -> Result<()> {
+    db.execute(
+        "INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",
+        &[Param::Integer(repo_id), Param::Text(oid), Param::Text(kind)],
+    )
 }
 
 pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
@@ -146,8 +235,8 @@ pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
     None
 }
 
-/// Map physical Git paths to Python's sys.path-relative module names.
-/// The default preserves established repository-qualified identities.
+/// Convert a Git-rooted module identity to a declared Python import name.
+/// Historical callers without an import base keep their old module names.
 pub fn module_name_with_import_base(
     path: &str,
     roots: &[&str],
@@ -169,145 +258,153 @@ struct Node {
     kind: String,
 }
 
+/// Verify a recorded tree using only the recorded Git entries. Subtrees are
+/// checked bottom-up, and each computed directory is handed to its parent once.
 pub fn reconstruct_tree(db: &Db, repo: i64, commit: &str) -> Result<String> {
     let expected = db.scalar(
         "SELECT tree_oid FROM revision WHERE repo_id=? AND commit_oid=?",
         &[Param::Integer(repo), Param::Text(commit)],
     )?;
-    let rows = db.query(
-        "SELECT path,mode,kind,oid FROM tree_entry WHERE repo_id=? AND commit_oid=? ORDER BY path",
-        &[Param::Integer(repo), Param::Text(commit)],
-    )?;
-    let mut directories = BTreeSet::from([String::new()]);
-    let mut leaves: BTreeMap<String, Vec<Node>> = BTreeMap::new();
-    let mut registered: BTreeMap<String, String> = BTreeMap::new();
-    let mut count = 0usize;
-    for r in rows {
-        let get = |i: usize| r[i].clone().ok_or("NULL tree entry");
-        let path = get(0)?;
-        let mode = get(1)?;
-        let kind = get(2)?;
-        let oid = get(3)?;
-        git::validate_path(&path)?;
-        git::oid(&oid)?;
-        if registered.insert(path.clone(), kind.clone()).is_some() {
+    let entries = db
+        .query(
+            "SELECT path,mode,kind,oid FROM tree_entry WHERE repo_id=? AND commit_oid=? ORDER BY path",
+            &[Param::Integer(repo), Param::Text(commit)],
+        )?
+        .into_iter()
+        .map(|row| {
+            let [path, mode, kind, oid]: [Option<String>; 4] =
+                row.try_into().map_err(|_| "invalid indexed tree row")?;
+            Ok(git::Entry {
+                path: path.ok_or("NULL tree path")?,
+                mode: mode.ok_or("NULL tree mode")?,
+                kind: kind.ok_or("NULL tree kind")?,
+                oid: oid.ok_or("NULL tree OID")?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    reconstruct_entries(&entries, &expected)
+}
+
+fn reconstruct_entries(entries: &[git::Entry], expected: &str) -> Result<String> {
+    git::oid(expected)?;
+
+    // The tree rows already enumerate every directory. Retaining the declared
+    // object IDs also removes a SQLite round-trip for each computed subtree.
+    let mut registered = BTreeMap::new();
+    let mut declared_trees = BTreeMap::new();
+    let mut children: BTreeMap<&str, Vec<Node>> = BTreeMap::new();
+    let mut directories = vec![""];
+
+    for entry in entries {
+        git::validate_path(&entry.path)?;
+        git::oid(&entry.oid)?;
+        if registered
+            .insert(entry.path.as_str(), entry.kind.as_str())
+            .is_some()
+        {
             return refuse("duplicate tree entry");
         }
-        count += 1;
-        if kind == "tree" {
-            if mode != "040000" {
+
+        let (parent, name) = entry.path.rsplit_once('/').unwrap_or(("", &entry.path));
+        if entry.kind == "tree" {
+            if entry.mode != "040000" {
                 return refuse("invalid directory mode");
             }
-            directories.insert(path.clone());
-        } else if !matches!(
-            (kind.as_str(), mode.as_str()),
-            ("blob", "100644" | "100755" | "120000") | ("commit", "160000")
-        ) {
-            return refuse("invalid indexed Git mode/kind");
-        }
-        let pieces = path.split('/').collect::<Vec<_>>();
-        let parent = pieces[..pieces.len() - 1].join("/");
-        leaves.entry(parent.clone()).or_default();
-        directories.insert(parent);
-        for k in 1..pieces.len() {
-            directories.insert(pieces[..k].join("/"));
-        }
-        if kind != "tree" {
-            leaves
-                .entry(pieces[..pieces.len() - 1].join("/"))
-                .or_default()
-                .push(Node {
-                    name: pieces[pieces.len() - 1].into(),
-                    mode,
-                    oid,
-                    kind,
-                });
+            declared_trees.insert(entry.path.as_str(), entry.oid.as_str());
+            directories.push(&entry.path);
+        } else {
+            if !matches!(
+                (entry.kind.as_str(), entry.mode.as_str()),
+                ("blob", "100644" | "100755" | "120000") | ("commit", "160000")
+            ) {
+                return refuse("invalid indexed Git mode/kind");
+            }
+            children.entry(parent).or_default().push(Node {
+                name: name.to_owned(),
+                mode: entry.mode.clone(),
+                oid: entry.oid.clone(),
+                kind: entry.kind.clone(),
+            });
         }
     }
-    if count == 0 {
-        // An empty Git tree is a valid tree: Git stores no entries.
+
+    // A path's parent must exist as a tree, not merely as an inferred prefix.
+    // In particular, a file may not also serve as a parent directory.
+    for path in registered.keys() {
+        let parent = path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or("");
+        if !parent.is_empty() && registered.get(parent) != Some(&"tree") {
+            return refuse(format!("missing parent tree entry: {parent}"));
+        }
+    }
+
+    if entries.is_empty() {
         let actual = digest::git_tree(&[]);
         if actual != expected {
             return refuse("empty tree OID mismatch");
         }
         return Ok(actual);
     }
-    for d in directories.iter().filter(|s| !s.is_empty()) {
-        if registered.get(d).map(String::as_str) != Some("tree") {
-            return refuse(format!("missing parent tree entry: {d}"));
-        }
-    }
-    let mut sorted = directories.iter().cloned().collect::<Vec<_>>();
-    sorted.sort_by_key(|p| {
-        std::cmp::Reverse(if p.is_empty() {
+
+    directories.sort_by_key(|path| {
+        std::cmp::Reverse(if path.is_empty() {
             0
         } else {
-            1 + p.bytes().filter(|b| *b == b'/').count()
+            1 + path.bytes().filter(|byte| *byte == b'/').count()
         })
     });
-    let mut computed: BTreeMap<String, String> = BTreeMap::new();
-    for dir in sorted {
-        let mut children = leaves.get(&dir).cloned().unwrap_or_default();
-        for (child_path, child_oid) in &computed {
-            let parent = child_path.rsplit_once('/').map(|x| x.0).unwrap_or("");
-            if parent == dir {
-                let name = child_path.rsplit('/').next().ok_or("bad child")?.to_owned();
-                children.push(Node {
-                    name,
-                    mode: "40000".into(),
-                    oid: child_oid.clone(),
-                    kind: "tree".into(),
-                });
-            }
-        }
-        children.sort_by(|a, b| {
-            let akey = if a.kind == "tree" {
-                format!("{}/", a.name)
-            } else {
-                a.name.clone()
-            };
-            let bkey = if b.kind == "tree" {
-                format!("{}/", b.name)
-            } else {
-                b.name.clone()
-            };
-            akey.as_bytes().cmp(bkey.as_bytes())
+
+    for directory in directories {
+        let mut nodes = children.remove(directory).unwrap_or_default();
+        // Git compares a tree's name as if it has a trailing slash. Compare
+        // byte iterators instead of allocating a sort key at each comparison.
+        nodes.sort_unstable_by(|a, b| {
+            a.name
+                .bytes()
+                .chain((a.kind == "tree").then_some(b'/'))
+                .cmp(b.name.bytes().chain((b.kind == "tree").then_some(b'/')))
         });
-        if children.windows(2).any(|p| p[0].name == p[1].name) {
+        if nodes.windows(2).any(|pair| pair[0].name == pair[1].name) {
             return refuse("duplicate tree basename");
         }
+
         let mut payload = Vec::new();
-        for child in &children {
-            payload.extend_from_slice(child.mode.trim_start_matches('0').as_bytes());
+        for node in &nodes {
+            payload.extend_from_slice(node.mode.trim_start_matches('0').as_bytes());
             payload.push(b' ');
-            payload.extend_from_slice(child.name.as_bytes());
+            payload.extend_from_slice(node.name.as_bytes());
             payload.push(0);
-            let raw = digest::unhex(&child.oid)?;
+            let raw = digest::unhex(&node.oid)?;
             if raw.len() != 20 {
                 return refuse("invalid Git object byte length");
             }
-            payload.extend(raw);
+            payload.extend_from_slice(&raw);
         }
+
         let actual = digest::git_tree(&payload);
-        if let Some(stored) = registered.get(&dir) {
-            if stored != "tree" {
-                return refuse("directory collides with file");
-            }
-            let declared = db.scalar(
-                "SELECT oid FROM tree_entry WHERE repo_id=? AND commit_oid=? AND path=?",
-                &[Param::Integer(repo), Param::Text(commit), Param::Text(&dir)],
-            )?;
-            if actual != declared {
-                return refuse(format!("subtree mismatch: {dir}"));
-            }
+        if let Some(&declared) = declared_trees.get(directory)
+            && actual != declared
+        {
+            return refuse(format!("subtree mismatch: {directory}"));
         }
-        computed.insert(dir, actual);
+        if directory.is_empty() {
+            if actual != expected {
+                return refuse(format!("root mismatch: {actual} vs {expected}"));
+            }
+            return Ok(actual);
+        }
+
+        let (parent, name) = directory.rsplit_once('/').unwrap_or(("", directory));
+        children.entry(parent).or_default().push(Node {
+            name: name.to_owned(),
+            mode: "40000".to_owned(),
+            oid: actual,
+            kind: "tree".to_owned(),
+        });
     }
-    let root = computed.remove("").ok_or("missing computed root")?;
-    if root != expected {
-        return refuse(format!("root mismatch: {root} vs {expected}"));
-    }
-    Ok(root)
+    refuse("missing computed root")
 }
 
 pub type FileChange = (String, Option<String>, Option<String>);
@@ -340,6 +437,117 @@ pub fn changed_paths(db: &Db, repo: i64, old: &str, new: &str) -> Result<Vec<Fil
 }
 
 #[cfg(test)]
+mod tree_tests {
+    use super::*;
+
+    // These tree and blob IDs were obtained independently with git hash-object
+    // and git mktree (including an executable and a symlink).
+    const ROOT: &str = "fb358e2c6a35e1550abfe881f1bfa2f67ae99359";
+
+    fn entry(path: &str, mode: &str, kind: &str, oid: &str) -> git::Entry {
+        git::Entry {
+            path: path.to_owned(),
+            mode: mode.to_owned(),
+            kind: kind.to_owned(),
+            oid: oid.to_owned(),
+        }
+    }
+
+    fn fixture() -> Vec<git::Entry> {
+        vec![
+            entry(
+                "src/sub/run.sh",
+                "100755",
+                "blob",
+                "e37f89b3b76e73e0d000552c897006f0b8ba1b76",
+            ),
+            entry(
+                "src/link",
+                "120000",
+                "blob",
+                "7444fe0be13f52655ac0ae0b39e50bc6d24562e0",
+            ),
+            entry(
+                "README.md",
+                "100644",
+                "blob",
+                "e845566c06f9bf557d35e8292c37cf05d97a9769",
+            ),
+            entry(
+                "src",
+                "040000",
+                "tree",
+                "ca8514f19a977b33644c22919f1dbd8f144e8507",
+            ),
+            entry(
+                "src/lib.rs",
+                "100644",
+                "blob",
+                "f0d6ccedb89e7e7c1e49694421c1c4530e62ec94",
+            ),
+            entry(
+                "src/sub",
+                "040000",
+                "tree",
+                "a80548db97f17b12b82cfc7880580bdc4f41ab05",
+            ),
+        ]
+    }
+
+    #[test]
+    fn reconstructs_independent_git_tree_regardless_of_row_order() {
+        let mut rows = fixture();
+        assert_eq!(reconstruct_entries(&rows, ROOT).unwrap(), ROOT);
+        rows.reverse();
+        assert_eq!(reconstruct_entries(&rows, ROOT).unwrap(), ROOT);
+        assert_eq!(
+            reconstruct_entries(&[], "4b825dc642cb6eb9a060e54bf8d69288fbee4904").unwrap(),
+            "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        );
+    }
+
+    #[test]
+    fn refuses_tampering_and_invalid_tree_structures() {
+        let mut rows = fixture();
+        rows.iter_mut()
+            .find(|e| e.path == "src/lib.rs")
+            .unwrap()
+            .mode = "100755".into();
+        assert!(reconstruct_entries(&rows, ROOT).is_err());
+
+        let mut rows = fixture();
+        rows.iter_mut().find(|e| e.path == "src/sub").unwrap().oid = "0".repeat(40);
+        assert!(
+            reconstruct_entries(&rows, ROOT)
+                .unwrap_err()
+                .contains("subtree mismatch")
+        );
+
+        let mut rows = fixture();
+        rows.retain(|e| e.path != "src/sub");
+        assert!(
+            reconstruct_entries(&rows, ROOT)
+                .unwrap_err()
+                .contains("missing parent tree")
+        );
+
+        let mut rows = fixture();
+        rows.push(rows[0].clone());
+        assert!(
+            reconstruct_entries(&rows, ROOT)
+                .unwrap_err()
+                .contains("duplicate")
+        );
+
+        let mut rows = fixture();
+        rows[0].path = "src//bad".into();
+        assert!(reconstruct_entries(&rows, ROOT).is_err());
+
+        assert!(reconstruct_entries(&[], ROOT).is_err());
+    }
+}
+
+#[cfg(test)]
 mod import_base_tests {
     use super::*;
 
@@ -356,6 +564,9 @@ mod import_base_tests {
             module_name_with_import_base("scripts/gdb/linux/__init__.py", roots, Some("scripts/gdb")).unwrap().0,
             "linux"
         );
-        assert!(module_name_with_import_base("scripts/other/task.py", roots, Some("scripts/gdb")).is_none());
+        assert!(
+            module_name_with_import_base("scripts/other/task.py", roots, Some("scripts/gdb"))
+                .is_none()
+        );
     }
 }

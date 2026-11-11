@@ -24,7 +24,7 @@ Git is required. See [portable releases](docs/PORTABILITY.md) for prebuilt
 binaries and [development setup](docs/DEVELOPMENT.md) for toolchains.
 
 For example, index an existing clean checkout of
-[h11](https://github.com/Julian/jsonschema), or another Python/JavaScript
+[h11](https://github.com/python-hyper/h11), or another Python/JavaScript
 repository with the roots and seed adjusted to match its modules:
 
 ```sh

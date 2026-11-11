@@ -3,7 +3,7 @@
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, git, graph_baseline, index, native_boundary, preflight, projection, refactor, refuse,
-    security_ingest, syntax, syntax_resolution, views,
+    scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -50,6 +50,8 @@ Usage:
   excession inspect review --db DB --name NAME --old REV --new REV
   excession refactor suggest --db DB --name NAME --rev REV
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
+  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
+  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
   excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
@@ -609,6 +611,29 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("engine"),
                 sub == "audit",
             )?))
+        }
+        [top, sub, rest @ ..]
+            if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
+        {
+            let opt = Options::parse(
+                rest,
+                if sub == "scip-audit" {
+                    &["repo", "rev", "index", "report"]
+                } else {
+                    &["repo", "rev", "index"]
+                },
+                &[],
+            )?;
+            Ok(json(if sub == "scip-audit" {
+                scip_refactor::audit(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.path("report"),
+                )?
+            } else {
+                scip_refactor::suggest(opt.path("repo"), opt.get("rev"), opt.path("index"))?
+            }))
         }
         [top, sub, rest @ ..] if top == "refactor" => {
             if !matches!(sub.as_str(), "suggest" | "audit") {

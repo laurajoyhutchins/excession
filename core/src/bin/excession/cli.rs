@@ -92,18 +92,6 @@ pub(super) fn command() -> Command {
                 ],
                 &["import-roots"],
             ),
-            leaf(
-                "cargo-depfile",
-                &[
-                    "repo",
-                    "package-root",
-                    "depfile",
-                    "subject",
-                    "rustc",
-                    "rustc-version",
-                ],
-                &["rev"],
-            ),
             leaf("native-preflight", &["declaration"], &[]),
             leaf(
                 "native-compare",
@@ -165,8 +153,8 @@ pub(super) fn command() -> Command {
         vec![
             leaf("suggest", &["db", "name", "rev"], &[]),
             leaf("audit", &["db", "name", "rev", "report"], &[]),
-            leaf("scip-suggest", &["repo", "rev", "index"], &[]),
-            leaf("scip-audit", &["repo", "rev", "index", "report"], &[]),
+            leaf("scip-suggest", &["repo", "rev", "index"], &["source-prefix"]),
+            leaf("scip-audit", &["repo", "rev", "index", "report"], &["source-prefix"]),
         ],
     )
     .about("Source-bound refactoring hypotheses");

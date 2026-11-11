@@ -131,7 +131,7 @@ The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL
 - `excession view ls|stat|cat`: list, inspect or read exact virtual source entries on demand.
 - `excession view materialize|audit`: generate a read-only physical tree or verify it.
 - `excession browse`: terminal browser, without a Python process or copied checkout.
-- `excession syntax native-run|cargo-depfile`: compare scoped compiler observations with source-bound declarations.
+- `excession syntax native-run`: compare scoped compiler observations with source-bound declarations.
 - `excession inspect evidence`: inspect focused, bounded source and runtime evidence.
 - `excession benchmark validate|report`: validate or assemble source-bound benchmark reports.
 

@@ -25,6 +25,8 @@ jobs:
       - name: Install pinned Rust for full manual benchmark
         if: github.event_name == 'workflow_dispatch'
         run: rustup show active-toolchain
+      - name: Resolve locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - uses: actions/setup-python@v5
         with:
           python-version-file: .python-version

@@ -28,7 +28,7 @@ REPETITIONS = 12
 PHASES = (
     "resolve_revision", "check_git_tree", "reconstruct_index_tree",
     "load_modules", "load_dependencies", "traverse_and_build_entries",
-    "validate_index_and_plan", "validate_plan", "read_git_source_tree",
+    "validate_index_and_plan", "validate_plan", "reuse_indexed_tree",
     "validate_source_bindings", "canonical_view_id",
 )
 

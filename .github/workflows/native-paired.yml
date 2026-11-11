@@ -7,6 +7,8 @@ on:
       - .github/workflows/native-paired.yml
       - core/src/graph_baseline.rs
       - core/src/projection.rs
+      - core/src/projection/composition.rs
+      - tests/test_projections.py
   workflow_dispatch:
 
 permissions:
@@ -18,16 +20,28 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
       - name: Compile native CLI
         run: cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
-      - name: Measure identical pinned h11 source queries
+      - name: Measure pinned h11 source queries (candidate)
         run: python3 benchmarks/native_paired.py core/target/release/excession native-calibration.json
+      - name: Compile and measure unmodified baseline on same runner
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/excession-baseline" "$BASE_SHA"
+          cargo +1.99.1 build --offline --release --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
+          python3 benchmarks/native_paired.py "$RUNNER_TEMP/excession-baseline/core/target/release/excession" baseline-calibration.json
       - name: Retain raw paired timings and source-parity receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: native-retrieval-calibration
-          path: native-calibration.json
+          path: |
+            native-calibration.json
+            baseline-calibration.json
           if-no-files-found: warn

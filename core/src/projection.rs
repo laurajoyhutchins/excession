@@ -141,8 +141,10 @@ impl Plan {
         ])
     }
     pub fn manifest(&self) -> Value {
-        let mut fields = self.payload().entries().expect("payload object").clone();
-        fields.insert("view_id".to_owned(), Value::string(self.payload().sha256()));
+        let payload = self.payload();
+        let view_id = payload.sha256();
+        let mut fields = payload.entries().expect("payload object").clone();
+        fields.insert("view_id".to_owned(), Value::string(view_id));
         Value::Object(fields)
     }
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -251,6 +253,25 @@ fn source_table(repo: &Path, commit: &str, tree: &str) -> Result<BTreeMap<String
     Ok(table)
 }
 
+/// Check all entries against a source table independently authenticated for
+/// this exact commit/tree. Reusing an enumeration never reuses a verdict.
+fn authenticate_from_table(plan: &Plan, actual: &BTreeMap<String, git::Entry>) -> Result<()> {
+    plan.check()?;
+    check_source_bindings(plan, actual)
+}
+
+fn check_source_bindings(plan: &Plan, actual: &BTreeMap<String, git::Entry>) -> Result<()> {
+    for e in &plan.entries {
+        let source = actual
+            .get(&e.source_path)
+            .ok_or("view references an absent source")?;
+        if source.oid != e.blob || source.mode != e.mode {
+            return refuse(format!("view source identity mismatch: {}", e.source_path));
+        }
+    }
+    Ok(())
+}
+
 fn authenticate(plan: &Plan, repo: &Path) -> Result<()> {
     authenticate_profiled(plan, repo, None)
 }
@@ -264,14 +285,7 @@ fn authenticate_profiled(
     stamp(&mut profile, "validate_plan");
     let actual = source_table(repo, &plan.commit, &plan.tree)?;
     stamp(&mut profile, "read_git_source_tree");
-    for e in &plan.entries {
-        let source = actual
-            .get(&e.source_path)
-            .ok_or("view references an absent source")?;
-        if source.oid != e.blob || source.mode != e.mode {
-            return refuse(format!("view source identity mismatch: {}", e.source_path));
-        }
-    }
+    check_source_bindings(plan, &actual)?;
     stamp(&mut profile, "validate_source_bindings");
     Ok(())
 }
@@ -301,6 +315,30 @@ struct Module {
     blob: String,
     mode: String,
     test: bool,
+}
+
+/// The whole indexed Git tree has already been reconstructed against the
+/// commit's actual root OID. Here we recheck that the view did not introduce
+/// a path/mode/blob that differs from the individually verified module rows.
+fn check_indexed_bindings(plan: &Plan, modules: &BTreeMap<String, Module>) -> Result<()> {
+    let mut known = BTreeMap::<&str, (&str, &str)>::new();
+    for module in modules.values() {
+        let identity = (module.blob.as_str(), module.mode.as_str());
+        if let Some(previous) = known.insert(module.path.as_str(), identity) {
+            if previous != identity {
+                return refuse("inconsistent indexed module bindings for one source path");
+            }
+        }
+    }
+    for entry in &plan.entries {
+        let Some(&(blob, mode)) = known.get(entry.source_path.as_str()) else {
+            return refuse("view references a source absent from authenticated index");
+        };
+        if blob != entry.blob || mode != entry.mode {
+            return refuse(format!("view source identity mismatch: {}", entry.source_path));
+        }
+    }
+    Ok(())
 }
 
 fn required(row: &[Option<String>], i: usize) -> Result<&str> {
@@ -359,11 +397,20 @@ fn dependency_plan_with_profile(
     }
     stamp(&mut profile, "reconstruct_index_tree");
     let mut modules = BTreeMap::new();
-    for row in db.query("SELECT m.name,m.path,m.blob_oid,t.mode,m.is_test FROM module m JOIN tree_entry t ON t.repo_id=m.repo_id AND t.commit_oid=m.commit_oid AND t.path=m.path WHERE m.repo_id=? AND m.commit_oid=? ORDER BY m.name", &[Param::Integer(id),Param::Text(&commit)])? {
-        modules.insert(required(&row,0)?.to_owned(), Module {
-            path: required(&row,1)?.to_owned(), blob: required(&row,2)?.to_owned(),
-            mode: required(&row,3)?.to_owned(), test: required(&row,4)? == "1",
-        });
+    for row in db.query("SELECT m.name,m.path,m.blob_oid,t.mode,m.is_test,t.oid,t.kind FROM module m JOIN tree_entry t ON t.repo_id=m.repo_id AND t.commit_oid=m.commit_oid AND t.path=m.path WHERE m.repo_id=? AND m.commit_oid=? ORDER BY m.name", &[Param::Integer(id),Param::Text(&commit)])? {
+        // Module metadata is not part of the Git tree proof. Bind its blob
+        // claim explicitly to the authenticated tree_entry OID and type.
+        if required(&row, 2)? != required(&row, 5)? || required(&row, 6)? != "blob" {
+            return refuse("indexed module and authenticated Git tree entry disagree");
+        }
+        if modules.insert(required(&row, 0)?.to_owned(), Module {
+            path: required(&row, 1)?.to_owned(),
+            blob: required(&row, 5)?.to_owned(),
+            mode: required(&row, 3)?.to_owned(),
+            test: required(&row, 4)? == "1",
+        }).is_some() {
+            return refuse("duplicate indexed module name");
+        }
     }
     if !modules.contains_key(seed) {
         return refuse(format!("unknown indexed seed module: {seed}"));
@@ -437,7 +484,13 @@ fn dependency_plan_with_profile(
     db.foreign_keys_valid()?;
     let plan = make_plan("dependencies", seed, commit, tree, entries)?;
     stamp(&mut profile, "validate_index_and_plan");
-    authenticate_profiled(&plan, &repo, profile)?;
+    plan.check()?;
+    stamp(&mut profile, "validate_plan");
+    // Git-tree reconstruction above authenticated every tree_entry row against
+    // commit^{tree}. No second git ls-tree is needed for this indexed query.
+    stamp(&mut profile, "reuse_indexed_tree");
+    check_indexed_bindings(&plan, &modules)?;
+    stamp(&mut profile, "validate_source_bindings");
     Ok(plan)
 }
 
@@ -616,7 +669,8 @@ pub fn security(db: &Db, repo: &Path, run_id: &str) -> Result<Value> {
     }
     db.foreign_keys_valid()?;
     let plan = make_plan("security-flow", run_id, commit, tree, entries)?;
-    authenticate(&plan, repo)?;
+    // source_table already read and authenticated this exact source tree.
+    authenticate_from_table(&plan, &all_sources)?;
     Ok(plan.manifest())
 }
 

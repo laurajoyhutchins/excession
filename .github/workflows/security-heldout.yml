@@ -131,7 +131,6 @@ jobs:
           languages: python
           queries: security-extended
           build-mode: none
-          tools: 2.27.4
       - name: Analyze pinned upstream source with CodeQL
         uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9
         with:

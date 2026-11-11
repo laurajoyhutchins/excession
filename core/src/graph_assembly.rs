@@ -199,6 +199,16 @@ pub fn assemble(repo: &Path, rev: &str, build: &Path, target_name: &str,
         push_edge(&mut edges, &target_id, &node, "DEPENDS_ON_TARGET",
                   "CMAKE_CONFIGURED", model_path)?;
     }
+    for artifact in values(&target_json, "artifacts")? {
+        let path = artifact.get("path")?.str()?;
+        if path.is_empty() { return refuse("empty target artifact path"); }
+        let node = format!("artifact:{path}");
+        push_node(&mut nodes, node.clone(), "configured-artifact",
+                  obj(&[("path", Value::string(path)),
+                        ("configuration", Value::string(config_name))]))?;
+        push_edge(&mut edges, &target_id, &node, "PRODUCES_ARTIFACT",
+                  "CMAKE_CONFIGURED_NOT_EXECUTION_PROOF", model_path)?;
+    }
     let mut source_paths = BTreeSet::new();
     let mut non_git_sources = 0usize;
     for item in values(&target_json, "sources")? {

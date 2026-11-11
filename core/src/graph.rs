@@ -457,6 +457,62 @@ mod tests {
         assert_eq!(configured_store::relation("unknown-new-edge"), "unknown");
     }
     #[test]
+    fn common_graph_queries_preserve_source_and_evidence() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH)
+            .expect("time").as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "excession-graph-{}-{unique}.sqlite", std::process::id()
+        ));
+        let db = Db::open(&path).expect("database");
+        let mut nodes = BTreeMap::new();
+        let mut edges = BTreeMap::new();
+        configured_store::push_node(
+            &mut nodes, "target:app".to_owned(), "configured-target",
+            obj(&[("name", Value::string("app"))])
+        ).unwrap();
+        configured_store::push_node(
+            &mut nodes, "source:a.c".to_owned(), "git-source",
+            obj(&[("path", Value::string("a.c"))])
+        ).unwrap();
+        configured_store::push_edge(
+            &mut edges, "target:app", "source:a.c", "TARGET_SOURCE",
+            "CMAKE_CONFIGURED_GIT_VERIFIED", "native-receipt"
+        ).unwrap();
+        let body = obj(&[
+            ("schema", Value::string("excession.configured-graph.v1")),
+            ("source_commit", Value::string("0000000000000000000000000000000000000000")),
+            ("target", Value::string("app")),
+            ("configuration", Value::string("Debug")),
+            ("status", Value::string("PARTIAL_TARGET_OBSERVATIONS")),
+            ("nodes", Value::array(nodes.values().cloned())),
+            ("edges", Value::array(edges.values().cloned())),
+        ]);
+        let id = body.sha256();
+        configured_store::persist(
+            &db, &id, "0000000000000000000000000000000000000000",
+            "app", "Debug", &body, &nodes, &edges, &[],
+        ).unwrap();
+        let listed = list(&db).unwrap();
+        assert_eq!(listed.get("count").unwrap().integer().unwrap(), 1);
+        let shown = show(&db, Some(&id[..12]), None).unwrap();
+        assert_eq!(shown.get("provider").unwrap().str().unwrap(), "cmake");
+        let dependencies = neighbors(&db, None, None, "app", "out", 2).unwrap();
+        let relation = &dependencies.get("edges").unwrap().array_ref().unwrap()[0];
+        assert_eq!(relation.get("relation").unwrap().str().unwrap(), "uses");
+        assert_eq!(relation.get("kind").unwrap().str().unwrap(), "TARGET_SOURCE");
+        assert_eq!(relation.get("status").unwrap().str().unwrap(),
+            "CMAKE_CONFIGURED_GIT_VERIFIED");
+        assert_eq!(relation.get("evidence").unwrap().str().unwrap(), "native-receipt");
+        let walk = self::path(&db, None, None, "app", "a.c", 2).unwrap();
+        assert_eq!(walk.get("status").unwrap().str().unwrap(), "RECORDED_EVIDENCE_PATH");
+        let unreachable = self::path(&db, None, None, "a.c", "app", 2).unwrap();
+        assert_eq!(unreachable.get("status").unwrap().str().unwrap(),
+            "NO_RECORDED_PATH_IN_SELECTED_DIRECTION_AND_DEPTH");
+        drop(db);
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
     fn provider_detection_is_fail_closed() {
         assert!(provider_for(Path::new("/does-not-exist"), "lib", "auto").is_err());
         assert_eq!(

@@ -230,7 +230,7 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
         }
         if let Some(text) = opt(doc, "text")
             && !text.str()?.is_empty()
-            && text.str()?.as_bytes() != data
+            && text.str()?.as_bytes() != data.as_slice()
         {
             return refuse("SCIP embedded document text differs from pinned Git blob");
         }
@@ -363,6 +363,9 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
     ]);
     let id = report.sha256();
     report.entries_mut()?.insert("report_id".into(), Value::string(id));
+    if report.canonical().len() > MAX_INDEX_BYTES {
+        return refuse("SCIP refactor report exceeds 16 MiB");
+    }
     Ok(report)
 }
 

@@ -185,6 +185,20 @@ impl Plan {
         digest::sha256(self.canonical_payload().as_bytes())
     }
 
+    /// Serialize the public manifest without materializing the nested JSON
+    /// Value tree. The source-authenticated Plan and canonical payload order
+    /// are unchanged. Append the final sorted view_id field after hashing
+    /// exactly the original six-field payload.
+    fn canonical_manifest(&self) -> String {
+        let mut output = self.canonical_payload();
+        let id = digest::sha256(output.as_bytes());
+        assert_eq!(output.pop(), Some('}'), "canonical payload ends in object");
+        output.push_str(r#","view_id":"#);
+        json::write_quoted(&id, &mut output);
+        output.push('}');
+        output
+    }
+
     pub fn manifest(&self) -> Value {
         let view_id = self.view_id();
         let payload = self.payload();
@@ -577,6 +591,17 @@ pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<V
     Ok(dependency_plan(db, name, revision, seed)?.manifest())
 }
 
+/// Emit the same authenticated dependency manifest bytes as `dependencies`,
+/// without constructing the nested JSON Value representation for output.
+pub fn dependencies_canonical(
+    db: &Db,
+    name: &str,
+    revision: &str,
+    seed: &str,
+) -> Result<String> {
+    Ok(dependency_plan(db, name, revision, seed)?.canonical_manifest())
+}
+
 /// Return only paths needed by a focused role query. The complete source-bound
 /// projection is authenticated first, but its unrelated entries are not emitted.
 /// This is a query result, not a view manifest or an independent correctness proof.
@@ -801,6 +826,46 @@ mod tests {
                 Plan::from_bytes(manifest.canonical().as_bytes()).unwrap(),
                 plan,
             );
+        }
+    }
+
+    #[test]
+    fn direct_manifest_output_is_byte_identical_to_value_serializer() {
+        for count in [1usize, 2, 17, 128, 1024, MAX_ENTRIES] {
+            let fake = "a".repeat(40);
+            let entries = (0..count)
+                .map(|i| Entry {
+                    virtual_path: format!("views/10-dependencies/m{i:04}é.py"),
+                    source_path: format!("source/m{i:04}é.py"),
+                    blob: fake.clone(),
+                    mode: if i % 2 == 0 { "100644" } else { "100755" }.into(),
+                    role: if i % 2 == 0 {
+                        "direct-dependencies"
+                    } else {
+                        "indexed-test"
+                    }
+                    .into(),
+                    detail: format!("module={i}; detail=\\\"🧪\\\";\n\r\t\u{1f}"),
+                })
+                .collect();
+            let plan = make_plan(
+                "dependencies",
+                "focus 🌎 \" \\ slash \n",
+                fake.clone(),
+                fake,
+                entries,
+            )
+            .unwrap();
+            let legacy = plan.manifest().canonical();
+            let new = plan.canonical_manifest();
+            assert_eq!(new, legacy, "different full manifest bytes at {count} entries");
+            assert_eq!(
+                Plan::from_bytes(new.as_bytes()).unwrap(),
+                plan,
+                "direct serialization must remain materializable",
+            );
+            let parsed = json::parse(new.as_bytes()).unwrap();
+            assert_eq!(parsed.get("view_id").unwrap().str().unwrap(), plan.view_id());
         }
     }
 

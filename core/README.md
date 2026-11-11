@@ -7,6 +7,14 @@ scanner ingestion and independent audit, and a `research` subgroup for exact
 historical reproductions. The Rust engine does not claim to infer arbitrary
 language semantics or confirm exploitable vulnerabilities.
 
+## Optional multi-language parsing
+
+`excession syntax scan` uses preinstalled Tree-sitter grammar-pack parsers to
+produce Git-authenticated structural and import observations; `syntax audit`
+independently re-parses and compares those observations. No external source
+code is executed and no unverified syntax fact becomes a dependency or proof.
+See [syntax parser documentation](../docs/SYNTAX_PARSERS.md).
+
 ## Run the checks
 
 From the repository root:

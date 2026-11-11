@@ -75,7 +75,10 @@ jobs:
           build-mode: manual
       - name: Build benchmark Go module for CodeQL extraction
         working-directory: benchmarks/security-validity
-        run: go test -count=1 ./...
+        run: |
+          go clean -cache
+          go build ./...
+          go test -count=1 ./...
       - name: Analyze with CodeQL and retain SARIF locally
         uses: github/codeql-action/analyze@v3
         with:

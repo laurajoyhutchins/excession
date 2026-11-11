@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/concepts/review-event.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Excession immutable semantic review event v1 (proposed)",
+  "required": [
+    "schema",
+    "event_id",
+    "action",
+    "concept_id",
+    "concept_revision_id",
+    "reviewer",
+    "scope",
+    "evidence_receipts",
+    "rationale",
+    "evidence_assessment"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts-review-event.v1"
+    },
+    "event_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "action": {
+      "enum": [
+        "ACCEPT",
+        "REJECT",
+        "MERGE",
+        "SPLIT",
+        "ALIAS",
+        "SUPERSEDE"
+      ]
+    },
+    "concept_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "concept_revision_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "related_concept_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "model_id",
+        "snapshot_id"
+      ],
+      "properties": {
+        "source_commit": {
+          "$ref": "#/$defs/oid"
+        },
+        "model_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "snapshot_id": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "evidence_receipts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_assessment": {
+      "const": "REVIEWED_INTERPRETATION_NOT_BEHAVIOR_PROOF"
+    },
+    "supersedes_event_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

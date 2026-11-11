@@ -45,10 +45,13 @@ views, and does not assert that it does.
 - `checked_tree_ab.py`: historical-vs-current Rust binaries, identical Git
   and SQLite relations, canonical byte parity and representative tamper
   refusals. Dedicated `checked-tree-ab.yml` remains an isolated long run.
-- `real_fixtures.py`: source-bound projections on a pinned h11 bundle and
-  selected real upstream Git commits, with independent Git blob/mode/path
-  checking and explicit unsupported-language limits.
+- `real_fixtures.py`: source-bound projections on pinned h11 and upstream Git
+  commits, with an independent, bounded import-edge inventory in
+  `dependency_oracle.py` and `js_import_oracle.cjs`. Missing and invented SQL
+  dependency rows must be caught by the oracle. An adversarial Python/JS
+  fixture covers absolute `src/` imports and CJS/TypeScript index files.
 
-These existing suites verify source identity and selected corruption refusals.
-They do **not** constitute an equal-guarantee comparison against an independent
-Git/SQLite security auditor or a complete semantic relationship oracle.
+These suites verify exact in-index static import edges for their named fixtures,
+not all runtime dependencies in arbitrary code. Dynamic imports, unsupported
+import-resolution configurations, and external packages remain outside the
+coverage denominator. See [dependency scope](../../docs/DEPENDENCY_COVERAGE.md).

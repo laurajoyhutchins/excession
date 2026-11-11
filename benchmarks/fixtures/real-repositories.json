@@ -61,6 +61,15 @@
         "lib.core.Axios",
         "lib.utils"
       ]
+    },
+    {
+      "name": "import-cases",
+      "source": "synthetic",
+      "roots": "src,lib",
+      "seeds": [
+        "src.pkg.first",
+        "lib.main"
+      ]
     }
   ]
 }

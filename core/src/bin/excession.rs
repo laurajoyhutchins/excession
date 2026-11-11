@@ -3,8 +3,7 @@
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, git, graph_baseline, index, preflight, projection, refactor, refuse, security_ingest,
-    syntax,
-    syntax_resolution, views,
+    syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -466,7 +465,10 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub, a]
             if a == "--help"
-                && matches!(top.as_str(), "view" | "security" | "inspect" | "syntax" | "refactor")
+                && matches!(
+                    top.as_str(),
+                    "view" | "security" | "inspect" | "syntax" | "refactor"
+                )
                 && !sub.is_empty() =>
         {
             Ok(Response::Message(HELP.to_owned()))

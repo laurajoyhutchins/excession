@@ -1,0 +1,29 @@
+name: Go research adapter
+
+on:
+  pull_request:
+    paths:
+      - '.go-version'
+      - 'mise.toml'
+      - '.github/workflows/go-adapter.yml'
+      - 'core/adapters/*.go'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      MISE_ENABLE_TOOLS: go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - name: Standard-library-only adapter tests
+        run: mise run go-check

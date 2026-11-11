@@ -6,6 +6,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -14,20 +18,42 @@ jobs:
     name: Rust and integration tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      MISE_ENABLE_TOOLS: rust,python,node
     steps:
       - uses: actions/checkout@v4
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
-      - uses: actions/setup-python@v5
+      - uses: jdx/mise-action@v5
+      - name: Confirm Rust toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version: '3.13.5'
-      - name: Install pinned Python test dependency
-        run: python3 -m pip install --disable-pip-version-check pytest==9.0.2
+          workspaces: core -> target
+      - name: Install development dependencies with mise
+        run: mise run setup
+      - name: Prefetch locked Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Install pinned Rust test reporter
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.151
       - name: Format
-        run: cargo +1.99.1 fmt --manifest-path core/Cargo.toml -- --check
+        run: cargo fmt --manifest-path core/Cargo.toml -- --check
       - name: Clippy
-        run: cargo +1.99.1 clippy --offline --manifest-path core/Cargo.toml --all-targets -- -D warnings
-      - name: Rust tests
-        run: cargo +1.99.1 test --offline --manifest-path core/Cargo.toml
-      - name: Python integration tests
-        run: python3 -m unittest discover -s tests -v
+        run: cargo clippy --offline --locked --manifest-path core/Cargo.toml --all-targets -- -D warnings
+      - name: Rust tests (JUnit XML)
+        run: cargo nextest run --offline --locked --manifest-path core/Cargo.toml --profile ci
+      - name: Rust doctests
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --doc
+      - name: JavaScript adapter tests
+        run: npm run check && npm test
+      - name: Python-specific tooling and independent oracle tests (JUnit XML)
+        run: python3 -m pytest -q tests --junitxml=test-results/python.xml
+      - name: Retain test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-junit
+          path: |
+            core/target/nextest/ci/junit.xml
+            test-results/python.xml
+          if-no-files-found: warn

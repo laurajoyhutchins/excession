@@ -85,21 +85,18 @@ fn source_path(repo: &Path, package: &Path, token: &str) -> Result<String> {
     Ok(name)
 }
 
-fn check_blob(
-    repo: &Path,
-    git_objects: &BTreeMap<String, git::Entry>,
-    path: &str,
-) -> Result<()> {
+fn check_blob(repo: &Path, git_objects: &BTreeMap<String, git::Entry>, path: &str) -> Result<()> {
     let entry = git_objects
         .get(path)
         .ok_or_else(|| format!("compiler input not tracked by Git: {path}"))?;
     if entry.kind != "blob" || !matches!(entry.mode.as_str(), "100644" | "100755") {
         return refuse(format!("compiler input is not a regular Git file: {path}"));
     }
-    let data = fs::read(repo.join(path))
-        .map_err(|e| format!("read compiler input {path}: {e}"))?;
+    let data = fs::read(repo.join(path)).map_err(|e| format!("read compiler input {path}: {e}"))?;
     if digest::git_blob(&data) != entry.oid {
-        return refuse(format!("compiled file does not match pinned Git blob: {path}"));
+        return refuse(format!(
+            "compiled file does not match pinned Git blob: {path}"
+        ));
     }
     Ok(())
 }
@@ -179,9 +176,8 @@ pub fn declaration(
     {
         return refuse("rustc executable is missing or exceeds hash limit");
     }
-    let compiler_sha = digest::sha256(
-        &fs::read(&binary_path).map_err(|e| format!("rustc hash read: {e}"))?,
-    );
+    let compiler_sha =
+        digest::sha256(&fs::read(&binary_path).map_err(|e| format!("rustc hash read: {e}"))?);
     let source_tree = git::rev(&checkout, &format!("{commit}^{{tree}}"))?;
     let payload = obj(&[
         ("schema", Value::string("excession.input-declaration.v1")),

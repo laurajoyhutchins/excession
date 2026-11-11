@@ -22,7 +22,7 @@ const HELP: &str = r#"Excession | Git-authenticated repository exploration and s
 
 Usage:
   excession doctor [--json]
-  excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
+  excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests] [--import-base PATH]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
   excession syntax audit --repo REPO --report SAVED_JSON
   excession syntax preflight --report SAVED_JSON
@@ -647,7 +647,11 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown syntax command {sub}")),
         },
         [top, tail @ ..] if top == "index" => {
-            let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots"])?;
+            let opt = Options::parse(
+                tail,
+                &["repo", "db", "name"],
+                &["rev", "roots", "import-base"],
+            )?;
             let roots = opt
                 .get_or("roots", "src,tests")
                 .split(',')
@@ -659,14 +663,26 @@ fn execute(args: &[String]) -> Result<Response> {
             let repo = opt.path("repo");
             let db = Db::open(opt.path("db"))?;
             let rev = opt.get_or("rev", "HEAD");
-            let id = index::index_revision_with_roots(
-                &db,
-                repo,
-                opt.get("name"),
-                rev,
-                "local-checkout",
-                &roots,
-            )?;
+            let id = if let Some(import_base) = opt.0.get("import-base") {
+                index::index_revision_with_import_base(
+                    &db,
+                    repo,
+                    opt.get("name"),
+                    rev,
+                    "local-checkout",
+                    &roots,
+                    import_base,
+                )?
+            } else {
+                index::index_revision_with_roots(
+                    &db,
+                    repo,
+                    opt.get("name"),
+                    rev,
+                    "local-checkout",
+                    &roots,
+                )?
+            };
             let commit = git::rev(repo, rev)?;
             let tree = index::reconstruct_tree(&db, id, &commit)?;
             Ok(json(excession::json::obj(&[

@@ -1,0 +1,52 @@
+name: Linux kernel Excession probe
+
+# Pinned Linux clone is an on-demand experiment, not a commit checkpoint.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-kernel-v6-12:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Excession from locked dependencies
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+
+      - name: Checkout exact upstream Linux commit with sparse working tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --sparse --branch v6.12 \
+            https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
+          git -C "$RUNNER_TEMP/linux" sparse-checkout set scripts/gdb
+          test "$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)" = "adc218676eef25575469234709c2d87185ca223a"
+          test -z "$(git -C "$RUNNER_TEMP/linux" status --porcelain)"
+
+      - name: Probe Git indexing, dependency view, replay and byte equality
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/linux_kernel_probe.py \
+            --repo "$RUNNER_TEMP/linux" \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --output "$RUNNER_TEMP/excession-linux"
+          cat "$RUNNER_TEMP/excession-linux/metrics.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save bounded experimental receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-linux-v6.12-probe
+          path: |
+            ${{ runner.temp }}/excession-linux/metrics.json
+            ${{ runner.temp }}/excession-linux/tasks-view.json
+          if-no-files-found: warn
+          retention-days: 7

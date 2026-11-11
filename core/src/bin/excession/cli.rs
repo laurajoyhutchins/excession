@@ -245,10 +245,8 @@ pub(super) fn parse(args: &[String]) -> Result<ParseOutcome> {
             for id in leaf.ids() {
                 if let Ok(Some(value)) = leaf.try_get_one::<String>(id.as_str()) {
                     values.insert(id.as_str().to_owned(), value.clone());
-                } else if let Ok(Some(flag)) = leaf.try_get_one::<bool>(id.as_str()) {
-                    if *flag {
-                        values.insert(id.as_str().to_owned(), "true".to_owned());
-                    }
+                } else if matches!(leaf.try_get_one::<bool>(id.as_str()), Ok(Some(&true))) {
+                    values.insert(id.as_str().to_owned(), "true".to_owned());
                 }
             }
             Ok(ParseOutcome::Command(Parsed {

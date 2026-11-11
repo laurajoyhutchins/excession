@@ -77,10 +77,10 @@ fn push_node(
         ("kind", Value::string(kind)),
         ("payload", payload),
     ]);
-    if let Some(old) = nodes.insert(id, entry.clone()) {
-        if old != entry {
-            return refuse("conflicting graph entity identity");
-        }
+    if let Some(old) = nodes.insert(id, entry.clone())
+        && old != entry
+    {
+        return refuse("conflicting graph entity identity");
     }
     Ok(())
 }

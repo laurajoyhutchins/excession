@@ -432,8 +432,10 @@ fn clang_command(tail: &[String]) -> Result<Response> {
         opt.get("source"),
         opt.path("compile-db"),
         opt.get_or("compiler", default_compiler),
-        opt.0.get("config").map(Path::new),
-        opt.0.get("object-prefix").map(String::as_str),
+        compiler_clang::ClangOptions {
+            config: opt.0.get("config").map(Path::new),
+            object_prefix: opt.0.get("object-prefix").map(String::as_str),
+        },
         opt.get("trusted-local"),
     )?))
 }

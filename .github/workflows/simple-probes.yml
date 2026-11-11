@@ -26,6 +26,13 @@ jobs:
         run: rustup toolchain install 1.99.1 --profile minimal
       - name: Build native CLI
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Install required comparison tools
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ripgrep clangd
+          rg --version | head -1
+          clangd --version | head -1
       - name: Unit tests
         run: python3 -m unittest discover -s tests -p test_simple_probes.py -v
       - name: Exact module-file lookup, four arms

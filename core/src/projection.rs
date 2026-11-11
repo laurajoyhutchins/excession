@@ -5,14 +5,65 @@ use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, index, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+mod composition;
+mod workspace;
+
+pub use composition::{compose, compose_replay, mount, mount_replay, select, select_replay};
+pub use workspace::{audit, describe, list, materialize, open, replay};
 
 const FORMAT: &str = "excession.repository-view.v1";
 const MANIFEST_NAME: &str = "view-manifest.json";
 const MAX_ENTRIES: usize = 5_000;
 const MAX_BLOB_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
+
+// Clock observations are deliberately outside manifest identity and are only
+// enabled by the dedicated profiling command.
+struct PhaseProfile {
+    start: Instant,
+    last: Instant,
+    phases: Vec<(&'static str, u128)>,
+}
+
+impl PhaseProfile {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            start: now,
+            last: now,
+            phases: Vec::new(),
+        }
+    }
+
+    fn mark(&mut self, name: &'static str) {
+        let now = Instant::now();
+        self.phases
+            .push((name, now.duration_since(self.last).as_micros()));
+        self.last = now;
+    }
+
+    fn elapsed_us(&self) -> u128 {
+        self.start.elapsed().as_micros()
+    }
+
+    fn observations(&self) -> Value {
+        Value::array(self.phases.iter().map(|(phase, elapsed_us)| {
+            obj(&[
+                ("phase", Value::string(*phase)),
+                ("elapsed_us", Value::number(elapsed_us)),
+            ])
+        }))
+    }
+}
+
+fn stamp(profile: &mut Option<&mut PhaseProfile>, phase: &'static str) {
+    if let Some(clock) = profile.as_deref_mut() {
+        clock.mark(phase);
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Entry {
@@ -89,9 +140,72 @@ impl Plan {
             ),
         ])
     }
+    /// Canonical payload bytes in the established BTreeMap key order.
+    ///
+    /// This is an alternate serialization of exactly the six fields produced
+    /// by payload(). It avoids constructing nested JSON Value objects solely
+    /// to obtain a view ID. The independent Value serializer remains the
+    /// correctness oracle in tests and the source of public manifests.
+    fn canonical_payload(&self) -> String {
+        let mut output = String::with_capacity(256 + self.entries.len() * 192);
+        output.push_str(r#"{"entries":["#);
+        for (i, entry) in self.entries.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            output.push_str(r#"{"blob":"#);
+            json::write_quoted(&entry.blob, &mut output);
+            output.push_str(r#","detail":"#);
+            json::write_quoted(&entry.detail, &mut output);
+            output.push_str(r#","mode":"#);
+            json::write_quoted(&entry.mode, &mut output);
+            output.push_str(r#","role":"#);
+            json::write_quoted(&entry.role, &mut output);
+            output.push_str(r#","source_path":"#);
+            json::write_quoted(&entry.source_path, &mut output);
+            output.push_str(r#","virtual_path":"#);
+            json::write_quoted(&entry.virtual_path, &mut output);
+            output.push('}');
+        }
+        output.push_str(r#"],"focus":"#);
+        json::write_quoted(&self.focus, &mut output);
+        output.push_str(r#","kind":"#);
+        json::write_quoted(&self.kind, &mut output);
+        output.push_str(r#","schema":"#);
+        json::write_quoted(FORMAT, &mut output);
+        output.push_str(r#","source_commit":"#);
+        json::write_quoted(&self.commit, &mut output);
+        output.push_str(r#","source_tree":"#);
+        json::write_quoted(&self.tree, &mut output);
+        output.push('}');
+        output
+    }
+
+    fn view_id(&self) -> String {
+        digest::sha256(self.canonical_payload().as_bytes())
+    }
+
+    /// Serialize the public manifest without materializing the nested JSON
+    /// Value tree. The source-authenticated Plan and canonical payload order
+    /// are unchanged. Append the final sorted view_id field after hashing
+    /// exactly the original six-field payload.
+    fn canonical_manifest(&self) -> String {
+        let mut output = self.canonical_payload();
+        let id = digest::sha256(output.as_bytes());
+        assert_eq!(output.pop(), Some('}'), "canonical payload ends in object");
+        output.push_str(r#","view_id":"#);
+        json::write_quoted(&id, &mut output);
+        output.push('}');
+        output
+    }
+
     pub fn manifest(&self) -> Value {
-        let mut fields = self.payload().entries().expect("payload object").clone();
-        fields.insert("view_id".to_owned(), Value::string(self.payload().sha256()));
+        let view_id = self.view_id();
+        let payload = self.payload();
+        let Value::Object(mut fields) = payload else {
+            unreachable!("projection payload is always a JSON object")
+        };
+        fields.insert("view_id".to_owned(), Value::string(view_id));
         Value::Object(fields)
     }
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
@@ -128,7 +242,7 @@ impl Plan {
             entries,
         };
         plan.check()?;
-        if plan.payload().sha256() != v.get("view_id")?.str()? {
+        if plan.view_id() != v.get("view_id")?.str()? {
             return refuse("view ID does not authenticate canonical manifest");
         }
         Ok(plan)
@@ -200,9 +314,14 @@ fn source_table(repo: &Path, commit: &str, tree: &str) -> Result<BTreeMap<String
     Ok(table)
 }
 
-fn authenticate(plan: &Plan, repo: &Path) -> Result<()> {
+/// Check all entries against a source table independently authenticated for
+/// this exact commit/tree. Reusing an enumeration never reuses a verdict.
+fn authenticate_from_table(plan: &Plan, actual: &BTreeMap<String, git::Entry>) -> Result<()> {
     plan.check()?;
-    let actual = source_table(repo, &plan.commit, &plan.tree)?;
+    check_source_bindings(plan, actual)
+}
+
+fn check_source_bindings(plan: &Plan, actual: &BTreeMap<String, git::Entry>) -> Result<()> {
     for e in &plan.entries {
         let source = actual
             .get(&e.source_path)
@@ -211,6 +330,24 @@ fn authenticate(plan: &Plan, repo: &Path) -> Result<()> {
             return refuse(format!("view source identity mismatch: {}", e.source_path));
         }
     }
+    Ok(())
+}
+
+fn authenticate(plan: &Plan, repo: &Path) -> Result<()> {
+    authenticate_profiled(plan, repo, None)
+}
+
+fn authenticate_profiled(
+    plan: &Plan,
+    repo: &Path,
+    mut profile: Option<&mut PhaseProfile>,
+) -> Result<()> {
+    plan.check()?;
+    stamp(&mut profile, "validate_plan");
+    let actual = source_table(repo, &plan.commit, &plan.tree)?;
+    stamp(&mut profile, "read_git_source_tree");
+    check_source_bindings(plan, &actual)?;
+    stamp(&mut profile, "validate_source_bindings");
     Ok(())
 }
 
@@ -241,6 +378,33 @@ struct Module {
     test: bool,
 }
 
+/// The whole indexed Git tree has already been reconstructed against the
+/// commit's actual root OID. Here we recheck that the view did not introduce
+/// a path/mode/blob that differs from the individually verified module rows.
+fn check_indexed_bindings(plan: &Plan, modules: &BTreeMap<String, Module>) -> Result<()> {
+    let mut known = BTreeMap::<&str, (&str, &str)>::new();
+    for module in modules.values() {
+        let identity = (module.blob.as_str(), module.mode.as_str());
+        if let Some(previous) = known.insert(module.path.as_str(), identity)
+            && previous != identity
+        {
+            return refuse("inconsistent indexed module bindings for one source path");
+        }
+    }
+    for entry in &plan.entries {
+        let Some(&(blob, mode)) = known.get(entry.source_path.as_str()) else {
+            return refuse("view references a source absent from authenticated index");
+        };
+        if blob != entry.blob || mode != entry.mode {
+            return refuse(format!(
+                "view source identity mismatch: {}",
+                entry.source_path
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn required(row: &[Option<String>], i: usize) -> Result<&str> {
     row.get(i)
         .and_then(Option::as_deref)
@@ -264,7 +428,13 @@ fn bfs(seed: &str, graph: &BTreeMap<String, BTreeSet<String>>) -> BTreeMap<Strin
     distance
 }
 
-pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
+fn dependency_plan_with_profile(
+    db: &Db,
+    name: &str,
+    revision: &str,
+    seed: &str,
+    mut profile: Option<&mut PhaseProfile>,
+) -> Result<Plan> {
     let id = db
         .scalar(
             "SELECT id FROM repository WHERE name=?",
@@ -281,22 +451,35 @@ pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<V
         "SELECT tree_oid FROM revision WHERE repo_id=? AND commit_oid=?",
         &[Param::Integer(id), Param::Text(&commit)],
     )?;
+    stamp(&mut profile, "resolve_revision");
     if tree != git::rev(&repo, &format!("{commit}^{{tree}}"))? {
         return refuse("indexed revision tree mismatch");
     }
+    stamp(&mut profile, "check_git_tree");
     if index::reconstruct_tree(db, id, &commit)? != tree {
         return refuse("indexed Git tree reconstruction mismatch");
     }
+    stamp(&mut profile, "reconstruct_index_tree");
     let mut modules = BTreeMap::new();
-    for row in db.query("SELECT m.name,m.path,m.blob_oid,t.mode,m.is_test FROM module m JOIN tree_entry t ON t.repo_id=m.repo_id AND t.commit_oid=m.commit_oid AND t.path=m.path WHERE m.repo_id=? AND m.commit_oid=? ORDER BY m.name", &[Param::Integer(id),Param::Text(&commit)])? {
-        modules.insert(required(&row,0)?.to_owned(), Module {
-            path: required(&row,1)?.to_owned(), blob: required(&row,2)?.to_owned(),
-            mode: required(&row,3)?.to_owned(), test: required(&row,4)? == "1",
-        });
+    for row in db.query("SELECT m.name,m.path,m.blob_oid,t.mode,m.is_test,t.oid,t.kind FROM module m JOIN tree_entry t ON t.repo_id=m.repo_id AND t.commit_oid=m.commit_oid AND t.path=m.path WHERE m.repo_id=? AND m.commit_oid=? ORDER BY m.name", &[Param::Integer(id),Param::Text(&commit)])? {
+        // Module metadata is not part of the Git tree proof. Bind its blob
+        // claim explicitly to the authenticated tree_entry OID and type.
+        if required(&row, 2)? != required(&row, 5)? || required(&row, 6)? != "blob" {
+            return refuse("indexed module and authenticated Git tree entry disagree");
+        }
+        if modules.insert(required(&row, 0)?.to_owned(), Module {
+            path: required(&row, 1)?.to_owned(),
+            blob: required(&row, 5)?.to_owned(),
+            mode: required(&row, 3)?.to_owned(),
+            test: required(&row, 4)? == "1",
+        }).is_some() {
+            return refuse("duplicate indexed module name");
+        }
     }
     if !modules.contains_key(seed) {
         return refuse(format!("unknown indexed seed module: {seed}"));
     }
+    stamp(&mut profile, "load_modules");
     let mut forward: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut backward: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for row in db.query("SELECT source_name,target_name FROM dependency WHERE repo_id=? AND commit_oid=? ORDER BY source_name,target_name", &[Param::Integer(id), Param::Text(&commit)])? {
@@ -306,6 +489,7 @@ pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<V
         forward.entry(from.clone()).or_default().insert(to.clone());
         backward.entry(to).or_default().insert(from);
     }
+    stamp(&mut profile, "load_dependencies");
     let downstream = bfs(seed, &forward);
     let upstream = bfs(seed, &backward);
     let mut entries = Vec::new();
@@ -360,10 +544,98 @@ pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<V
         role: "focus".into(),
         detail: format!("module={seed}"),
     });
+    stamp(&mut profile, "traverse_and_build_entries");
     db.foreign_keys_valid()?;
     let plan = make_plan("dependencies", seed, commit, tree, entries)?;
-    authenticate(&plan, &repo)?;
-    Ok(plan.manifest())
+    stamp(&mut profile, "validate_index_and_plan");
+    plan.check()?;
+    stamp(&mut profile, "validate_plan");
+    // Git-tree reconstruction above authenticated every tree_entry row against
+    // commit^{tree}. No second git ls-tree is needed for this indexed query.
+    stamp(&mut profile, "reuse_indexed_tree");
+    check_indexed_bindings(&plan, &modules)?;
+    stamp(&mut profile, "validate_source_bindings");
+    Ok(plan)
+}
+
+fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Plan> {
+    dependency_plan_with_profile(db, name, revision, seed, None)
+}
+
+/// Profile the exact source-bound dependency path without changing the
+/// production manifest, view identity, SQL queries or refusal rules.
+/// Phase durations are process-local microsecond observations, not guarantees.
+pub fn profile_dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
+    let mut timer = PhaseProfile::new();
+    let plan = dependency_plan_with_profile(db, name, revision, seed, Some(&mut timer))?;
+    let view_id = plan.view_id();
+    timer.mark("canonical_view_id");
+    let elapsed_us = timer.elapsed_us();
+    Ok(obj(&[
+        (
+            "schema",
+            Value::string("excession.projection-phase-profile.v1"),
+        ),
+        ("source_commit", Value::string(&plan.commit)),
+        ("source_tree", Value::string(&plan.tree)),
+        ("view_id", Value::string(view_id)),
+        ("seed", Value::string(seed)),
+        ("entry_count", Value::number(plan.entries.len())),
+        ("total_us", Value::number(elapsed_us)),
+        ("phases", timer.observations()),
+    ]))
+}
+
+/// Generate the complete authenticated, materializable dependency projection.
+pub fn dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
+    Ok(dependency_plan(db, name, revision, seed)?.manifest())
+}
+
+/// Emit the same authenticated dependency manifest bytes as `dependencies`,
+/// without constructing the nested JSON Value representation for output.
+pub fn dependencies_canonical(db: &Db, name: &str, revision: &str, seed: &str) -> Result<String> {
+    Ok(dependency_plan(db, name, revision, seed)?.canonical_manifest())
+}
+
+/// Return only paths needed by a focused role query. The complete source-bound
+/// projection is authenticated first, but its unrelated entries are not emitted.
+/// This is a query result, not a view manifest or an independent correctness proof.
+pub fn dependency_paths(
+    db: &Db,
+    name: &str,
+    revision: &str,
+    seed: &str,
+    role: &str,
+) -> Result<Value> {
+    if !matches!(
+        role,
+        "focus"
+            | "direct-dependencies"
+            | "transitive-dependencies"
+            | "direct-dependents"
+            | "transitive-dependents"
+            | "indexed-test"
+    ) {
+        return refuse("unknown dependency role");
+    }
+    let plan = dependency_plan(db, name, revision, seed)?;
+    let paths = plan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role)
+        .map(|entry| entry.source_path.as_str())
+        .collect::<BTreeSet<_>>();
+    Ok(obj(&[
+        ("schema", Value::string("excession.dependency-paths.v1")),
+        ("source_commit", Value::string(&plan.commit)),
+        ("source_tree", Value::string(&plan.tree)),
+        ("view_id", Value::string(plan.view_id())),
+        ("role", Value::string(role)),
+        (
+            "source_paths",
+            Value::array(paths.into_iter().map(Value::string)),
+        ),
+    ]))
 }
 
 pub fn security(db: &Db, repo: &Path, run_id: &str) -> Result<Value> {
@@ -467,7 +739,8 @@ pub fn security(db: &Db, repo: &Path, run_id: &str) -> Result<Value> {
     }
     db.foreign_keys_valid()?;
     let plan = make_plan("security-flow", run_id, commit, tree, entries)?;
-    authenticate(&plan, repo)?;
+    // source_table already read and authenticated this exact source tree.
+    authenticate_from_table(&plan, &all_sources)?;
     Ok(plan.manifest())
 }
 
@@ -479,439 +752,9 @@ fn checked_plan(repo: &Path, manifest: &Path) -> Result<Plan> {
     Ok(plan)
 }
 
-fn same_revision(left: &Plan, right: &Plan) -> Result<()> {
-    if left.commit != right.commit || left.tree != right.tree {
-        return refuse("cannot compose projections from different Git source revisions");
-    }
-    Ok(())
-}
-
-fn source_identity(e: &Entry) -> (&str, &str, &str) {
-    (&e.source_path, &e.blob, &e.mode)
-}
-
-/// Compose two independently checked view manifests by *source identity*, never
-/// by substring matching their display names. Multiple virtual references to
-/// one source blob are meaningful and retained when selected.
-pub fn compose(repo: &Path, operator: &str, left: &Path, right: &Path) -> Result<Value> {
-    if !matches!(operator, "union" | "intersection" | "difference") {
-        return refuse("view composition supports union, intersection, difference only");
-    }
-    let a = checked_plan(repo, left)?;
-    let b = checked_plan(repo, right)?;
-    same_revision(&a, &b)?;
-    let a_id = a.payload().sha256();
-    let b_id = b.payload().sha256();
-    let left_sources = a
-        .entries
-        .iter()
-        .map(source_identity)
-        .collect::<BTreeSet<_>>();
-    let right_sources = b
-        .entries
-        .iter()
-        .map(source_identity)
-        .collect::<BTreeSet<_>>();
-    let mut selected = BTreeMap::<String, Entry>::new();
-    for e in &a.entries {
-        let keep = match operator {
-            "union" => true,
-            "intersection" => right_sources.contains(&source_identity(e)),
-            "difference" => !right_sources.contains(&source_identity(e)),
-            _ => unreachable!(),
-        };
-        if keep {
-            selected.insert(e.virtual_path.clone(), e.clone());
-        }
-    }
-    if operator == "union" {
-        for e in &b.entries {
-            // Same virtual pathname with different provenance/meaning cannot be
-            // silently overwritten, even when the two blobs are byte-identical.
-            if let Some(previous) = selected.get(&e.virtual_path) {
-                if previous != e {
-                    return refuse(format!("conflicting virtual view path: {}", e.virtual_path));
-                }
-            } else {
-                selected.insert(e.virtual_path.clone(), e.clone());
-            }
-        }
-    }
-    // Sanity check ensures we have a source-based operation, rather than a
-    // fortuitous equal count of unrelated directory entries.
-    if operator == "intersection" && left_sources.is_disjoint(&right_sources) {
-        return refuse("view intersection has no common source identity");
-    }
-    let query = obj(&[
-        ("operator", Value::string(operator)),
-        ("left_view_id", Value::string(a_id)),
-        ("right_view_id", Value::string(b_id)),
-        ("selection", Value::string("source-identity-v1")),
-    ]);
-    let plan = make_plan(
-        "composed",
-        &format!("query:{}", query.sha256()),
-        a.commit,
-        a.tree,
-        selected.into_values().collect(),
-    )?;
-    Ok(plan.manifest())
-}
-
-/// Narrow an existing projection by a precise role or path-subtree. The
-/// filter is deterministic and does not rely on a language parser.
-pub fn select(repo: &Path, manifest: &Path, axis: &str, needle: &str) -> Result<Value> {
-    if needle.is_empty() || needle.len() > 512 {
-        return refuse("view filter value must contain 1..512 characters");
-    }
-    if !matches!(axis, "role" | "source-prefix" | "virtual-prefix") {
-        return refuse("supported view filter axes: role, source-prefix, virtual-prefix");
-    }
-    if axis != "role" {
-        git::validate_path(needle)?;
-    }
-    let input = checked_plan(repo, manifest)?;
-    let input_id = input.payload().sha256();
-    let entries = input
-        .entries
-        .into_iter()
-        .filter(|e| match axis {
-            "role" => e.role == needle,
-            "source-prefix" => {
-                e.source_path == needle || e.source_path.starts_with(&format!("{needle}/"))
-            }
-            "virtual-prefix" => {
-                e.virtual_path == needle || e.virtual_path.starts_with(&format!("{needle}/"))
-            }
-            _ => unreachable!(),
-        })
-        .collect::<Vec<_>>();
-    let query = obj(&[
-        ("operator", Value::string("select")),
-        ("input_view_id", Value::string(input_id)),
-        ("axis", Value::string(axis)),
-        ("value", Value::string(needle)),
-    ]);
-    Ok(make_plan(
-        "composed",
-        &format!("query:{}", query.sha256()),
-        input.commit,
-        input.tree,
-        entries,
-    )?
-    .manifest())
-}
-
-/// Place a view below a separate named virtual subtree. This permits two
-/// independently focused layouts to coexist even if their original paths clash.
-pub fn mount(repo: &Path, manifest: &Path, namespace: &str) -> Result<Value> {
-    if namespace.is_empty()
-        || namespace.len() > 64
-        || !namespace
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-    {
-        return refuse("view namespace must be 1..64 ASCII letters, digits, '-' or '_'");
-    }
-    let input = checked_plan(repo, manifest)?;
-    let query = obj(&[
-        ("operator", Value::string("mount")),
-        ("input_view_id", Value::string(input.payload().sha256())),
-        ("namespace", Value::string(namespace)),
-    ]);
-    let mut entries = input.entries;
-    for e in &mut entries {
-        let tail = e
-            .virtual_path
-            .strip_prefix("views/")
-            .ok_or("virtual entry missing views/ root")?;
-        e.virtual_path = format!("views/{namespace}/{tail}");
-    }
-    Ok(make_plan(
-        "composed",
-        &format!("query:{}", query.sha256()),
-        input.commit,
-        input.tree,
-        entries,
-    )?
-    .manifest())
-}
-
-pub fn mount_replay(repo: &Path, input: &Path, namespace: &str, output: &Path) -> Result<Value> {
-    replay(&mount(repo, input, namespace)?, output)
-}
-
-pub fn compose_replay(
-    repo: &Path,
-    operator: &str,
-    left: &Path,
-    right: &Path,
-    output: &Path,
-) -> Result<Value> {
-    replay(&compose(repo, operator, left, right)?, output)
-}
-
-pub fn select_replay(
-    repo: &Path,
-    input: &Path,
-    axis: &str,
-    value: &str,
-    output: &Path,
-) -> Result<Value> {
-    replay(&select(repo, input, axis, value)?, output)
-}
-
-fn get_entry<'a>(plan: &'a Plan, virtual_path: &str) -> Result<&'a Entry> {
-    git::validate_path(virtual_path)?;
-    plan.entries
-        .iter()
-        .find(|e| e.virtual_path == virtual_path)
-        .ok_or_else(|| format!("no virtual file at path: {virtual_path}"))
-}
-
-/// Expose the path/source binding without requiring a filesystem projection.
-pub fn describe(repo: &Path, manifest: &Path, virtual_path: &str) -> Result<Value> {
-    let plan = checked_plan(repo, manifest)?;
-    let entry = get_entry(&plan, virtual_path)?;
-    Ok(obj(&[
-        ("view_id", Value::string(plan.payload().sha256())),
-        ("source_commit", Value::string(&plan.commit)),
-        ("entry", entry.to_json()),
-        ("status", Value::string("PINNED_GIT_SOURCE_NOT_EXECUTABLE")),
-    ]))
-}
-
-/// List one level of the virtual hierarchy. Listing verifies the entire
-/// manifest, not only the item requested by a potentially stale client.
-pub fn list(repo: &Path, manifest: &Path, prefix: &str) -> Result<Value> {
-    if !prefix.is_empty() {
-        git::validate_path(prefix)?;
-    }
-    let plan = checked_plan(repo, manifest)?;
-    let mut children = BTreeMap::<String, (bool, usize)>::new();
-    let mut found = prefix.is_empty();
-    for e in &plan.entries {
-        let remainder = if prefix.is_empty() {
-            e.virtual_path.as_str()
-        } else if let Some(rest) = e.virtual_path.strip_prefix(&format!("{prefix}/")) {
-            found = true;
-            rest
-        } else {
-            continue;
-        };
-        let (name, directory) = if let Some((head, _)) = remainder.split_once('/') {
-            (head, true)
-        } else {
-            (remainder, false)
-        };
-        let item = children.entry(name.to_owned()).or_insert((directory, 0));
-        if item.0 != directory {
-            return refuse("virtual file/directory name collision");
-        }
-        item.1 += 1;
-    }
-    if !found {
-        return refuse("unknown virtual directory");
-    }
-    Ok(obj(&[
-        ("view_id", Value::string(plan.payload().sha256())),
-        ("directory", Value::string(prefix)),
-        (
-            "children",
-            Value::array(
-                children
-                    .into_iter()
-                    .map(|(name, (dir, count))| {
-                        obj(&[
-                            ("name", Value::string(name)),
-                            (
-                                "type",
-                                Value::string(if dir { "directory" } else { "file" }),
-                            ),
-                            ("references", Value::number(count)),
-                        ])
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        ),
-    ]))
-}
-
-/// Read exactly one immutable Git blob on demand, without materialization.
-/// The CLI emits the raw bytes to stdout; all metadata goes through describe.
-pub fn open(repo: &Path, manifest: &Path, virtual_path: &str) -> Result<Vec<u8>> {
-    let plan = checked_plan(repo, manifest)?;
-    read_blob(repo, get_entry(&plan, virtual_path)?)
-}
-
-/// Check that a previously generated manifest is still the complete output of the
-/// exact indexed query, not merely a collection of valid Git blob references.
-/// For security runs the scanner report must also be independently audited via
-/// `security-ingest-audit` before trusting the unverified flow relationships.
-pub fn replay(expected: &Value, manifest: &Path) -> Result<Value> {
-    let provided = read_plan(manifest)?;
-    if expected.canonical() != provided.manifest().canonical() {
-        return refuse("projection is not the complete deterministic query result");
-    }
-    Ok(obj(&[
-        ("view_id", Value::string(provided.payload().sha256())),
-        ("entries_replayed", Value::number(provided.entries.len())),
-        ("status", Value::string("QUERY_REPLAY_MATCHED")),
-    ]))
-}
-
 fn read_plan(path: &Path) -> Result<Plan> {
     Plan::from_bytes(&fs::read(path).map_err(|e| e.to_string())?)
 }
-fn verify_parent(repo: &Path, output: &Path) -> Result<()> {
-    if !output.is_absolute() {
-        return refuse("view output must be an absolute path");
-    }
-    let parent = output
-        .parent()
-        .ok_or("view output must have a parent directory")?
-        .canonicalize()
-        .map_err(|e| format!("output parent must already exist: {e}"))?;
-    let root = repo.canonicalize().map_err(|e| e.to_string())?;
-    if parent.starts_with(&root) {
-        return refuse("view output must be outside source checkout");
-    }
-    if !parent.is_dir() {
-        return refuse("output parent is not a directory");
-    }
-    Ok(())
-}
-
-fn read_blob(repo: &Path, e: &Entry) -> Result<Vec<u8>> {
-    let raw = git::command(repo, &["cat-file", "blob", &e.blob])?;
-    if raw.len() > MAX_BLOB_BYTES {
-        return refuse("source blob larger than 16 MiB cap");
-    }
-    if digest::git_blob(&raw) != e.blob {
-        return refuse("Git source blob content has invalid OID");
-    }
-    Ok(raw)
-}
-
-pub fn materialize(repo: &Path, manifest: &Path, target: &Path) -> Result<Value> {
-    let plan = read_plan(manifest)?;
-    authenticate(&plan, repo)?;
-    verify_parent(repo, target)?;
-    if target.exists() || fs::symlink_metadata(target).is_ok() {
-        return refuse("view destination already exists");
-    }
-    // Validate/read all content before creating output; limit total bytes including repeated refs.
-    let mut bytes = Vec::new();
-    let mut total = 0usize;
-    for e in &plan.entries {
-        let data = read_blob(repo, e)?;
-        total = total.checked_add(data.len()).ok_or("view size overflow")?;
-        if total > MAX_TOTAL_BYTES {
-            return refuse("view exceeds 128 MiB copy cap");
-        }
-        bytes.push(data);
-    }
-    fs::create_dir(target).map_err(|e| e.to_string())?;
-    let result = (|| {
-        for (e, data) in plan.entries.iter().zip(bytes.iter()) {
-            let path = target.join(&e.virtual_path);
-            fs::create_dir_all(path.parent().ok_or("invalid view path")?)
-                .map_err(|e| e.to_string())?;
-            fs::write(&path, data).map_err(|e| e.to_string())?;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o444))
-                .map_err(|e| e.to_string())?;
-        }
-        let receipt = plan.manifest().canonical();
-        fs::write(target.join(MANIFEST_NAME), receipt.as_bytes()).map_err(|e| e.to_string())?;
-        audit(repo, manifest, target)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_dir_all(target);
-    }
-    result
-}
-
-fn walk(root: &Path, prefix: &Path, output: &mut BTreeSet<String>) -> Result<()> {
-    for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let typ = entry.file_type().map_err(|e| e.to_string())?;
-        if typ.is_symlink() {
-            return refuse("symbolic link in materialized view");
-        }
-        if typ.is_dir() {
-            walk(&entry.path(), prefix, output)?;
-        } else if typ.is_file() {
-            let entry_path = entry.path();
-            let rel = entry_path.strip_prefix(prefix).map_err(|e| e.to_string())?;
-            let name = rel
-                .to_str()
-                .ok_or("non-UTF8 output filename")?
-                .replace(std::path::MAIN_SEPARATOR, "/");
-            if !output.insert(name) {
-                return refuse("duplicate output file");
-            }
-        } else {
-            return refuse("unexpected device or special file in view");
-        }
-    }
-    Ok(())
-}
-
-pub fn audit(repo: &Path, manifest: &Path, target: &Path) -> Result<Value> {
-    if !target
-        .symlink_metadata()
-        .map_err(|e| e.to_string())?
-        .file_type()
-        .is_dir()
-    {
-        return refuse("view root must be an actual directory, not a symlink");
-    }
-    let plan = read_plan(manifest)?;
-    authenticate(&plan, repo)?;
-    let receipt = fs::read(target.join(MANIFEST_NAME)).map_err(|e| e.to_string())?;
-    if receipt != plan.manifest().canonical().as_bytes() {
-        return refuse("view receipt mismatch");
-    }
-    let mut observed = BTreeSet::new();
-    walk(target, target, &mut observed)?;
-    let expected = plan
-        .entries
-        .iter()
-        .map(|e| e.virtual_path.clone())
-        .chain(std::iter::once(MANIFEST_NAME.into()))
-        .collect::<BTreeSet<_>>();
-    if observed != expected {
-        return refuse("view contains extra or missing files");
-    }
-    let mut total = 0usize;
-    for entry in &plan.entries {
-        let contents = fs::read(target.join(&entry.virtual_path)).map_err(|e| e.to_string())?;
-        if contents.len() > MAX_BLOB_BYTES {
-            return refuse("view output exceeds blob cap");
-        }
-        total = total
-            .checked_add(contents.len())
-            .ok_or("view byte count overflow")?;
-        if total > MAX_TOTAL_BYTES {
-            return refuse("view output exceeds total cap");
-        }
-        if digest::git_blob(&contents) != entry.blob {
-            return refuse("view contents differ from source blob");
-        }
-    }
-    Ok(obj(&[
-        ("view_id", Value::string(plan.payload().sha256())),
-        ("kind", Value::string(plan.kind)),
-        ("source_commit", Value::string(plan.commit)),
-        ("entries_verified", Value::number(plan.entries.len())),
-        ("bytes_verified", Value::number(total)),
-        (
-            "status",
-            Value::string("SOURCE_BLOBS_VERIFIED_NOT_EXECUTABLE"),
-        ),
-    ]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -941,6 +784,92 @@ mod tests {
             original
         );
     }
+    #[test]
+    fn direct_hash_matches_independent_canonical_value_tree() {
+        for count in [1usize, 2, 17, 128, 1024] {
+            let fake = "a".repeat(40);
+            let entries = (0..count)
+                .map(|i| Entry {
+                    virtual_path: format!("views/10-dependencies/m{i:04}é.py"),
+                    source_path: format!("source/m{i:04}é.py"),
+                    blob: fake.clone(),
+                    mode: if i % 2 == 0 { "100644" } else { "100755" }.into(),
+                    role: if i % 2 == 0 {
+                        "direct-dependencies"
+                    } else {
+                        "indexed-test"
+                    }
+                    .into(),
+                    detail: format!("module={i}; detail=\\\"🧪\\\";\n\r\t\u{1f}"),
+                })
+                .collect();
+            let plan = make_plan(
+                "dependencies",
+                "special focus 🌎 \" \n",
+                fake.clone(),
+                fake,
+                entries,
+            )
+            .unwrap();
+            let expected_bytes = plan.payload().canonical();
+            let expected_id = plan.payload().sha256();
+            assert_eq!(plan.canonical_payload(), expected_bytes);
+            assert_eq!(plan.view_id(), expected_id);
+            let manifest = plan.manifest();
+            assert_eq!(manifest.get("view_id").unwrap().str().unwrap(), expected_id);
+            assert_eq!(
+                Plan::from_bytes(manifest.canonical().as_bytes()).unwrap(),
+                plan,
+            );
+        }
+    }
+
+    #[test]
+    fn direct_manifest_output_is_byte_identical_to_value_serializer() {
+        for count in [1usize, 2, 17, 128, 1024, MAX_ENTRIES] {
+            let fake = "a".repeat(40);
+            let entries = (0..count)
+                .map(|i| Entry {
+                    virtual_path: format!("views/10-dependencies/m{i:04}é.py"),
+                    source_path: format!("source/m{i:04}é.py"),
+                    blob: fake.clone(),
+                    mode: if i % 2 == 0 { "100644" } else { "100755" }.into(),
+                    role: if i % 2 == 0 {
+                        "direct-dependencies"
+                    } else {
+                        "indexed-test"
+                    }
+                    .into(),
+                    detail: format!("module={i}; detail=\\\"🧪\\\";\n\r\t\u{1f}"),
+                })
+                .collect();
+            let plan = make_plan(
+                "dependencies",
+                "focus 🌎 \" \\ slash \n",
+                fake.clone(),
+                fake,
+                entries,
+            )
+            .unwrap();
+            let legacy = plan.manifest().canonical();
+            let new = plan.canonical_manifest();
+            assert_eq!(
+                new, legacy,
+                "different full manifest bytes at {count} entries"
+            );
+            assert_eq!(
+                Plan::from_bytes(new.as_bytes()).unwrap(),
+                plan,
+                "direct serialization must remain materializable",
+            );
+            let parsed = json::parse(new.as_bytes()).unwrap();
+            assert_eq!(
+                parsed.get("view_id").unwrap().str().unwrap(),
+                plan.view_id()
+            );
+        }
+    }
+
     #[test]
     fn manifest_rejects_forged_id() {
         let mut value = example().manifest();

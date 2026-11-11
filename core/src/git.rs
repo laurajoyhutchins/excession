@@ -120,6 +120,11 @@ impl BlobReader {
     }
 
     pub fn read(&mut self, expected_oid: &str) -> Result<Vec<u8>> {
+        self.read_capped(expected_oid, usize::MAX)
+    }
+
+    /// Reject oversized blobs before allocating their payload.
+    pub fn read_capped(&mut self, expected_oid: &str, max_bytes: usize) -> Result<Vec<u8>> {
         oid(expected_oid)?;
         let stdin = self
             .stdin
@@ -148,6 +153,9 @@ impl BlobReader {
             .map_err(|_| "invalid Git batch blob length")?;
         if fields.next().is_some() {
             return refuse("unexpected Git batch header fields");
+        }
+        if size > max_bytes {
+            return refuse("Git source blob exceeds byte limit");
         }
 
         let mut data = vec![0_u8; size];
@@ -302,7 +310,7 @@ mod tests {
         std::fs::write(root.join("second.bin"), second).unwrap();
         let a = text(&root, &["hash-object", "-w", "first.bin"]).unwrap();
         let b = text(&root, &["hash-object", "-w", "second.bin"]).unwrap();
-        let tree = text(&root, &["hash-object", "-w", "-t", "tree", "/dev/null"]).unwrap();
+        let tree = text(&root, &["hash-object", "-w", "-t", "tree", "--stdin"]).unwrap();
 
         let mut reader = BlobReader::open(&root).unwrap();
         assert_eq!(reader.read(&a).unwrap(), first);

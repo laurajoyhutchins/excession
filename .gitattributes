@@ -1,0 +1,5 @@
+# Normalize ordinary source files without changing committed binary evidence.
+* text=auto
+
+# Historical Git bundles are exact binary fixtures, not line-oriented text.
+*.bundle binary

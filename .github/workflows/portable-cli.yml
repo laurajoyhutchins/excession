@@ -29,9 +29,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # Linux smoke on PRs; all native targets on tags and manual releases.
+      # Fast Linux smoke on ordinary PRs; full matrix on labeled PRs/tags/manual runs.
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-24.04","executable":"excession"}]' || '[{"os":"ubuntu-24.04","executable":"excession"},{"os":"ubuntu-24.04-arm","executable":"excession"},{"os":"macos-15","executable":"excession"},{"os":"macos-15-intel","executable":"excession"},{"os":"windows-2025","executable":"excession.exe"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:full-portability') && '[{"os":"ubuntu-24.04","executable":"excession"}]' || '[{"os":"ubuntu-24.04","executable":"excession"},{"os":"ubuntu-24.04-arm","executable":"excession"},{"os":"macos-15","executable":"excession"},{"os":"macos-15-intel","executable":"excession"},{"os":"windows-2025","executable":"excession.exe"}]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Select pinned Rust toolchain
@@ -80,7 +80,7 @@ jobs:
 
   musl:
     name: Minimal Linux (x86-64 musl)
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-portability')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

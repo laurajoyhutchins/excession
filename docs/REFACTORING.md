@@ -58,7 +58,7 @@ methods can inform historical co-change; and language-native refactoring tools
 should perform any eventual edits. All imported results would require explicit
 source binding, tool/version provenance, and independent validation.
 
-`tests/test_refactor_cli.py` creates a local Git fixture and verifies
+`core/tests/refactor_contracts.rs` creates a local Git fixture and verifies
 cycle/duplicate detection, Git identities, deterministic replay, report and
 SQL-relation tampering, and unindexed-revision rejection.
 

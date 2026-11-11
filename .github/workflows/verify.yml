@@ -39,7 +39,7 @@ jobs:
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --doc
       - name: JavaScript adapter tests
         run: npm run check && npm test
-      - name: Python integration tests (JUnit XML)
+      - name: Python-specific tooling and independent oracle tests (JUnit XML)
         run: python3 -m pytest -q tests --junitxml=test-results/python.xml
       - name: Retain test reports on failure
         if: always()

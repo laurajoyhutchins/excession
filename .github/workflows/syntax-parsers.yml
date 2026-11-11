@@ -27,10 +27,11 @@ on:
       - 'core/src/bin/excession.rs'
       - 'core/src/lib.rs'
       - 'tests/test_tree_sitter_bridge.py'
-      - 'tests/test_syntax_cli.py'
-      - 'tests/test_preflight_cli.py'
-      - 'tests/test_syntax_resolution_cli.py'
-      - 'tests/test_native_boundary_cli.py'
+      - 'core/tests/syntax_contracts.rs'
+      - 'core/tests/preflight_contracts.rs'
+      - 'core/tests/native_boundary_contracts.rs'
+      - 'core/tests/native_inline_contracts.rs'
+      - 'core/tests/refactor_contracts.rs'
       - 'tests/test_native_inline_cli.py'
       - 'tests/test_python_native_resolution.py'
       - 'docs/SYNTAX_PARSERS.md'
@@ -70,8 +71,10 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build Excession CLI
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
-      - name: Run parser unit and Git integration tests (JUnit XML)
-        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py tests/test_preflight_cli.py tests/test_native_boundary_cli.py tests/test_native_inline_cli.py tests/test_python_native_resolution.py tests/test_evidence_query_cli.py --junitxml=test-results/syntax-parsers.xml
+      - name: Source-bound Rust grammar and native input contracts
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test syntax_contracts --test preflight_contracts --test native_boundary_contracts --test native_inline_contracts
+      - name: Python adapter, resolver and independent observation checks (JUnit XML)
+        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_native_inline_cli.py tests/test_python_native_resolution.py tests/test_evidence_query_cli.py --junitxml=test-results/syntax-parsers.xml
       - name: Retain JUnit test report
         if: always()
         uses: actions/upload-artifact@v4

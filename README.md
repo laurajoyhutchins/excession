@@ -37,7 +37,9 @@ mise exec -- core/target/debug/excession --help
 ```
 
 `make check` runs Rust tests, formatting, strict Clippy, the JS adapter
-checks, and Python integration tests. Use `make cli` for the development
+checks, and Python-specific adapter and independent-oracle tests. Git, SQLite,
+projection, security, syntax, and refactoring integration tests run under Cargo.
+Use `make cli` for the development
 binary and `make go-check` for the optional Go adapter. See
 [development setup](docs/DEVELOPMENT.md) for mise tasks, native toolchain
 version files, and optional Tree-sitter grammars. Mise is a convenience layer;
@@ -45,8 +47,8 @@ Cargo, npm, and pip remain usable independently.
 
 For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
 Python research requirements,
-then run `make junit`. This retains the existing `unittest` test cases while
-producing separate Rust and Python reports:
+then run `make junit`. Rust owns application integration contracts;
+Python retains its adapters and independent reference checks. Reports:
 
 - `core/target/nextest/ci/junit.xml` (Rust, including failure output)
 - `test-results/python.xml` (Python, including skipped and failed tests)

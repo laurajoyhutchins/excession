@@ -8,7 +8,7 @@ use crate::index::module_name;
 use crate::json::Value;
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 fn put_dependency(
@@ -284,12 +284,6 @@ pub fn index_sources(
         .map_err(|e| e.to_string())?;
     if indexed != modules.len() {
         return refuse("module catalog count differs from analyzed source identities");
-    }
-    let mut unique = BTreeSet::new();
-    for name in modules.keys() {
-        if !unique.insert(name) {
-            return refuse("duplicate parsed logical module");
-        }
     }
     Ok(())
 }

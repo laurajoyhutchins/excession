@@ -252,7 +252,6 @@ pub fn audit(repo: &Path, manifest: &Path, target: &Path) -> Result<Value> {
     ]))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

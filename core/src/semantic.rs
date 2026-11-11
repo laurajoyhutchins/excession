@@ -8,16 +8,8 @@ use crate::index::module_name;
 use crate::json::Value;
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
-
-fn blob_text(root: &Path, oid: &str) -> Result<String> {
-    let raw = git::command(root, &["cat-file", "blob", oid])?;
-    if digest::git_blob(&raw) != oid {
-        return refuse("Git source blob bytes disagree with indexed OID");
-    }
-    String::from_utf8(raw).map_err(|_| "source is not UTF-8; unsupported source decoder".to_owned())
-}
 
 fn put_dependency(
     db: &Db,
@@ -137,11 +129,12 @@ pub fn index_sources(
     let mut modules = BTreeMap::new();
     let mut files = BTreeMap::new();
     let mut mains = BTreeMap::<String, String>::new();
+    let mut blob_reader = git::BlobReader::open(root)?;
     for e in entries {
         if e.kind == "blob"
             && e.path.ends_with("/package.json")
             && matches!(e.mode.as_str(), "100644" | "100755")
-            && let Ok(v) = crate::json::parse(&git::command(root, &["cat-file", "blob", &e.oid])?)
+            && let Ok(v) = crate::json::parse(&blob_reader.read(&e.oid)?)
             && let Ok(main) = v.get("main").and_then(Value::str)
         {
             let parent = e.path.rsplit_once('/').map(|x| x.0).unwrap_or("");
@@ -161,7 +154,8 @@ pub fn index_sources(
     let mut js = Vec::new();
     let mut map_js = BTreeMap::new();
     for (path, (name, oid)) in &files {
-        let content = blob_text(root, oid)?;
+        let content = String::from_utf8(blob_reader.read(oid)?)
+            .map_err(|_| "source is not UTF-8; unsupported source decoder".to_owned())?;
         if path.ends_with(".py") {
             py.push(adapter::entry(name, path, &content));
         } else {
@@ -169,6 +163,7 @@ pub fn index_sources(
             map_js.insert(path.clone(), name.clone());
         }
     }
+    blob_reader.finish()?;
     if !py.is_empty() {
         for item in adapter::python(&py)?.array_ref()? {
             let module = item.get("name")?.str()?;
@@ -289,12 +284,6 @@ pub fn index_sources(
         .map_err(|e| e.to_string())?;
     if indexed != modules.len() {
         return refuse("module catalog count differs from analyzed source identities");
-    }
-    let mut unique = BTreeSet::new();
-    for name in modules.keys() {
-        if !unique.insert(name) {
-            return refuse("duplicate parsed logical module");
-        }
     }
     Ok(())
 }

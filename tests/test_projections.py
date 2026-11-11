@@ -103,6 +103,79 @@ class ProjectionIntegration(unittest.TestCase):
         self.assertEqual(json.loads(run(BIN, "research", "view-audit", self.source, manifest, view_dir).stdout), receipt)
         self.assertEqual(run("git", "-C", self.source, "status", "--porcelain").stdout, "")
 
+    def test_compact_dependency_paths_match_authenticated_full_view(self):
+        plan, _ = self.plan_deps()
+        for role in (
+            "focus", "direct-dependencies", "transitive-dependencies",
+            "direct-dependents", "transitive-dependents", "indexed-test",
+        ):
+            selected = json.loads(run(
+                BIN, "view", "paths", "--db", self.catalog, "--name", "h11",
+                "--rev", "HEAD", "--seed", "h11._connection", "--role", role,
+            ).stdout)
+            expected = sorted({e["source_path"] for e in plan["entries"] if e["role"] == role})
+            self.assertEqual(selected["schema"], "excession.dependency-paths.v1")
+            self.assertEqual(selected["source_commit"], self.commit)
+            self.assertEqual(selected["source_tree"], self.tree)
+            self.assertEqual(selected["view_id"], plan["view_id"])
+            self.assertEqual(selected["role"], role)
+            self.assertEqual(selected["source_paths"], expected)
+        self.assertNotEqual(run(
+            BIN, "view", "paths", "--db", self.catalog, "--name", "h11",
+            "--rev", "HEAD", "--seed", "h11._connection", "--role", "unknown",
+            ok=False,
+        ).returncode, 0)
+        # Compact results are not authenticatable materialization manifests.
+        self.assertNotIn("entries", selected)
+
+    def test_phase_profile_reuses_full_source_authentication(self):
+        plan, _ = self.plan_deps()
+        profile = json.loads(run(
+            BIN, "view", "profile-deps", "--db", self.catalog,
+            "--name", "h11", "--rev", "HEAD", "--seed", "h11._connection",
+        ).stdout)
+        self.assertEqual(profile["schema"], "excession.projection-phase-profile.v1")
+        self.assertEqual(profile["source_commit"], self.commit)
+        self.assertEqual(profile["source_tree"], self.tree)
+        self.assertEqual(profile["view_id"], plan["view_id"])
+        self.assertEqual(profile["entry_count"], len(plan["entries"]))
+        phases = profile["phases"]
+        self.assertEqual([p["phase"] for p in phases], [
+            "resolve_revision", "check_git_tree", "reconstruct_index_tree",
+            "load_modules", "load_dependencies", "traverse_and_build_entries",
+            "validate_index_and_plan", "validate_plan", "read_git_source_tree",
+            "validate_source_bindings", "canonical_view_id",
+        ])
+        self.assertTrue(all(isinstance(p["elapsed_us"], int) and p["elapsed_us"] >= 0 for p in phases))
+        self.assertGreaterEqual(profile["total_us"], sum(p["elapsed_us"] for p in phases))
+        self.assertNotIn("entries", profile)
+
+    def test_native_graph_baseline_matches_dependency_view(self):
+        plan, _ = self.plan_deps()
+        role_map = {
+            "focus": {"focus"},
+            "dependencies_direct": {"direct-dependencies"},
+            "dependencies_all": {"direct-dependencies", "transitive-dependencies"},
+            "dependents_direct": {"direct-dependents"},
+            "dependents_all": {"direct-dependents", "transitive-dependents"},
+            "tests": {"indexed-test"},
+        }
+        for kind, roles in role_map.items():
+            result = json.loads(run(
+                BIN, "view", "graph", "--db", self.catalog, "--name", "h11",
+                "--rev", "HEAD", "--seed", "h11._connection", "--kind", kind,
+            ).stdout)
+            expected = sorted({e["source_path"] for e in plan["entries"] if e["role"] in roles})
+            self.assertEqual(result["schema"], "excession.graph-baseline.v1")
+            self.assertEqual((result["source_commit"], result["source_tree"]), (self.commit, self.tree))
+            self.assertEqual(result["kind"], kind)
+            self.assertEqual(result["source_paths"], expected)
+        self.assertNotEqual(run(
+            BIN, "view", "graph", "--db", self.catalog, "--name", "h11",
+            "--rev", "HEAD", "--seed", "h11._connection", "--kind", "bad-kind",
+            ok=False,
+        ).returncode, 0)
+
     def test_focus_changes_layout_not_source_revision(self):
         a, _ = self.plan_deps("h11._connection")
         b, _ = self.plan_deps("h11._headers")

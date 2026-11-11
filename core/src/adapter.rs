@@ -15,6 +15,11 @@ pub fn javascript(entries: &[Value]) -> Result<Value> {
     run("node", code, entries)
 }
 
+pub fn tree_sitter(entries: &[Value]) -> Result<Value> {
+    let code = include_str!("../adapters/tree_sitter.py");
+    run("python3", code, entries)
+}
+
 fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
     let mut process = Command::new(binary)
         .arg(if binary == "node" { "-e" } else { "-c" })

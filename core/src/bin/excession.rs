@@ -1,7 +1,9 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, graph_baseline, index, projection, refuse, security_ingest, syntax, views};
+use excession::{
+    Result, git, graph_baseline, index, projection, refuse, security_ingest, syntax, views,
+};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -459,27 +461,22 @@ fn execute(args: &[String]) -> Result<Response> {
             research::run(tail)?;
             Ok(Response::Bytes(Vec::new()))
         }
-        [top, sub, tail @ ..] if top == "syntax" => {
-            match sub.as_str() {
-                "scan" => {
-                    let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
-                    let roots = opt
-                        .get("roots")
-                        .split(',')
-                        .collect::<Vec<_>>();
-                    Ok(json(syntax::scan(
-                        opt.path("repo"),
-                        opt.get_or("rev", "HEAD"),
-                        &roots,
-                    )?))
-                }
-                "audit" => {
-                    let opt = Options::parse(tail, &["repo", "report"], &[])?;
-                    Ok(json(syntax::audit(opt.path("repo"), opt.path("report"))?))
-                }
-                _ => refuse(format!("unknown syntax command {sub}")),
+        [top, sub, tail @ ..] if top == "syntax" => match sub.as_str() {
+            "scan" => {
+                let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(syntax::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
+                )?))
             }
-        }
+            "audit" => {
+                let opt = Options::parse(tail, &["repo", "report"], &[])?;
+                Ok(json(syntax::audit(opt.path("repo"), opt.path("report"))?))
+            }
+            _ => refuse(format!("unknown syntax command {sub}")),
+        },
         [top, tail @ ..] if top == "index" => {
             let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots"])?;
             let roots = opt

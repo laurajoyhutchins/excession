@@ -164,7 +164,15 @@ pub struct GraphSnapshot<'a> {
 
 pub fn persist(snapshot: GraphSnapshot<'_>) -> Result<()> {
     let GraphSnapshot {
-        db, id, commit, target, configuration, graph, nodes, edges, observations,
+        db,
+        id,
+        commit,
+        target,
+        configuration,
+        graph,
+        nodes,
+        edges,
+        observations,
     } = snapshot;
     if graph.sha256() != id {
         return refuse("graph ID differs from canonical body");

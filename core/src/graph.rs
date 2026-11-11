@@ -577,17 +577,17 @@ mod tests {
             ("edges", Value::array(edges.values().cloned())),
         ]);
         let id = body.sha256();
-        configured_store::persist(
-            &db,
-            &id,
-            "0000000000000000000000000000000000000000",
-            "app",
-            "Debug",
-            &body,
-            &nodes,
-            &edges,
-            &[],
-        )
+        configured_store::persist(configured_store::GraphSnapshot {
+            db: &db,
+            id: &id,
+            commit: "0000000000000000000000000000000000000000",
+            target: "app",
+            configuration: "Debug",
+            graph: &body,
+            nodes: &nodes,
+            edges: &edges,
+            observations: &[],
+        })
         .unwrap();
         let listed = list(&db).unwrap();
         assert_eq!(listed.get("count").unwrap().integer().unwrap(), 1);
@@ -644,17 +644,17 @@ mod tests {
             ("edges", Value::array(provider_edges.values().cloned())),
         ]);
         let provider_id = provider_body.sha256();
-        configured_store::persist(
-            &db,
-            &provider_id,
-            "0000000000000000000000000000000000000000",
-            "rust-target",
-            "Debug",
-            &provider_body,
-            &nodes,
-            &provider_edges,
-            &[],
-        )
+        configured_store::persist(configured_store::GraphSnapshot {
+            db: &db,
+            id: &provider_id,
+            commit: "0000000000000000000000000000000000000000",
+            target: "rust-target",
+            configuration: "Debug",
+            graph: &provider_body,
+            nodes: &nodes,
+            edges: &provider_edges,
+            observations: &[],
+        })
         .unwrap();
         let native = neighbors(&db, Some(&provider_id), None, "app", "out", 1).unwrap();
         let relationship = &native.get("edges").unwrap().array_ref().unwrap()[0];

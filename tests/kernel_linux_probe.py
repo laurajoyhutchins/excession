@@ -54,6 +54,17 @@ def main():
                for x in c)
     assert any(x["kind"] == "c_include" and x["target"] == "asm/i8259.h"
                and "CONFIG_X86" in x["condition"] for x in c)
+    links = report["links"]
+    assert any(x["kind"] == "candidate-object-source" and
+               x["source_path"] == "drivers/rtc/Makefile" and
+               x["target_path"] == "drivers/rtc/rtc-cmos.c" for x in links)
+    assert any(x["kind"] == "candidate-config-declaration" and
+               x["source_path"] == "drivers/rtc/Makefile" and
+               x["target_path"] == "drivers/rtc/Kconfig" and
+               "CONFIG_RTC_DRV_CMOS" in x["condition"] for x in links)
+    assert any(x["kind"] == "candidate-header-include" and
+               x["source_path"] == "drivers/rtc/rtc-cmos.c" and
+               x["target_path"] == "include/linux/module.h" for x in links)
     # No build-configuration evaluation may be smuggled into the receipt.
     assert all(x["status"] != "VERIFIED" for src in report["sources"]
                for x in src["facts"])
@@ -63,7 +74,7 @@ def main():
     summary = {
         k: report[k] for k in (
             "source_commit", "source_tree", "source_count", "source_bytes",
-            "fact_count", "diagnostic_count", "report_id", "completeness"
+            "fact_count", "diagnostic_count", "link_count", "report_id", "completeness"
         )
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

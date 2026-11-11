@@ -1,7 +1,8 @@
 //! Read-only, bounded Linux-source extraction; Git authenticates every input.
 //! Facts describe syntax, not evaluated build configurations or compiled C.
 use crate::json::{Value, obj};
-use crate::{Result, adapter, git, refuse};
+use crate::{Result, adapter, git, kernel_links, refuse};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 const MAX_FILES: usize = 1_500;
@@ -86,6 +87,11 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
     }
     let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
     let source = git::entries(repo, &commit)?;
+    let tracked = source
+        .iter()
+        .filter(|e| e.kind == "blob")
+        .map(|e| (e.path.clone(), e.oid.clone()))
+        .collect::<BTreeMap<_, _>>();
     let selected: Vec<_> = source
         .into_iter()
         .filter(|e| {
@@ -163,6 +169,10 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
         }
     }
     reader.finish()?;
+    let links = kernel_links::derive(&results, &tracked)?;
+    if links.len() + fact_count + diagnostic_count > MAX_OBSERVATIONS {
+        return refuse("kernel link count exceeded observation budget");
+    }
     let body = obj(&[
         ("schema", Value::string("excession.kernel-syntax.v1")),
         ("source_commit", Value::string(commit)),
@@ -174,6 +184,8 @@ pub fn scan(repo: &Path, revision: &str, roots: &[&str]) -> Result<Value> {
         ("source_count", Value::number(results.len())),
         ("fact_count", Value::number(fact_count)),
         ("diagnostic_count", Value::number(diagnostic_count)),
+        ("link_count", Value::number(links.len())),
+        ("links", Value::array(links)),
         ("source_bytes", Value::number(bytes_seen)),
         ("sources", Value::array(results)),
         ("completeness", Value::string("CONSERVATIVE_SYNTAX_ONLY")),

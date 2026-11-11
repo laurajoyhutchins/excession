@@ -6,6 +6,7 @@ on:
       - '.github/workflows/linux-native-parsers.yml'
       - 'core/adapters/kernel_parse.py'
       - 'core/src/kernel.rs'
+      - 'core/src/kernel_links.rs'
       - 'core/src/adapter.rs'
       - 'core/src/bin/excession.rs'
       - 'core/src/lib.rs'

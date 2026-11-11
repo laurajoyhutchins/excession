@@ -22,27 +22,47 @@ fn field<'a>(value: &'a Value, key: &str) -> Result<&'a Value> {
     value.get(key).ok_or_else(|| format!("missing field {key}"))
 }
 fn string<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
-    field(value, key)?.as_str().ok_or_else(|| format!("{key} is not a string"))
+    field(value, key)?
+        .as_str()
+        .ok_or_else(|| format!("{key} is not a string"))
 }
 fn integer(value: &Value, key: &str) -> Result<u64> {
-    field(value, key)?.as_u64().ok_or_else(|| format!("{key} is not a nonnegative integer"))
+    field(value, key)?
+        .as_u64()
+        .ok_or_else(|| format!("{key} is not a nonnegative integer"))
 }
 fn number(value: &Value, key: &str) -> Result<f64> {
-    let result = field(value, key)?.as_f64().ok_or_else(|| format!("{key} is not a number"))?;
+    let result = field(value, key)?
+        .as_f64()
+        .ok_or_else(|| format!("{key} is not a number"))?;
     if !result.is_finite() || result < 0.0 {
         return refuse(format!("invalid numeric value for {key}"));
     }
     Ok(result)
 }
 fn array<'a>(value: &'a Value, key: &str) -> Result<&'a [Value]> {
-    field(value, key)?.as_array().map(Vec::as_slice).ok_or_else(|| format!("{key} is not an array"))
+    field(value, key)?
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| format!("{key} is not an array"))
 }
 fn boolean(value: &Value, key: &str) -> Result<bool> {
-    field(value, key)?.as_bool().ok_or_else(|| format!("{key} is not a boolean"))
+    field(value, key)?
+        .as_bool()
+        .ok_or_else(|| format!("{key} is not a boolean"))
 }
-fn metric(name: &str, arm: &str, unit: &str, statistic: &str, value: Value, count: u64) -> Result<Value> {
+fn metric(
+    name: &str,
+    arm: &str,
+    unit: &str,
+    statistic: &str,
+    value: Value,
+    count: u64,
+) -> Result<Value> {
     if count == 0 || value.as_f64().is_none_or(|n| !n.is_finite() || n < 0.0) {
-        return refuse("measured metrics require a finite nonnegative value and positive sample count");
+        return refuse(
+            "measured metrics require a finite nonnegative value and positive sample count",
+        );
     }
     Ok(document!({
         "name": name, "arm": arm, "unit": unit, "statistic": statistic,
@@ -50,17 +70,25 @@ fn metric(name: &str, arm: &str, unit: &str, statistic: &str, value: Value, coun
     }))
 }
 fn file_digest(path: &Path) -> Result<String> {
-    Ok(digest::sha256(&fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?))
+    Ok(digest::sha256(
+        &fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?,
+    ))
 }
 fn safe_artifact_path(base: &Path, name: &str) -> Result<std::path::PathBuf> {
     let rel = Path::new(name);
     if name.is_empty()
-        || !rel.components().all(|component| matches!(component, Component::Normal(_)))
+        || !rel
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
     {
         return refuse(format!("unsafe artifact path {name:?}"));
     }
-    let root = base.canonicalize().map_err(|e| format!("canonicalize {}: {e}", base.display()))?;
-    let source = base.join(rel).canonicalize()
+    let root = base
+        .canonicalize()
+        .map_err(|e| format!("canonicalize {}: {e}", base.display()))?;
+    let source = base
+        .join(rel)
+        .canonicalize()
         .map_err(|e| format!("resolve artifact {name:?}: {e}"))?;
     if !source.starts_with(&root) || !source.is_file() {
         return refuse(format!("artifact escapes report directory: {name:?}"));
@@ -77,7 +105,9 @@ fn artifact(base: &Path, name: &str, role: &str, media_type: &str) -> Result<Val
 }
 fn identity(report: &Value) -> Result<String> {
     let mut body = report.clone();
-    body.as_object_mut().ok_or("report must be an object")?.remove("run_id");
+    body.as_object_mut()
+        .ok_or("report must be an object")?
+        .remove("run_id");
     let serialized = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
     let canonical = json::parse(&serialized)?.canonical();
     Ok(digest::sha256(canonical.as_bytes()))
@@ -89,7 +119,10 @@ fn schema_validator() -> Result<jsonschema::Validator> {
 fn validate_value(report: &Value, base: &Path) -> Result<()> {
     let validator = schema_validator()?;
     if let Err(error) = validator.validate(report) {
-        return refuse(format!("invalid benchmark report: {error} at {}", error.instance_path));
+        return refuse(format!(
+            "invalid benchmark report: {error} at {}",
+            error.instance_path
+        ));
     }
     if string(report, "run_id")? != identity(report)? {
         return refuse("report run_id differs from normalized content identity");
@@ -100,7 +133,12 @@ fn validate_value(report: &Value, base: &Path) -> Result<()> {
         if !unique.insert(path.to_owned()) {
             return refuse(format!("duplicate artifact path: {path}"));
         }
-        let expected = artifact(base, path, string(item, "role")?, string(item, "media_type")?)?;
+        let expected = artifact(
+            base,
+            path,
+            string(item, "role")?,
+            string(item, "media_type")?,
+        )?;
         if &expected != item {
             return refuse(format!("artifact digest or size mismatch: {path}"));
         }
@@ -111,18 +149,27 @@ fn validate_value(report: &Value, base: &Path) -> Result<()> {
         let arm = string(item, "arm")?;
         let statistic = string(item, "statistic")?;
         if !unique.insert(format!("{arm}/{name}/{statistic}")) {
-            return refuse(format!("duplicate measurement identity: {arm}/{name}/{statistic}"));
+            return refuse(format!(
+                "duplicate measurement identity: {arm}/{name}/{statistic}"
+            ));
         }
     }
     unique.clear();
     for item in array(report, "source_revisions")? {
-        let key = format!("{}/{}/{}", string(item, "name")?, string(item, "commit")?, string(item, "tree")?);
+        let key = format!(
+            "{}/{}/{}",
+            string(item, "name")?,
+            string(item, "commit")?,
+            string(item, "tree")?
+        );
         if !unique.insert(key) {
             return refuse("duplicate source revision");
         }
     }
     if string(report, "status")? == "passed"
-        && array(report, "checks")?.iter().any(|check| check["status"] != "passed")
+        && array(report, "checks")?
+            .iter()
+            .any(|check| check["status"] != "passed")
     {
         return refuse("passed report contains failed or unsupported check");
     }
@@ -148,7 +195,9 @@ fn environment() -> Value {
     value
 }
 fn write_report(directory: &Path, name: &str, mut report: Value) -> Result<std::path::PathBuf> {
-    if !name.ends_with(".json") || Path::new(name).file_name().and_then(|x| x.to_str()) != Some(name) {
+    if !name.ends_with(".json")
+        || Path::new(name).file_name().and_then(|x| x.to_str()) != Some(name)
+    {
         return refuse("report filename must be a plain JSON filename");
     }
     report["run_id"] = identity(&report)?.into();
@@ -171,7 +220,11 @@ pub fn build_native(directory: &Path, input: &str) -> Result<std::path::PathBuf>
     if source.parent() != directory.canonicalize().ok().as_deref() {
         return refuse("native calibration input must be a file in its report directory");
     }
-    if !input.ends_with(".json") || !input.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+    if !input.ends_with(".json")
+        || !input
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    {
         return refuse("native calibration name must be a plain JSON filename");
     }
     let raw = read(&source)?;
@@ -197,11 +250,27 @@ pub fn build_native(directory: &Path, input: &str) -> Result<std::path::PathBuf>
             ("stdout_size", "bytes", "stdout_bytes"),
         ] {
             let item = field(summary, key)?;
-            measurements.push(metric(name, arm, unit, "median", document!(number(item, "median")?), count)?);
-            measurements.push(metric(name, arm, unit, "p95", document!(number(item, "nearest_rank_p95")?), count)?);
+            measurements.push(metric(
+                name,
+                arm,
+                unit,
+                "median",
+                document!(number(item, "median")?),
+                count,
+            )?);
+            measurements.push(metric(
+                name,
+                arm,
+                unit,
+                "p95",
+                document!(number(item, "nearest_rank_p95")?),
+                count,
+            )?);
         }
     }
-    let name = input.strip_suffix(".json").ok_or("expected JSON filename")?;
+    let name = input
+        .strip_suffix(".json")
+        .ok_or("expected JSON filename")?;
     let report = document!({
         "schema": REPORT_SCHEMA, "suite": "native-paired-calibration",
         "status": if parity { "passed" } else { "failed" },
@@ -233,9 +302,12 @@ pub fn build_native(directory: &Path, input: &str) -> Result<std::path::PathBuf>
 fn paired_key(trial: &Value) -> Result<String> {
     Ok(format!(
         "{}:{}:{}:{}:{}:{}",
-        string(trial, "workload")?, integer(trial, "revision")?,
-        string(trial, "commit")?, string(trial, "seed")?,
-        string(trial, "kind")?, integer(trial, "repetition")?
+        string(trial, "workload")?,
+        integer(trial, "revision")?,
+        string(trial, "commit")?,
+        string(trial, "seed")?,
+        string(trial, "kind")?,
+        integer(trial, "repetition")?
     ))
 }
 pub fn build_relational(directory: &Path) -> Result<std::path::PathBuf> {
@@ -272,14 +344,24 @@ pub fn build_relational(directory: &Path) -> Result<std::path::PathBuf> {
     let mut checks = Vec::new();
     let mut artifacts = vec![
         artifact(directory, "summary.json", "summary", "application/json")?,
-        artifact(directory, "trials.jsonl", "raw-samples", "application/x-ndjson")?,
+        artifact(
+            directory,
+            "trials.jsonl",
+            "raw-samples",
+            "application/x-ndjson",
+        )?,
     ];
     let mut index_ms = 0.0;
     let mut index_cpu_ms = 0.0;
     let mut index_count = 0;
     for workload in array(&summary, "workloads")? {
         let bundle = string(workload, "source_bundle")?;
-        let source_bundle = artifact(directory, bundle, "source-bundle", "application/octet-stream")?;
+        let source_bundle = artifact(
+            directory,
+            bundle,
+            "source-bundle",
+            "application/octet-stream",
+        )?;
         if source_bundle["sha256"].as_str() != Some(string(workload, "bundle_sha256")?) {
             return refuse(format!("bundle digest does not match summary: {bundle}"));
         }
@@ -303,17 +385,23 @@ pub fn build_relational(directory: &Path) -> Result<std::path::PathBuf> {
             index_count += 1;
         }
     }
-    let paired = pairs.len() as u64 == count && pairs.values().all(|arms| {
-        if arms.len() != 2 {
-            return false;
-        }
-        let Some(graph) = arms.get("graph") else { return false };
-        let Some(view) = arms.get("view") else { return false };
-        graph["status"] == "ok" && view["status"] == "ok"
-            && graph["exact_oracle_match"] == true
-            && view["exact_oracle_match"] == true
-            && graph["source_paths"] == view["source_paths"]
-    });
+    let paired = pairs.len() as u64 == count
+        && pairs.values().all(|arms| {
+            if arms.len() != 2 {
+                return false;
+            }
+            let Some(graph) = arms.get("graph") else {
+                return false;
+            };
+            let Some(view) = arms.get("view") else {
+                return false;
+            };
+            graph["status"] == "ok"
+                && view["status"] == "ok"
+                && graph["exact_oracle_match"] == true
+                && view["exact_oracle_match"] == true
+                && graph["source_paths"] == view["source_paths"]
+        });
     checks.push(document!({
         "name": "source_written_oracle_and_pair_parity",
         "description": "Both arms match the source-written oracle and each other for every paired query",
@@ -322,28 +410,77 @@ pub fn build_relational(directory: &Path) -> Result<std::path::PathBuf> {
     }));
     let mut measurements = Vec::new();
     for arm in ["graph", "view"] {
-        let found = trials.iter().filter(|trial| trial["arm"] == arm).collect::<Vec<_>>();
+        let found = trials
+            .iter()
+            .filter(|trial| trial["arm"] == arm)
+            .collect::<Vec<_>>();
         if found.len() as u64 != count {
             return refuse(format!("missing trials for {arm}"));
         }
         let declared = field(field(&summary, "status_counts")?, arm)?;
-        for (state, amount) in declared.as_object().ok_or("status_counts must be an object")? {
-            if found.iter().filter(|trial| trial["status"] == state).count() as u64
+        for (state, amount) in declared
+            .as_object()
+            .ok_or("status_counts must be an object")?
+        {
+            if found
+                .iter()
+                .filter(|trial| trial["status"] == state)
+                .count() as u64
                 != amount.as_u64().ok_or("invalid status count")?
             {
                 return refuse(format!("summary status count disagrees for {arm}/{state}"));
             }
         }
-        let stats = |key: &str| -> Result<Value> {
-            Ok(field(field(&summary, key)?, arm)?.clone())
-        };
-        measurements.push(metric("query_wall_time", arm, "ms", "median", stats("median_wall_ms")?, count)?);
-        measurements.push(metric("query_wall_time", arm, "ms", "sum", stats("total_query_wall_ms")?, count)?);
-        measurements.push(metric("stdout_size", arm, "bytes", "median", stats("median_raw_stdout_bytes")?, count)?);
-        measurements.push(metric("query_count", arm, "count", "count", document!(count), count)?);
+        let stats = |key: &str| -> Result<Value> { Ok(field(field(&summary, key)?, arm)?.clone()) };
+        measurements.push(metric(
+            "query_wall_time",
+            arm,
+            "ms",
+            "median",
+            stats("median_wall_ms")?,
+            count,
+        )?);
+        measurements.push(metric(
+            "query_wall_time",
+            arm,
+            "ms",
+            "sum",
+            stats("total_query_wall_ms")?,
+            count,
+        )?);
+        measurements.push(metric(
+            "stdout_size",
+            arm,
+            "bytes",
+            "median",
+            stats("median_raw_stdout_bytes")?,
+            count,
+        )?);
+        measurements.push(metric(
+            "query_count",
+            arm,
+            "count",
+            "count",
+            document!(count),
+            count,
+        )?);
     }
-    measurements.push(metric("index_wall_time", "index", "ms", "sum", document!((index_ms * 1000.0).round() / 1000.0), index_count)?);
-    measurements.push(metric("index_cpu_time", "index", "ms", "sum", document!((index_cpu_ms * 1000.0).round() / 1000.0), index_count)?);
+    measurements.push(metric(
+        "index_wall_time",
+        "index",
+        "ms",
+        "sum",
+        document!((index_ms * 1000.0).round() / 1000.0),
+        index_count,
+    )?);
+    measurements.push(metric(
+        "index_cpu_time",
+        "index",
+        "ms",
+        "sum",
+        document!((index_cpu_ms * 1000.0).round() / 1000.0),
+        index_count,
+    )?);
     let passed = checks.iter().all(|check| check["status"] == "passed");
     let report = document!({
         "schema": REPORT_SCHEMA, "suite": "relational-retrieval",
@@ -375,15 +512,21 @@ mod tests {
     impl Temp {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
-                "excession-benchmark-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+                "excession-benchmark-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir_all(&path).unwrap();
             Self(path)
         }
-        fn path(&self) -> &Path { &self.0 }
+        fn path(&self) -> &Path {
+            &self.0
+        }
     }
     impl Drop for Temp {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
     }
 
     fn native_input(path: &Path) {
@@ -401,7 +544,11 @@ mod tests {
             "samples": [{"arm": "graph"}, {"arm": "paths"}, {"arm": "graph"}, {"arm": "paths"}],
             "limitations": "Protocol test fixture only, no empirical correctness claimed."
         });
-        fs::write(path.join("native.json"), serde_json::to_vec(&receipt).unwrap()).unwrap();
+        fs::write(
+            path.join("native.json"),
+            serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
     }
     #[test]
     fn schema_is_valid_draft_2020_12() {
@@ -419,9 +566,16 @@ mod tests {
         assert_eq!(content["status"], "passed");
         assert_eq!(content["oracle"]["independent"], false);
         assert_eq!(content["measurements"].as_array().unwrap().len(), 12);
-        assert_eq!(content["artifacts"][0]["sha256"], file_digest(&temp.path().join("native.json")).unwrap());
+        assert_eq!(
+            content["artifacts"][0]["sha256"],
+            file_digest(&temp.path().join("native.json")).unwrap()
+        );
         fs::write(temp.path().join("native.json"), b"{}").unwrap();
-        assert!(validate(&report).unwrap_err().contains("digest or size mismatch"));
+        assert!(
+            validate(&report)
+                .unwrap_err()
+                .contains("digest or size mismatch")
+        );
     }
     #[test]
     fn reject_invalid_fields_and_false_success() {
@@ -430,10 +584,26 @@ mod tests {
         let path = build_native(temp.path(), "native.json").unwrap();
         let original = read(&path).unwrap();
         for mut value in [
-            { let mut v = original.clone(); v["measurements"][0]["unit"] = "invented".into(); v },
-            { let mut v = original.clone(); v["measurements"][0]["value"] = document!(-1); v },
-            { let mut v = original.clone(); v["artifacts"][0]["path"] = "../native.json".into(); v },
-            { let mut v = original.clone(); v["checks"][0]["status"] = "failed".into(); v },
+            {
+                let mut v = original.clone();
+                v["measurements"][0]["unit"] = "invented".into();
+                v
+            },
+            {
+                let mut v = original.clone();
+                v["measurements"][0]["value"] = document!(-1);
+                v
+            },
+            {
+                let mut v = original.clone();
+                v["artifacts"][0]["path"] = "../native.json".into();
+                v
+            },
+            {
+                let mut v = original.clone();
+                v["checks"][0]["status"] = "failed".into();
+                v
+            },
         ] {
             value["run_id"] = identity(&value).unwrap().into();
             fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
@@ -450,7 +620,10 @@ mod tests {
         fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
         assert!(validate(&path).unwrap_err().contains("run_id"));
         value["measurements"][0]["status"] = "not_measured".into();
-        value["measurements"][0].as_object_mut().unwrap().remove("value");
+        value["measurements"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("value");
         value["run_id"] = identity(&value).unwrap().into();
         fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
         assert!(validate(&path).is_err());

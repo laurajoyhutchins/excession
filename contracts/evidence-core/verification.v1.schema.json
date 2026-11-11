@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/verification.v1.schema.json",
+  "title": "contracts: predicate-specific claim verification and non-promotion rules",
+  "description": "Proposed wire shape only; no source, execution or semantic proof from schema validity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "claim_id",
+    "claim",
+    "support_receipt_ids",
+    "counterevidence_receipt_ids",
+    "obligation",
+    "verification",
+    "prohibition"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.claim-verification.v1"
+    },
+    "claim_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predicate",
+        "subject_id",
+        "scope_id",
+        "assessment"
+      ],
+      "properties": {
+        "predicate": {
+          "type": "string",
+          "enum": [
+            "MAY_CALL",
+            "REFERENCES",
+            "SOURCE_MATCHES",
+            "BUILD_PRODUCED",
+            "REACHABLE_UNDER",
+            "SECURITY_IMPACT"
+          ]
+        },
+        "subject_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "scope_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "assessment": {
+          "type": "string",
+          "enum": [
+            "CANDIDATE",
+            "NOT_ESTABLISHED",
+            "ESTABLISHED_UNDER_SCOPE",
+            "DISCONFIRMED",
+            "UNSUPPORTED"
+          ]
+        }
+      }
+    },
+    "support_receipt_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "counterevidence_receipt_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "obligation_id",
+        "kind",
+        "scope_id"
+      ],
+      "properties": {
+        "obligation_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "GIT_SOURCE_REPLAY",
+            "REGENERATE_PRODUCER",
+            "OBSERVE_EXECUTION",
+            "INDEPENDENT_BEHAVIORAL_TEST",
+            "REVIEWED_BUILD_ATTESTATION"
+          ]
+        },
+        "scope_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "receipt_id",
+        "authority"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "NOT_RUN",
+            "PASSED_UNDER_SCOPE",
+            "FAILED",
+            "UNSUPPORTED"
+          ]
+        },
+        "receipt_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "authority": {
+          "type": "string",
+          "enum": [
+            "SELF_HASH_ONLY",
+            "INDEPENDENT_REPLAY",
+            "AUTHENTICATED_WORKER",
+            "NONE"
+          ]
+        }
+      }
+    },
+    "prohibition": {
+      "const": "SOURCE_REPLAY_NEVER_IMPLIES_SEMANTIC_OR_SECURITY_VALIDITY"
+    }
+  }
+}

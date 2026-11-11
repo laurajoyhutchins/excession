@@ -2,6 +2,7 @@
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
 use excession::analyze;
+use excession::change_inventory;
 use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
@@ -509,6 +510,11 @@ fn execute(args: &[String]) -> Result<Response> {
             )?;
             Ok(json(found.report()?))
         }
+        [top] if top == "changes" => Ok(json(change_inventory::inventory(
+            Path::new(opt.get_or("path", ".")),
+            opt.get("base"),
+            opt.get_or("head", "HEAD"),
+        )?)),
         [top] if top == "doctor" => {
             if opt.get_or("json", "false") == "true" {
                 Ok(json(doctor::report()))

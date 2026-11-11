@@ -294,6 +294,28 @@ pub(super) fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("changes")
+                .about("List exact tracked Git blob changes between two commits")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("base")
+                        .long("base")
+                        .required(true)
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("head")
+                        .long("head")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                ),
+        )
+        .subcommand(
             Command::new("doctor")
                 .about("Report local toolchain and bundled storage capabilities")
                 .arg(

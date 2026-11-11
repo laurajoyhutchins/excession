@@ -203,6 +203,45 @@ Do not treat this report as independent worker attestation, a verified
 behavioral guarantee, or permission to skip tests. Any compiler-backed
 promotion needs authenticated runtime evidence in a later contract.
 
+## Execute native discovery and compare immediately
+
+`native-run` is the integrated, opt-in path. Rust stages bounded Git
+source blobs and invokes the existing language-native adapters; the produced
+`excession.input-declaration.v1` is passed **in memory** to the boundary
+checker, with no intermediate user-editable declaration file.
+
+```sh
+excession syntax native-run --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --entry src/main.rs --language rust \
+  --trusted-local true > /tmp/native-run.json
+```
+
+The command accepts `go`, `javascript`, `typescript`, and `rust`.
+It first rejects malformed syntax/resolution reports, mismatched revisions,
+out-of-scope subjects, dirty checkouts, and incorrect Git trees. Only then
+does it reconstruct the pinned snapshot and execute the compiler-backed
+resolver. The returned JSON carries `declaration`, `stats` and `boundary`,
+which includes Git blob identities and any scope differences. The optional
+Tree-sitter grammars must be installed ahead of time for full replay.
+
+The reusable Rust authority and narrow Python language adapters originated
+from the ongoing [Rust-native discovery PR #32](https://github.com/laurajoyhutchins/excession/pull/32).
+This command does not import the remainder of that PR's stacked historical
+transport and evidence machinery.
+
+**Trust boundary:** `--trusted-local true` is mandatory because compiler
+parsers operate on untrusted source and this is not process isolation.
+The result says `TRUSTED_LOCAL_NOT_ATTESTED`: it records a locally observed
+compiler invocation and toolchain metadata, **not** an independently attested
+remote execution or complete runtime dependency set. Its static-versus-native
+comparison is still a scoped hypothesis, never permission to skip tests.
+
+To audit its stable boundary separately, extract the `declaration` and
+`boundary` members into individual JSON files and use `native-audit`.
+The `stats.elapsed_ns` timing is deliberately not a reproducible identity.
+
 ## Safety and reproducibility
 
 The adapter runs trusted, locally installed parser binaries and grammars, but

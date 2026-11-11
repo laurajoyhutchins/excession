@@ -84,7 +84,7 @@ def execute(repo: Path, server: list[str], repetitions: int, timeout: float) -> 
                 proc, timings = command(argv, timeout)
                 row = {
                     "arm": arm, "repetition": repetition, **timings,
-                    "status": "ok" if proc.returncode == 0 else "error",
+                    "status": "ok" if proc.returncode == 0 else ("unsupported" if proc.returncode == 127 else "error"),
                     "returncode": proc.returncode,
                     "raw_stdout_bytes": len(proc.stdout),
                     "raw_stdout_sha256": hashlib.sha256(proc.stdout).hexdigest(),

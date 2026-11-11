@@ -19,6 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
+      - name: Resolve locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Compile optimized CLI
         run: cargo build --offline --locked --release --manifest-path core/Cargo.toml
       - name: Measure authenticated projection phases and scaling

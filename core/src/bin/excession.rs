@@ -105,6 +105,7 @@ impl Options {
 
 enum Response {
     Json(excession::json::Value),
+    CanonicalJson(String),
     Message(String),
     Bytes(Vec<u8>),
 }
@@ -113,7 +114,7 @@ impl Response {
         let mut out = io::stdout().lock();
         match self {
             Self::Json(j) => writeln!(out, "{}", j.canonical()),
-            Self::Message(s) => writeln!(out, "{s}"),
+            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}"),
             Self::Bytes(bytes) => out.write_all(&bytes),
         }
         .map_err(|e| format!("stdout write failed: {e}"))
@@ -124,25 +125,23 @@ fn json(v: excession::json::Value) -> Response {
 }
 
 fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
+    if (verb, replay) == ("deps", false) {
+        let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
+        let db = Db::open(opt.path("db"))?;
+        return Ok(Response::CanonicalJson(projection::dependencies_canonical(
+            &db,
+            opt.get("name"),
+            opt.get("rev"),
+            opt.get("seed"),
+        )?));
+    }
     let v = match (verb, replay) {
-        ("deps", false) | ("deps", true) => {
-            let opt = Options::parse(
-                argv,
-                if replay {
-                    &["db", "name", "rev", "seed", "manifest"]
-                } else {
-                    &["db", "name", "rev", "seed"]
-                },
-                &[],
-            )?;
+        ("deps", true) => {
+            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "manifest"], &[])?;
             let db = Db::open(opt.path("db"))?;
             let plan =
                 projection::dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?;
-            if replay {
-                projection::replay(&plan, opt.path("manifest"))?
-            } else {
-                plan
-            }
+            projection::replay(&plan, opt.path("manifest"))?
         }
         ("profile-deps", false) => {
             let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;

@@ -127,6 +127,57 @@ impl Db {
 mod tests {
     use super::*;
     #[test]
+    fn existing_file_and_row_contract() {
+        let file = std::env::temp_dir().join(format!(
+            "excession-bundled-sqlite-{}-{}.db",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("unnamed")
+        ));
+        let _ = std::fs::remove_file(&file);
+        {
+            let db = Db::open(&file).expect("create");
+            db.exec("CREATE TABLE sample(id INTEGER PRIMARY KEY, description TEXT, raw BLOB)")
+                .expect("schema");
+            db.execute(
+                "INSERT INTO sample(id, description, raw) VALUES (?1, ?2, ?3)",
+                &[Param::Integer(42), Param::Text("quoted ' literal"), Param::Text("raw text")],
+            ).expect("bound insert");
+            assert_eq!(
+                db.query("SELECT id, description, raw, NULL FROM sample", &[]).unwrap(),
+                vec![vec![
+                    Some("42".to_owned()),
+                    Some("quoted ' literal".to_owned()),
+                    Some("raw text".to_owned()),
+                    None,
+                ]]
+            );
+            db.transaction(|db| {
+                db.execute(
+                    "INSERT INTO sample(id, description) VALUES (?, ?)",
+                    &[Param::Integer(43), Param::Text("committed")],
+                )?;
+                Ok(())
+            }).expect("commit");
+            assert!(db.transaction::<()>(|db| {
+                db.execute("INSERT INTO sample(id) VALUES (?)", &[Param::Integer(44)])?;
+                refuse("intentional rollback")
+            }).is_err());
+            assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
+            assert!(db.execute("SELECT * FROM sample", &[]).is_err());
+        }
+        // This is an ordinary SQLite file, readable after closing and
+        // independently of the connection that originally created it.
+        let header = std::fs::read(&file).expect("persisted database");
+        assert!(header.starts_with(b"SQLite format 3\0"));
+        {
+            let db = Db::open(&file).expect("reopen");
+            assert_eq!(db.scalar("SELECT description FROM sample WHERE id=43", &[]).unwrap(), "committed");
+            assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
+        }
+        let _ = std::fs::remove_file(file);
+    }
+
+    #[test]
     fn fk_and_binding() {
         let d = std::env::temp_dir().join(format!(
             "excession-sqlite-test-{}-{}.db",

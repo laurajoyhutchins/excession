@@ -162,7 +162,8 @@ fn toolchain(name: &str, version_flag: &str) -> Result<(String, String)> {
 fn rustc_binary() -> Result<PathBuf> {
     let launcher = executable("rustc")?;
     let mut probe = Command::new(&launcher);
-    probe.args(["--print", "sysroot"])
+    probe
+        .args(["--print", "sysroot"])
         .env("RUSTUP_AUTO_INSTALL", "0");
     let sysroot = String::from_utf8(run_bounded(probe, "native rustc sysroot")?)
         .map_err(|_| "non-UTF8 rustc sysroot")?;
@@ -170,7 +171,9 @@ fn rustc_binary() -> Result<PathBuf> {
     if !compiler.is_file() {
         return refuse("selected Rust sysroot has no actual rustc executable");
     }
-    compiler.canonicalize().map_err(|e| format!("resolve rustc compiler: {e}"))
+    compiler
+        .canonicalize()
+        .map_err(|e| format!("resolve rustc compiler: {e}"))
 }
 fn stage(repo: &Path, commit: &str, root: &Path) -> Result<(usize, usize, PinnedFiles)> {
     let entries = git::entries(repo, commit)?;

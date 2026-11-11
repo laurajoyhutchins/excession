@@ -1,0 +1,349 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/concepts/model.v1.schema.json",
+  "title": "Excession semantic model v1 (proposed)",
+  "description": "Contract scaffold for source-bound semantic proposals. Shape validation is not source authentication or evidence replay.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "model_id",
+    "source_commit",
+    "source_tree",
+    "subjects",
+    "claims",
+    "concepts",
+    "coverage"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts-model.v1"
+    },
+    "model_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/oid"
+    },
+    "subjects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/subject"
+      },
+      "uniqueItems": true
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      },
+      "uniqueItems": true
+    },
+    "concepts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/concept"
+      },
+      "uniqueItems": true
+    },
+    "coverage": {
+      "$ref": "#/$defs/coverage"
+    }
+  },
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_line",
+        "end_line",
+        "encoding"
+      ],
+      "properties": {
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "encoding": {
+          "enum": [
+            "UTF8",
+            "UTF16",
+            "UTF32",
+            "LINE_ONLY"
+          ]
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject_id",
+        "kind",
+        "source_commit",
+        "path",
+        "blob",
+        "producer",
+        "producer_receipt_id"
+      ],
+      "properties": {
+        "subject_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kind": {
+          "enum": [
+            "SOURCE_FILE",
+            "SYMBOL",
+            "BUILD_TARGET",
+            "TEST",
+            "CONFIGURATION"
+          ]
+        },
+        "source_commit": {
+          "$ref": "#/$defs/oid"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "blob": {
+          "$ref": "#/$defs/oid"
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer_receipt_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "configuration_id": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "role",
+        "observation_kind"
+      ],
+      "properties": {
+        "receipt_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "role": {
+          "enum": [
+            "SUPPORTS",
+            "CONTRADICTS"
+          ]
+        },
+        "observation_kind": {
+          "enum": [
+            "SCIP_REFERENCE",
+            "STATIC_IMPORT_CANDIDATE",
+            "COMPILER_DECLARATION",
+            "RUNTIME_WITNESS",
+            "SCANNER_FINDING",
+            "NATIVE_VERIFICATION",
+            "REVIEW_EVENT"
+          ]
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "predicate",
+        "subjects",
+        "assessment",
+        "behavioral_verification",
+        "support"
+      ],
+      "properties": {
+        "claim_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "predicate": {
+          "enum": [
+            "POSSIBLY_SAME_RESPONSIBILITY",
+            "REALIZES_CONCEPT",
+            "ALIAS_OF",
+            "SHARES_INTERFACE",
+            "BEHAVIORALLY_EQUIVALENT_UNDER",
+            "CONTRADICTS"
+          ]
+        },
+        "subjects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sha256"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "concept_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assessment": {
+          "enum": [
+            "PROPOSED",
+            "CORROBORATED",
+            "CONTRADICTED",
+            "UNRESOLVED"
+          ]
+        },
+        "behavioral_verification": {
+          "enum": [
+            "UNTESTED",
+            "VERIFIED_UNDER_CONTRACT",
+            "FAILED",
+            "UNSUPPORTED"
+          ]
+        },
+        "verification_contract_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "support": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concept_id",
+        "revision_id",
+        "name",
+        "definition",
+        "membership_claims",
+        "review_status"
+      ],
+      "properties": {
+        "concept_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "revision_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "definition": {
+          "type": "string",
+          "minLength": 1
+        },
+        "membership_claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sha256"
+          },
+          "uniqueItems": true
+        },
+        "review_status": {
+          "enum": [
+            "UNREVIEWED",
+            "ACCEPTED",
+            "REJECTED",
+            "SUPERSEDED"
+          ]
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "producer_receipts",
+        "gaps"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PARTIAL",
+            "DECLARED_SCOPE_COMPLETE",
+            "UNKNOWN"
+          ]
+        },
+        "producer_receipts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sha256"
+          },
+          "uniqueItems": true
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "source_path": {
+                "$ref": "#/$defs/path"
+              },
+              "reason": {
+                "enum": [
+                  "UNSUPPORTED_LANGUAGE",
+                  "MISSING_INDEXER",
+                  "UNRESOLVED_SYMBOL",
+                  "EXCLUDED_CONFIGURATION",
+                  "RESOURCE_LIMIT",
+                  "UNKNOWN_COVERAGE"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

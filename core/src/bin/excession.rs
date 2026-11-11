@@ -14,12 +14,20 @@ use std::path::Path;
 mod research;
 #[path = "excession/scan.rs"]
 mod scan;
+#[path = "excession/graph.rs"]
+mod graph_cli;
 
 const HELP: &str = r#"Excession | Git-authenticated repository exploration and security evidence
 
 Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession graph import --build BUILD_DIR --target TARGET [--repo .] [--provider auto]
+      [--db SQLITE] [--rev HEAD] [--observations RECEIPTS] [--trusted-local true]
+  excession graph ls --build BUILD_DIR [--db SQLITE]
+  excession graph show --build BUILD_DIR [--id GRAPH_ID]
+  excession graph deps --build BUILD_DIR --node SOURCE_OR_TARGET [--depth 2]
+  excession graph path --build BUILD_DIR --from TARGET --to SOURCE [--depth 8]
   excession graph kbuild --repo LINUX --build BUILD_DIR --archive init/built-in.a
       --db SQLITE --trusted-local true [--rev HEAD] [--ar ar|llvm-ar]
   excession graph assemble --repo REPO --rev HEAD --build BUILD_DIR
@@ -476,6 +484,7 @@ fn execute(args: &[String]) -> Result<Response> {
             Ok(Response::Message(HELP.to_owned()))
         }
         [top, sub, tail @ ..] if top == "graph" => match sub.as_str() {
+            "import" | "ls" | "show" | "deps" | "path" => graph_cli::run(sub, tail),
             "kbuild" => {
                 let opt = Options::parse(tail,
                     &["repo", "build", "archive", "db", "trusted-local"],
@@ -499,7 +508,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.get_or("rev", "HEAD"),
                     opt.path("build"),
                     opt.get("target"),
-                    opt.path("observations"),
+                    Some(opt.path("observations")),
                     &db,
                 )?))
             }

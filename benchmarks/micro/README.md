@@ -1,6 +1,6 @@
 # Microbenchmarks: single-query retrieval and projection costs
 
-These historical calibration exercises live below the primary relational experiments. They do **not** measure agent task completion, independent graph completeness, or reusable multi-revision relationships.
+These diagnostic probes complement the primary relational experiments. They do **not** measure agent task completion, independent graph completeness, or reusable multi-revision relationships.
 
 ## Exact file locations
 

@@ -24,8 +24,8 @@ excession inspect evidence --repo "$REPO" --rev HEAD \
 ```
 
 `--declaration` and `--runtime-report` are optional. The compiler declaration
-is an existing `excession.input-declaration.v1` receipt, e.g. from
-`excession syntax cargo-depfile`. The runtime report is an opt-in
+is a separately produced `excession.input-declaration.v1` receipt from a
+reviewed compiler-input collection workflow. The runtime report is an opt-in
 `excession.python-runtime-witness.v1` receipt from
 `tools/python_import_observer.py`; no program is executed by the query.
 
@@ -88,5 +88,4 @@ python3 -m pytest -q tests/test_evidence_query_cli.py
 The test uses a real clean Git revision, real syntax/resolution replay, a
 trusted Python program with a dynamic import, and a synthetic native input
 **declaration shape**. Its synthetic declaration does not claim actual
-compilation. The Cargo depfile self-analysis workflow supplies separate real
-compiler input evidence.
+compilation. Compiler-input evidence must be collected and reviewed separately.

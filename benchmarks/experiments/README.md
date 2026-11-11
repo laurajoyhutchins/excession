@@ -41,11 +41,8 @@ The retained relation runner measures repeated queries and changed histories,
 not automatic caching. The bounded full indexed-query audit below is now
 implemented separately.
 
-## Additional retained experiments
+## Source-bound real-repository experiments
 
-- `checked_tree_ab.py`: historical-vs-current Rust binaries, identical Git
-  and SQLite relations, canonical byte parity and representative tamper
-  refusals. Dedicated `checked-tree-ab.yml` remains an isolated long run.
 - `real_fixtures.py`: source-bound projections on pinned h11 and upstream Git
   commits, with an independent, bounded import-edge inventory in
   `dependency_oracle.py` and `js_import_oracle.cjs`. Missing and invented SQL

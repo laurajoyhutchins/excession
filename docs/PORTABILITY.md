@@ -78,8 +78,7 @@ release, then extracts the archive *outside the build checkout*. The extracted
 binary indexes a Git fixture in JavaScript using its bundled TypeScript
 parser, exercising Git access, SQLite linkage, and language adapter discovery.
 
-The existing Linux verify workflow remains authoritative for full Rust,
-Python, JavaScript and historical suites. A green portability build proves
+The Linux verify workflow remains authoritative for current Rust, Python and JavaScript suites. A green portability build proves
 that the tested release subset operates on its host OS. It does **not**
 establish every optional adapter's semantic parity or execute untrusted
 programs safely.
@@ -88,7 +87,7 @@ programs safely.
 
 - Linux and macOS dynamically link system SQLite and platform libc. Older
   or minimal systems may need compatible libraries or a local build.
-- Some optional Go effect-inference and native research adapters retain
+- Optional Go and other language-native adapters retain
   separately managed toolchain and runtime requirements.
 - Windows has no POSIX file executable modes. Git object/mode identity is
   still authoritative. Materialized views use the host's read-only file flag

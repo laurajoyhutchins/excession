@@ -2,10 +2,10 @@
 
 Git is authoritative for source objects; SQLite stores indexed relations and
 scoped evidence. This crate's package and library are both named `excession`.
-The **one** binary is `excession`. It exposes read-only projection operations,
-scanner ingestion and independent audit, and a `research` subgroup for exact
-historical reproductions. The Rust engine does not claim to infer arbitrary
-language semantics or confirm exploitable vulnerabilities.
+The **one** binary is `excession`. Its maintained `clap` grammar defines
+all commands and flags, including views, syntax, security, refactoring,
+benchmarks, and independent audits. The engine does not claim to infer
+arbitrary language semantics or confirm exploitable vulnerabilities.
 
 ## Optional multi-language parsing
 
@@ -20,7 +20,8 @@ See [syntax parser documentation](../docs/SYNTAX_PARSERS.md).
 From the repository root:
 
 ```sh
-cargo test --offline --manifest-path core/Cargo.toml
+cargo fetch --locked --manifest-path core/Cargo.toml  # initial setup
+cargo test --offline --locked --manifest-path core/Cargo.toml
 cargo fmt --manifest-path core/Cargo.toml -- --check
 cargo clippy --offline --manifest-path core/Cargo.toml --all-targets -- -D warnings
 python3 -m unittest discover -s tests -v
@@ -30,17 +31,6 @@ To collect CI-compatible JUnit XML, run `make junit` from the repository root
 with `cargo-nextest` 0.9.151 and `pytest` 9.0.2 installed. The reports are
 written to `core/target/nextest/ci/junit.xml` and
 `test-results/python.xml`; the tests and assertions are unchanged.
-
-Historical differential checks remain available from inside `core/`:
-
-```sh
-bash scripts/reproduce.sh /tmp/excession-v10-fresh
-python3 scripts/reproduce_v11.py /tmp/excession-v11-fresh
-```
-
-Both outputs must be empty or nonexistent. These use version-pinned bundled
-Git histories, adapters, and test oracles, including immutable historical
-protocol and Git attribution bytes. They are not general security tests.
 
 ## Responsibility boundaries
 
@@ -53,4 +43,4 @@ protocol and Git attribution bytes. They are not general security tests.
 | Native tests and replay | Explicit bounded observations, with unsupported cases retained |
 
 Refer to [architecture](../docs/ARCHITECTURE.md), [CLI](../docs/CLI.md),
-[migration notes](../docs/MIGRATION.md), and [historical origins](../docs/ORIGINS.md).
+[development setup](../docs/DEVELOPMENT.md), and [repository views](../docs/REPOSITORY_VIEWS.md).

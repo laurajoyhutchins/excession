@@ -250,3 +250,84 @@ fn one_way_import_does_not_create_architectural_concept() {
         "PARTIAL"
     );
 }
+
+#[test]
+fn review_events_are_scoped_append_only_and_not_behavioral_proof() {
+    let fixture = Fixture::new();
+    fixture.report(true);
+    let model = fixture.invoke("preview", &[]);
+    let db = fixture.db.to_str().unwrap();
+    let receipt = fixture.invoke("compile", &["--db", db]);
+    let snapshot = receipt.get("snapshot_id").unwrap().str().unwrap();
+    let concept = &model.get("concepts").unwrap().array_ref().unwrap()[0];
+    let concept_id = concept.get("concept_id").unwrap().str().unwrap();
+    let revision_id = concept.get("revision_id").unwrap().str().unwrap();
+    let producer = model.get("coverage").unwrap()
+        .get("producer_receipts").unwrap().array_ref().unwrap()[0]
+        .str().unwrap();
+
+    let event = concepts::seal(
+        obj(&[
+            ("schema", Value::string("excession.concepts-review-event.v1")),
+            ("action", Value::string("ACCEPT")),
+            ("concept_id", Value::string(concept_id)),
+            ("concept_revision_id", Value::string(revision_id)),
+            ("reviewer", Value::string("local-test-reviewer")),
+            (
+                "scope",
+                obj(&[
+                    ("source_commit", Value::string(&fixture.commit)),
+                    ("model_id", model.get("model_id").unwrap().clone()),
+                    ("snapshot_id", Value::string(snapshot)),
+                ]),
+            ),
+            ("evidence_receipts", Value::array(vec![Value::string(producer)])),
+            ("rationale", Value::string("Scoped architectural interpretation, not behavior verification")),
+            (
+                "evidence_assessment",
+                Value::string("REVIEWED_INTERPRETATION_NOT_BEHAVIOR_PROOF"),
+            ),
+        ]),
+        "event_id",
+    )
+    .unwrap();
+    let file = fixture.root.join("review.json");
+    fs::write(&file, event.canonical()).unwrap();
+    let path = file.to_str().unwrap();
+
+    let denied = cmd(
+        env!("CARGO_BIN_EXE_excession"),
+        &["concepts", "review", "--db", db, "--event", path, "--trusted-local", "false"],
+    );
+    assert!(!denied.status.success());
+    assert!(denied.stdout.is_empty());
+
+    let approved = cli(&[
+        "concepts", "review", "--db", db, "--event", path, "--trusted-local", "true",
+    ]);
+    assert_eq!(
+        approved.get("status").unwrap().str().unwrap(),
+        "REVIEW_EVENT_RETAINED"
+    );
+    cli(&["concepts", "review", "--db", db, "--event", path, "--trusted-local", "true"]);
+    let events = cli(&[
+        "concepts", "reviews", "--db", db, "--snapshot", snapshot, "--concept", concept_id,
+    ]);
+    assert_eq!(events.get("events").unwrap().array_ref().unwrap().len(), 1);
+    assert!(!events.get("behavioral_verification_inferred").unwrap().bool().unwrap());
+
+    let mut altered = event.clone();
+    let wrong = altered.entries_mut().unwrap().get_mut("scope").unwrap();
+    wrong.entries_mut().unwrap().insert(
+        "source_commit".into(),
+        Value::string("f".repeat(40)),
+    );
+    let altered = concepts::seal(altered, "event_id").unwrap();
+    fs::write(&file, altered.canonical()).unwrap();
+    let refused = cmd(
+        env!("CARGO_BIN_EXE_excession"),
+        &["concepts", "review", "--db", db, "--event", path, "--trusted-local", "true"],
+    );
+    assert!(!refused.status.success());
+    assert!(refused.stdout.is_empty());
+}

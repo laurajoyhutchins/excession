@@ -17,7 +17,8 @@ SAMPLE = {
     "reviewer": "reviewer@example.invalid",
     "scope": {
         "source_commit": "dddddddddddddddddddddddddddddddddddddddd",
-        "model_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "model_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "snapshot_id": "1111111111111111111111111111111111111111111111111111111111111111"
     },
     "evidence_receipts": [
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"

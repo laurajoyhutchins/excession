@@ -15,10 +15,14 @@ use std::path::Path;
 
 #[path = "excession/cli.rs"]
 mod cli;
+#[path = "excession/evidence.rs"]
+mod evidence_cli;
 #[path = "excession/graph.rs"]
 mod graph_cli;
 #[path = "excession/scan.rs"]
 mod scan;
+#[path = "excession/slice.rs"]
+mod slice_cli;
 use cli::{Options, ParseOutcome};
 
 enum Response {
@@ -339,6 +343,8 @@ fn execute(args: &[String]) -> Result<Response> {
     };
     let opt = &parsed.options;
     match parsed.path.as_slice() {
+        [top, sub] if top == "slice" => slice_cli::run(sub, opt),
+        [top, sub] if top == "evidence" => evidence_cli::run(sub, opt),
         [top, sub] if top == "semantic" => match sub.as_str() {
             "scan" => {
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();

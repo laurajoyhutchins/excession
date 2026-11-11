@@ -229,6 +229,73 @@ pub(super) fn command() -> Command {
         )
     };
     let analyze = group("analyze", vec![clang()]).about("Compiler-backed source analysis");
+    let slice_commands = group(
+        "slice",
+        vec![
+            leaf("ingest", &["repo", "manifest", "receipt", "db"], &[]),
+            leaf("audit", &["repo", "manifest", "receipt", "db"], &[]),
+            leaf("plan", &["repo", "rev", "entry"], &["assets", "history"]),
+            leaf("validate", &["repo", "manifest"], &[]),
+            leaf("materialize", &["repo", "manifest", "directory"], &[]),
+            leaf("source-audit", &["repo", "manifest", "directory"], &[]),
+            leaf(
+                "run",
+                &["repo", "manifest", "directory", "trusted-local"],
+                &["timeout", "isolated-linux"],
+            ),
+            leaf(
+                "carry",
+                &["repo", "manifest", "receipt", "rev"],
+                &["replay", "isolated-linux", "trusted-local"],
+            ),
+        ],
+    )
+    .about("Bounded source-backed local execution and independent receipts");
+    let evidence_commands = group(
+        "evidence",
+        vec![
+            leaf(
+                "discover-native",
+                &["repo", "rev", "entry", "language", "trusted-local"],
+                &["import-roots"],
+            ),
+            leaf("contract-plan", &["repo", "rev", "declaration"], &[]),
+            leaf(
+                "contract-compare",
+                &["repo", "source-contract", "target-contract", "db"],
+                &[],
+            ),
+            leaf(
+                "contract-audit",
+                &["repo", "source-contract", "target-contract", "db"],
+                &[],
+            ),
+            leaf("trace", &["repo", "receipt-id", "db"], &[]),
+            leaf(
+                "transport",
+                &[
+                    "repo",
+                    "source-manifest",
+                    "target-manifest",
+                    "receipt",
+                    "db",
+                ],
+                &[],
+            ),
+            leaf(
+                "transport-audit",
+                &[
+                    "repo",
+                    "source-manifest",
+                    "target-manifest",
+                    "receipt",
+                    "db",
+                ],
+                &[],
+            ),
+        ],
+    )
+    .about("Declared-input comparisons and source-bound historical transport");
     let kernel = group(
         "kernel",
         vec![
@@ -271,6 +338,8 @@ pub(super) fn command() -> Command {
         .subcommand(configured_graph)
         .subcommand(analyze)
         .subcommand(kernel)
+        .subcommand(slice_commands)
+        .subcommand(evidence_commands)
         .subcommand(
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
                 .about("Read-only virtual source browser"),

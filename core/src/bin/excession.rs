@@ -1,5 +1,5 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
-//! Historical experiments run under `excession research` without a second CLI.
+//! All commands use one clap grammar; the same parsed options reach the native handlers.
 use excession::doctor;
 use excession::evidence_query;
 use excession::semantic_contract;
@@ -8,113 +8,15 @@ use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
     refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
-use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
-#[path = "excession/research.rs"]
-mod research;
+#[path = "excession/cli.rs"]
+mod cli;
 #[path = "excession/scan.rs"]
 mod scan;
-
-const HELP: &str = r#"Excession | Git-authenticated repository exploration and security evidence
-
-Usage:
-  excession doctor [--json]
-  excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
-  excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
-  excession syntax audit --repo REPO --report SAVED_JSON
-  excession syntax preflight --report SAVED_JSON
-  excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
-  excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
-  excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
-  excession semantic scan --repo REPO --roots src[,tests] [--rev HEAD]
-  excession semantic audit --repo REPO --roots src[,tests] --report SHARED_JSON
-  excession semantic resolve --repo REPO --syntax-report JSON
-  excession semantic export --repo REPO --syntax-report JSON --resolution-report JSON
-  excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust|python --import-roots ROOTS(PYTHON) --trusted-local true
-  excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
-  excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
-  excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
-  excession view deps --db DB --name NAME --rev REV --seed MODULE
-  excession view paths --db DB --name NAME --rev REV --seed MODULE --role ROLE
-  excession view graph --db DB --name NAME --rev REV --seed MODULE --kind KIND
-  excession view profile-deps --db DB --name NAME --rev REV --seed MODULE
-  excession view security --db DB --repo REPO --run RUN_ID
-  excession view compose --repo REPO --op union|intersection|difference --left JSON --right JSON
-  excession view select --repo REPO --manifest JSON --axis role|source-prefix|virtual-prefix --value TEXT
-  excession view mount --repo REPO --manifest JSON --namespace NAME
-  excession view ls --repo REPO --manifest JSON [--path VIRTUAL_DIR]
-  excession view stat|cat --repo REPO --manifest JSON --path VIRTUAL_FILE
-  excession view materialize|audit --repo REPO --manifest JSON --output NEW_DIR
-  excession view replay deps|security|compose|select|mount [same options, plus --manifest or --output]
-  excession browse --repo REPO --manifest JSON [--max-bytes 8192]
-  excession security ingest|audit --repo REPO --report JSON --db DB --engine codeql|semgrep
-  excession security scan --repo REPO --report NEW_JSON --db DB --engine codeql|semgrep
-      --config LOCAL_RULES --trusted-local true [--scanner EXECUTABLE]
-      [--codeql-db PREBUILT_DB] [--timeout-seconds 300]
-  excession inspect evidence --repo REPO --focus FILE --syntax-report JSON --resolution-report JSON [--rev HEAD] [--declaration JSON] [--runtime-report JSON]
-  excession inspect dependencies|manifest --db DB --name NAME --rev REV
-  excession inspect impact --db DB --name NAME --rev REV --seed MODULE
-  excession inspect review --db DB --name NAME --old REV --new REV
-  excession refactor suggest --db DB --name NAME --rev REV
-  excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
-  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON [--source-prefix core]
-  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON [--source-prefix core]
-  excession benchmark report --kind relational --directory RESULT_DIR
-  excession benchmark report --kind native --directory RESULT_DIR --input RECEIPT.json
-  excession benchmark validate --report SAVED_REPORT_JSON
-  excession research COMMAND [historical positional arguments]
-
-Views are read-only and are not executable source checkouts. Scanner findings remain
-UNVERIFIED_STATIC_CANDIDATES. JSON is written to stdout, errors to stderr;
-`view cat` writes exact Git blob bytes to stdout. Redirect view-plan JSON to a file
-before using it as a manifest. `research` preserves pinned legacy experiments.
-
-Use `excession --version` or `excession help`. No network access is required.
-"#;
-
-#[derive(Debug)]
-struct Options(BTreeMap<String, String>);
-impl Options {
-    fn parse(argv: &[String], required: &[&str], optional: &[&str]) -> Result<Self> {
-        let mut out = BTreeMap::new();
-        let mut it = argv.iter();
-        while let Some(token) = it.next() {
-            let key = token.strip_prefix("--").ok_or_else(|| {
-                format!("unexpected positional argument {token:?}; use named options")
-            })?;
-            if !required.contains(&key) && !optional.contains(&key) {
-                return refuse(format!("unknown option {token}"));
-            }
-            let value = it
-                .next()
-                .ok_or_else(|| format!("missing value for {token}"))?;
-            if value.is_empty() || value.starts_with("--") || value.contains('\0') {
-                return refuse(format!("invalid value for {token}"));
-            }
-            if out.insert(key.to_owned(), value.to_owned()).is_some() {
-                return refuse(format!("duplicate option {token}"));
-            }
-        }
-        for key in required {
-            if !out.contains_key(*key) {
-                return refuse(format!("missing required option --{key}"));
-            }
-        }
-        Ok(Self(out))
-    }
-    fn get(&self, key: &str) -> &str {
-        self.0.get(key).expect("required option validated")
-    }
-    fn get_or<'a>(&'a self, key: &str, default: &'a str) -> &'a str {
-        self.0.get(key).map(String::as_str).unwrap_or(default)
-    }
-    fn path(&self, key: &str) -> &Path {
-        Path::new(self.get(key))
-    }
-}
+use cli::{Options, ParseOutcome};
 
 enum Response {
     Json(excession::json::Value),
@@ -137,9 +39,9 @@ fn json(v: excession::json::Value) -> Response {
     Response::Json(v)
 }
 
-fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
+fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
     if (verb, replay) == ("deps", false) {
-        let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
+
         let db = Db::open(opt.path("db"))?;
         return Ok(Response::CanonicalJson(projection::dependencies_canonical(
             &db,
@@ -150,19 +52,19 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
     }
     let v = match (verb, replay) {
         ("deps", true) => {
-            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "manifest"], &[])?;
+
             let db = Db::open(opt.path("db"))?;
             let plan =
                 projection::dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?;
             projection::replay(&plan, opt.path("manifest"))?
         }
         ("profile-deps", false) => {
-            let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
+
             let db = Db::open(opt.path("db"))?;
             projection::profile_dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?
         }
         ("graph", false) => {
-            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "kind"], &[])?;
+
             let db = Db::open(opt.path("db"))?;
             graph_baseline::paths(
                 &db,
@@ -173,7 +75,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             )?
         }
         ("paths", false) => {
-            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "role"], &[])?;
+
             let db = Db::open(opt.path("db"))?;
             projection::dependency_paths(
                 &db,
@@ -184,15 +86,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             )?
         }
         ("security", false) | ("security", true) => {
-            let opt = Options::parse(
-                argv,
-                if replay {
-                    &["db", "repo", "run", "manifest"]
-                } else {
-                    &["db", "repo", "run"]
-                },
-                &[],
-            )?;
+
             let db = Db::open(opt.path("db"))?;
             let plan = projection::security(&db, opt.path("repo"), opt.get("run"))?;
             if replay {
@@ -202,15 +96,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             }
         }
         ("compose", false) | ("compose", true) => {
-            let opt = Options::parse(
-                argv,
-                if replay {
-                    &["repo", "op", "left", "right", "output"]
-                } else {
-                    &["repo", "op", "left", "right"]
-                },
-                &[],
-            )?;
+
             if replay {
                 projection::compose_replay(
                     opt.path("repo"),
@@ -229,15 +115,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             }
         }
         ("select", false) | ("select", true) => {
-            let opt = Options::parse(
-                argv,
-                if replay {
-                    &["repo", "manifest", "axis", "value", "output"]
-                } else {
-                    &["repo", "manifest", "axis", "value"]
-                },
-                &[],
-            )?;
+
             if replay {
                 projection::select_replay(
                     opt.path("repo"),
@@ -256,15 +134,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             }
         }
         ("mount", false) | ("mount", true) => {
-            let opt = Options::parse(
-                argv,
-                if replay {
-                    &["repo", "manifest", "namespace", "output"]
-                } else {
-                    &["repo", "manifest", "namespace"]
-                },
-                &[],
-            )?;
+
             if replay {
                 projection::mount_replay(
                     opt.path("repo"),
@@ -277,7 +147,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             }
         }
         ("ls", false) => {
-            let opt = Options::parse(argv, &["repo", "manifest"], &["path"])?;
+
             projection::list(
                 opt.path("repo"),
                 opt.path("manifest"),
@@ -285,11 +155,11 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             )?
         }
         ("stat", false) => {
-            let opt = Options::parse(argv, &["repo", "manifest", "path"], &[])?;
+
             projection::describe(opt.path("repo"), opt.path("manifest"), opt.get("path"))?
         }
         ("cat", false) => {
-            let opt = Options::parse(argv, &["repo", "manifest", "path"], &[])?;
+
             return Ok(Response::Bytes(projection::open(
                 opt.path("repo"),
                 opt.path("manifest"),
@@ -297,7 +167,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             )?));
         }
         ("materialize", false) | ("audit", false) => {
-            let opt = Options::parse(argv, &["repo", "manifest", "output"], &[])?;
+
             if verb == "materialize" {
                 projection::materialize(opt.path("repo"), opt.path("manifest"), opt.path("output"))?
             } else {
@@ -313,14 +183,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
     Ok(json(v))
 }
 
-fn inspect_cmd(verb: &str, argv: &[String]) -> Result<Response> {
-    let (req, extra): (&[&str], &[&str]) = match verb {
-        "dependencies" | "manifest" => (&["db", "name", "rev"], &[]),
-        "impact" => (&["db", "name", "rev", "seed"], &[]),
-        "review" => (&["db", "name", "old", "new"], &[]),
-        _ => return refuse(format!("unknown inspection command {verb:?}")),
-    };
-    let opt = Options::parse(argv, req, extra)?;
+fn inspect_cmd(verb: &str, opt: &Options) -> Result<Response> {
     let db = Db::open(opt.path("db"))?;
     let resolve = |spec: &str| -> Result<String> {
         let root = db.scalar(
@@ -462,50 +325,14 @@ fn browse(repo: &Path, manifest: &Path, max: usize) -> Result<()> {
 }
 
 fn execute(args: &[String]) -> Result<Response> {
-    match args {
-        [] => Ok(Response::Message(HELP.to_owned())),
-        [a] if matches!(a.as_str(), "--help" | "-h" | "help") => {
-            Ok(Response::Message(HELP.to_owned()))
-        }
-        [a] if a == "--version" => Ok(Response::Message(format!(
-            "excession {}",
-            env!("CARGO_PKG_VERSION")
-        ))),
-        [a] if a == "doctor" => Ok(Response::Message(doctor::format_human(&doctor::report())?)),
-        [a, flag] if a == "doctor" && flag == "--json" => Ok(json(doctor::report())),
-        [top, a]
-            if a == "--help"
-                && matches!(
-                    top.as_str(),
-                    "view"
-                        | "security"
-                        | "inspect"
-                        | "index"
-                        | "browse"
-                        | "syntax"
-                        | "semantic"
-                        | "refactor"
-                ) =>
-        {
-            Ok(Response::Message(HELP.to_owned()))
-        }
-        [top, sub, a]
-            if a == "--help"
-                && matches!(
-                    top.as_str(),
-                    "view" | "security" | "inspect" | "syntax" | "semantic" | "refactor"
-                )
-                && !sub.is_empty() =>
-        {
-            Ok(Response::Message(HELP.to_owned()))
-        }
-        [top, tail @ ..] if top == "research" => {
-            research::run(tail)?;
-            Ok(Response::Bytes(Vec::new()))
-        }
-        [top, sub, tail @ ..] if top == "semantic" => match sub.as_str() {
+    let parsed = match cli::parse(args)? {
+        ParseOutcome::Help(message) => return Ok(Response::Message(message)),
+        ParseOutcome::Command(parsed) => parsed,
+    };
+    let opt = &parsed.options;
+    match parsed.path.as_slice() {
+        [top, sub] if top == "semantic" => match sub.as_str() {
             "scan" => {
-                let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();
                 Ok(json(semantic_contract::scan(
                     opt.path("repo"),
@@ -514,7 +341,6 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             "audit" => {
-                let opt = Options::parse(tail, &["repo", "roots", "report"], &[])?;
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();
                 Ok(json(semantic_contract::audit_scan(
                     opt.path("repo"),
@@ -522,27 +348,20 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.path("report"),
                 )?))
             }
-            "resolve" => {
-                let opt = Options::parse(tail, &["repo", "syntax-report"], &[])?;
-                Ok(json(semantic_contract::resolve(
-                    opt.path("repo"),
-                    opt.path("syntax-report"),
-                )?))
-            }
-            "export" => {
-                let opt =
-                    Options::parse(tail, &["repo", "syntax-report", "resolution-report"], &[])?;
-                Ok(json(semantic_contract::export(
-                    opt.path("repo"),
-                    opt.path("syntax-report"),
-                    opt.path("resolution-report"),
-                )?))
-            }
+            "resolve" => Ok(json(semantic_contract::resolve(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+            )?)),
+            "export" => Ok(json(semantic_contract::export(
+                opt.path("repo"),
+                opt.path("syntax-report"),
+                opt.path("resolution-report"),
+            )?)),
             _ => refuse(format!("unknown semantic command {sub}")),
         },
-        [top, sub, tail @ ..] if top == "syntax" => match sub.as_str() {
+        [top, sub] if top == "syntax" => match sub.as_str() {
             "scan" => {
-                let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
+
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();
                 Ok(json(syntax::scan(
                     opt.path("repo"),
@@ -551,30 +370,19 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             "audit" => {
-                let opt = Options::parse(tail, &["repo", "report"], &[])?;
+
                 Ok(json(syntax::audit(opt.path("repo"), opt.path("report"))?))
             }
             "preflight" => {
-                let opt = Options::parse(tail, &["report"], &[])?;
+
                 Ok(json(preflight::syntax_file(opt.path("report"))?))
             }
             "resolve-preflight" => {
-                let opt = Options::parse(tail, &["report"], &[])?;
+
                 Ok(json(preflight::resolution_file(opt.path("report"))?))
             }
             "native-run" => {
-                let opt = Options::parse(
-                    tail,
-                    &[
-                        "repo",
-                        "syntax-report",
-                        "resolution-report",
-                        "entry",
-                        "language",
-                        "trusted-local",
-                    ],
-                    &["import-roots"],
-                )?;
+
                 let trusted = match opt.get("trusted-local") {
                     "true" => true,
                     "false" => false,
@@ -591,17 +399,13 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             "native-preflight" => {
-                let opt = Options::parse(tail, &["declaration"], &[])?;
+
                 Ok(json(native_boundary::preflight_file(
                     opt.path("declaration"),
                 )?))
             }
             "native-compare" => {
-                let opt = Options::parse(
-                    tail,
-                    &["repo", "syntax-report", "resolution-report", "declaration"],
-                    &[],
-                )?;
+
                 Ok(json(native_boundary::compare(
                     opt.path("repo"),
                     opt.path("syntax-report"),
@@ -610,17 +414,7 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             "native-audit" => {
-                let opt = Options::parse(
-                    tail,
-                    &[
-                        "repo",
-                        "syntax-report",
-                        "resolution-report",
-                        "declaration",
-                        "report",
-                    ],
-                    &[],
-                )?;
+
                 Ok(json(native_boundary::audit(
                     opt.path("repo"),
                     opt.path("syntax-report"),
@@ -630,14 +424,14 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             "resolve" => {
-                let opt = Options::parse(tail, &["repo", "report"], &[])?;
+
                 Ok(json(syntax_resolution::candidates(
                     opt.path("repo"),
                     opt.path("report"),
                 )?))
             }
             "resolve-audit" => {
-                let opt = Options::parse(tail, &["repo", "syntax-report", "report"], &[])?;
+
                 Ok(json(syntax_resolution::audit(
                     opt.path("repo"),
                     opt.path("syntax-report"),
@@ -646,8 +440,15 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown syntax command {sub}")),
         },
-        [top, tail @ ..] if top == "index" => {
-            let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots"])?;
+        [top] if top == "doctor" => {
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(doctor::report()))
+            } else {
+                Ok(Response::Message(doctor::format_human(&doctor::report())?))
+            }
+        }
+        [top] if top == "index" => {
+
             let roots = opt
                 .get_or("roots", "src,tests")
                 .split(',')
@@ -676,19 +477,15 @@ fn execute(args: &[String]) -> Result<Response> {
                 ("status", excession::json::Value::string("GIT_TREE_INDEXED")),
             ])))
         }
-        [top, sub, rest @ ..] if top == "security" => {
+        [top, sub] if top == "security" => {
             if sub == "scan" {
-                let opt = Options::parse(
-                    rest,
-                    &["repo", "report", "db", "engine", "config", "trusted-local"],
-                    &["scanner", "codeql-db", "timeout-seconds"],
-                )?;
-                return Ok(json(scan::run(&opt)?));
+
+                return Ok(json(scan::run(opt)?));
             }
             if !matches!(sub.as_str(), "ingest" | "audit") {
                 return refuse(format!("unknown security command {sub}"));
             }
-            let opt = Options::parse(rest, &["repo", "report", "db", "engine"], &[])?;
+
             let db = Db::open(opt.path("db"))?;
             Ok(json(security_ingest::execute(
                 opt.path("repo"),
@@ -698,18 +495,10 @@ fn execute(args: &[String]) -> Result<Response> {
                 sub == "audit",
             )?))
         }
-        [top, sub, rest @ ..]
+        [top, sub]
             if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
         {
-            let opt = Options::parse(
-                rest,
-                if sub == "scip-audit" {
-                    &["repo", "rev", "index", "report"]
-                } else {
-                    &["repo", "rev", "index"]
-                },
-                &["source-prefix"],
-            )?;
+
             Ok(json(if sub == "scip-audit" {
                 scip_refactor::audit_with_prefix(
                     opt.path("repo"),
@@ -727,19 +516,11 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?
             }))
         }
-        [top, sub, rest @ ..] if top == "refactor" => {
+        [top, sub] if top == "refactor" => {
             if !matches!(sub.as_str(), "suggest" | "audit") {
                 return refuse(format!("unknown refactor command {sub}"));
             }
-            let opt = Options::parse(
-                rest,
-                if sub == "audit" {
-                    &["db", "name", "rev", "report"]
-                } else {
-                    &["db", "name", "rev"]
-                },
-                &[],
-            )?;
+
             let db = Db::open(opt.path("db"))?;
             Ok(json(if sub == "audit" {
                 refactor::audit(&db, opt.get("name"), opt.get("rev"), opt.path("report"))?
@@ -747,14 +528,14 @@ fn execute(args: &[String]) -> Result<Response> {
                 refactor::suggest(&db, opt.get("name"), opt.get("rev"))?
             }))
         }
-        [top, sub, rest @ ..] if top == "benchmark" => match sub.as_str() {
+        [top, sub] if top == "benchmark" => match sub.as_str() {
             "validate" => {
-                let opt = Options::parse(rest, &["report"], &[])?;
+
                 benchmark::validate(opt.path("report"))?;
                 Ok(Response::Message(format!("VALID {}", opt.get("report"))))
             }
             "report" => {
-                let opt = Options::parse(rest, &["kind", "directory"], &["input"])?;
+
                 let output = match opt.get("kind") {
                     "relational" => {
                         if opt.0.contains_key("input") {
@@ -774,12 +555,8 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
-        [top, sub, rest @ ..] if top == "inspect" && sub == "evidence" => {
-            let opt = Options::parse(
-                rest,
-                &["repo", "focus", "syntax-report", "resolution-report"],
-                &["rev", "declaration", "runtime-report"],
-            )?;
+        [top, sub] if top == "inspect" && sub == "evidence" => {
+
             Ok(json(evidence_query::query(
                 opt.path("repo"),
                 opt.get_or("rev", "HEAD"),
@@ -790,16 +567,11 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.0.get("runtime-report").map(|s| Path::new(s.as_str())),
             )?))
         }
-        [top, sub, rest @ ..] if top == "inspect" => inspect_cmd(sub, rest),
-        [top, sub, rest @ ..] if top == "view" && sub == "replay" => {
-            let Some((verb, tail)) = rest.split_first() else {
-                return refuse("expected view replay operation");
-            };
-            view_cmd(verb, tail, true)
-        }
-        [top, verb, rest @ ..] if top == "view" => view_cmd(verb, rest, false),
-        [top, rest @ ..] if top == "browse" => {
-            let opt = Options::parse(rest, &["repo", "manifest"], &["max-bytes"])?;
+        [top, sub] if top == "inspect" => inspect_cmd(sub, opt),
+        [top, sub, verb] if top == "view" && sub == "replay" => view_cmd(verb, opt, true),
+        [top, verb] if top == "view" => view_cmd(verb, opt, false),
+        [top] if top == "browse" => {
+
             let max = opt
                 .get_or("max-bytes", "8192")
                 .parse::<usize>()
@@ -832,17 +604,20 @@ mod tests {
         x.iter().map(|s| (*s).to_owned()).collect()
     }
     #[test]
-    fn flags_are_strict() {
-        assert!(Options::parse(&strings(&["--repo", "a", "--repo", "b"]), &["repo"], &[]).is_err());
-        assert!(Options::parse(&strings(&["--reppo", "a"]), &["repo"], &[]).is_err());
-        assert!(Options::parse(&strings(&["--repo", "--db", "x"]), &["repo"], &[]).is_err());
-        assert!(Options::parse(&strings(&["--repo", "a", "surprise"]), &["repo"], &[]).is_err());
-        assert_eq!(
-            Options::parse(&strings(&["--repo", "a"]), &["repo"], &[])
-                .unwrap()
-                .get("repo"),
-            "a"
-        );
+    fn options_are_validated_once_by_clap() {
+        assert!(execute(&strings(&[
+            "index", "--repo", "a", "--db", "x", "--name", "n", "--db", "duplicate"
+        ]))
+        .is_err());
+        assert!(execute(&strings(&["index", "--reppo", "a"])).is_err());
+        assert!(execute(&strings(&["index", "--repo", "--db", "x"])).is_err());
+
+    }
+    #[test]
+    fn retired_research_subcommand_is_rejected() {
+        assert!(execute(&strings(&["research"])).is_err());
+        assert!(execute(&strings(&["research", "--help"])).is_err());
+        assert!(execute(&strings(&["research", "compose"])).is_err());
     }
     #[test]
     fn command_help_and_failure_are_ordinary_results() {

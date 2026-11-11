@@ -246,10 +246,17 @@ def extract_symbols(ast, source, source_bytes):
             pending.extend(reversed(node.get("inner") or []))
         return None
 
-    # Inherited file context permits nested C++ member nodes with offset-only
-    # locations while preventing declarations explicitly located in headers
-    # from being emitted as main-translation-unit source facts.
-    stack = [(ast, None, (), None)]
+    # Clang omits explicit files for adjacent top-level source declarations,
+    # including a C++ main() after a namespace. Carry the last explicit
+    # top-level file across siblings, but do not inherit that file across an
+    # unrelated subtree when Clang explicitly identifies a header.
+    top = ast.get("inner") or []
+    cursor = None
+    top_frames = []
+    for child in top:
+        cursor = explicit_file(child) or cursor
+        top_frames.append((child, cursor, (), None))
+    stack = list(reversed(top_frames))
     while stack:
         node, inherited_file, scope, caller = stack.pop()
         if not isinstance(node, dict):

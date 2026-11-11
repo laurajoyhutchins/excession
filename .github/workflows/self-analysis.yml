@@ -56,7 +56,8 @@ jobs:
         run: |
           SOURCE="$RUNNER_TEMP/excession-self-source"
           export CARGO_TARGET_DIR="$RUNNER_TEMP/excession-native-target"
-          cargo +1.99.1 build --offline --locked --manifest-path "$SOURCE/core/Cargo.toml" --bin excession
+          cargo +1.99.1 build --offline --locked --manifest-path "$SOURCE/core/Cargo.toml" --lib --bin excession
+          ls -l "$CARGO_TARGET_DIR/debug/"*.d
           RUSTC="$(rustup which rustc --toolchain 1.99.1)"
           RUSTC_VERSION="$("$RUSTC" --version)"
           BIN="$GITHUB_WORKSPACE/core/target/debug/excession"

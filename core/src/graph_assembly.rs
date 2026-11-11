@@ -449,17 +449,17 @@ pub fn assemble(
                 receipt,
             )?;
             let callee = call.get("callee")?.str()?;
-            if let Some(candidates) = definitions.get(callee) {
-                if candidates.len() == 1 {
-                    push_edge(
-                        &mut edges,
-                        &node,
-                        &candidates[0],
-                        "MAY_REFER_TO",
-                        "NAME_MATCH_CANDIDATE_ONLY",
-                        receipt,
-                    )?;
-                }
+            if let Some(candidates) = definitions.get(callee)
+                && candidates.len() == 1
+            {
+                push_edge(
+                    &mut edges,
+                    &node,
+                    &candidates[0],
+                    "MAY_REFER_TO",
+                    "NAME_MATCH_CANDIDATE_ONLY",
+                    receipt,
+                )?;
             }
         }
     }

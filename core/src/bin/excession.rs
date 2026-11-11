@@ -1,5 +1,6 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
+use excession::doctor;
 use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
@@ -20,6 +21,7 @@ mod scan;
 const HELP: &str = r#"Excession | Git-authenticated repository exploration and security evidence
 
 Usage:
+  excession doctor [--json]
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests] [--import-base PATH]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
@@ -470,6 +472,8 @@ fn execute(args: &[String]) -> Result<Response> {
             "excession {}",
             env!("CARGO_PKG_VERSION")
         ))),
+        [a] if a == "doctor" => Ok(Response::Message(doctor::format_human(&doctor::report())?)),
+        [a, flag] if a == "doctor" && flag == "--json" => Ok(json(doctor::report())),
         [top, a]
             if a == "--help"
                 && matches!(

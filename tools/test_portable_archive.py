@@ -51,6 +51,12 @@ def verify(archive: Path) -> None:
         )
         assert "excession " in run(str(binary), "--version", cwd=source)
         assert "excession index" in run(str(binary), "--help", cwd=source)
+        import json
+        doctor = json.loads(run(str(binary), "doctor", "--json", cwd=source))
+        assert doctor["schema"] == "excession.capabilities.v1"
+        assert doctor["sqlite"]["status"] == "BUNDLED"
+        assert doctor["tools"]["git"]["status"] == "DETECTED"
+        assert doctor["required_ready"] is True
         output = run(
             str(binary), "index", "--repo", str(source),
             "--db", str(root / "portable.sqlite"), "--name", "portable-js",
@@ -65,7 +71,7 @@ def main() -> None:
     if len(archives) != 1:
         raise SystemExit(f"expected one portable archive, found {len(archives)}")
     verify(archives[0])
-    print(f"Verified {archives[0].name}: checksums, executable, JS parser, Git and SQLite")
+    print(f"Verified {archives[0].name}: checksums, executable, JS parser, Git, bundled SQLite and doctor")
 
 
 if __name__ == "__main__":

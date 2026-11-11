@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build deterministic platform archives around the native Excession executable.
 
-Only the JavaScript parser sidecar is packaged. Python, Node, Git and native
-SQLite requirements are described in docs/PORTABILITY.md.
+The JavaScript parser sidecar is packaged; SQLite is compiled into the native
+CLI. Python, Node and Git requirements are described in docs/PORTABILITY.md.
 """
 from __future__ import annotations
 

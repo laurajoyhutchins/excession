@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/comparison.v1.schema.json",
+  "title": "contracts: coverage-qualified revision and artifact evidence comparison",
+  "description": "Proposed wire shape only; no source, execution or semantic proof from schema validity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "left_subject_id",
+    "right_subject_id",
+    "correspondence",
+    "facet",
+    "left_coverage",
+    "right_coverage",
+    "result",
+    "evidence_receipts",
+    "unresolved_reasons",
+    "interpretation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.evidence-comparison.v1"
+    },
+    "left_subject_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "right_subject_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "correspondence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "receipt_ids"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "EXACT_GIT_BLOB",
+            "EXACT_ARTIFACT_DIGEST",
+            "NATIVE_SYMBOL_REPORTED",
+            "EXPLICIT_MAPPING",
+            "CANDIDATE_ONLY",
+            "UNESTABLISHED"
+          ]
+        },
+        "receipt_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "facet": {
+      "type": "string",
+      "enum": [
+        "SOURCE_CONTENT",
+        "SYMBOL_REFERENCES",
+        "BUILD_INPUTS",
+        "MACHINE_CODE",
+        "CALLS",
+        "RUNTIME_BEHAVIOR"
+      ]
+    },
+    "left_coverage": {
+      "type": "string",
+      "enum": [
+        "COMPLETE_DECLARED_SCOPE",
+        "PARTIAL",
+        "UNKNOWN",
+        "UNSUPPORTED"
+      ]
+    },
+    "right_coverage": {
+      "type": "string",
+      "enum": [
+        "COMPLETE_DECLARED_SCOPE",
+        "PARTIAL",
+        "UNKNOWN",
+        "UNSUPPORTED"
+      ]
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "CHANGED",
+        "UNCHANGED_OBSERVED",
+        "UNKNOWN",
+        "CONTRADICTORY",
+        "NOT_COMPARABLE"
+      ]
+    },
+    "evidence_receipts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "unresolved_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "interpretation": {
+      "const": "FACET_SCOPED_NOT_BEHAVIORAL_EQUIVALENCE"
+    }
+  }
+}

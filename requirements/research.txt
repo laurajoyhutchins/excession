@@ -1,0 +1,8 @@
+# Python 3.13 research replay dependencies, including pytest's transitive runtime deps.
+# No external package is required for the ordinary unittest integration suite.
+pytest==9.0.2
+iniconfig==2.3.0
+packaging==25.0
+pluggy==1.6.0
+pygments==2.20.0
+colorama==0.4.6; sys_platform == "win32"

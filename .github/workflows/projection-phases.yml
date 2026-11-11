@@ -18,9 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal
+        run: rustup show active-toolchain
       - name: Compile optimized CLI
-        run: cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
+        run: cargo build --offline --locked --release --manifest-path core/Cargo.toml
       - name: Measure authenticated projection phases and scaling
         run: python3 benchmarks/micro/projection_phases.py core/target/release/excession projection-phases.json
       - name: Preserve raw phase receipts

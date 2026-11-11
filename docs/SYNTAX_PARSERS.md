@@ -17,7 +17,7 @@ The parser package is optional and must be installed into the Python environment
 used by the Excession executable:
 
 ```sh
-python3 -m pip install tree-sitter-language-pack==1.25.0
+python3 -m pip install -r requirements/syntax.txt
 python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust","go","c","java","python","javascript","typescript"])'
 ```
 

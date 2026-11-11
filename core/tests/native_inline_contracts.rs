@@ -214,9 +214,14 @@ impl Fixture {
 }
 #[test]
 fn rust_native_resolver_is_replaced_by_rust_analyzer_scip() {
-    if !grammars() { return; }
+    if !grammars() {
+        return;
+    }
     let f = Fixture::new();
-    reject(f.invoke("src/main.rs", "rust", "true"), "rust-analyzer SCIP");
+    reject(
+        f.invoke("src/main.rs", "rust", "true"),
+        "rust-analyzer SCIP",
+    );
 }
 #[test]
 fn go_compiler_dependency_graph_is_checked_against_source() {

@@ -93,7 +93,10 @@ pub fn audit(repo: &Path, revision: &str, directory: &Path, size: usize) -> Resu
             let reason = item.get("reason")?.str()?;
             if !matches!(
                 reason,
-                "SOURCE_EXCEEDS_1_MIB" | "PARTITION_EXCEEDS_32_MIB" | "SOURCE_NOT_UTF8"
+                "SOURCE_EXCEEDS_1_MIB"
+                    | "PARTITION_EXCEEDS_32_MIB"
+                    | "SOURCE_NOT_UTF8"
+                    | "OBSERVATION_BUDGET"
             ) {
                 return refuse("unrecognized unsupported-source reason");
             }

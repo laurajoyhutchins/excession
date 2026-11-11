@@ -13,6 +13,7 @@ pub mod impact;
 pub mod index;
 pub mod integration;
 pub mod json;
+pub mod kernel;
 pub mod optimizer;
 pub mod overlap;
 pub mod projection;

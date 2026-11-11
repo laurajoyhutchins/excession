@@ -43,7 +43,7 @@ functions are syntactic observations, not unconditional execution edges.
 ## Run
 
 ```sh
-# Rust 1.99.1, Git, CPython 3.13, Node 22 and global TypeScript 5.9.3
+# Rust 1.99.1, Git, CPython 3.13, Node 22 and lockfile-installed TypeScript 5.8.3
 cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
 python3 benchmarks/experiments/real_fixtures.py \
   --bin core/target/release/excession \

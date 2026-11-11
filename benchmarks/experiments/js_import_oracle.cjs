@@ -3,10 +3,7 @@
 // edges or imports its production JS adapter/resolution machinery.
 const fs = require('node:fs');
 const path = require('node:path').posix;
-const {execFileSync} = require('node:child_process');
-const ts = require(require('node:path').join(
-  execFileSync('npm', ['root', '-g'], {encoding: 'utf8'}).trim(), 'typescript'
-));
+const ts = require('typescript');
 const files = JSON.parse(fs.readFileSync(0, 'utf8'));
 const tracked = new Set(files.map(f => f.path));
 const edges = [];

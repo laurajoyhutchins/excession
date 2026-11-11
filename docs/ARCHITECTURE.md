@@ -59,10 +59,11 @@ and [refactoring](REFACTORING.md).
 
 ### Public command surface
 
-The installed `excession` Rust executable provides the Git/SQLite CLI.
-`excession research ...` retains historical reproducibility operations without
-introducing a second executable. Optional trusted-local scanner execution is
-not a sandbox. Python tools remain optional adapters and reference checks.
+The installed `excession` Rust executable provides one `clap` command grammar
+for Git/SQLite operations. The old positional `excession research` entry point
+is retired; its sources and fixtures remain available from the pinned Git
+history. Optional trusted-local scanner execution is not a sandbox. Python
+tools remain optional adapters and reference checks.
 
 ## 2. Research application: vulnerability discovery
 

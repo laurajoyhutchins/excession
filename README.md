@@ -50,6 +50,22 @@ copying code. Materialized views are read-only **and not executable checkouts**.
 See [CLI](docs/CLI.md), [repository views](docs/REPOSITORY_VIEWS.md), and
 [composable views](docs/COMPOSABLE_VIEWS.md).
 
+## Multi-language syntax parsing
+
+A separate optional Tree-sitter adapter reuses established grammars for many
+languages. It emits Git-bound structural and import observations, with explicit
+statuses when parsing is incomplete or a grammar is unavailable offline:
+
+```sh
+excession syntax scan --repo "$REPO" --roots src,tests > /tmp/syntax.json
+excession syntax audit --repo "$REPO" --report /tmp/syntax.json
+```
+
+The optional parser package must be installed and grammars prefetched in advance;
+no parser is downloaded during analysis. The existing Python/JS dependency index
+remains a separate, language-aware path. See [syntax parsers](docs/SYNTAX_PARSERS.md)
+for installation, limits and provenance.
+
 ## Source-bound scanner evidence
 
 ```sh
@@ -83,8 +99,9 @@ research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
 
 ## Limits
 
-The source index currently supports bounded Python and JavaScript static
-module relations, with additional Go-native research adapters. It cannot claim
+The relational dependency index currently supports bounded Python and JavaScript static
+module relations, with additional Go-native research adapters. A separate optional
+Tree-sitter syntax scan covers more languages without claiming resolved dependencies. It cannot claim
 that absent graph edges do not exist. Scanner source-to-sink flows are unverified
 scanner reports until independent analysis establishes reachability and impact.
 Excession does not automatically confirm CVEs, execute untrusted code safely,

@@ -158,7 +158,7 @@ pub fn assemble(
     rev: &str,
     build: &Path,
     target_name: &str,
-    observations: &Path,
+    observations: Option<&Path>,
     db: &Db,
 ) -> Result<Value> {
     git::verify_repo(repo)?;
@@ -346,11 +346,16 @@ pub fn assemble(
     }
     let mut observed = BTreeMap::<String, (String, Value)>::new();
     let mut receipt_documents = BTreeMap::<String, Value>::new();
-    let entries = fs::read_dir(observations)
-        .map_err(|e| format!("observation directory unavailable: {e}"))?;
     let mut count = 0;
-    for file in entries {
-        let path = file.map_err(|e| e.to_string())?.path();
+    let files = if let Some(directory) = observations {
+        fs::read_dir(directory)
+            .map_err(|e| format!("observation directory unavailable: {e}"))?
+            .map(|item| item.map(|file| file.path()).map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        Vec::new()
+    };
+    for path in files {
         if path.extension().and_then(|x| x.to_str()) != Some("json") {
             continue;
         }

@@ -1,0 +1,24 @@
+{
+  "languages": [
+    "c",
+    "go",
+    "java",
+    "javascript",
+    "python",
+    "rust",
+    "typescript"
+  ],
+  "libraries": {
+    "libtree_sitter_c.so": "3a2494a9e4da32ba70e737d6e3002219b91193b3e50a014034f0c1ce0f220e0d",
+    "libtree_sitter_go.so": "e262c4d29952631cc5bd40d97eb28758ee2dc6fefa58811f015a15e5a1f53486",
+    "libtree_sitter_java.so": "38d7debeacab7eb5be73fff12cff9c14ce4162baaa80e165ac9d18076874e380",
+    "libtree_sitter_javascript.so": "e44b35a4fa546dee858b80c41a0455f5161cd63c46647f418849ae7de9214ab3",
+    "libtree_sitter_python.so": "bfce1e0135bc442fe3db71d6a644eb92accaa808ab6aa2cf299c892f8877f10e",
+    "libtree_sitter_rust.so": "39d7c7d21d569ce3bc8fa2dec8e4d51ce05fe424c885d18a81d3230138e49611",
+    "libtree_sitter_typescript.so": "5afc27fbe28f53e72a43911085f7fd9c10820dd284bd2dc755b19589e1dcba6a"
+  },
+  "package": "tree-sitter-language-pack",
+  "platform": "linux-x86_64-gnu",
+  "schema": "excession.grammar-artifacts.v1",
+  "version": "1.25.0"
+}

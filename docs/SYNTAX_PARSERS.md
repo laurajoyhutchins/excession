@@ -17,8 +17,9 @@ The parser package is optional and must be installed into the Python environment
 used by the Excession executable:
 
 ```sh
-python3 -m pip install -r requirements/syntax.txt
+python3 -m pip install --require-hashes --only-binary=:all: -r requirements/locks/syntax-linux-cp313-x86_64.txt
 python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust","go","c","java","python","javascript","typescript"])'
+python3 tools/grammar_artifacts.py verify
 ```
 
 Prefetch happens in a **trusted setup step**, before analysis. Scans never

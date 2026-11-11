@@ -1,4 +1,4 @@
-.PHONY: check build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli benchmark-schema-check
+.PHONY: check build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli benchmark-schema-check native-preflight grammar-verify
 
 build:
 	cargo build --offline --locked --manifest-path core/Cargo.toml
@@ -38,3 +38,9 @@ cli:
 
 install-cli:
 	cargo install --offline --locked --path core --bin excession
+
+native-preflight:
+	python3 tools/native_runtime.py
+
+grammar-verify:
+	python3 tools/grammar_artifacts.py verify

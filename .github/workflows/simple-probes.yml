@@ -29,7 +29,8 @@ jobs:
         with:
           python-version-file: .python-version
       - name: Install pinned Python test dependency
-        run: python3 -m pip install --disable-pip-version-check -r requirements/research.txt
+        run: >-
+          python3 -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements/locks/research-linux-cp313-x86_64.txt
       - name: Build native CLI for full manual benchmark
         if: github.event_name == 'workflow_dispatch'
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession

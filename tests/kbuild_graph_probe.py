@@ -73,7 +73,7 @@ def main():
     original = repo / "init/main.c"
     raw = original.read_bytes()
     try:
-        original.write_bytes(raw + b"\\n/* modified for acceptance */\\n")
+        original.write_bytes(raw + b"\n/* modified for acceptance */\n")
         altered = run(command, okay=False)
         assert altered.returncode != 0, "mismatched Git source unexpectedly accepted"
         assert "Git" in altered.stderr or "git" in altered.stderr

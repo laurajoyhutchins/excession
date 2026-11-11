@@ -27,6 +27,8 @@ jobs:
           python-version: '3.13.5'
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Resolve locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Restore immediately preceding canonical implementation
         run: git worktree add --detach "$RUNNER_TEMP/excession-before-direct-id" 90cb4d5c1cbe7fde704a6d9189aa03cb5eff7a66
       - name: Build identical-toolchain native executables

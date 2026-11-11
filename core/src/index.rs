@@ -18,6 +18,12 @@ pub fn index_revision(
 /// Index the complete Git object/tree/revision identities required by a
 /// bounded integration claim, without doing unrelated language parsing.
 /// The source tree is still independently reconstructed from SQLite rows.
+#[derive(Clone, Copy)]
+enum SemanticMode<'a> {
+    GitOnly,
+    Parse { import_base: Option<&'a str> },
+}
+
 pub fn index_revision_for_evidence(
     db: &Db,
     root: &Path,
@@ -25,7 +31,15 @@ pub fn index_revision_for_evidence(
     commit: &str,
     provenance: &str,
 ) -> Result<i64> {
-    index_revision_inner(db, root, name, commit, provenance, &["h11", "tests"], false)
+    index_revision_inner(
+        db,
+        root,
+        name,
+        commit,
+        provenance,
+        &["h11", "tests"],
+        SemanticMode::GitOnly,
+    )
 }
 
 pub fn index_revision_with_roots(
@@ -36,7 +50,47 @@ pub fn index_revision_with_roots(
     provenance: &str,
     roots: &[&str],
 ) -> Result<i64> {
-    index_revision_inner(db, root, name, commit, provenance, roots, true)
+    index_revision_inner(
+        db,
+        root,
+        name,
+        commit,
+        provenance,
+        roots,
+        SemanticMode::Parse { import_base: None },
+    )
+}
+
+/// Resolve imports relative to a declared source directory without changing
+/// physical Git paths, file modes, or blob identities.
+pub fn index_revision_with_import_base(
+    db: &Db,
+    root: &Path,
+    name: &str,
+    commit: &str,
+    provenance: &str,
+    roots: &[&str],
+    import_base: &str,
+) -> Result<i64> {
+    git::validate_path(import_base)?;
+    let prefix = format!("{import_base}/");
+    if roots
+        .iter()
+        .any(|root| *root != import_base && !root.starts_with(&prefix))
+    {
+        return refuse("every module root must be inside --import-base");
+    }
+    index_revision_inner(
+        db,
+        root,
+        name,
+        commit,
+        provenance,
+        roots,
+        SemanticMode::Parse {
+            import_base: Some(import_base),
+        },
+    )
 }
 
 fn index_revision_inner(
@@ -46,8 +100,12 @@ fn index_revision_inner(
     commit: &str,
     provenance: &str,
     roots: &[&str],
-    include_semantics: bool,
+    semantics: SemanticMode<'_>,
 ) -> Result<i64> {
+    let import_base = match semantics {
+        SemanticMode::GitOnly => None,
+        SemanticMode::Parse { import_base } => import_base,
+    };
     git::clean(root)?;
     let commit = git::rev(root, commit)?;
     if git::text(root, &["cat-file", "-t", &commit])? != "commit" {
@@ -93,7 +151,7 @@ fn index_revision_inner(
                 ],
             )?;
             if entry.kind == "blob"
-                && let Some((module, is_test)) = module_name(&entry.path, roots)
+                && let Some((module, is_test)) = module_name_with_import_base(&entry.path, roots, import_base)
             {
                 db.execute(
                     "INSERT OR IGNORE INTO module(repo_id,commit_oid,name,path,blob_oid,is_test) VALUES(?,?,?,?,?,?)",
@@ -122,8 +180,10 @@ fn index_revision_inner(
                 "Git/SQLite tree mismatch: expected {tree}, got {reconstructed}"
             ));
         }
-        if include_semantics {
-            crate::semantic::index_sources(db, repo_id, root, &commit, &entries, roots)?;
+        if matches!(semantics, SemanticMode::Parse { .. }) {
+            crate::semantic::index_sources(
+                db, repo_id, root, &commit, &entries, roots, import_base,
+            )?;
         }
         db.foreign_keys_valid()?;
         Ok(repo_id)
@@ -206,6 +266,21 @@ pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
         return Some((name.to_owned(), is_test));
     }
     None
+}
+
+/// Convert a Git-rooted module identity to a declared Python import name.
+/// Historical callers without an import base keep their old module names.
+pub fn module_name_with_import_base(
+    path: &str,
+    roots: &[&str],
+    import_base: Option<&str>,
+) -> Option<(String, bool)> {
+    let (name, is_test) = module_name(path, roots)?;
+    let Some(import_base) = import_base else {
+        return Some((name, is_test));
+    };
+    let prefix = format!("{}.", import_base.replace('/', "."));
+    Some((name.strip_prefix(&prefix)?.to_owned(), is_test))
 }
 
 #[derive(Clone, Debug)]
@@ -502,5 +577,40 @@ mod tree_tests {
         assert!(reconstruct_entries(&rows, ROOT).is_err());
 
         assert!(reconstruct_entries(&[], ROOT).is_err());
+    }
+}
+
+#[cfg(test)]
+mod import_base_tests {
+    use super::*;
+
+    #[test]
+    fn git_paths_remain_distinct_from_python_import_names() {
+        let path = "scripts/gdb/linux/tasks.py";
+        let roots = &["scripts/gdb"];
+        assert_eq!(
+            module_name(path, roots).unwrap().0,
+            "scripts.gdb.linux.tasks"
+        );
+        assert_eq!(
+            module_name_with_import_base(path, roots, Some("scripts/gdb"))
+                .unwrap()
+                .0,
+            "linux.tasks"
+        );
+        assert_eq!(
+            module_name_with_import_base(
+                "scripts/gdb/linux/__init__.py",
+                roots,
+                Some("scripts/gdb")
+            )
+            .unwrap()
+            .0,
+            "linux"
+        );
+        assert!(
+            module_name_with_import_base("scripts/other/task.py", roots, Some("scripts/gdb"))
+                .is_none()
+        );
     }
 }

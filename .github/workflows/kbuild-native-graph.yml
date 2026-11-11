@@ -1,0 +1,74 @@
+name: Kbuild native archive graph
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/kbuild-native-graph.yml'
+      - 'core/adapters/kbuild_native.py'
+      - 'core/src/kbuild_graph.rs'
+      - 'core/src/configured_store.rs'
+      - 'core/src/graph_assembly.rs'
+      - 'core/src/lib.rs'
+      - 'core/src/bin/excession.rs'
+      - 'tests/kbuild_graph_probe.py'
+      - 'docs/KBUILD_GRAPHS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-init-archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Rust CLI without third-party downloads
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Ensure native Linux build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for tool in make gcc ar bison flex bc; do
+            if ! command -v "$tool" >/dev/null; then missing+=("$tool"); fi
+          done
+          if (( ${#missing[@]} > 0 )) || ! test -f /usr/include/libelf.h || ! test -f /usr/include/gelf.h; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq bison flex bc libelf-dev libssl-dev
+          fi
+      - name: Check out actual Linux v6.12 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --single-branch --branch v6.12 \
+            https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
+          test "$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)" = "adc218676eef25575469234709c2d87185ca223a"
+      - name: Configure and compile native Kbuild archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C "$RUNNER_TEMP/linux" O="$RUNNER_TEMP/linux-build" x86_64_defconfig
+          make -C "$RUNNER_TEMP/linux" O="$RUNNER_TEMP/linux-build" -j2 init/built-in.a
+          test -s "$RUNNER_TEMP/linux-build/init/built-in.a"
+          test -s "$RUNNER_TEMP/linux-build/.config"
+      - name: Compare graph with Kbuild and ar evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/kbuild_graph_probe.py \
+            --repo "$RUNNER_TEMP/linux" --build "$RUNNER_TEMP/linux-build" \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --out "$RUNNER_TEMP/kbuild-test"
+          cat "$RUNNER_TEMP/kbuild-test/summary.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve evidence summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-kbuild-graph
+          path: ${{ runner.temp }}/kbuild-test/summary.json
+          retention-days: 7
+          if-no-files-found: warn

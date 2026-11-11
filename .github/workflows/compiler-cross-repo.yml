@@ -1,0 +1,72 @@
+name: Generic C and C++ compiler observations
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/compiler-cross-repo.yml'
+      - 'core/adapters/clang_ast.py'
+      - 'core/src/compiler_clang.rs'
+      - 'core/src/kernel_clang.rs'
+      - 'core/src/adapter.rs'
+      - 'core/src/bin/excession.rs'
+      - 'core/src/lib.rs'
+      - 'tests/test_clang_ast.py'
+      - 'tests/compiler_cross_repo_probe.py'
+      - 'docs/COMPILER_ANALYSIS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-repos:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate C and C++ Clang observations
+        run: |
+          clang --version | head -n 1
+          clang++ --version | head -n 1
+          python3 -m unittest discover -s tests -p test_clang_ast.py -v
+
+      - name: Compile Excession with no Cargo downloads
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+
+      - name: Fetch independently pinned C and C++ repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --sparse --branch v1.3.1 \
+            https://github.com/madler/zlib.git "$RUNNER_TEMP/zlib"
+          git -C "$RUNNER_TEMP/zlib" sparse-checkout set test
+          test "$(git -C "$RUNNER_TEMP/zlib" rev-parse HEAD)" = "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf"
+
+          git clone --depth=1 --filter=blob:none --sparse --branch 11.1.4 \
+            https://github.com/fmtlib/fmt.git "$RUNNER_TEMP/fmt"
+          git -C "$RUNNER_TEMP/fmt" sparse-checkout set test/static-export-test
+          test "$(git -C "$RUNNER_TEMP/fmt" rev-parse HEAD)" = "123913715afeb8a437e6388b4473fcc4753e1c9a"
+
+      - name: Compare compiledb evidence on real C and C++ sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/compiler_cross_repo_probe.py \
+            --zlib "$RUNNER_TEMP/zlib" \
+            --fmt "$RUNNER_TEMP/fmt" \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --output "$RUNNER_TEMP/compiler-cross-repo"
+          cat "$RUNNER_TEMP/compiler-cross-repo/summary.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve bounded receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-generic-compiler-probe
+          path: ${{ runner.temp }}/compiler-cross-repo/summary.json
+          retention-days: 7
+          if-no-files-found: warn

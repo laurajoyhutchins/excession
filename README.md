@@ -117,6 +117,12 @@ The `research` commands accept historical positional arguments. They are
 separate from the modern named-option CLI and intentionally preserve existing
 research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
 
+## Benchmarks
+
+The [benchmark program](benchmarks/README.md) separates observable relational
+experiments from [single-query microbenchmarks](benchmarks/micro/README.md).
+Reproducible measurements do not claim improved agent productivity.
+
 ## Limits
 
 The relational dependency index currently supports bounded Python and JavaScript static

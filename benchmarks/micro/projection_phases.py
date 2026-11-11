@@ -21,7 +21,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = ROOT / "core/fixtures/h11-crossrepo.bundle"
 SCALES = (32, 128, 512)
 REPETITIONS = 12

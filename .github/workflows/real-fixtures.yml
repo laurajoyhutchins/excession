@@ -3,7 +3,7 @@ name: Real repository projection fixtures
 on:
   pull_request:
     paths:
-      - benchmarks/real_fixtures.py
+      - benchmarks/experiments/real_fixtures.py
       - benchmarks/fixtures/real-repositories.json
       - .github/workflows/real-fixtures.yml
       - core/src/projection.rs
@@ -31,7 +31,7 @@ jobs:
         run: cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
       - name: Verify immutable upstream fixtures and corruption refusals
         run: |
-          python3 benchmarks/real_fixtures.py \
+          python3 benchmarks/experiments/real_fixtures.py \
             --bin core/target/release/excession \
             --manifest benchmarks/fixtures/real-repositories.json \
             --out real-fixture-results.json

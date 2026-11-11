@@ -2,6 +2,7 @@
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
 use excession::discovery;
+use excession::doctor;
 use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};

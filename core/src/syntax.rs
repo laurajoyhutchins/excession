@@ -157,7 +157,7 @@ fn consume_batch(
         return refuse("parser version missing or invalid");
     }
     if let Some(previous) = parser_version {
-        if previous != version {
+        if previous.as_str() != version {
             return refuse("parser version changed during scan");
         }
     } else {

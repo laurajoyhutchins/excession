@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, index, kernel, kernel_clang, projection, refuse, security_ingest, views,
+    Result, compiler_clang, git, index, kernel, projection, refuse, security_ingest, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -19,6 +19,8 @@ const HELP: &str = r#"Excession | Git-authenticated repository exploration and s
 Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession analyze clang --repo REPO --source PATH --compile-db JSON --trusted-local true
+      [--rev HEAD] [--compiler clang|clang++] [--config CONFIG]
   excession kernel clang --repo REPO --source PATH --compile-db JSON --trusted-local true
       [--rev HEAD] [--compiler clang] [--config .config]
   excession view deps --db DB --name NAME --rev REV --seed MODULE
@@ -408,6 +410,30 @@ fn browse(repo: &Path, manifest: &Path, max: usize) -> Result<()> {
     Ok(())
 }
 
+/// Shared configuration-scoped C/C++ analysis; the older kernel command is
+/// an alias, not an independent parser or evidence generator.
+fn clang_command(tail: &[String]) -> Result<Response> {
+    let opt = Options::parse(
+        tail,
+        &["repo", "source", "compile-db", "trusted-local"],
+        &["rev", "compiler", "config"],
+    )?;
+    let default_compiler = if opt.get("source").ends_with(".c") {
+        "clang"
+    } else {
+        "clang++"
+    };
+    Ok(json(compiler_clang::scan(
+        opt.path("repo"),
+        opt.get_or("rev", "HEAD"),
+        opt.get("source"),
+        opt.path("compile-db"),
+        opt.get_or("compiler", default_compiler),
+        opt.0.get("config").map(Path::new),
+        opt.get("trusted-local"),
+    )?))
+}
+
 fn execute(args: &[String]) -> Result<Response> {
     match args {
         [] => Ok(Response::Message(HELP.to_owned())),
@@ -422,7 +448,7 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "kernel"
+                    "view" | "security" | "inspect" | "index" | "browse" | "kernel" | "analyze"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -434,6 +460,10 @@ fn execute(args: &[String]) -> Result<Response> {
         {
             Ok(Response::Message(HELP.to_owned()))
         }
+        [top, sub, tail @ ..] if top == "analyze" => match sub.as_str() {
+            "clang" => clang_command(tail),
+            _ => refuse(format!("unknown analysis command: {sub}")),
+        },
         [top, sub, tail @ ..] if top == "kernel" => match sub.as_str() {
             "scan" => {
                 let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
@@ -444,22 +474,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     &roots,
                 )?))
             }
-            "clang" => {
-                let opt = Options::parse(
-                    tail,
-                    &["repo", "source", "compile-db", "trusted-local"],
-                    &["rev", "compiler", "config"],
-                )?;
-                Ok(json(kernel_clang::scan(
-                    opt.path("repo"),
-                    opt.get_or("rev", "HEAD"),
-                    opt.get("source"),
-                    opt.path("compile-db"),
-                    opt.get_or("compiler", "clang"),
-                    opt.0.get("config").map(Path::new),
-                    opt.get("trusted-local"),
-                )?))
-            }
+            "clang" => clang_command(tail),
             _ => refuse(format!("unknown kernel command: {sub}")),
         },
         [top, tail @ ..] if top == "research" => {

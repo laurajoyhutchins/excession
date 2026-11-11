@@ -5,7 +5,7 @@ use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, git, graph_baseline, index, kernel, native_boundary, preflight, projection,
+    Result, benchmark, git, graph_baseline, index, kernel, kernel_coverage, native_boundary, preflight, projection,
     refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
@@ -24,6 +24,9 @@ Usage:
   excession doctor [--json]
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests] [--import-base PATH]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession kernel inventory --repo REPO [--rev HEAD] [--size 128]
+  excession kernel partition --repo REPO --index N [--rev HEAD] [--size 128]
+  excession kernel audit --repo REPO --dir RECEIPTS [--rev HEAD] [--size 128]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
   excession syntax audit --repo REPO --report SAVED_JSON
   excession syntax preflight --report SAVED_JSON
@@ -501,18 +504,39 @@ fn execute(args: &[String]) -> Result<Response> {
         {
             Ok(Response::Message(HELP.to_owned()))
         }
-        [top, sub, tail @ ..] if top == "kernel" => {
-            if sub != "scan" {
-                return refuse(format!("unknown kernel command: {sub}"));
+        [top, sub, tail @ ..] if top == "kernel" => match sub.as_str() {
+            "scan" => {
+                let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(kernel::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
+                )?))
             }
-            let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
-            let roots = opt.get("roots").split(',').collect::<Vec<_>>();
-            Ok(json(kernel::scan(
-                opt.path("repo"),
-                opt.get_or("rev", "HEAD"),
-                &roots,
-            )?))
-        }
+            "inventory" | "partition" | "audit" => {
+                let required = match sub.as_str() {
+                    "partition" => &["repo", "index"][..],
+                    "audit" => &["repo", "dir"][..],
+                    _ => &["repo"][..],
+                };
+                let opt = Options::parse(tail, required, &["rev", "size"])?;
+                let size = opt.get_or("size", "128").parse::<usize>()
+                    .map_err(|_| "invalid kernel partition size")?;
+                let repo = opt.path("repo");
+                let rev = opt.get_or("rev", "HEAD");
+                match sub.as_str() {
+                    "inventory" => Ok(json(kernel::inventory(repo, rev, size)?)),
+                    "partition" => {
+                        let index = opt.get("index").parse::<usize>()
+                            .map_err(|_| "invalid kernel partition index")?;
+                        Ok(json(kernel::scan_partition(repo, rev, index, size)?))
+                    }
+                    _ => Ok(json(kernel_coverage::audit(repo, rev, opt.path("dir"), size)?)),
+                }
+            }
+            _ => refuse(format!("unknown kernel command: {sub}")),
+        },
         [top, tail @ ..] if top == "research" => {
             research::run(tail)?;
             Ok(Response::Bytes(Vec::new()))

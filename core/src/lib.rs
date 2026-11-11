@@ -16,6 +16,7 @@ pub mod identity;
 pub mod impact;
 pub mod index;
 pub mod kernel;
+pub mod kernel_coverage;
 pub mod kernel_links;
 pub mod integration;
 pub mod json;

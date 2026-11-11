@@ -6,9 +6,25 @@ use json::{Value, obj};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+/// Restore Git's tracked file modes without requiring POSIX permissions on Windows.
+fn set_source_permissions(path: &Path, mode: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = fs::Permissions::from_mode(if mode == "100755" { 0o755 } else { 0o644 });
+        fs::set_permissions(path, permissions).map_err(|e| e.to_string())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = mode;
+        let mut permissions = fs::metadata(path).map_err(|e| e.to_string())?.permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(path, permissions).map_err(|e| e.to_string())
+    }
+}
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS projection (
@@ -485,11 +501,7 @@ fn do_projection(db: &Db, p: &Plan, dest: &Path, temp: &Path) -> Result<Value> {
         let e = entry_by_path
             .get(source_path)
             .ok_or("source file mode missing")?;
-        fs::set_permissions(
-            &target,
-            fs::Permissions::from_mode(if e.mode == "100755" { 0o755 } else { 0o644 }),
-        )
-        .map_err(|e| e.to_string())?;
+        set_source_permissions(&target, &e.mode)?;
     }
     for m in &p.moves {
         let oldp = temp.join(&m.old);
@@ -542,9 +554,8 @@ fn do_projection(db: &Db, p: &Plan, dest: &Path, temp: &Path) -> Result<Value> {
             )
         };
         fs::write(&oldp, shim).map_err(|e| e.to_string())?;
-        let perms = fs::Permissions::from_mode(if src.mode == "100755" { 0o755 } else { 0o644 });
-        fs::set_permissions(oldp, perms.clone()).map_err(|e| e.to_string())?;
-        fs::set_permissions(temp.join(&m.new), perms).map_err(|e| e.to_string())?;
+        set_source_permissions(&oldp, &src.mode)?;
+        set_source_permissions(&temp.join(&m.new), &src.mode)?;
     }
     let after = probe(temp, &p.probe)?;
     if baseline != after {
@@ -723,6 +734,7 @@ pub fn maps(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     #[test]
     fn symlinked_destination_parent_is_refused() {
         use std::os::unix::fs::symlink;

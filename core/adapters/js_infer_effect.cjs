@@ -2,10 +2,8 @@
 // TypeScript-native, exact-span conservative effect inference. Never claims
 // JavaScript semantic equivalence; only a uniquely transportable source edit.
 const fs = require('node:fs');
-const cp = require('node:child_process');
-const path = require('node:path');
 const crypto = require('node:crypto');
-const ts = require(path.join(cp.execFileSync('npm', ['root','-g'], {encoding:'utf8'}).trim(), 'typescript'));
+const ts = require('typescript');
 function refuse(msg) { throw Error(msg); }
 const hash = text => crypto.createHash('sha256').update(text).digest('hex');
 function parse(text) {

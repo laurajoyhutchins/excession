@@ -41,7 +41,7 @@ def imports(node, source_name, source_path, available):
         parts = choice.split('.')
         matched = ['.'.join(parts[:i]) for i in range(1, len(parts)+1) if '.'.join(parts[:i]) in available]
         if matched:
-            target = max(matched, key=len)
+            target = available[max(matched, key=len)]
             edge = {'target':target, 'line':node.lineno, 'syntax':syntax}
             if edge not in out: out.append(edge)
     return out
@@ -80,7 +80,7 @@ def exports(tree):
     return [{'name':n,'target':t,'explicitly_exported':int(n in explicit if explicit is not None else not n.startswith('_'))} for n,t in sorted(targets.items())]
 
 
-def parse_item(item,available):
+def parse_item(item,available,import_name):
     mod=item['name'];path=item['path'];code=item['content']
     result={'name':mod,'path':path,'imports':[],'symbols':[],'exports':[],'hazards':[]}
     try:tree=ast.parse(code,filename=path)
@@ -89,7 +89,7 @@ def parse_item(item,available):
         return result
     for stmt in ast.walk(tree):
         if isinstance(stmt,(ast.Import,ast.ImportFrom)):
-            result['imports'].extend(imports(stmt,mod,path,available))
+            result['imports'].extend(imports(stmt,import_name,path,available))
             if isinstance(stmt,ast.ImportFrom) and any(a.name=='*' for a in stmt.names):
                 result['hazards'].append({'line':stmt.lineno,'reason':'wildcard import'})
         if isinstance(stmt,ast.Call):
@@ -102,15 +102,52 @@ def parse_item(item,available):
     return result
 
 
+def importable_names(items):
+    """Separate stable SQL identities from importable names in regular packages.
+
+    The highest tracked __init__.py ancestor supplies the package boundary.
+    A tree without an observed package marker has no inferred sys.path root:
+    retain its indexed name rather than guessing a directory to discard.
+    """
+    paths={item['path'] for item in items}
+    package_dirs={path.rsplit('/',1)[0] for path in paths
+                  if path.endswith('/__init__.py')}
+    available={item['name']:item['name'] for item in items}
+    if len(available)!=len(items): raise ValueError('duplicate logical module names')
+    chosen={}
+    for item in items:
+        indexed=item['name']
+        components=item['path'].split('/')
+        package_start=next(
+            (i for i in range(len(components)-1)
+             if '/'.join(components[:i+1]) in package_dirs),None
+        )
+        if package_start is None:
+            import_name=indexed
+        else:
+            relative=components[package_start:]
+            if relative[-1]=='__init__.py':
+                relative=relative[:-1]
+            else:
+                relative[-1]=relative[-1][:-3]
+            import_name='.'.join(relative)
+        if not import_name: raise ValueError('empty importable module identity')
+        previous=available.get(import_name)
+        if previous is not None and previous!=indexed:
+            raise ValueError('ambiguous importable Python module: '+import_name)
+        available[import_name]=indexed
+        chosen[indexed]=import_name
+    return available,chosen
+
+
 def main():
     items=json.load(sys.stdin)
     if not isinstance(items,list): raise ValueError('invalid module input')
     for item in items:
         if not isinstance(item,dict) or set(item)!= {'name','path','content'}: raise ValueError('invalid input record')
         if not all(isinstance(v,str) for v in item.values()): raise ValueError('invalid input types')
-    available={item['name'] for item in items}
-    if len(available)!=len(items):raise ValueError('duplicate logical module names')
-    result=[parse_item(item,available) for item in items]
+    available,names=importable_names(items)
+    result=[parse_item(item,available,names[item['name']]) for item in items]
     print(json.dumps(result,sort_keys=True,separators=(',',':'),ensure_ascii=False))
 
 if __name__=='__main__': main()

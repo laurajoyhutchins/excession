@@ -193,8 +193,13 @@ pub fn persist(
     // v1 graph databases have no neutral relation column. Add it without
     // changing immutable graph bodies or graph IDs.
     let columns = db.query("PRAGMA table_info(configured_edge)", &[])?;
-    if !columns.iter().any(|row| row.get(1).and_then(|value| value.as_deref()) == Some("relation")) {
-        db.exec("ALTER TABLE configured_edge ADD COLUMN relation TEXT NOT NULL DEFAULT '__legacy__'")?;
+    if !columns
+        .iter()
+        .any(|row| row.get(1).and_then(|value| value.as_deref()) == Some("relation"))
+    {
+        db.exec(
+            "ALTER TABLE configured_edge ADD COLUMN relation TEXT NOT NULL DEFAULT '__legacy__'",
+        )?;
     }
     db.transaction(|db| {
         db.execute(

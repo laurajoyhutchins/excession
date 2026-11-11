@@ -5,18 +5,19 @@ use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph, kernel, native_boundary, preflight, projection,
-    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
+    kernel, native_boundary, preflight, projection, refactor, refuse, scip_refactor,
+    security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
-#[path = "excession/research.rs"]
-mod research;
 #[path = "excession/graph.rs"]
 mod graph_cli;
+#[path = "excession/research.rs"]
+mod research;
 #[path = "excession/scan.rs"]
 mod scan;
 
@@ -484,7 +485,11 @@ fn clang_command(tail: &[String]) -> Result<Response> {
         &["repo", "source", "compile-db", "trusted-local"],
         &["rev", "compiler", "config", "object-prefix"],
     )?;
-    let default_compiler = if opt.get("source").ends_with(".c") { "clang" } else { "clang++" };
+    let default_compiler = if opt.get("source").ends_with(".c") {
+        "clang"
+    } else {
+        "clang++"
+    };
     Ok(json(compiler_clang::scan(
         opt.path("repo"),
         opt.get_or("rev", "HEAD"),

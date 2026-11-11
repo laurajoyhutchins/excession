@@ -3,8 +3,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod adapter;
-pub mod compiler_clang;
 pub mod benchmark;
+pub mod compiler_clang;
+pub mod configured_store;
 pub mod contracts;
 pub mod digest;
 pub mod doctor;
@@ -13,17 +14,16 @@ pub mod evidence_query;
 pub mod git;
 pub mod graph;
 pub mod graph_assembly;
-pub mod configured_store;
-pub mod kbuild_graph;
 pub mod graph_baseline;
 pub mod historical;
 pub mod identity;
 pub mod impact;
 pub mod index;
-pub mod kernel;
-pub mod kernel_links;
 pub mod integration;
 pub mod json;
+pub mod kbuild_graph;
+pub mod kernel;
+pub mod kernel_links;
 pub mod native_boundary;
 pub mod native_discovery;
 pub mod optimizer;

@@ -238,9 +238,9 @@ struct Arc {
 }
 fn arcs(db: &Db, graph: &str) -> Result<Vec<Arc>> {
     let columns = db.query("PRAGMA table_info(configured_edge)", &[])?;
-    let has_relation = columns.iter().any(|r|
-        r.get(1).and_then(|c| c.as_deref()) == Some("relation")
-    );
+    let has_relation = columns
+        .iter()
+        .any(|r| r.get(1).and_then(|c| c.as_deref()) == Some("relation"));
     let statement = if has_relation {
         "SELECT source_id,destination_id,kind,status,evidence,relation FROM configured_edge WHERE graph_id=? ORDER BY id"
     } else {
@@ -357,12 +357,18 @@ pub fn neighbors(
     let mut shown = BTreeMap::<(String, String, String, String, String, String), Arc>::new();
     let mut truncated = false;
     while let Some((current, distance)) = queue.pop_front() {
-        if distance == depth { continue; }
+        if distance == depth {
+            continue;
+        }
         if let Some(adjacent) = adjacency.get(&current) {
             for (other, arc) in adjacent {
                 let key = (
-                    arc.from.clone(), arc.to.clone(), arc.kind.clone(),
-                    arc.status.clone(), arc.evidence.clone(), arc.relation.clone(),
+                    arc.from.clone(),
+                    arc.to.clone(),
+                    arc.kind.clone(),
+                    arc.status.clone(),
+                    arc.evidence.clone(),
+                    arc.relation.clone(),
                 );
                 if !shown.contains_key(&key) && shown.len() >= MAX_QUERY_EDGES {
                     truncated = true;
@@ -409,8 +415,15 @@ pub fn path(
         adjacency.entry(arc.from.clone()).or_default().push(arc);
     }
     for outgoing in adjacency.values_mut() {
-        outgoing.sort_by(|a,b| (&a.to,&a.kind,&a.status,&a.evidence,&a.relation)
-            .cmp(&(&b.to,&b.kind,&b.status,&b.evidence,&b.relation)));
+        outgoing.sort_by(|a, b| {
+            (&a.to, &a.kind, &a.status, &a.evidence, &a.relation).cmp(&(
+                &b.to,
+                &b.kind,
+                &b.status,
+                &b.evidence,
+                &b.relation,
+            ))
+        });
     }
     let mut visited = BTreeSet::from([start.clone()]);
     let mut queue = VecDeque::from([(start.clone(), 0usize)]);
@@ -514,10 +527,13 @@ mod tests {
     #[test]
     fn common_graph_queries_preserve_source_and_evidence() {
         use std::time::{SystemTime, UNIX_EPOCH};
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH)
-            .expect("time").as_nanos();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "excession-graph-{}-{unique}.sqlite", std::process::id()
+            "excession-graph-{}-{unique}.sqlite",
+            std::process::id()
         ));
         let db = Db::open(&path).expect("database");
         // A v1 database must gain a neutral relation column without losing
@@ -580,25 +596,47 @@ mod tests {
         let dependencies = neighbors(&db, None, None, "app", "out", 2).unwrap();
         let relation = &dependencies.get("edges").unwrap().array_ref().unwrap()[0];
         assert_eq!(relation.get("relation").unwrap().str().unwrap(), "uses");
-        assert_eq!(relation.get("kind").unwrap().str().unwrap(), "TARGET_SOURCE");
-        assert_eq!(relation.get("status").unwrap().str().unwrap(),
-            "CMAKE_CONFIGURED_GIT_VERIFIED");
-        assert_eq!(relation.get("evidence").unwrap().str().unwrap(), "native-receipt");
+        assert_eq!(
+            relation.get("kind").unwrap().str().unwrap(),
+            "TARGET_SOURCE"
+        );
+        assert_eq!(
+            relation.get("status").unwrap().str().unwrap(),
+            "CMAKE_CONFIGURED_GIT_VERIFIED"
+        );
+        assert_eq!(
+            relation.get("evidence").unwrap().str().unwrap(),
+            "native-receipt"
+        );
         let walk = super::path(&db, None, None, "app", "a.c", 2).unwrap();
-        assert_eq!(walk.get("status").unwrap().str().unwrap(), "RECORDED_EVIDENCE_PATH");
+        assert_eq!(
+            walk.get("status").unwrap().str().unwrap(),
+            "RECORDED_EVIDENCE_PATH"
+        );
         let unreachable = super::path(&db, None, None, "a.c", "app", 2).unwrap();
-        assert_eq!(unreachable.get("status").unwrap().str().unwrap(),
-            "NO_RECORDED_PATH_IN_SELECTED_DIRECTION_AND_DEPTH");
+        assert_eq!(
+            unreachable.get("status").unwrap().str().unwrap(),
+            "NO_RECORDED_PATH_IN_SELECTED_DIRECTION_AND_DEPTH"
+        );
         // A new language adapter supplies its neutral relation directly:
         // the query must not erase it because its native kind is unfamiliar.
         let mut provider_edges = BTreeMap::new();
         configured_store::push_typed_edge(
-            &mut provider_edges, "target:app", "source:a.c", "reads",
-            "unrecognized-rust-kind", "NATIVE_COMPILER_OBSERVED", "rust-receipt",
-        ).unwrap();
+            &mut provider_edges,
+            "target:app",
+            "source:a.c",
+            "reads",
+            "unrecognized-rust-kind",
+            "NATIVE_COMPILER_OBSERVED",
+            "rust-receipt",
+        )
+        .unwrap();
         let provider_body = obj(&[
             ("schema", Value::string("excession.configured-graph.v1")),
-            ("source_commit", Value::string("0000000000000000000000000000000000000000")),
+            (
+                "source_commit",
+                Value::string("0000000000000000000000000000000000000000"),
+            ),
             ("target", Value::string("rust-target")),
             ("configuration", Value::string("Debug")),
             ("status", Value::string("PARTIAL_TARGET_OBSERVATIONS")),
@@ -607,13 +645,27 @@ mod tests {
         ]);
         let provider_id = provider_body.sha256();
         configured_store::persist(
-            &db, &provider_id, "0000000000000000000000000000000000000000",
-            "rust-target", "Debug", &provider_body, &nodes, &provider_edges, &[],
-        ).unwrap();
+            &db,
+            &provider_id,
+            "0000000000000000000000000000000000000000",
+            "rust-target",
+            "Debug",
+            &provider_body,
+            &nodes,
+            &provider_edges,
+            &[],
+        )
+        .unwrap();
         let native = neighbors(&db, Some(&provider_id), None, "app", "out", 1).unwrap();
         let relationship = &native.get("edges").unwrap().array_ref().unwrap()[0];
-        assert_eq!(relationship.get("relation").unwrap().str().unwrap(), "reads");
-        assert_eq!(relationship.get("kind").unwrap().str().unwrap(), "unrecognized-rust-kind");
+        assert_eq!(
+            relationship.get("relation").unwrap().str().unwrap(),
+            "reads"
+        );
+        assert_eq!(
+            relationship.get("kind").unwrap().str().unwrap(),
+            "unrecognized-rust-kind"
+        );
         drop(db);
         std::fs::remove_file(path).unwrap();
     }

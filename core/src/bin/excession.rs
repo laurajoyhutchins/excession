@@ -504,11 +504,15 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             "native-preflight" => {
                 let opt = Options::parse(tail, &["declaration"], &[])?;
-                Ok(json(native_boundary::preflight_file(opt.path("declaration"))?))
+                Ok(json(native_boundary::preflight_file(
+                    opt.path("declaration"),
+                )?))
             }
             "native-compare" => {
                 let opt = Options::parse(
-                    tail, &["repo", "syntax-report", "resolution-report", "declaration"], &[]
+                    tail,
+                    &["repo", "syntax-report", "resolution-report", "declaration"],
+                    &[],
                 )?;
                 Ok(json(native_boundary::compare(
                     opt.path("repo"),
@@ -519,7 +523,15 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             "native-audit" => {
                 let opt = Options::parse(
-                    tail, &["repo", "syntax-report", "resolution-report", "declaration", "report"], &[]
+                    tail,
+                    &[
+                        "repo",
+                        "syntax-report",
+                        "resolution-report",
+                        "declaration",
+                        "report",
+                    ],
+                    &[],
                 )?;
                 Ok(json(native_boundary::audit(
                     opt.path("repo"),

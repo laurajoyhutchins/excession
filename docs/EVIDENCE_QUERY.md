@@ -1,8 +1,13 @@
-# Read-only multi-evidence source query
+# Inspect evidence for a source file
 
-Excession can now answer **one pinned source-path query** using separate static,
-compiler-declared and runtime-observed receipts. It does not merge these into
-one authoritative edge table or claim complete runtime dependency coverage.
+Use `excession inspect evidence` to see which relationships and observations
+are associated with a file at a pinned Git revision. The result can include
+static relationship candidates, compiler-declared inputs and recorded runtime
+witnesses, each with its own source and evidence type.
+
+The query keeps those categories separate rather than treating them as a
+single dependency graph. This initial interface is read-only and path-scoped;
+missing observations are reported as gaps, not inferred absences.
 
 ## Query
 

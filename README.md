@@ -1,15 +1,15 @@
 # Excession
 
-**Explore a codebase through its relationships, without changing its source tree.**
+**Git-grounded, auditable code intelligence.**
 
-Excession indexes a pinned Git revision, connects source files to recorded
-dependencies and analysis results, and builds focused views of a repository.
-You can browse those views, investigate refactoring candidates, and replay
-reports against the underlying Git objects.
+Excession turns a pinned Git revision into inspectable relationships between
+source files, analysis results, and focused repository views. It records where
+each observation came from and lets you query or replay the evidence against
+the original Git objects.
 
-The core is a Rust CLI backed by Git and SQLite. Language-specific work is
-delegated to established parsers, indexers, compilers, and scanners where
-possible.
+The core is a Rust CLI with Git as source authority and SQLite for indexed
+relations and evidence. It reuses language-native parsers, symbol indexers,
+compilers, and scanners rather than replacing them.
 
 ## Try it
 
@@ -115,6 +115,17 @@ command. See the [architecture](docs/ARCHITECTURE.md),
 [repository views](docs/REPOSITORY_VIEWS.md), and
 [evidence contract](docs/EVIDENCE_QUERY.md) for precise boundaries.
 
+## Research direction
+
+Vulnerability discovery is an application to investigate, not an established
+capability of the code-intelligence layer. Excession already imports and audits
+source-bound scanner evidence. Whether combining that evidence with repository
+relationships, revision history, and runtime tests finds additional confirmed
+vulnerabilities needs controlled comparison against existing tools.
+
+See [architecture and security research](docs/ARCHITECTURE.md) for the
+implemented boundary and the proposed experiment.
+
 ## Develop
 
 ```sh
@@ -139,5 +150,5 @@ Benchmarks and their measurement contracts live in
 - [Composable views](docs/COMPOSABLE_VIEWS.md)
 - [Syntax parsing and native comparison](docs/SYNTAX_PARSERS.md)
 - [Semantic contracts](docs/SEMANTIC_CONTRACTS.md)
-- [Security architecture and evaluation protocol](docs/ARCHITECTURE.md)
+- [Architecture and security research](docs/ARCHITECTURE.md)
 - [Third-party source licenses](THIRD_PARTY.md)

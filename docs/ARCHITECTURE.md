@@ -1,63 +1,110 @@
-# Excession: architectural specification
+# Excession architecture
 
-**Status:** implemented first vertical slice, not an autonomous CVE discovery system.
-**Version:** 0.1.x. **Authority:** Git for source objects; Rust + SQLite for evidence relations.
-**Scope:** local authorized analysis of version-pinned software. No untrusted native execution on a shared host.
+**Product:** Git-grounded, auditable code intelligence.
+**Version:** 0.1.x. **Source authority:** Git objects; Rust and SQLite maintain
+indexed relationships and imported evidence.
+**Scope:** source-bound analysis at pinned revisions, with explicit coverage
+for each observation producer.
 
-## 1. Problem and falsifiable hypothesis
+## 1. Code-intelligence foundation
 
-Excession owns the migrated Rust Git/SQLite core as its evidence authority. Given a revision `R`, a set of scanner outputs `S`, a source revision graph `G`, and
-native tests `T`, identify security invariant violations with independently replayable
-evidence. We want to learn whether relationships across revisions and between
-components discover additional *real* vulnerabilities over CodeQL + native
-fuzzing alone.
-
-**Hypothesis:** `confirmed(Excession + static analysis + fuzzing) > confirmed(static analysis + fuzzing)`
-on a preregistered held-out corpus at comparable resource cost. This is unproven.
-
-A static warning is not a vulnerability, a bug is not necessarily exploitable,
-a historical CVE match is not a new CVE, and a new finding may never receive a CVE.
-
-## 2. System boundary
+Excession assembles **inspectable evidence about code** without replacing the
+source tree or the tools that understand each programming language. A repository
+revision stays the common reference point:
 
 ```text
-Pinned Git revisions + frozen trial protocol
-       |   (no CVEs/advisories in candidate generation)
-       v
-Language-native extraction / CodeQL / Semgrep / Joern
-       |   SARIF 2.1.0, Semgrep JSON, future code-property graph
-       v
-Excession Rust: source binding, normalized findings, SQLite provenance
-       |   revision comparisons, dependency relations, selection
-       v
-Native fuzz / dynamic oracles in isolated ephemeral environments
-       |   input + actual trace + counterexample + controls
-       v
-Excession independent audit, with source and tool version checks
-       |   freeze observations
-       v
-Post-freeze OSV / GitHub advisory scoring and disclosure review
+Pinned Git commit, tree, paths and blobs
+                |
+                v
+Language-native parsers, SCIP indexers, compiler inputs, scanner reports
+                |
+                v
+Source binding + typed observations (Rust CLI, SQLite, JSON contracts)
+                |
+                v
+Queries, refactoring candidates, repository views, replay and audits
 ```
 
-Rust does not reimplement CodeQL's dataflow engine, Semgrep's rule matching,
-Joern's CPG, or native fuzzers. External reports are **untrusted inputs**.
+The stages have distinct responsibilities:
 
-### Derived repository layouts
+- **Git** supplies the source identity: a commit, tree, path and blob.
+  The current source core supports SHA-1 Git object repositories.
+- **Producers** observe syntax, static dependencies, symbol references,
+  compiler-declared inputs, runtime witnesses or scanner findings. Their
+  meaning and coverage remain producer-specific.
+- **Excession** checks source bindings and records relationships in SQLite
+  or versioned reports. It does not invent edges between incompatible
+  evidence types.
+- **Views and queries** reorganize or select recorded evidence while retaining
+  original source identities.
+- **Audits** replay a supported observation or query against its stated
+  inputs. Replay establishes reproducibility and source consistency for that
+  contract, not completeness of an analyzer or safety of a code change.
 
-A separate, read-only projection capability maps the Git tree and recorded relations into alternate virtual file paths. Dependency projections use the existing `module`/`dependency` index; security projections use imported but **unverified** CodeQL flow steps and findings. Excession materializes regular Git blobs as read-only copies, never as editable links or executable checkouts. Exact source Git identity and a canonical manifest define the output, with independent regeneration and blob audits. See [Repository views](REPOSITORY_VIEWS.md) for contracts and limits. This capability does not promote static candidates into verified vulnerabilities.
+### Implemented interfaces
 
-## Public command surface
+| Capability | Mechanism | Current boundary |
+| --- | --- | --- |
+| Git-backed module index | Rust/SQLite with Python/JavaScript extraction | Bounded static relations in selected roots |
+| Repository views | Virtual composition, browsing, optional read-only materialization | Source-linked layouts, not executable reorganizations |
+| Syntax/semantic observations | Optional Tree-sitter and language-aware resolvers | Reported candidates and unresolved cases |
+| Symbol evidence | SCIP supplied by language-native indexers | Git-checked occurrences and reference hypotheses |
+| Source inspection | `inspect evidence` and native input comparison | Distinct static, compiler and runtime observations |
+| Scanner evidence | CodeQL SARIF and Semgrep import/audit | Source-bound reports, not confirmed vulnerabilities |
 
-The `excession` Rust executable is the supported user-facing CLI (see
-[`CLI.md`](CLI.md)). It uses the existing Rust library directly for Git/SQLite
-authority and read-only repository projections. The historical `excession research` command family
-is retained for reproducibility of earlier experiments. The optional trusted-local
-`excession security scan` command invokes installed CodeQL/Semgrep programs and
-immediately performs source-bound import plus independent replay. Its explicit
-`--trusted-local true` flag does **not** provide sandbox isolation, remote
-attestation, or a security verdict. Python tool adapters remain optional helpers.
+These interfaces have different coverage and authority. See
+[CLI](CLI.md), [repository views](REPOSITORY_VIEWS.md),
+[semantic contracts](SEMANTIC_CONTRACTS.md), [evidence queries](EVIDENCE_QUERY.md),
+and [refactoring](REFACTORING.md).
 
-## 3. Existing engines and interface contracts
+### Public command surface
+
+The installed `excession` Rust executable provides the Git/SQLite CLI.
+`excession research ...` retains historical reproducibility operations without
+introducing a second executable. Optional trusted-local scanner execution is
+not a sandbox. Python tools remain optional adapters and reference checks.
+
+## 2. Research application: vulnerability discovery
+
+The evidence layer can support controlled security investigations. The
+unproven hypothesis is that joining source relationships and revision history
+with static analysis and native fuzzing produces *more confirmed findings*
+than static analysis and fuzzing alone, at comparable resource cost.
+
+**Hypothesis:** `confirmed(Excession + static analysis + fuzzing) > confirmed(static analysis + fuzzing)`
+on a preregistered held-out corpus. No demonstrated autonomous discovery
+superiority follows from the existing ingestion or replay features.
+
+### Proposed security evaluation pipeline
+
+The following is an **experiment design**, not a currently delivered end-to-end
+vulnerability discovery system:
+
+```text
+Pinned revisions, frozen trial and baseline scanner/fuzzer outputs
+                         |
+                         v
+CodeQL / Semgrep + optional language-native evidence
+                         |
+                         v
+Excession source binding, normalized candidates, SQLite provenance
+                         |
+                         v
+Isolated native tests, controls and observed traces (research integration)
+                         |
+                         v
+Independent validation and frozen findings
+                         |
+                         v
+Post-freeze OSV / advisory matching and baseline comparison
+```
+
+CodeQL's dataflow engine, Semgrep's matcher and native fuzzers remain external.
+An imported warning is not a verified vulnerability; confirmation requires
+independent behavioral and impact evidence. The discovery protocol and
+security controls below apply to this research use case.
+
+## 3. Security analysis engines and interface contracts
 
 | Interface | Input | Output | Current support |
 |---|---|---|---|
@@ -77,7 +124,7 @@ execute untrusted source. CodeQL databases must be created by a separately
 reviewed and isolated build. Reports must use plain repository-relative source
 paths; ambiguous/encoded/absolute paths are refused rather than guessed.
 
-## 4. Authoritative identities
+## 4. Source and scanner evidence identities
 
 * Source authority: pinned Git SHA-1 commit + path + blob SHA. The current
   Rust core explicitly rejects SHA-256 Git object-format repositories.
@@ -97,7 +144,7 @@ A database hash alone does not authenticate remote execution or detect deliberat
 replacement of the entire database and its source inputs. Remote attestations and
 sandbox identity are separately required before trusting third-party agents.
 
-## 5. Relational state and proof obligations
+## 5. Security evidence state and proof obligations
 
 First implementation tables:
 
@@ -123,7 +170,7 @@ A separate `DISCONFIRMED` and `UNSUPPORTED` terminal outcome must remain in
 counts. *No inference from a lower state to a higher state.* A CVE ID is
 metadata only after a post-freeze match, not a security-verdict state.
 
-## 6. Trusted-local ingestion flow (implemented)
+## 6. Trusted-local scanner ingestion (implemented)
 
 1. Require an existing clean SHA-1 Git checkout; record `HEAD`.
 2. Run a named installed scanner without a shell, at bounded time, using
@@ -144,7 +191,7 @@ primary locations with start lines, `tool.driver.name=CodeQL`, and Semgrep
 `results/check_id/path/start.line`. More complicated tool reports must be
 explicitly supported rather than silently truncated.
 
-## 7. Discovery and replay protocol
+## 7. Security discovery evaluation protocol
 
 **Before reading advisories:** Select repositories by publicly articulated
 neutral criteria (language, size, fixed historical date, supported analyzers),
@@ -177,7 +224,7 @@ Excession-enhanced output against CodeQL-only + fuzz-only baselines at similar c
 - Treat analysis tool outputs and their messages as adversarial data.
 - Coordinate disclosure for any actionable new finding; no automatic CVE claim.
 
-## 9. Compute and CI
+## 9. Compute and CI for security experiments
 
 Local commit check (<30s target): Rust formatting/strict Clippy, core unit
 and importer fixture tests, basic Python unittest. It should not trigger a
@@ -187,9 +234,9 @@ Cloud Build/manual deep check: fetch exact source revision, construct CodeQL
 DB, run code scanning, seeded fuzzing in isolation, audit and cost receipts.
 Explicit environment version-pins required. No GitHub Actions minutes assumed.
 
-## 10. Acceptance criteria and implementation status
+## 10. Security research status and acceptance criteria
 
-**Delivered now:** new local git repo; Rust SARIF/Semgrep candidate ingest and
+**Implemented security-evidence handling:** Rust SARIF/Semgrep candidate ingest and
 audit; runner for local CodeQL/Semgrep; label-free benchmark protocol freeze;
 preliminary cross-revision candidate comparison; offline fixture and tampering
 regressions; inherited RelGit v0.19 Git/SQLite/native pilots.
@@ -199,7 +246,7 @@ Semgrep installs; trusted source-built CodeQL DB; native fuzz harness generator;
 replayable authorization impact; OSV post-freeze range matcher; blind historical
 benchmark; measurement against standalone scanners; remote attestations.
 
-## 11. Rejection policy and design choices
+## 11. Security research design choices
 
 - No general-purpose CPG rewrite in Rust. Consume Joern/CodeQL output.
 - No automatic acceptance of "fixed" from absent static findings.

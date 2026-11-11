@@ -2,12 +2,17 @@
 from __future__ import annotations
 
 import sys
+import json
+import tempfile
 from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "benchmarks/experiments"))
-from scip_fixture_migration import cases, coverage, independently_replayed_occurrences  # noqa: E402
+from scip_fixture_migration import (  # noqa: E402
+    cases, coverage, independently_replayed_occurrences,
+    typescript_fixture_config,
+)
 
 
 def symbols(*, occurrences: int = 2, unresolved: int = 0) -> dict:
@@ -79,6 +84,35 @@ class ScipEvidenceContract(unittest.TestCase):
             ]},
         ]), 7)
 
+    def test_fixture_scoped_js_config_preserves_original_project(self) -> None:
+        with tempfile.TemporaryDirectory() as dirname:
+            stage = Path(dirname)
+            original = '{"compilerOptions":{"strict":true,"noEmit":true}}\n'
+            (stage / "tsconfig.json").write_text(original)
+            paths = {"lib/core.js", "lib/alt/index.cjs", "lib/main.ts"}
+            overlay = typescript_fixture_config(stage, paths)
+            data = json.loads(overlay.read_text())
+            self.assertEqual(data["extends"], "./tsconfig.json")
+            self.assertEqual(data["files"], sorted(paths))
+            self.assertTrue(data["compilerOptions"]["allowJs"])
+            self.assertFalse(data["compilerOptions"]["checkJs"])
+            self.assertEqual(data["include"], [])
+            self.assertEqual((stage / "tsconfig.json").read_text(), original)
+            with self.assertRaisesRegex(ValueError, "overwrite"):
+                typescript_fixture_config(stage, paths)
+
+    def test_fixture_scoped_js_config_without_tsconfig(self) -> None:
+        with tempfile.TemporaryDirectory() as dirname:
+            stage = Path(dirname)
+            overlay = typescript_fixture_config(
+                stage, {"src/app.js", "lib/util.cjs"},
+            )
+            data = json.loads(overlay.read_text())
+            self.assertNotIn("extends", data)
+            self.assertEqual(data["files"], ["lib/util.cjs", "src/app.js"])
+            with self.assertRaisesRegex(ValueError, "empty"):
+                typescript_fixture_config(stage / "elsewhere", set())
+
     def test_immutable_pinned_fixture_selection(self) -> None:
         manifest = ROOT / "benchmarks/fixtures/real-repositories.json"
         standard = cases(manifest, False, set())
@@ -91,6 +125,8 @@ class ScipEvidenceContract(unittest.TestCase):
         old_postcss = cases(manifest, True, {"postcss"})
         self.assertEqual(len(old_postcss), 4)
         self.assertTrue(all(case["source"] == "historical"
+                            for case in old_postcss))
+        self.assertTrue(all("lib" in case["roots"].split(",")
                             for case in old_postcss))
         with self.assertRaisesRegex(ValueError, "unknown fixture"):
             cases(manifest, False, {"invented-project"})

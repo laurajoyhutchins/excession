@@ -88,6 +88,19 @@ jobs:
             --python-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-python" \
             --typescript-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-typescript" \
             --trusted-local "${args[@]}"
+      - name: Validate a pinned historical PostCSS bundle revision
+        shell: bash
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.historical }}
+        run: |
+          python3 benchmarks/experiments/scip_fixture_migration.py \
+            --bin core/target/release/excession \
+            --historical --fixture postcss-173614d9c \
+            --out scip-historical-results.json \
+            --evidence-dir scip-historical-evidence \
+            --scip "$RUNNER_TEMP/scip-cli/scip" \
+            --python-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-python" \
+            --typescript-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-typescript" \
+            --trusted-local
       - name: Preserve actual indexes, audits and coverage gaps
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,4 +109,6 @@ jobs:
           path: |
             scip-fixture-results.json
             scip-fixture-evidence/
+            scip-historical-results.json
+            scip-historical-evidence/
           if-no-files-found: warn

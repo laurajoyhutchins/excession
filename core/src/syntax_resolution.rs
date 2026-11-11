@@ -305,6 +305,102 @@ fn go_candidates<'a>(
     (candidate, Some(module))
 }
 
+/// The grammar-pack extractor returns statement text for some languages
+/// instead of a normalized import path. Only accept small explicit shapes.
+fn quoted_literal(statement: &str) -> Option<String> {
+    let mut quote = None;
+    let mut begin = 0;
+    let mut values = Vec::new();
+    for (at, ch) in statement.char_indices() {
+        if let Some(q) = quote {
+            if ch == '\\' {
+                return None; // Escapes require language-native literal decoding.
+            }
+            if ch == q {
+                let value = &statement[begin..at];
+                if value.is_empty() || value.contains('\n') || value.contains('\r') {
+                    return None;
+                }
+                values.push(value.to_owned());
+                quote = None;
+            }
+        } else if ch == '\'' || ch == '"' || ch == char::from(96) {
+            quote = Some(ch);
+            begin = at + ch.len_utf8();
+        }
+    }
+    if quote.is_some() || values.len() != 1 {
+        return None;
+    }
+    values.pop()
+}
+
+fn import_target(language: &str, statement: &str) -> Option<String> {
+    let text = statement.trim();
+    match language {
+        "javascript" | "typescript" | "tsx" => {
+            if text.starts_with("import ") || text.starts_with("export ")
+                || text.starts_with("import\n") || text.starts_with("export\n")
+            {
+                quoted_literal(text)
+            } else if text.starts_with("./") || text.starts_with("../") {
+                Some(text.into())
+            } else {
+                None
+            }
+        }
+        "go" => {
+            let value = if let Some(body) = text.strip_prefix("import ") {
+                body.trim()
+            } else {
+                text
+            };
+            if value.starts_with('"') || value.starts_with(char::from(96)) {
+                quoted_literal(value)
+            } else if !value.contains(char::is_whitespace) && !value.contains('"') {
+                Some(value.into())
+            } else {
+                None
+            }
+        }
+        "rust" => {
+            let value = text.strip_prefix("pub use ")
+                .or_else(|| text.strip_prefix("use "))
+                .unwrap_or(text)
+                .trim_end_matches(';').trim();
+            if value.starts_with("crate::")
+                && value.split("::").all(|segment| {
+                    !segment.is_empty() &&
+                    segment.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                })
+            {
+                Some(value.to_owned())
+            } else {
+                None
+            }
+        }
+        "python" => {
+            if let Some(rest) = text.strip_prefix("from ") {
+                let (module, _) = rest.split_once(" import ")?;
+                if !module.is_empty() && !module.contains(char::is_whitespace) {
+                    Some(module.into())
+                } else {
+                    None
+                }
+            } else {
+                let rest = text.strip_prefix("import ").unwrap_or(text).trim();
+                let module = rest.split_whitespace().next()?;
+                if module.contains(',') || rest.contains(',') {
+                    None
+                } else {
+                    Some(module.into())
+                }
+            }
+        }
+        _ => None,
+    }
+}
+
 fn edge(source: &Source<'_>, target: &Source<'_>, spec: &str, line: i64, rule: &str) -> Value {
     obj(&[
         ("source_path", Value::string(source.path)),
@@ -367,8 +463,15 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
             if candidate_edges.len() + unresolved_imports.len() >= MAX_RELATIONS {
                 return refuse("resolution exceeds 10,000 observations; narrow --roots");
             }
-            let spec = import.get("source")?.str()?;
+            let raw_spec = import.get("source")?.str()?;
             let line = import.get("line")?.integer()?;
+            let Some(spec) = import_target(source.language, raw_spec) else {
+                unresolved_imports.push(unresolved(
+                    source, raw_spec, line, "UNSUPPORTED_IMPORT_SHAPE",
+                ));
+                continue;
+            };
+            let spec = spec.as_str();
             let (targets, rule, fallback) = match source.language {
                 "javascript" | "typescript" | "tsx" => (
                     relative_candidates(spec, source.path, &files),
@@ -505,6 +608,18 @@ mod tests {
         assert_eq!(join_relative("src/a.ts", "../../b"), None);
         assert_eq!(join_relative("src/a.ts", r".\b"), None);
         assert_eq!(join_relative("src/a.ts", "/etc/passwd"), None);
+    }
+
+    #[test]
+    fn grammar_pack_import_statements_are_normalized_only_when_unambiguous() {
+        assert_eq!(import_target("typescript", "import {x} from './util';"), Some("./util".into()));
+        assert_eq!(import_target("typescript", "import './side_effect';"), Some("./side_effect".into()));
+        assert_eq!(import_target("typescript", "import x from 'a' with {type: 'json'};"), None);
+        assert_eq!(import_target("go", "\"example.org/pkg\""), Some("example.org/pkg".into()));
+        assert_eq!(import_target("rust", "use crate::widget::answer;"), Some("crate::widget::answer".into()));
+        assert_eq!(import_target("rust", "use crate::{a,b};"), None);
+        assert_eq!(import_target("python", "import pkg.util"), Some("pkg.util".into()));
+        assert_eq!(import_target("python", "from .util import answer"), Some(".util".into()));
     }
 
     #[test]

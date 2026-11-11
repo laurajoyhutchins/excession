@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
-    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, git, graph_baseline, index, native_boundary, preflight,
+    projection, refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -25,7 +25,7 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
-  excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust --trusted-local true
+  excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust|python --import-roots ROOTS(PYTHON) --trusted-local true
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
   excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
@@ -518,7 +518,7 @@ fn execute(args: &[String]) -> Result<Response> {
                         "language",
                         "trusted-local",
                     ],
-                    &[],
+                    &["import-roots"],
                 )?;
                 let trusted = match opt.get("trusted-local") {
                     "true" => true,
@@ -531,6 +531,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.path("resolution-report"),
                     opt.get("entry"),
                     opt.get("language"),
+                    opt.0.get("import-roots").map(String::as_str),
                     trusted,
                 )?))
             }

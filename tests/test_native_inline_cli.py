@@ -69,6 +69,18 @@ class NativeInlineCLI(unittest.TestCase):
             "lib/math.ts": "export const value = 42;\n",
             "src/app.js": 'const {value} = require("./helper.js");\nconsole.log(value);\n',
             "src/helper.js": "module.exports = {value: 42};\n",
+            "src/pypkg/__init__.py": 'raise RuntimeError("never execute this source")\n',
+            "src/pypkg/dependency.py": "VALUE = 42\n",
+            "src/pypkg/entry.py": (
+                "from pypkg import dependency\n"
+                "from . import dependency\n"
+                "import pypkg.dependency\n"
+                "import os\n"
+                "import importlib\n"
+                "importlib.import_module('pypkg.dependency')\n"
+                "computed = 'pypkg.' + 'dependency'\n"
+                "__import__(computed)\n"
+            ),
         }
         for path, content in files.items():
             target = self.repo / path
@@ -86,7 +98,7 @@ class NativeInlineCLI(unittest.TestCase):
             "--report", self.syntax,
         ).stdout)
 
-    def invoke(self, entry, language, *, check=True, trust="true"):
+    def invoke(self, entry, language, *, check=True, trust="true", roots=None):
         env = dict(os.environ)
         if NPM_BIN.is_dir():
             env["PATH"] = str(NPM_BIN) + os.pathsep + env.get("PATH", "")
@@ -96,6 +108,7 @@ class NativeInlineCLI(unittest.TestCase):
             "--resolution-report", self.resolution,
             "--entry", entry, "--language", language,
             "--trusted-local", trust,
+            *([] if roots is None else ["--import-roots", roots]),
             check=check, env=env,
         )
 
@@ -155,6 +168,49 @@ class NativeInlineCLI(unittest.TestCase):
         refused = self.invoke("src/app.js", "javascript", trust="false", check=False)
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn(b"--trusted-local true", refused.stderr)
+
+    def test_python_native_resolution_authenticated_without_import_execution(self):
+        result = json.loads(self.invoke(
+            "src/pypkg/entry.py", "python", roots="src"
+        ).stdout)
+        boundary = self.assert_valid(result, "python", "src/pypkg/entry.py")
+        inputs = {x["path"] for x in boundary["pinned_inputs"]}
+        self.assertTrue({
+            "src/pypkg/entry.py",
+            "src/pypkg/__init__.py",
+            "src/pypkg/dependency.py",
+        } <= inputs)
+        evidence = result["resolution"]
+        self.assertEqual(evidence["schema"], "excession.python-resolution.v1")
+        self.assertEqual(evidence["source_commit"], self.rev)
+        self.assertEqual(evidence["import_roots"], "src")
+        self.assertEqual(result["declaration"]["assumptions"]["python-runtime-coverage"],
+                         "NOT_ESTABLISHED")
+        statuses = {x["status"] for x in evidence["observations"]}
+        self.assertTrue({"RESOLVED", "CANDIDATE", "UNRESOLVED", "UNSUPPORTED"} <= statuses)
+        self.assertEqual(len(evidence["report_id"]), 64)
+        self.assertIn("src/pypkg/dependency.py", [
+            x["path"] for x in boundary["pinned_inputs"]
+        ])
+
+        declaration = self.base / "python-native-declaration.json"
+        report = self.base / "python-native-boundary.json"
+        declaration.write_text(json.dumps(result["declaration"]))
+        report.write_text(json.dumps(boundary))
+        audit = json.loads(run(
+            BIN, "syntax", "native-audit", "--repo", self.repo,
+            "--syntax-report", self.syntax,
+            "--resolution-report", self.resolution,
+            "--declaration", declaration, "--report", report,
+        ).stdout)
+        self.assertEqual(audit["status"], "DECLARATION_AND_GIT_REPLAY_MATCH")
+
+        missing = self.invoke("src/pypkg/entry.py", "python", check=False)
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertIn(b"--import-roots", missing.stderr)
+        invalid = self.invoke("src/pypkg/entry.py", "python",
+                              roots="../outside", check=False)
+        self.assertNotEqual(invalid.returncode, 0)
 
     def test_mismatched_resolution_refused_before_invocation(self):
         data = json.loads(self.resolution.read_text())

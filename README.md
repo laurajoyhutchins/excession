@@ -16,30 +16,32 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-The native CLI builds offline with Rust 1.99.1 and no third-party Cargo
-crates. Git (SHA-1 object format) and SQLite remain required for repository
-operations. Digests use portable Rust and no longer require OpenSSL.
-Python 3.13.5 and Node 22.16.0 are optional language runtimes; Go 1.26.11,
-Tree-sitter grammars and native scanners are separate opt-in adapters.
+The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
+crates. Git (SHA-1 object format) and native SQLite are required for
+repository operations; the digests use portable Rust without OpenSSL.
+Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
+Tree-sitter grammars and security scanners are opt-in adapters.
 
-Prebuilt Linux, macOS and Windows archives package the binary and the
-locked TypeScript parser sidecar. See [portable installation, supported
-targets and limitations](docs/PORTABILITY.md).
+Prebuilt Linux, macOS and Windows archives carry the binary and the
+locked TypeScript parser sidecar. See [portable installation and supported
+targets](docs/PORTABILITY.md) for runtime dependencies and limitations.
+
+For full development checks, the pinned mise workflow remains available:
 
 ```sh
-cargo install --offline --locked --path core --bin excession
-excession --help
-# For development and the complete language-adapter test suite:
-npm ci --ignore-scripts --no-audit --no-fund
-python3 -m pip install -r requirements/research.txt
-make check
+mise install
+mise run setup
+mise run check
+mise run cli
+mise exec -- core/target/debug/excession --help
 ```
 
 `make check` runs Rust tests, formatting, strict Clippy, the JS adapter
 checks, and Python integration tests. Use `make cli` for the development
 binary and `make go-check` for the optional Go adapter. See
-[development setup](docs/DEVELOPMENT.md) for toolchain files and separately
-pinned research/grammar dependencies.
+[development setup](docs/DEVELOPMENT.md) for mise tasks, native toolchain
+version files, and optional Tree-sitter grammars. Mise is a convenience layer;
+Cargo, npm, and pip remain usable independently.
 
 For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
 Python research requirements,
@@ -123,7 +125,26 @@ deterministic, unverified import-cycle and repeated-body hypotheses from the
 existing Python/JavaScript index. `excession refactor audit` replays the
 indexed query against Git source identities and checks a saved report. It does
 not reparse semantic relations, prove equivalence, or modify source.
+An optional SCIP decoder JSON input enables cross-language semantic-reference
+hypotheses without adding a Protobuf decoder or language parser to Rust.
 See [refactoring hypotheses](docs/REFACTORING.md).
+
+## Integrated compiler-backed discovery
+
+For supported Go, Rust and JS/TS projects, run the trusted-local language
+resolver and source-bound comparison together:
+
+```sh
+excession syntax native-run --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --entry src/main.rs --language rust --trusted-local true
+```
+
+The compiler runs only **after** cheap report and Git-revision checks.
+Output preserves the actual native input declaration, runtime statistics and
+a Git-backed boundary report with unresolved and divergent scopes. This is
+trusted-local parsing, not sandboxing or independently attested behavior.
 
 ## Native declaration boundary
 

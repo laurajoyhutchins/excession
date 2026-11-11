@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, native_boundary, preflight, projection, refactor, refuse,
-    security_ingest, syntax, syntax_resolution, views,
+    Result, git, graph_baseline, index, native_boundary, native_depinfo, preflight, projection,
+    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -26,6 +26,7 @@ Usage:
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
+  excession syntax cargo-depfile --repo REPO --package-root core --depfile CARGO_D --subject core/src/lib.rs --rustc RUSTC --rustc-version VERSION [--rev HEAD]
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
   excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
@@ -50,6 +51,8 @@ Usage:
   excession inspect review --db DB --name NAME --old REV --new REV
   excession refactor suggest --db DB --name NAME --rev REV
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
+  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
+  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
   excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
@@ -103,6 +106,7 @@ impl Options {
 
 enum Response {
     Json(excession::json::Value),
+    CanonicalJson(String),
     Message(String),
     Bytes(Vec<u8>),
 }
@@ -111,7 +115,7 @@ impl Response {
         let mut out = io::stdout().lock();
         match self {
             Self::Json(j) => writeln!(out, "{}", j.canonical()),
-            Self::Message(s) => writeln!(out, "{s}"),
+            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}"),
             Self::Bytes(bytes) => out.write_all(&bytes),
         }
         .map_err(|e| format!("stdout write failed: {e}"))
@@ -122,25 +126,23 @@ fn json(v: excession::json::Value) -> Response {
 }
 
 fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
+    if (verb, replay) == ("deps", false) {
+        let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
+        let db = Db::open(opt.path("db"))?;
+        return Ok(Response::CanonicalJson(projection::dependencies_canonical(
+            &db,
+            opt.get("name"),
+            opt.get("rev"),
+            opt.get("seed"),
+        )?));
+    }
     let v = match (verb, replay) {
-        ("deps", false) | ("deps", true) => {
-            let opt = Options::parse(
-                argv,
-                if replay {
-                    &["db", "name", "rev", "seed", "manifest"]
-                } else {
-                    &["db", "name", "rev", "seed"]
-                },
-                &[],
-            )?;
+        ("deps", true) => {
+            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "manifest"], &[])?;
             let db = Db::open(opt.path("db"))?;
             let plan =
                 projection::dependencies(&db, opt.get("name"), opt.get("rev"), opt.get("seed"))?;
-            if replay {
-                projection::replay(&plan, opt.path("manifest"))?
-            } else {
-                plan
-            }
+            projection::replay(&plan, opt.path("manifest"))?
         }
         ("profile-deps", false) => {
             let opt = Options::parse(argv, &["db", "name", "rev", "seed"], &[])?;
@@ -502,6 +504,29 @@ fn execute(args: &[String]) -> Result<Response> {
                 let opt = Options::parse(tail, &["report"], &[])?;
                 Ok(json(preflight::resolution_file(opt.path("report"))?))
             }
+            "cargo-depfile" => {
+                let opt = Options::parse(
+                    tail,
+                    &[
+                        "repo",
+                        "package-root",
+                        "depfile",
+                        "subject",
+                        "rustc",
+                        "rustc-version",
+                    ],
+                    &["rev"],
+                )?;
+                Ok(json(native_depinfo::declaration(
+                    opt.path("repo"),
+                    opt.get("package-root"),
+                    opt.path("depfile"),
+                    opt.get("subject"),
+                    opt.path("rustc"),
+                    opt.get("rustc-version"),
+                    opt.get_or("rev", "HEAD"),
+                )?))
+            }
             "native-preflight" => {
                 let opt = Options::parse(tail, &["declaration"], &[])?;
                 Ok(json(native_boundary::preflight_file(
@@ -609,6 +634,29 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("engine"),
                 sub == "audit",
             )?))
+        }
+        [top, sub, rest @ ..]
+            if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
+        {
+            let opt = Options::parse(
+                rest,
+                if sub == "scip-audit" {
+                    &["repo", "rev", "index", "report"]
+                } else {
+                    &["repo", "rev", "index"]
+                },
+                &[],
+            )?;
+            Ok(json(if sub == "scip-audit" {
+                scip_refactor::audit(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.path("report"),
+                )?
+            } else {
+                scip_refactor::suggest(opt.path("repo"), opt.get("rev"), opt.path("index"))?
+            }))
         }
         [top, sub, rest @ ..] if top == "refactor" => {
             if !matches!(sub.as_str(), "suggest" | "audit") {

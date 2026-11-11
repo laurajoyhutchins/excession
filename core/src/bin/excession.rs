@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, projection, preflight, refuse, security_ingest, syntax,
+    Result, git, graph_baseline, index, preflight, projection, refuse, security_ingest, syntax,
     syntax_resolution, views,
 };
 use std::collections::BTreeMap;

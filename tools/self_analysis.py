@@ -318,13 +318,15 @@ def report_markdown(summary: dict[str, Any]) -> str:
         f"- Non-fully-parsed sources: `{json.dumps(syntax['nonfully_parsed_sources'], sort_keys=True)}`.",
         f"- Independent source binding: {summary['assurance']['source_binding']}.",
         f"- Excession replay: {syntax['audit']} / {dependencies['audit']}.",
-        f"- Rust semantic source: {summary['scip']['source']} "
-        f"({summary['scip']['indexed_documents']} documents, "
-        f"{summary['scip']['indexed_occurrences']} occurrences, "
-        f"{summary['scip']['matched_cross_file_references']} cross-file references; "
-        f"{summary['scip']['unresolved_references']} unresolved; "
-        f"{summary['scip']['refactor_hypotheses']} advisory hypotheses).",
-        f"- SCIP/Git replay: {summary['scip']['audit']}.",
+        *([
+            f"- Rust semantic source: {summary['scip']['source']} "
+            f"({summary['scip']['indexed_documents']} documents, "
+            f"{summary['scip']['indexed_occurrences']} occurrences, "
+            f"{summary['scip']['matched_cross_file_references']} cross-file references; "
+            f"{summary['scip']['unresolved_references']} unresolved; "
+            f"{summary['scip']['refactor_hypotheses']} advisory hypotheses).",
+            f"- SCIP/Git replay: {summary['scip']['audit']}.",
+        ] if "scip" in summary else []),
         f"- Changed paths: {len(impact['changed_paths'])}; "
         f"candidate dependents: {len(impact['candidate_affected_sources'])}.",
         "",

@@ -139,8 +139,13 @@ fn write_quoted(s: &str, out: &mut String) {
             }
             c if (c as u32) > 0xffff => {
                 let u = (c as u32) - 0x10000;
-                write!(out, "\\u{:04x}\\u{:04x}", 0xd800 + (u >> 10), 0xdc00 + (u & 0x3ff))
-                    .expect("writing a String cannot fail");
+                write!(
+                    out,
+                    "\\u{:04x}\\u{:04x}",
+                    0xd800 + (u >> 10),
+                    0xdc00 + (u & 0x3ff)
+                )
+                .expect("writing a String cannot fail");
             }
             c => out.push(c),
         }
@@ -413,12 +418,17 @@ mod tests {
             Value::String(v) => quote(v),
             Value::Array(v) => format!(
                 "[{}]",
-                v.iter().map(reference_canonical).collect::<Vec<_>>().join(",")
+                v.iter()
+                    .map(reference_canonical)
+                    .collect::<Vec<_>>()
+                    .join(",")
             ),
             Value::Object(v) => format!(
                 "{{{}}}",
-                v.iter().map(|(k, v)| format!("{}:{}", quote(k), reference_canonical(v)))
-                    .collect::<Vec<_>>().join(",")
+                v.iter()
+                    .map(|(k, v)| format!("{}:{}", quote(k), reference_canonical(v)))
+                    .collect::<Vec<_>>()
+                    .join(",")
             ),
         }
     }
@@ -430,14 +440,19 @@ mod tests {
             Value::Bool(true),
             Value::number("-1.250e+4"),
             Value::string("plain"),
-            Value::string("\"\\\n\r\t\u{8}\u{c}\0\u{1f}\u{7f}\u{80}\u{e9}\u{20ac}\u{ffff}\u{10000}😀"),
+            Value::string(
+                "\"\\\n\r\t\u{8}\u{c}\0\u{1f}\u{7f}\u{80}\u{e9}\u{20ac}\u{ffff}\u{10000}😀",
+            ),
             obj(&[
                 ("z", Value::array([])),
                 ("é", Value::string("astral 🎼")),
-                ("nested", Value::array([
-                    obj(&[("b", Value::Bool(false)), ("a", Value::number("0.000"))]),
-                    Value::Null,
-                ])),
+                (
+                    "nested",
+                    Value::array([
+                        obj(&[("b", Value::Bool(false)), ("a", Value::number("0.000"))]),
+                        Value::Null,
+                    ]),
+                ),
             ]),
         ];
         for record in &records {

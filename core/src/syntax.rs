@@ -264,9 +264,7 @@ pub fn audit(root: &Path, file: &Path) -> Result<Value> {
         return refuse("syntax report exceeds 32 MiB");
     }
     let stored = json::parse(&bytes)?;
-    if stored.get("schema")?.str()? != "excession.syntax-observations.v1" {
-        return refuse("unsupported syntax report schema");
-    }
+    crate::preflight::syntax(&stored)?;
     let reference = git::oid(stored.get("source_commit")?.str()?)?;
     let roots = stored
         .get("roots")?

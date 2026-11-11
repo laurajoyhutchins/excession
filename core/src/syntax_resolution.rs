@@ -593,6 +593,7 @@ pub fn audit(root: &Path, syntax_report: &Path, resolution_report: &Path) -> Res
         return refuse("resolution report exceeds 32 MiB");
     }
     let stored = json::parse(&bytes)?;
+    crate::preflight::resolution(&stored)?;
     let regenerated = candidates(root, syntax_report)?;
     if regenerated.canonical() != stored.canonical() {
         return refuse("dependency candidates differ from independently regenerated report");

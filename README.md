@@ -85,6 +85,15 @@ no parser is downloaded during analysis. The existing Python/JS dependency index
 remains a separate, language-aware path. See [syntax parsers](docs/SYNTAX_PARSERS.md)
 for installation, limits and provenance.
 
+## Early report validation
+
+`excession syntax preflight --report /tmp/syntax.json` and
+`excession syntax resolve-preflight --report /tmp/candidates.json` perform
+cheap, parser-free report contract checks before costly regeneration. They
+validate shapes, counts and canonical content digests but **cannot authenticate
+Git sources**. Full `syntax audit` and `syntax resolve-audit` remain required.
+See [syntax parser preflight](docs/SYNTAX_PARSERS.md#fast-preflight-before-expensive-source-replay).
+
 ## Candidate import resolution
 
 Parsed imports can be mapped to scoped, Git-bound file candidates with

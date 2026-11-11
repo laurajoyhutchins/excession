@@ -10,6 +10,7 @@ on:
       - 'requirements/research.txt'
       - 'core/adapters/tree_sitter.py'
       - 'core/src/syntax.rs'
+      - 'core/src/preflight.rs'
       - 'core/src/syntax_resolution.rs'
       - 'core/src/git.rs'
       - 'core/src/adapter.rs'
@@ -17,6 +18,7 @@ on:
       - 'core/src/lib.rs'
       - 'tests/test_tree_sitter_bridge.py'
       - 'tests/test_syntax_cli.py'
+      - 'tests/test_preflight_cli.py'
       - 'tests/test_syntax_resolution_cli.py'
       - 'docs/SYNTAX_PARSERS.md'
   workflow_dispatch:
@@ -36,6 +38,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version-file: .python-version
+      - name: Fast grammar-independent adapter contract tests
+        run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
       - name: Install optional parser and prefetch grammars
         run: |
           python3 -m pip install --disable-pip-version-check -r requirements/research.txt -r requirements/syntax.txt
@@ -43,7 +47,7 @@ jobs:
       - name: Build Excession CLI
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Run parser unit and Git integration tests (JUnit XML)
-        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py --junitxml=test-results/syntax-parsers.xml
+        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py tests/test_preflight_cli.py --junitxml=test-results/syntax-parsers.xml
       - name: Retain JUnit test report
         if: always()
         uses: actions/upload-artifact@v4

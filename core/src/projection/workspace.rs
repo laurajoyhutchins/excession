@@ -16,7 +16,7 @@ pub fn describe(repo: &Path, manifest: &Path, virtual_path: &str) -> Result<Valu
     let plan = checked_plan(repo, manifest)?;
     let entry = get_entry(&plan, virtual_path)?;
     Ok(obj(&[
-        ("view_id", Value::string(plan.payload().sha256())),
+        ("view_id", Value::string(plan.view_id())),
         ("source_commit", Value::string(&plan.commit)),
         ("entry", entry.to_json()),
         ("status", Value::string("PINNED_GIT_SOURCE_NOT_EXECUTABLE")),
@@ -57,7 +57,7 @@ pub fn list(repo: &Path, manifest: &Path, prefix: &str) -> Result<Value> {
         return refuse("unknown virtual directory");
     }
     Ok(obj(&[
-        ("view_id", Value::string(plan.payload().sha256())),
+        ("view_id", Value::string(plan.view_id())),
         ("directory", Value::string(prefix)),
         (
             "children",
@@ -97,7 +97,7 @@ pub fn replay(expected: &Value, manifest: &Path) -> Result<Value> {
         return refuse("projection is not the complete deterministic query result");
     }
     Ok(obj(&[
-        ("view_id", Value::string(provided.payload().sha256())),
+        ("view_id", Value::string(provided.view_id())),
         ("entries_replayed", Value::number(provided.entries.len())),
         ("status", Value::string("QUERY_REPLAY_MATCHED")),
     ]))
@@ -240,7 +240,7 @@ pub fn audit(repo: &Path, manifest: &Path, target: &Path) -> Result<Value> {
         }
     }
     Ok(obj(&[
-        ("view_id", Value::string(plan.payload().sha256())),
+        ("view_id", Value::string(plan.view_id())),
         ("kind", Value::string(plan.kind)),
         ("source_commit", Value::string(plan.commit)),
         ("entries_verified", Value::number(plan.entries.len())),

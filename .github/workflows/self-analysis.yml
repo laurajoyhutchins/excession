@@ -1,0 +1,72 @@
+name: Excession self-analysis (advisory)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/self-analysis.yml'
+      - 'tools/self_analysis.py'
+      - 'tests/test_self_analysis.py'
+      - 'docs/SELF_ANALYSIS.md'
+      - 'core/src/**'
+      - 'core/adapters/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'benchmarks/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/self-analysis.yml'
+      - 'tools/self_analysis.py'
+      - 'tests/test_self_analysis.py'
+      - 'core/src/**'
+      - 'core/adapters/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'benchmarks/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-analysis:
+    name: Audit pinned self-source and dependency candidates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Install and prefetch optional Tree-sitter grammars
+        run: |
+          python3 -m pip install --disable-pip-version-check tree-sitter-language-pack==1.25.0
+          python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "python", "javascript", "typescript", "go", "c", "java"])'
+      - name: Build actual Excession binary
+        run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Adversarial self-analysis reporting tests
+        run: python3 -m unittest discover -s tests -p 'test_self_analysis.py' -v
+      - name: Analyze detached, clean source at the exact workflow commit
+        run: |
+          SOURCE="$RUNNER_TEMP/excession-self-source"
+          git worktree add --detach "$SOURCE" "$GITHUB_SHA"
+          BASE="$(git -C "$SOURCE" rev-parse "$GITHUB_SHA^1")"
+          python3 tools/self_analysis.py \
+            --repo "$SOURCE" \
+            --bin "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --out "$GITHUB_WORKSPACE/self-analysis-artifacts" \
+            --rev "$GITHUB_SHA" \
+            --base-rev "$BASE"
+      - name: Report advisory observations
+        run: cat self-analysis-artifacts/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain self-analysis evidence and refusal diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-self-analysis
+          path: self-analysis-artifacts/
+          if-no-files-found: warn

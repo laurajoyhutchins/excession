@@ -35,20 +35,44 @@ exact adjacency equality, query counts, status counts, median timing, total
 query time and stdout bytes. `trials.jsonl` records each comparison against
 the independent oracle. Neither graph nor view has a special oracle channel.
 
-**Incomplete experiments:** an equivalent-guarantee tamper/audit baseline
-and a truly incremental reuse baseline. The current runner measures repeated
-queries and changed histories, not whether Excession automatically caches
-views, and does not assert that it does.
+**Still incomplete:** scalable independent replay on several real repositories,
+truly incremental view maintenance and resource accounting for process memory.
+The retained relation runner measures repeated queries and changed histories,
+not automatic caching. The bounded full indexed-query audit below is now
+implemented separately.
 
 ## Additional retained experiments
 
 - `checked_tree_ab.py`: historical-vs-current Rust binaries, identical Git
   and SQLite relations, canonical byte parity and representative tamper
   refusals. Dedicated `checked-tree-ab.yml` remains an isolated long run.
-- `real_fixtures.py`: source-bound projections on a pinned h11 bundle and
-  selected real upstream Git commits, with independent Git blob/mode/path
-  checking and explicit unsupported-language limits.
+- `real_fixtures.py`: source-bound projections on pinned h11 and upstream Git
+  commits, with an independent, bounded import-edge inventory in
+  `dependency_oracle.py` and `js_import_oracle.cjs`. Missing and invented SQL
+  dependency rows must be caught by the oracle. An adversarial Python/JS
+  fixture covers absolute `src/` imports and CJS/TypeScript index files.
 
-These existing suites verify source identity and selected corruption refusals.
-They do **not** constitute an equal-guarantee comparison against an independent
-Git/SQLite security auditor or a complete semantic relationship oracle.
+These suites verify exact in-index static import edges for their named fixtures,
+not all runtime dependencies in arbitrary code. Dynamic imports, unsupported
+import-resolution configurations, and external packages remain outside the
+coverage denominator. See [dependency scope](../../docs/DEPENDENCY_COVERAGE.md).
+
+## Independent indexed-query verifier
+
+`independent_audit.py` is an independent full Git/SQLite replay
+implementation, complementary to the already established Python/JavaScript
+source-import candidate oracle. It compares exact accept/refuse outcomes,
+full manifest commitments, and per-command cost against Excession's native
+`view replay deps` rather than comparing an unauthenticated graph
+query to an authenticated view.
+
+```sh
+python3 benchmarks/experiments/independent_audit.py benchmark \
+  --bin core/target/debug/excession --out /tmp/replay-audit --repetitions 2
+```
+
+Intact manifest and eight corruption variants are checked on a pinned h11
+Git bundle. A passing result does not authenticate arbitrary dependency
+relations that are self-consistent but absent from the source. The existing
+`dependency_oracle.py` and `real_fixtures.py` supply
+the separate source-level falsification experiment.

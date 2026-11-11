@@ -140,9 +140,54 @@ impl Plan {
             ),
         ])
     }
+    /// Canonical payload bytes in the established BTreeMap key order.
+    ///
+    /// This is an alternate serialization of exactly the six fields produced
+    /// by payload(). It avoids constructing nested JSON Value objects solely
+    /// to obtain a view ID. The independent Value serializer remains the
+    /// correctness oracle in tests and the source of public manifests.
+    fn canonical_payload(&self) -> String {
+        let mut output = String::with_capacity(256 + self.entries.len() * 192);
+        output.push_str(r#"{"entries":["#);
+        for (i, entry) in self.entries.iter().enumerate() {
+            if i != 0 {
+                output.push(',');
+            }
+            output.push_str(r#"{"blob":"#);
+            json::write_quoted(&entry.blob, &mut output);
+            output.push_str(r#","detail":"#);
+            json::write_quoted(&entry.detail, &mut output);
+            output.push_str(r#","mode":"#);
+            json::write_quoted(&entry.mode, &mut output);
+            output.push_str(r#","role":"#);
+            json::write_quoted(&entry.role, &mut output);
+            output.push_str(r#","source_path":"#);
+            json::write_quoted(&entry.source_path, &mut output);
+            output.push_str(r#","virtual_path":"#);
+            json::write_quoted(&entry.virtual_path, &mut output);
+            output.push('}');
+        }
+        output.push_str(r#"],"focus":"#);
+        json::write_quoted(&self.focus, &mut output);
+        output.push_str(r#","kind":"#);
+        json::write_quoted(&self.kind, &mut output);
+        output.push_str(r#","schema":"#);
+        json::write_quoted(FORMAT, &mut output);
+        output.push_str(r#","source_commit":"#);
+        json::write_quoted(&self.commit, &mut output);
+        output.push_str(r#","source_tree":"#);
+        json::write_quoted(&self.tree, &mut output);
+        output.push('}');
+        output
+    }
+
+    fn view_id(&self) -> String {
+        digest::sha256(self.canonical_payload().as_bytes())
+    }
+
     pub fn manifest(&self) -> Value {
+        let view_id = self.view_id();
         let payload = self.payload();
-        let view_id = payload.sha256();
         let Value::Object(mut fields) = payload else {
             unreachable!("projection payload is always a JSON object")
         };
@@ -183,7 +228,7 @@ impl Plan {
             entries,
         };
         plan.check()?;
-        if plan.payload().sha256() != v.get("view_id")?.str()? {
+        if plan.view_id() != v.get("view_id")?.str()? {
             return refuse("view ID does not authenticate canonical manifest");
         }
         Ok(plan)
@@ -509,7 +554,7 @@ fn dependency_plan(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Pl
 pub fn profile_dependencies(db: &Db, name: &str, revision: &str, seed: &str) -> Result<Value> {
     let mut timer = PhaseProfile::new();
     let plan = dependency_plan_with_profile(db, name, revision, seed, Some(&mut timer))?;
-    let view_id = plan.payload().sha256();
+    let view_id = plan.view_id();
     timer.mark("canonical_view_id");
     let elapsed_us = timer.elapsed_us();
     Ok(obj(&[
@@ -564,7 +609,7 @@ pub fn dependency_paths(
         ("schema", Value::string("excession.dependency-paths.v1")),
         ("source_commit", Value::string(&plan.commit)),
         ("source_tree", Value::string(&plan.tree)),
-        ("view_id", Value::string(plan.payload().sha256())),
+        ("view_id", Value::string(plan.view_id())),
         ("role", Value::string(role)),
         (
             "source_paths",
@@ -719,6 +764,46 @@ mod tests {
             original
         );
     }
+    #[test]
+    fn direct_hash_matches_independent_canonical_value_tree() {
+        for count in [1usize, 2, 17, 128, 1024] {
+            let fake = "a".repeat(40);
+            let entries = (0..count)
+                .map(|i| Entry {
+                    virtual_path: format!("views/10-dependencies/m{i:04}é.py"),
+                    source_path: format!("source/m{i:04}é.py"),
+                    blob: fake.clone(),
+                    mode: if i % 2 == 0 { "100644" } else { "100755" }.into(),
+                    role: if i % 2 == 0 {
+                        "direct-dependencies"
+                    } else {
+                        "indexed-test"
+                    }
+                    .into(),
+                    detail: format!("module={i}; detail=\\\"🧪\\\";\n\r\t\u{1f}"),
+                })
+                .collect();
+            let plan = make_plan(
+                "dependencies",
+                "special focus 🌎 \" \n",
+                fake.clone(),
+                fake,
+                entries,
+            )
+            .unwrap();
+            let expected_bytes = plan.payload().canonical();
+            let expected_id = plan.payload().sha256();
+            assert_eq!(plan.canonical_payload(), expected_bytes);
+            assert_eq!(plan.view_id(), expected_id);
+            let manifest = plan.manifest();
+            assert_eq!(manifest.get("view_id").unwrap().str().unwrap(), expected_id);
+            assert_eq!(
+                Plan::from_bytes(manifest.canonical().as_bytes()).unwrap(),
+                plan,
+            );
+        }
+    }
+
     #[test]
     fn manifest_rejects_forged_id() {
         let mut value = example().manifest();

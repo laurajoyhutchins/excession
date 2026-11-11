@@ -15,6 +15,11 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 
+# The benchmark program now keeps its reusable controls under experiments/
+# and synthetic fixture generator under micro/. Use those originals directly.
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "experiments"))
+sys.path.insert(0, str(ROOT / "micro"))
 from checked_tree_ab import check_view, invoke, percentile, query
 from projection_phases import prepare
 

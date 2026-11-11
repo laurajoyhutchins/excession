@@ -1,0 +1,6 @@
+# Linux glibc x86_64, CPython 3.13. This is an optional parser wheel lock.
+# Package hashes do NOT authenticate separately downloaded grammar libraries.
+tree-sitter==0.26.1 \
+    --hash=sha256:00e55f823de46b2bbcab9ca58a4c2a7ccc2b1dc28ed3fad7355fb32726008e21
+tree-sitter-language-pack==1.25.0 \
+    --hash=sha256:8dc0dcdf9ec0570c4b25fc81061c2b1f3e14d90703b3aeb4acc894c55d036ac3

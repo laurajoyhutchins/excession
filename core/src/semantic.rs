@@ -106,9 +106,12 @@ fn resolve_js_target(
         candidate.clone(),
         format!("{candidate}.js"),
         format!("{candidate}.mjs"),
+        format!("{candidate}.cjs"),
         format!("{candidate}.ts"),
         format!("{candidate}/index.js"),
         format!("{candidate}/index.mjs"),
+        format!("{candidate}/index.cjs"),
+        format!("{candidate}/index.ts"),
     ];
     if let Some(main) = mains.get(&candidate)
         && let Some(path) = normalize_local(&format!("{candidate}/package.json"), main)

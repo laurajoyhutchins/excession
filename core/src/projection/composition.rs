@@ -28,8 +28,8 @@ pub fn compose(repo: &Path, operator: &str, left: &Path, right: &Path) -> Result
     let sources = source_table(repo, &a.commit, &a.tree)?;
     authenticate_from_table(&a, &sources)?;
     authenticate_from_table(&b, &sources)?;
-    let a_id = a.payload().sha256();
-    let b_id = b.payload().sha256();
+    let a_id = a.view_id();
+    let b_id = b.view_id();
     let left_sources = a
         .entries
         .iter()
@@ -99,7 +99,7 @@ pub fn select(repo: &Path, manifest: &Path, axis: &str, needle: &str) -> Result<
         git::validate_path(needle)?;
     }
     let input = checked_plan(repo, manifest)?;
-    let input_id = input.payload().sha256();
+    let input_id = input.view_id();
     let entries = input
         .entries
         .into_iter()
@@ -144,7 +144,7 @@ pub fn mount(repo: &Path, manifest: &Path, namespace: &str) -> Result<Value> {
     let input = checked_plan(repo, manifest)?;
     let query = obj(&[
         ("operator", Value::string("mount")),
-        ("input_view_id", Value::string(input.payload().sha256())),
+        ("input_view_id", Value::string(input.view_id())),
         ("namespace", Value::string(namespace)),
     ]);
     let mut entries = input.entries;

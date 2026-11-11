@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, preflight, projection, refuse, security_ingest, syntax,
-    syntax_resolution, views,
+    Result, git, graph_baseline, index, native_boundary, preflight, projection, refactor, refuse,
+    scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -25,6 +25,9 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
+  excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
+  excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
+  excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
   excession view paths --db DB --name NAME --rev REV --seed MODULE --role ROLE
   excession view graph --db DB --name NAME --rev REV --seed MODULE --kind KIND
@@ -45,6 +48,10 @@ Usage:
   excession inspect dependencies|manifest --db DB --name NAME --rev REV
   excession inspect impact --db DB --name NAME --rev REV --seed MODULE
   excession inspect review --db DB --name NAME --old REV --new REV
+  excession refactor suggest --db DB --name NAME --rev REV
+  excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
+  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
+  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
   excession research COMMAND [historical positional arguments]
 
 Views are read-only and are not executable source checkouts. Scanner findings remain
@@ -456,14 +463,17 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "syntax"
+                    "view" | "security" | "inspect" | "index" | "browse" | "syntax" | "refactor"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))
         }
         [top, sub, a]
             if a == "--help"
-                && matches!(top.as_str(), "view" | "security" | "inspect" | "syntax")
+                && matches!(
+                    top.as_str(),
+                    "view" | "security" | "inspect" | "syntax" | "refactor"
+                )
                 && !sub.is_empty() =>
         {
             Ok(Response::Message(HELP.to_owned()))
@@ -493,6 +503,45 @@ fn execute(args: &[String]) -> Result<Response> {
             "resolve-preflight" => {
                 let opt = Options::parse(tail, &["report"], &[])?;
                 Ok(json(preflight::resolution_file(opt.path("report"))?))
+            }
+            "native-preflight" => {
+                let opt = Options::parse(tail, &["declaration"], &[])?;
+                Ok(json(native_boundary::preflight_file(
+                    opt.path("declaration"),
+                )?))
+            }
+            "native-compare" => {
+                let opt = Options::parse(
+                    tail,
+                    &["repo", "syntax-report", "resolution-report", "declaration"],
+                    &[],
+                )?;
+                Ok(json(native_boundary::compare(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("resolution-report"),
+                    opt.path("declaration"),
+                )?))
+            }
+            "native-audit" => {
+                let opt = Options::parse(
+                    tail,
+                    &[
+                        "repo",
+                        "syntax-report",
+                        "resolution-report",
+                        "declaration",
+                        "report",
+                    ],
+                    &[],
+                )?;
+                Ok(json(native_boundary::audit(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("resolution-report"),
+                    opt.path("declaration"),
+                    opt.path("report"),
+                )?))
             }
             "resolve" => {
                 let opt = Options::parse(tail, &["repo", "report"], &[])?;
@@ -562,6 +611,49 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("engine"),
                 sub == "audit",
             )?))
+        }
+        [top, sub, rest @ ..]
+            if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
+        {
+            let opt = Options::parse(
+                rest,
+                if sub == "scip-audit" {
+                    &["repo", "rev", "index", "report"]
+                } else {
+                    &["repo", "rev", "index"]
+                },
+                &[],
+            )?;
+            Ok(json(if sub == "scip-audit" {
+                scip_refactor::audit(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.path("report"),
+                )?
+            } else {
+                scip_refactor::suggest(opt.path("repo"), opt.get("rev"), opt.path("index"))?
+            }))
+        }
+        [top, sub, rest @ ..] if top == "refactor" => {
+            if !matches!(sub.as_str(), "suggest" | "audit") {
+                return refuse(format!("unknown refactor command {sub}"));
+            }
+            let opt = Options::parse(
+                rest,
+                if sub == "audit" {
+                    &["db", "name", "rev", "report"]
+                } else {
+                    &["db", "name", "rev"]
+                },
+                &[],
+            )?;
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(if sub == "audit" {
+                refactor::audit(&db, opt.get("name"), opt.get("rev"), opt.path("report"))?
+            } else {
+                refactor::suggest(&db, opt.get("name"), opt.get("rev"))?
+            }))
         }
         [top, sub, rest @ ..] if top == "inspect" => inspect_cmd(sub, rest),
         [top, sub, rest @ ..] if top == "view" && sub == "replay" => {

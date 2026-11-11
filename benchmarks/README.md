@@ -15,7 +15,7 @@ queries and Git revisions, while preserving a stated verification guarantee?**
 | [Observable protocol](protocol.md) | Defined | Equal information contracts, independent oracle and four cost axes |
 | [Relational experiments](experiments/README.md) | Executable | Source-written oracle, multi-revision retrieval, size/fanout/revision variation |
 | [Checked-tree A/B](experiments/checked_tree_ab.py) | Existing | Reusable source-binding checks with adversarial refusal parity |
-| [Real repository fixtures](experiments/real_fixtures.py) | Existing | Pinned upstream Git object validation; not an independent semantic dependency oracle |
+| [Real repository fixtures](experiments/real_fixtures.py) | Existing | Pinned Git objects and independent bounded import-edge oracle; dynamic imports unsupported |
 | [Single-query microbenchmarks](micro/README.md) | Existing, preserved | Git, ripgrep, clangd, graph-only and view phase diagnostics |
 | [Historical reports](results/) | Retained | Original measured results and GitHub Actions artifact pointers |
 
@@ -50,3 +50,36 @@ results under `results/`. They are not inputs to a global "Excession wins" score
 
 See [experiment details](experiments/README.md) and
 [protocol and limitations](protocol.md).
+
+## Machine-readable reports
+
+Relational runs now produce a Draft 2020-12 JSON Schema validated `report.json`
+alongside the **unchanged** `summary.json`, `trials.jsonl`, and Git bundles.
+See [report schema](schemas/benchmark-report.v1.schema.json). The envelope records
+source revisions, executable digest, independently assessed checks, unit-bearing
+metrics, and SHA-256 digests of referenced artifacts.
+
+```sh
+python3 -m pip install -r requirements/research.txt
+make benchmark-schema-check
+python3 benchmarks/reporting.py validate /tmp/excession-relational-v1/report.json
+python3 benchmarks/reporting.py build-native . native-calibration.json
+python3 benchmarks/reporting.py validate native-calibration.report.json
+```
+
+The CLI refuses missing or tampered artifacts, unavailable measurements
+encoded as zeros, duplicate metrics, unsafe paths, and false success labels.
+Report IDs are digests, **not signatures**. A native calibration explicitly
+declares a shared-index oracle, while relational experiments declare
+independently authored source relationships. Historical JSON is preserved.
+
+## Full indexed-query audit: independently implemented
+
+`experiments/independent_audit.py` independently checks a dependency
+projection's complete deterministic query against Git's actual tree objects,
+the SQLite index, module source bindings, and the canonical view ID. It compares
+against `excession view replay deps` on intact inputs and eight
+manifests/database corruption variants, recording refusal parity and execution
+costs. This does not prove semantic dependency truth: the independent Python
+and JS source-import oracle in `experiments/dependency_oracle.py`
+establishes that *separately*, within its declared static scope.

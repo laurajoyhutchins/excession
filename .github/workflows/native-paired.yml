@@ -36,6 +36,20 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/excession-baseline" "$BASE_SHA"
           cargo build --offline --locked --release --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
           python3 benchmarks/micro/native_paired.py "$RUNNER_TEMP/excession-baseline/core/target/release/excession" baseline-calibration.json
+      - name: Install pinned JSON Schema validator
+        if: always()
+        run: python3 -m pip install --disable-pip-version-check -r requirements/research.txt
+      - name: Validate native paired report envelopes
+        if: always()
+        run: |
+          if [ -f native-calibration.json ]; then
+            python3 benchmarks/reporting.py build-native . native-calibration.json
+            python3 benchmarks/reporting.py validate native-calibration.report.json
+          fi
+          if [ -f baseline-calibration.json ]; then
+            python3 benchmarks/reporting.py build-native . baseline-calibration.json
+            python3 benchmarks/reporting.py validate baseline-calibration.report.json
+          fi
       - name: Retain raw paired timings and source-parity receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,4 +58,6 @@ jobs:
           path: |
             native-calibration.json
             baseline-calibration.json
+            native-calibration.report.json
+            baseline-calibration.report.json
           if-no-files-found: warn

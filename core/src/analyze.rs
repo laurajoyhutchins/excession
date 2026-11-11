@@ -35,24 +35,42 @@ fn modules(db: &Db, repo_id: i64, commit: &str) -> Result<BTreeMap<String, Modul
     let mut modules = BTreeMap::new();
     for row in rows {
         let get = |n: usize| -> Result<String> {
-            row.get(n).and_then(|v| v.as_ref()).cloned()
+            row.get(n)
+                .and_then(|v| v.as_ref())
+                .cloned()
                 .ok_or_else(|| format!("invalid module catalog column {n}"))
         };
         let name = get(0)?;
-        if modules.insert(name, Module {
-            path: get(1)?, blob: get(2)?, mode: get(3)?,
-        }).is_some() {
+        if modules
+            .insert(
+                name,
+                Module {
+                    path: get(1)?,
+                    blob: get(2)?,
+                    mode: get(3)?,
+                },
+            )
+            .is_some()
+        {
             return refuse("duplicate indexed module");
         }
     }
     Ok(modules)
 }
 
-pub fn run(path: &Path, rev: &str, explicit_roots: Option<&str>, db_override: Option<&str>) -> Result<(Value, PathBuf)> {
+pub fn run(
+    path: &Path,
+    rev: &str,
+    explicit_roots: Option<&str>,
+    db_override: Option<&str>,
+) -> Result<(Value, PathBuf)> {
     let discovered = discovery::inspect(path, rev)?;
     let roots: Vec<String> = if let Some(spec) = explicit_roots {
-        let roots: Vec<String> = spec.split(',').map(str::to_owned)
-            .filter(|x| !x.is_empty()).collect();
+        let roots: Vec<String> = spec
+            .split(',')
+            .map(str::to_owned)
+            .filter(|x| !x.is_empty())
+            .collect();
         if roots.is_empty() {
             return refuse("at least one source root is required");
         }
@@ -64,13 +82,20 @@ pub fn run(path: &Path, rev: &str, explicit_roots: Option<&str>, db_override: Op
         discovered.roots.clone()
     };
     if roots.is_empty() {
-        return refuse("no supported Python/JavaScript source directories detected; provide --roots or use configured native graph commands");
+        return refuse(
+            "no supported Python/JavaScript source directories detected; provide --roots or use configured native graph commands",
+        );
     }
     let capabilities = doctor::report();
     let cap = capabilities.get("capabilities")?;
-    for (lang, key) in [("python", "python_index"), ("javascript", "javascript_index")] {
+    for (lang, key) in [
+        ("python", "python_index"),
+        ("javascript", "javascript_index"),
+    ] {
         if discovered.language_counts.contains_key(lang) && !cap.get(key)?.bool()? {
-            return refuse(format!("required {lang} analyzer unavailable; run excession doctor --json"));
+            return refuse(format!(
+                "required {lang} analyzer unavailable; run excession doctor --json"
+            ));
         }
     }
     // Revisions indexed with different module roots must never silently share
@@ -80,10 +105,15 @@ pub fn run(path: &Path, rev: &str, explicit_roots: Option<&str>, db_override: Op
     normalized_roots.dedup();
     let root_spec = normalized_roots.join(",");
     let digest = digest::sha256(root_spec.as_bytes());
-    let project = discovered.root.file_name()
-        .and_then(|n| n.to_str()).unwrap_or("repository");
+    let project = discovered
+        .root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("repository");
     let name = format!("{project}-{}", &digest[..12]);
-    let db_path = db_override.map(PathBuf::from).unwrap_or_else(|| discovered.index_path.clone());
+    let db_path = db_override
+        .map(PathBuf::from)
+        .unwrap_or_else(|| discovered.index_path.clone());
     if !db_path.is_absolute() || db_path.starts_with(&discovered.root) {
         return refuse("SQLite destination must be an absolute path outside the source repository");
     }
@@ -92,8 +122,12 @@ pub fn run(path: &Path, rev: &str, explicit_roots: Option<&str>, db_override: Op
     let db = Db::open(&db_path)?;
     let roots_borrowed: Vec<&str> = normalized_roots.iter().map(String::as_str).collect();
     let repo_id = index::index_revision_with_roots(
-        &db, &discovered.root, &name, &discovered.commit,
-        "git-object-static-candidates", &roots_borrowed,
+        &db,
+        &discovered.root,
+        &name,
+        &discovered.commit,
+        "git-object-static-candidates",
+        &roots_borrowed,
     )?;
     index::reconstruct_tree(&db, repo_id, &discovered.commit)?;
     let catalog = modules(&db, repo_id, &discovered.commit)?;
@@ -120,28 +154,45 @@ pub fn run(path: &Path, rev: &str, explicit_roots: Option<&str>, db_override: Op
             ("source", from_source.clone()),
             ("target", to_source),
             ("kind", Value::string("STATIC_IMPORT")),
-            ("evidence", Value::array([obj(&[
-                ("receipt_id", Value::string(receipt_id)),
-                ("producer", Value::string("static-module-index")),
-                ("observation_kind", Value::string("STATIC_IMPORT_CANDIDATE")),
-                ("assessment", Value::string("CANDIDATE")),
-                ("source", from_source),
-            ])])),
+            (
+                "evidence",
+                Value::array([obj(&[
+                    ("receipt_id", Value::string(receipt_id)),
+                    ("producer", Value::string("static-module-index")),
+                    ("observation_kind", Value::string("STATIC_IMPORT_CANDIDATE")),
+                    ("assessment", Value::string("CANDIDATE")),
+                    ("source", from_source),
+                ])]),
+            ),
         ]));
     }
-    let mut gaps = discovered.report()?.get("coverage")?.get("gaps")?.array_ref()?.to_vec();
+    let mut gaps = discovered
+        .report()?
+        .get("coverage")?
+        .get("gaps")?
+        .array_ref()?
+        .to_vec();
     for row in db.query(
         "SELECT module_name,line,reason FROM hazard
          WHERE repo_id=? AND commit_oid=? ORDER BY module_name,line,reason LIMIT 9999",
         &[Param::Integer(repo_id), Param::Text(&discovered.commit)],
     )? {
-        let name = row.first().and_then(|x| x.as_deref()).ok_or("hazard module missing")?;
-        let reason = row.get(2).and_then(|x| x.as_deref()).ok_or("hazard reason missing")?;
+        let name = row
+            .first()
+            .and_then(|x| x.as_deref())
+            .ok_or("hazard module missing")?;
+        let reason = row
+            .get(2)
+            .and_then(|x| x.as_deref())
+            .ok_or("hazard reason missing")?;
         let path = catalog.get(name).ok_or("hazard source module missing")?;
         gaps.push(obj(&[
             ("reason", Value::string("UNRESOLVED_RELATIONSHIP")),
             ("path", Value::string(&path.path)),
-            ("detail", Value::string(reason.chars().take(1024).collect::<String>())),
+            (
+                "detail",
+                Value::string(reason.chars().take(1024).collect::<String>()),
+            ),
         ]));
     }
     if gaps.len() > 10000 {
@@ -153,16 +204,24 @@ pub fn run(path: &Path, rev: &str, explicit_roots: Option<&str>, db_override: Op
         ("source_commit", Value::string(&discovered.commit)),
         ("source_tree", Value::string(&discovered.tree)),
         ("status", Value::string("PARTIAL")),
-        ("observation_receipts", Value::array(receipt_ids.into_iter().map(Value::string))),
+        (
+            "observation_receipts",
+            Value::array(receipt_ids.into_iter().map(Value::string)),
+        ),
         ("relationships", Value::array(relationships)),
-        ("coverage", obj(&[
-            ("status", Value::string("PARTIAL")),
-            ("analyzed_sources", Value::number(catalog.len())),
-            ("gaps", Value::array(gaps)),
-        ])),
+        (
+            "coverage",
+            obj(&[
+                ("status", Value::string("PARTIAL")),
+                ("analyzed_sources", Value::number(catalog.len())),
+                ("gaps", Value::array(gaps)),
+            ]),
+        ),
     ]);
     let report_id = report.sha256();
-    report.entries_mut()?.insert("report_id".into(), Value::string(report_id));
+    report
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(report_id));
     Ok((report, db_path))
 }
 
@@ -175,6 +234,7 @@ pub fn human(report: &Value, db_path: &Path) -> Result<String> {
          Source revision: {}\nUnresolved/excluded observations: {gaps}\n\
          SQLite evidence: {}\nCoverage: PARTIAL (absence of an edge is not absence of a dependency)\n\
          Use --json for a versioned report.",
-        report.get("source_commit")?.str()?, db_path.display()
+        report.get("source_commit")?.str()?,
+        db_path.display()
     ))
 }

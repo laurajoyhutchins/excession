@@ -202,6 +202,14 @@ fn resolve_node(db: &Db, graph: &str, name: &str) -> Result<String> {
     if names.iter().any(|id| id == name) {
         return Ok(name.to_owned());
     }
+    // Prefer an explicit configured target over an output artifact with the
+    // same basename. This is not a claim that the two nodes are identical.
+    for prefix in ["target:", "archive:", "source:", "object:", "artifact:"] {
+        let full = format!("{prefix}{name}");
+        if names.iter().any(|id| id == &full) {
+            return Ok(full);
+        }
+    }
     let candidates = names
         .iter()
         .filter(|id| {

@@ -1,5 +1,5 @@
 //! Source-bound SCIP observations, decoded by the official external \`scip print --json\`.
- //! No protobuf reimplementation, source rewriting, or invented FFI relationships.
+//! No protobuf reimplementation, source rewriting, or invented FFI relationships.
 use crate::git;
 use crate::json::{self, Value, obj};
 use crate::{Result, refuse};
@@ -109,13 +109,19 @@ fn range_line(occ: &Value, lines: &[usize], encoding: usize) -> Result<usize> {
     }
     let (start_line, start_char, end_line, end_char) = if let Some(v) = single {
         let line = optional_num(v, "line", "line")?;
-        (line, optional_num(v, "start_character", "startCharacter")?,
-            line, optional_num(v, "end_character", "endCharacter")?)
+        (
+            line,
+            optional_num(v, "start_character", "startCharacter")?,
+            line,
+            optional_num(v, "end_character", "endCharacter")?,
+        )
     } else if let Some(v) = multi {
-        (optional_num(v, "start_line", "startLine")?,
+        (
+            optional_num(v, "start_line", "startLine")?,
             optional_num(v, "start_character", "startCharacter")?,
             optional_num(v, "end_line", "endLine")?,
-            optional_num(v, "end_character", "endCharacter")?)
+            optional_num(v, "end_character", "endCharacter")?,
+        )
     } else if let Some(v) = raw {
         let values = v.array_ref()?;
         if !matches!(values.len(), 3 | 4) {
@@ -147,7 +153,9 @@ fn range_line(occ: &Value, lines: &[usize], encoding: usize) -> Result<usize> {
 
 fn candidate(mut value: Value) -> Result<Value> {
     let id = value.sha256();
-    value.entries_mut()?.insert("candidate_id".into(), Value::string(id));
+    value
+        .entries_mut()?
+        .insert("candidate_id".into(), Value::string(id));
     Ok(value)
 }
 
@@ -184,8 +192,8 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
     }
     let parsed = json::parse(&bytes)?;
     let metadata = parsed.get("metadata")?;
-    let tool = property(metadata, "tool_info", "toolInfo")
-        .ok_or("SCIP metadata lacks tool_info")?;
+    let tool =
+        property(metadata, "tool_info", "toolInfo").ok_or("SCIP metadata lacks tool_info")?;
     let name = property_str(tool, "name", "name")?;
     let version = property_str(tool, "version", "version")?;
     if name.is_empty() || version.is_empty() || name.len() > 128 || version.len() > 128 {
@@ -213,7 +221,8 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
     for doc in docs {
         let path = property_str(doc, "relative_path", "relativePath")?;
         git::validate_path(path)?;
-        let entry = tracked.get(path)
+        let entry = tracked
+            .get(path)
             .ok_or_else(|| format!("SCIP document not a tracked regular Git file: {path}"))?;
         let language = doc.get("language")?.str()?;
         if language.is_empty() || language.len() > 64 {
@@ -223,7 +232,8 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
             return refuse("duplicate SCIP source document path");
         }
         let data = reader.read_capped(&entry.oid, MAX_BLOB_BYTES)?;
-        total_bytes = total_bytes.checked_add(data.len())
+        total_bytes = total_bytes
+            .checked_add(data.len())
             .ok_or("SCIP source byte total overflow")?;
         if total_bytes > MAX_SOURCE_BYTES {
             return refuse("SCIP source bytes exceed 32 MiB");
@@ -242,14 +252,21 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
         languages.insert(language.to_owned());
         documents.insert(
             path.to_owned(),
-            Document { path: path.into(), blob: entry.oid.clone(), language: language.into() },
+            Document {
+                path: path.into(),
+                blob: entry.oid.clone(),
+                language: language.into(),
+            },
         );
         for occ in optional_array(doc, "occurrences")? {
             count += 1;
             if count > MAX_OCCURRENCES {
                 return refuse("SCIP occurrence limit exceeded");
             }
-            let symbol = opt(occ, "symbol").map(Value::str).transpose()?.unwrap_or("");
+            let symbol = opt(occ, "symbol")
+                .map(Value::str)
+                .transpose()?
+                .unwrap_or("");
             if symbol.is_empty() {
                 continue; // syntax highlighting without symbol reference
             }
@@ -267,7 +284,10 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
                 continue;
             }
             if role & 1 != 0 {
-                definitions.entry(symbol.into()).or_default().insert(path.into());
+                definitions
+                    .entry(symbol.into())
+                    .or_default()
+                    .insert(path.into());
             } else if role & 64 == 0 {
                 references.push((path.to_owned(), symbol.to_owned(), line));
             }
@@ -285,7 +305,10 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
                 let to = destinations.iter().next().expect("unique definition");
                 if to != from {
                     matched.insert(Reference {
-                        from: from.clone(), to: to.clone(), symbol: symbol.clone(), line: *line,
+                        from: from.clone(),
+                        to: to.clone(),
+                        symbol: symbol.clone(),
+                        line: *line,
                     });
                 }
             }
@@ -295,8 +318,10 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
 
     let mut by_pair: BTreeMap<(String, String), Vec<Reference>> = BTreeMap::new();
     for edge in &matched {
-        by_pair.entry((edge.from.clone(), edge.to.clone()))
-            .or_default().push(edge.clone());
+        by_pair
+            .entry((edge.from.clone(), edge.to.clone()))
+            .or_default()
+            .push(edge.clone());
     }
 
     let mut candidates = Vec::new();
@@ -307,7 +332,9 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
             continue;
         }
         if let Some(backward) = by_pair.get(&(right.clone(), left.clone())) {
-            let evidence = forward.iter().chain(backward.iter())
+            let evidence = forward
+                .iter()
+                .chain(backward.iter())
                 .take(MAX_REFERENCES_PER_CANDIDATE)
                 .map(|x| reference(x, &documents))
                 .collect::<Vec<_>>();
@@ -345,24 +372,46 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
         ("source_commit", Value::string(commit)),
         ("source_tree", Value::string(tree)),
         ("index_sha256", Value::string(crate::digest::sha256(&bytes))),
-        ("indexer", obj(&[
-            ("name", Value::string(name)),
-            ("version", Value::string(version)),
-        ])),
-        ("coverage", obj(&[
-            ("indexed_documents", Value::number(documents.len())),
-            ("indexed_occurrences", Value::number(count)),
-            ("unique_defined_symbols", Value::number(definitions.values().filter(|v| v.len() == 1).count())),
-            ("unresolved_references", Value::number(unresolved)),
-            ("matched_cross_file_references", Value::number(matched.len())),
-            ("line_only_position_documents", Value::number(lines_only)),
-            ("languages", Value::array(languages.into_iter().map(Value::string))),
-            ("limitations", Value::string("A SCIP indexer report is not proof of correctness or build completeness. References are not necessarily calls or imports. Absence of a reference is not evidence of absence. Cross-language identities are joined only by exact SCIP symbol IDs.")),
-        ])),
+        (
+            "indexer",
+            obj(&[
+                ("name", Value::string(name)),
+                ("version", Value::string(version)),
+            ]),
+        ),
+        (
+            "coverage",
+            obj(&[
+                ("indexed_documents", Value::number(documents.len())),
+                ("indexed_occurrences", Value::number(count)),
+                (
+                    "unique_defined_symbols",
+                    Value::number(definitions.values().filter(|v| v.len() == 1).count()),
+                ),
+                ("unresolved_references", Value::number(unresolved)),
+                (
+                    "matched_cross_file_references",
+                    Value::number(matched.len()),
+                ),
+                ("line_only_position_documents", Value::number(lines_only)),
+                (
+                    "languages",
+                    Value::array(languages.into_iter().map(Value::string)),
+                ),
+                (
+                    "limitations",
+                    Value::string(
+                        "A SCIP indexer report is not proof of correctness or build completeness. References are not necessarily calls or imports. Absence of a reference is not evidence of absence. Cross-language identities are joined only by exact SCIP symbol IDs.",
+                    ),
+                ),
+            ]),
+        ),
         ("candidates", Value::array(candidates)),
     ]);
     let id = report.sha256();
-    report.entries_mut()?.insert("report_id".into(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(id));
     if report.canonical().len() > MAX_INDEX_BYTES {
         return refuse("SCIP refactor report exceeds 16 MiB");
     }
@@ -393,21 +442,27 @@ mod tests {
     #[test]
     fn legacy_and_typed_ranges_use_zero_based_lines() {
         let lines = vec![10, 10];
-        let a = obj(&[("range", Value::array([
-            Value::number(0), Value::number(1), Value::number(3),
-        ]))]);
+        let a = obj(&[(
+            "range",
+            Value::array([Value::number(0), Value::number(1), Value::number(3)]),
+        )]);
         assert_eq!(range_line(&a, &lines, 1).unwrap(), 0);
-        let b = obj(&[("TypedRange", obj(&[
-            ("SingleLineRange", obj(&[
-                ("line", Value::number(1)),
-                ("start_character", Value::number(2)),
-                ("end_character", Value::number(4)),
-            ])),
-        ]))]);
+        let b = obj(&[(
+            "TypedRange",
+            obj(&[(
+                "SingleLineRange",
+                obj(&[
+                    ("line", Value::number(1)),
+                    ("start_character", Value::number(2)),
+                    ("end_character", Value::number(4)),
+                ]),
+            )]),
+        )]);
         assert_eq!(range_line(&b, &lines, 1).unwrap(), 1);
-        let bad = obj(&[("range", Value::array([
-            Value::number(0), Value::number(0), Value::number(100),
-        ]))]);
+        let bad = obj(&[(
+            "range",
+            Value::array([Value::number(0), Value::number(0), Value::number(100)]),
+        )]);
         assert!(range_line(&bad, &lines, 1).is_err());
     }
 }

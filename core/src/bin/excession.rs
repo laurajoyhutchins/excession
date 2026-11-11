@@ -612,7 +612,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 sub == "audit",
             )?))
         }
-        [top, sub, rest @ ..] if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") => {
+        [top, sub, rest @ ..]
+            if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
+        {
             let opt = Options::parse(
                 rest,
                 if sub == "scip-audit" {
@@ -624,7 +626,10 @@ fn execute(args: &[String]) -> Result<Response> {
             )?;
             Ok(json(if sub == "scip-audit" {
                 scip_refactor::audit(
-                    opt.path("repo"), opt.get("rev"), opt.path("index"), opt.path("report")
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.path("report"),
                 )?
             } else {
                 scip_refactor::suggest(opt.path("repo"), opt.get("rev"), opt.path("index"))?

@@ -2,7 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, compiler_clang, git, graph_assembly, index, kernel, projection, refuse, security_ingest, views,
+    Result, compiler_clang, git, graph_assembly, index, kernel, projection, refuse,
+    security_ingest, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -451,7 +452,14 @@ fn execute(args: &[String]) -> Result<Response> {
             if a == "--help"
                 && matches!(
                     top.as_str(),
-                    "view" | "security" | "inspect" | "index" | "browse" | "kernel" | "analyze" | "graph"
+                    "view"
+                        | "security"
+                        | "inspect"
+                        | "index"
+                        | "browse"
+                        | "kernel"
+                        | "analyze"
+                        | "graph"
                 ) =>
         {
             Ok(Response::Message(HELP.to_owned()))

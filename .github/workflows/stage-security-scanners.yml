@@ -1,0 +1,51 @@
+name: Stage scanner executables
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [security/source-bound-validity-oracle]
+    paths: ['.github/workflows/stage-security-scanners.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download versioned CodeQL CLI distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/scanners"
+          curl --fail --location --retry 3 --silent --show-error \
+            'https://github.com/github/codeql-cli-binaries/releases/download/v2.23.6/codeql-linux64.zip' \
+            -o "$RUNNER_TEMP/scanners/codeql-linux64-v2.23.6.zip"
+          unzip -t "$RUNNER_TEMP/scanners/codeql-linux64-v2.23.6.zip" >/dev/null
+          sha256sum "$RUNNER_TEMP/scanners/codeql-linux64-v2.23.6.zip" > "$RUNNER_TEMP/scanners/codeql.sha256"
+      - name: Download pinned Semgrep wheel and offline dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip download --only-binary=:all: --dest "$RUNNER_TEMP/scanners/semgrep-wheelhouse" 'semgrep==1.145.0'
+          python3 -m pip install --no-index --find-links "$RUNNER_TEMP/scanners/semgrep-wheelhouse" --target "$RUNNER_TEMP/scanners/semgrep-install" 'semgrep==1.145.0'
+          PYTHONPATH="$RUNNER_TEMP/scanners/semgrep-install" python3 -m semgrep --version > "$RUNNER_TEMP/scanners/semgrep-version.txt"
+          (cd "$RUNNER_TEMP/scanners" && find semgrep-wheelhouse -type f -print0 | sort -z | xargs -0 sha256sum) > "$RUNNER_TEMP/scanners/semgrep-wheels.sha256"
+      - name: Preserve provenance
+        shell: bash
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/scanners/source-commit.txt"
+          python3 --version > "$RUNNER_TEMP/scanners/python-version.txt"
+      - name: Publish offline scanner transfer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86-64-security-scanners
+          path: ${{ runner.temp }}/scanners/
+          retention-days: 30
+          if-no-files-found: warn
+          compression-level: 0

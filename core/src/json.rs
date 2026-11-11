@@ -119,7 +119,7 @@ pub fn obj(pairs: &[(&str, Value)]) -> Value {
     Value::object(pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())))
 }
 
-fn write_quoted(s: &str, out: &mut String) {
+pub(crate) fn write_quoted(s: &str, out: &mut String) {
     use std::fmt::Write as _;
     out.push('"');
     for c in s.chars() {

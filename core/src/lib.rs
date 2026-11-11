@@ -18,6 +18,7 @@ pub mod overlap;
 pub mod scoped;
 pub mod security;
 pub mod security_discovery;
+pub mod security_ingest;
 pub mod security_survey;
 pub mod semantic;
 pub mod sqlite;

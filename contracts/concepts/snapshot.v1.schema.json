@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/concepts/snapshot.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Excession immutable semantic snapshot manifest v1 (proposed)",
+  "required": [
+    "schema",
+    "snapshot_id",
+    "model_id",
+    "source_commit",
+    "source_tree",
+    "input_batch_ids",
+    "compiler_version",
+    "rule_set_id",
+    "record_counts",
+    "coverage_status"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts-snapshot.v1"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "model_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/oid"
+    },
+    "input_batch_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sha256"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "compiler_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rule_set_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "record_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subjects",
+        "concepts",
+        "claims",
+        "support_links"
+      ],
+      "properties": {
+        "subjects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "concepts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "claims": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "support_links": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "coverage_status": {
+      "enum": [
+        "PARTIAL",
+        "DECLARED_SCOPE_COMPLETE",
+        "UNKNOWN"
+      ]
+    }
+  },
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

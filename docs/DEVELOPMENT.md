@@ -56,3 +56,12 @@ report at `core/target/nextest/ci/junit.xml` and a Python report at
 behind `make go-check` and its path-filtered CI workflow. Generated SQLite
 indexes, test output, and local packages are ignored; checked-in fixture
 bundles and benchmark receipts are intentionally retained.
+
+## Benchmark reports
+
+`python3 benchmarks/reporting.py validate path/to/report.json` checks the
+Draft 2020-12 schema, report content digest, and recorded raw-artifact hashes.
+The validator and its dependencies are pinned in `requirements/research.txt`.
+`make benchmark-schema-check` runs conversion and negative-case tests.
+Relational runs publish `report.json`; native CI wraps raw calibrations
+as separate `*.report.json` files. No unavailable measurements are invented.

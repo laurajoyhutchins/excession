@@ -15,7 +15,6 @@ pub mod index;
 pub mod integration;
 pub mod json;
 pub mod native_boundary;
-pub mod native_depinfo;
 pub mod optimizer;
 pub mod overlap;
 pub mod preflight;

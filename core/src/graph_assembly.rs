@@ -10,8 +10,6 @@ use std::path::{Component, Path, PathBuf};
 
 const MAX_JSON: usize = 48 * 1024 * 1024;
 const MAX_TUS: usize = 128;
-const MAX_NODES: usize = 30_000;
-const MAX_EDGES: usize = 80_000;
 
 fn read_json(path: &Path) -> Result<Value> {
     let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
@@ -73,46 +71,16 @@ fn as_path(source: &Path, build: &Path, name: &str) -> Result<PathBuf> {
     Ok(build.join(original))
 }
 fn push_node(
-    nodes: &mut BTreeMap<String, Value>,
-    id: String,
-    kind: &str,
-    payload: Value,
+    nodes: &mut BTreeMap<String, Value>, id: String,
+    kind: &str, payload: Value,
 ) -> Result<()> {
-    if nodes.len() >= MAX_NODES && !nodes.contains_key(&id) {
-        return refuse("graph node budget exceeded");
-    }
-    let entry = obj(&[
-        ("id", Value::string(&id)),
-        ("kind", Value::string(kind)),
-        ("payload", payload),
-    ]);
-    if let Some(old) = nodes.insert(id, entry.clone())
-        && old != entry
-    {
-        return refuse("conflicting graph entity identity");
-    }
-    Ok(())
+    crate::configured_store::push_node(nodes, id, kind, payload)
 }
 fn push_edge(
     edges: &mut BTreeMap<String, Value>,
-    from: &str,
-    to: &str,
-    kind: &str,
-    status: &str,
-    evidence: &str,
+    from: &str, to: &str, kind: &str, status: &str, evidence: &str,
 ) -> Result<()> {
-    if edges.len() >= MAX_EDGES {
-        return refuse("graph edge budget exceeded");
-    }
-    let entry = obj(&[
-        ("from", Value::string(from)),
-        ("to", Value::string(to)),
-        ("kind", Value::string(kind)),
-        ("status", Value::string(status)),
-        ("evidence", Value::string(evidence)),
-    ]);
-    edges.insert(entry.sha256(), entry);
-    Ok(())
+    crate::configured_store::push_edge(edges, from, to, kind, status, evidence)
 }
 fn source_suffix(path: &str) -> bool {
     [".c", ".cc", ".cpp", ".cxx", ".C"]

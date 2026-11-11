@@ -26,7 +26,7 @@ jobs:
           go-version: '1.23'
       - name: Install scanner and build Excession
         run: |
-          python3 -m pip install --user 'semgrep>=1,<2'
+          python3 -m pip install --user 'semgrep==1.145.0'
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           cargo build --locked --manifest-path core/Cargo.toml --bin excession
       - name: Execute real Semgrep scan

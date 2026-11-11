@@ -133,6 +133,8 @@ without a custom Protobuf decoder or Rust language parser. For nested Rust
 projects, use `--source-prefix core` to bind index paths to repository-root Git.
 See [refactoring hypotheses](docs/REFACTORING.md).
 
+SCIP migration fixtures are evaluated against [a source-bound evidence contract](benchmarks/experiments/SCIP_MIGRATION.md), **not forced into parity** with the legacy import resolver. Missing coverage stays visible, and the original historical tests remain intact.
+
 ## Integrated compiler-backed discovery
 
 For supported Go, Rust and JS/TS projects, run the trusted-local language

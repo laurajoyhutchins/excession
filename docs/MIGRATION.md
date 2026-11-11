@@ -13,14 +13,14 @@ This is an operational migration, not a rewriting of historical research.
 | `relgit security-ingest-audit REPO REPORT DB ENGINE` | `excession security audit --repo REPO --report REPORT --db DB --engine ENGINE` |
 | `relgit view-ls REPO MANIFEST [DIR]` | `excession view ls --repo REPO --manifest MANIFEST [--path DIR]` |
 | `relgit view-open REPO MANIFEST FILE` | `excession view cat --repo REPO --manifest MANIFEST --path FILE` |
-| `relgit carry ROOT DB REPORT` | `excession research carry ROOT DB REPORT` |
-| `relgit compose SPEC DB` | `excession research compose SPEC DB` |
-| `relgit project SPEC DB DIR` | `excession research project SPEC DB DIR` |
+| `relgit carry ROOT DB REPORT` | Retired; use its historical pinned revision for reproduction |
+| `relgit compose SPEC DB` | Retired positional protocol; use supported `excession view compose` where applicable |
+| `relgit project SPEC DB DIR` | Retired; no direct CLI replacement |
 
-For other pinned, positional research commands, use
-`excession research OLD_COMMAND [OLD_ARGS...]`. The research subprocess runs
-within the same executable and uses the same Rust library; it is not a shell
-wrapper or a separate binary.
+There is **no** `excession research` entry point. Historical commits and
+fixture evidence are preserved in Git, but the current executable accepts
+only documented modern commands. Do not assume newer view commands preserve
+the behavior or output identity of retired research protocols.
 
 Rust embedding clients should change `relgit::` imports to `excession::`.
 Cargo's package and library names have changed, so downstream `Cargo.lock`

@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - '.github/workflows/syntax-parsers.yml'
+      - 'rust-toolchain.toml'
+      - '.python-version'
+      - 'requirements/syntax.txt'
+      - 'requirements/research.txt'
       - 'core/adapters/tree_sitter.py'
       - 'core/src/syntax.rs'
       - 'core/src/syntax_resolution.rs'
@@ -27,17 +31,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Install pinned Rust
-        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Activate pinned Rust toolchain
+        run: rustup show active-toolchain
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.13.5'
+          python-version-file: .python-version
       - name: Install optional parser and prefetch grammars
         run: |
-          python3 -m pip install --disable-pip-version-check pytest==9.0.2 tree-sitter-language-pack==1.25.0
+          python3 -m pip install --disable-pip-version-check -r requirements/research.txt -r requirements/syntax.txt
           python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java", "python", "typescript", "javascript"])'
       - name: Build Excession CLI
-        run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+        run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Run parser unit and Git integration tests (JUnit XML)
         run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py --junitxml=test-results/syntax-parsers.xml
       - name: Retain JUnit test report

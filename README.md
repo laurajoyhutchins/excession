@@ -16,20 +16,28 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-Requirements: Rust 1.99.1, Git with SHA-1 repositories, native `libsqlite3` and
-`libcrypto`, and Python 3 for the repository integration tests. The Rust crate
-has no third-party Cargo dependencies; a network connection is not required.
+Requirements: Rust 1.99.1, Python 3.13.5, Node 22.16.0/npm 10.9.2,
+Git with SHA-1 repositories, and native `libsqlite3` / `libcrypto`.
+Go 1.26.11 is optional for the Go research adapter. The Rust crate has
+no third-party Cargo dependencies and builds offline. JS/TS parsing uses
+the locally locked TypeScript package, not a global npm installation.
 
 ```sh
+npm ci --ignore-scripts --no-audit --no-fund
+python3 -m pip install -r requirements/research.txt
 cargo install --offline --locked --path core --bin excession
 excession --help
 make check
 ```
 
-`make check` runs Rust tests, Rust formatting and strict Clippy, plus the Python
-integration suite. Use `make cli` for a local development binary.
+`make check` runs Rust tests, formatting, strict Clippy, the JS adapter
+checks, and Python integration tests. Use `make cli` for the development
+binary and `make go-check` for the optional Go adapter. See
+[development setup](docs/DEVELOPMENT.md) for toolchain files and separately
+pinned research/grammar dependencies.
 
-For JUnit XML reports, install `cargo-nextest` 0.9.151 and `pytest` 9.0.2,
+For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
+Python research requirements,
 then run `make junit`. This retains the existing `unittest` test cases while
 producing separate Rust and Python reports:
 
@@ -37,7 +45,7 @@ producing separate Rust and Python reports:
 - `test-results/python.xml` (Python, including skipped and failed tests)
 
 CI uploads JUnit XML as artifacts, including after a test failure.
-`make check` remains the dependency-light local validation path; Rust doctests
+`make check` remains the simpler local validation path without nextest; Rust doctests
 are also checked by `cargo test --doc` in the JUnit workflow.
 
 ## One repository, multiple layouts

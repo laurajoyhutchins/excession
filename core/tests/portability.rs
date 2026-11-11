@@ -39,6 +39,13 @@ fn installed_binary_works_outside_build_tree_with_unicode_paths() {
     assert!(String::from_utf8_lossy(&version.stdout).contains("excession "));
     let help = run(binary, &["--help"], &working);
     assert!(String::from_utf8_lossy(&help.stdout).contains("excession index"));
+    let doctor = run(binary, &["doctor", "--json"], &working);
+    let diagnostics: serde_json::Value =
+        serde_json::from_slice(&doctor.stdout).expect("valid doctor JSON");
+    assert_eq!(diagnostics["schema"], "excession.capabilities.v1");
+    assert_eq!(diagnostics["sqlite"]["status"], "BUNDLED");
+    assert_eq!(diagnostics["tools"]["git"]["status"], "DETECTED");
+    assert_eq!(diagnostics["required_ready"], true);
 
     if excession::adapter::python_command()
         .arg("--version")

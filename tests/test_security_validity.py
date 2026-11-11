@@ -80,7 +80,8 @@ class ValidityTests(unittest.TestCase):
         self.assertEqual([c["status"] for c in result["candidate_outcomes"]],
                          ["REPRODUCED_LOCAL_BOUNDARY", "SAFE_CONTROL_HIT",
                           "SAFE_CONTROL_HIT", "UNJUDGED_CANDIDATE"])
-        self.assertEqual(len(result["native_oracle"]["tests"]), 4)
+        self.assertEqual(len(result["native_oracle"]["tests"]), 7)
+        self.assertIn("TestHTTPTraversalIsObservable", result["native_oracle"]["tests"])
         self.assertIn("not vulnerability reachability", result["claim_boundary"])
 
     def test_unrelated_rule_at_positive_location_is_unjudged(self) -> None:

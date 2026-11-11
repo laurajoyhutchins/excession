@@ -40,7 +40,7 @@ pub fn tree_sitter(entries: &[Value]) -> Result<Value> {
 
 /// Load the locked TypeScript parser from a sidecar or an explicitly trusted
 /// location. Never resolve it from the repository being indexed.
-fn typescript_file() -> Result<PathBuf> {
+pub fn typescript_file() -> Result<PathBuf> {
     if let Some(value) = std::env::var_os("EXCESSION_TYPESCRIPT_JS") {
         let path = PathBuf::from(value);
         if !path.is_absolute() || !path.is_file() {

@@ -286,4 +286,75 @@ mod tests {
         receipt.entries_mut().unwrap().insert("status".into(), Value::string("OBSERVED_FAIL"));
         assert!(validated_receipt(&receipt, &"1".repeat(64), &"1".repeat(40), "check.py").is_err());
     }
+    #[test]
+    fn git_sqlite_roundtrip_rejects_forged_rows() {
+        use std::process::Command;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("excession-slice-{}-{nonce}", std::process::id()));
+        let repo = dir.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let command = |args: &[&str]| {
+            let output = Command::new("git").arg("-C").arg(&repo).args(args).output().unwrap();
+            assert!(output.status.success(), "{:?}: {}", args, String::from_utf8_lossy(&output.stderr));
+        };
+        command(&["init", "-q"]);
+        command(&["config", "user.name", "Slice Test"]);
+        command(&["config", "user.email", "test@example.invalid"]);
+        fs::write(repo.join("check.py"), b"assert 1 + 1 == 2\n").unwrap();
+        command(&["add", "check.py"]);
+        command(&["commit", "-qm", "fixture"]);
+        let commit = git::rev(&repo, "HEAD").unwrap();
+        let tree = git::rev(&repo, "HEAD^{tree}").unwrap();
+        let blob = git::blob(&repo, "HEAD", "check.py").unwrap();
+        let data = fs::read(repo.join("check.py")).unwrap();
+        let source = obj(&[
+            ("path", Value::string("check.py")),
+            ("blob", Value::string(blob)),
+            ("bytes", Value::number(data.len())),
+            ("sha256", Value::string(digest::sha256(&data))),
+        ]);
+        let mut manifest = obj(&[
+            ("schema", Value::string("excession.executable-slice.v1")),
+            ("commit", Value::string(commit.clone())),
+            ("tree", Value::string(tree)),
+            ("entry", Value::string("check.py")),
+            ("assets", Value::array(Vec::new())),
+            ("entries", Value::array(vec![source])),
+            ("scope", Value::string("STATIC_IMPORT_CLOSURE_ONLY")),
+            ("semantic_equivalence", Value::string("UNVERIFIED")),
+        ]);
+        let view = manifest.sha256();
+        manifest.entries_mut().unwrap().insert("view_id".into(), Value::string(&view));
+        let mut receipt = obj(&[
+            ("schema", Value::string("excession.slice-observation.v1")),
+            ("view_id", Value::string(view)),
+            ("commit", Value::string(commit)),
+            ("entry", Value::string("check.py")),
+            ("python", Value::string("3.13.5")),
+            ("exit_code", Value::number(0)),
+            ("stdout_sha256", Value::string(digest::sha256(b"ok"))),
+            ("stderr_sha256", Value::string(digest::sha256(b""))),
+            ("status", Value::string("OBSERVED_PASS")),
+            ("scope", Value::string("FINITE_TRUSTED_LOCAL_EXECUTION")),
+        ]);
+        let id = receipt.sha256();
+        receipt.entries_mut().unwrap().insert("receipt_id".into(), Value::string(id.clone()));
+        let manifest_file = dir.join("manifest.json");
+        let receipt_file = dir.join("receipt.json");
+        fs::write(&manifest_file, manifest.canonical()).unwrap();
+        fs::write(&receipt_file, receipt.canonical()).unwrap();
+        let db = Db::open(&dir.join("evidence.sqlite")).unwrap();
+        assert!(evidence(&repo, &manifest_file, &receipt_file, &db, false).is_ok());
+        assert!(evidence(&repo, &manifest_file, &receipt_file, &db, true).is_ok());
+        assert!(evidence(&repo, &manifest_file, &receipt_file, &db, false).is_err());
+        db.execute(
+            "UPDATE executable_slice_source SET blob_oid=? WHERE receipt_id=?",
+            &[Param::Text(&"0".repeat(40)), Param::Text(&id)],
+        ).unwrap();
+        assert!(evidence(&repo, &manifest_file, &receipt_file, &db, true).is_err());
+        drop(db);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }

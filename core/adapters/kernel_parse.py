@@ -211,9 +211,18 @@ def kconfig_facts(text):
     diagnostics = []
     symbol = ""
     stack = []
+    help_indent = None
     for line, raw in logical_lines(text):
         source = raw.strip()
+        indent = len(raw.expandtabs(8)) - len(raw.expandtabs(8).lstrip())
+        if help_indent is not None:
+            if not source or indent > help_indent:
+                continue
+            help_indent = None
         if not source or source.startswith("#"):
+            continue
+        if source in ("help", "---help---"):
+            help_indent = indent
             continue
         m = KCONFIG_SYMBOL.match(source)
         if m:

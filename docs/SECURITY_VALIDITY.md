@@ -5,7 +5,7 @@
 `security ingest` and `security audit` preserve source-bound scanner *reports*;
 that is not a statement about detection accuracy. The opt-in local assessor in
 `tools/assess_security_findings.py` joins an **already audited** ingestion run
-to Git-blob-bound behavioral controls. It deliberately produces a separate
+to Git-blob-bound behavioral controls and explicit scanner rule IDs. It deliberately produces a separate
 receipt and never changes `security_ingest_candidate` or assigns CVE verdicts.
 
 A controlled Go corpus in `benchmarks/security-validity` demonstrates one

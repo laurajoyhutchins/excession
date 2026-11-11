@@ -57,6 +57,13 @@ def load_ground_truth(repo: Path, path: Path) -> tuple[dict, dict[str, str]]:
     checked_path(repo, f"{oracle_dir}/go.mod")
     cases = data.get("cases")
     require(isinstance(cases, list) and len(cases) >= 2, "need positive and safe controls")
+    allowed_rules = data.get("rule_ids")
+    require(isinstance(allowed_rules, dict) and
+            all(engine in ("semgrep", "codeql") and isinstance(rules, list)
+                and bool(rules) and all(isinstance(rule, str) and bool(rule) for rule in rules)
+                and len(set(rules)) == len(rules)
+                for engine, rules in allowed_rules.items()),
+            "ground truth must bind explicit scanner rule IDs")
     tests: dict[str, str] = {}
     ids: set[str] = set()
     ranges: dict[str, list[tuple[int, int]]] = {}
@@ -115,8 +122,11 @@ def run_oracle(repo: Path, truth: dict, required_tests: dict[str, str]) -> dict:
             "native oracle did not pass all controls")
     require(git(repo, "status", "--porcelain", "--untracked-files=all") == "",
             "oracle modified the source checkout")
+    runtime = subprocess.run(["go", "version"], capture_output=True, text=True,
+                             check=True, timeout=10).stdout.strip()
     return {"output_sha256": hashlib.sha256(process.stdout).hexdigest(),
-            "tests": final, "kind": "trusted-local-go-test-not-sandboxed"}
+            "go_version": runtime, "tests": final,
+            "kind": "trusted-local-go-test-not-sandboxed"}
 
 
 def read_ingestion(db_path: Path, run_id: str) -> tuple[dict, list[dict]]:
@@ -151,6 +161,7 @@ def assess(repo: Path, db_path: Path, run_id: str, truth_path: Path,
             audit_receipt.get("independently_replayed") is True,
             "fresh Excession scanner audit required")
     truth, tests = load_ground_truth(repo, truth_path)
+    truth_blob, _ = checked_path(repo, str(truth_path.resolve().relative_to(repo.resolve())))
     oracle = run_oracle(repo, truth, tests)
     outcomes = []
     summary = {"reproduced_boundaries": 0, "safe_control_hits": 0,
@@ -160,7 +171,8 @@ def assess(repo: Path, db_path: Path, run_id: str, truth_path: Path,
         source_path, source_blob, line = (candidate[k] for k in
                                           ("source_path", "source_blob", "line"))
         case = next((c for c in truth["cases"]
-                     if c["path"] == source_path and c["source_blob"] == source_blob
+                     if candidate["rule_id"] in truth["rule_ids"].get(run["engine"], [])
+                     and c["path"] == source_path and c["source_blob"] == source_blob
                      and c["start_line"] <= line <= c["end_line"]), None)
         if case is None:
             status = "UNJUDGED_CANDIDATE"
@@ -181,7 +193,8 @@ def assess(repo: Path, db_path: Path, run_id: str, truth_path: Path,
     # No recall/TN estimate: scanner target and rule coverage are not attested.
     return {"schema": "excession.security.validity-assessment.v1", "source_commit": commit,
             "run_id": run_id, "engine": run["engine"], "report_sha256": run["report_sha256"],
-            "family": truth["family"], "native_oracle": oracle, "summary": summary,
+            "family": truth["family"], "ground_truth_blob": truth_blob,
+            "native_oracle": oracle, "summary": summary,
             "candidate_outcomes": outcomes,
             "claim_boundary": "local behavioral controls only; not vulnerability reachability, impact, scanner recall or CVE confirmation"}
 

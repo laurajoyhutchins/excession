@@ -83,6 +83,15 @@ class ValidityTests(unittest.TestCase):
         self.assertEqual(len(result["native_oracle"]["tests"]), 4)
         self.assertIn("not vulnerability reachability", result["claim_boundary"])
 
+    def test_unrelated_rule_at_positive_location_is_unjudged(self) -> None:
+        with sqlite3.connect(self.db) as connection:
+            connection.execute("UPDATE security_ingest_candidate SET rule_id='unrelated.rule' "
+                               "WHERE line=14")
+        result = self.assess()
+        self.assertEqual(result["summary"]["reproduced_boundaries"], 0)
+        self.assertEqual(result["summary"]["known_positive_cases_without_hit"], 1)
+        self.assertEqual(result["candidate_outcomes"][0]["status"], "UNJUDGED_CANDIDATE")
+
     def test_missing_scanner_hit_is_not_called_clean(self) -> None:
         self.set_candidates([])
         result = self.assess()

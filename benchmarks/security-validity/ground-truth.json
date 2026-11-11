@@ -34,5 +34,13 @@
   ],
   "additional_required_tests": [
     "TestGuardPreservesBenignAccess"
-  ]
+  ],
+  "rule_ids": {
+    "semgrep": [
+      "excession.go.joined-read"
+    ],
+    "codeql": [
+      "go/path-injection"
+    ]
+  }
 }

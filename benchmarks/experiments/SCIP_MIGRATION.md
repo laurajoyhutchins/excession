@@ -41,41 +41,45 @@ To replay previously generated decoded indexes without executing an indexer,
 replace `--trusted-local` with `--decoded-dir PATH` containing
 `<fixture>-python.json` or `<fixture>-typescript.json`.
 
-## Observed six-fixture run
+## Observed real-indexer coverage
 
-The pinned upstream SCIP tools and Git-bound replay passed on
-[workflow run 43055514994](https://github.com/laurajoyhutchins/excession/actions/runs/43055514994).
-That run produced 37,825 SCIP occurrences over six fixtures and preserved
-decoded indexes, generated binary SCIP files, reports and audit receipts.
+[Workflow run 43066123968](https://github.com/laurajoyhutchins/excession/actions/runs/43066123968)
+passed all six pinned fixtures, using the official upstream SCIP indexers
+and Git-bound replay. It reported **44,812 symbol occurrences** in total.
 
-| Fixture | Scoped source coverage | Outcome |
+| Fixture | Declared source files indexed | Status |
 | --- | ---: | --- |
 | h11 | 12 / 12 | `SOURCE_BOUND` |
 | ItsDangerous | 8 / 8 | `SOURCE_BOUND` |
 | Click | 17 / 17 | `SOURCE_BOUND` |
 | Requests | 19 / 19 | `SOURCE_BOUND` |
-| Axios | 0 / 72 expected `lib` files | `PARTIAL` |
-| Mixed import fixture | Python 4 / 4; JS/TS 1 / 4 | `PARTIAL` |
+| Axios | 72 / 72 | `SOURCE_BOUND` |
+| Mixed import fixture | Python 4 / 4; JS/TS 4 / 4 | `SOURCE_BOUND` |
 
-This is the baseline run before fixing the fixture analysis configuration.
-Axios's pinned `tsconfig.json` selects TypeScript declarations and tests but
-does not set `allowJs`; `scip-typescript` indexed other files and none of
-the 72 declared `lib` JavaScript files. The mixed-language fixture similarly
-left three of four JS/TS source files out of the inferred project.
+The same workflow exercised pinned historical PostCSS revision
+`173614d9cfa4660eddd3d42f55e3fb0ec4659427` and indexed its single
+declared `lib` source file (33 SCIP occurrences). All 16 historical
+revisions remain available through the opt-in full historical sweep; this
+run established one historical revision, not all 16.
 
-The migration runner now generates an **explicit, disposable SCIP analysis
-project** when a fixture has JavaScript/TypeScript sources. It lists precisely
-the Git-tracked files within the fixture's declared roots, sets `allowJs`,
-and extends the repository's existing `tsconfig.json` if one exists. The
-original configuration is never overwritten. The generated analysis config,
-its SHA-256 digest, and the original `tsconfig.json` digest are preserved
-alongside the resulting SCIP index and replay receipt.
+The preceding [baseline run 43055514994](https://github.com/laurajoyhutchins/excession/actions/runs/43055514994)
+indexed none of Axios's 72 declared `lib` JavaScript files and only one
+of the mixed fixture's four JS/TS files. The native TypeScript project
+selection excluded the others.
 
-This *fixture-scoped* analysis is distinct from a project's original build
-configuration. It does not prove that those JavaScript files are compiled,
-imported, or reachable in any deployment. Indexed files outside the declared
-roots continue to be reported separately rather than silently redefining the
-denominator. Updated measurements must come from a new real indexer run.
+The runner now uses an **explicit, disposable SCIP analysis project** for
+fixtures containing JavaScript or TypeScript. It lists precisely the
+Git-tracked source files within the declared roots, enables `allowJs`,
+and extends the original `tsconfig.json` when one exists. It never
+overwrites the pinned repository configuration. The generated analysis
+configuration, its SHA-256 digest, and the original project's config
+digest are preserved alongside the SCIP index and replay receipt.
+
+This separate fixture-scoped analysis does **not** establish that every
+source file participates in the original build, deployment, or runtime,
+nor that every symbol relationship has been discovered correctly. The
+original project-selected SCIP observations and the fixture-scoped
+observations are not interchangeable.
 
 ## Evidence contract
 

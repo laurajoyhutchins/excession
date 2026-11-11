@@ -21,6 +21,21 @@ queries and Git revisions, while preserving a stated verification guarantee?**
 
 **No agent task-completion or subjective productivity metric is used.**
 
+## Historical performance experiments
+
+The one-off A/B experiments remain reproducible, but are no longer separate
+pull-request CI gates. Run **Actions → Historical performance experiments →
+Run workflow**, choose `manifest-output`, `direct-id`, `canonical-json`,
+`checked-tree`, or `projection-phases`. One manually selected experiment
+runs on a pinned Rust toolchain and uploads its raw JSON measurements.
+
+The matching source scripts and past receipts in [results/](results/) are
+preserved. The baselines intentionally use historical commits; do not treat
+differences across many intervening commits as attribution to one optimization.
+Ordinary PR CI still checks serialization identity and Git/SQLite refusals.
+Native retrieval calibration and the relational benchmark retain their own
+path-scoped workflows because they validate actively maintained protocols.
+
 ## First executable experiment
 
 After compiling `core/target/debug/excession`:
@@ -60,14 +75,13 @@ source revisions, executable digest, independently assessed checks, unit-bearing
 metrics, and SHA-256 digests of referenced artifacts.
 
 ```sh
-python3 -m pip install -r requirements/research.txt
 make benchmark-schema-check
-python3 benchmarks/reporting.py validate /tmp/excession-relational-v1/report.json
-python3 benchmarks/reporting.py build-native . native-calibration.json
-python3 benchmarks/reporting.py validate native-calibration.report.json
+core/target/debug/excession benchmark validate --report /tmp/excession-relational-v1/report.json
+core/target/release/excession benchmark report --kind native --directory . --input native-calibration.json
+core/target/debug/excession benchmark validate --report native-calibration.report.json
 ```
 
-The CLI refuses missing or tampered artifacts, unavailable measurements
+The Rust CLI refuses missing or tampered artifacts, unavailable measurements
 encoded as zeros, duplicate metrics, unsafe paths, and false success labels.
 Report IDs are digests, **not signatures**. A native calibration explicitly
 declares a shared-index oracle, while relational experiments declare

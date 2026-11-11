@@ -4,11 +4,12 @@ on:
   pull_request:
     paths:
       - benchmarks/micro/native_paired.py
+      - core/src/benchmark.rs
+      - core/Cargo.toml
+      - core/Cargo.lock
+      - benchmarks/schemas/**
       - .github/workflows/native-paired.yml
       - core/src/graph_baseline.rs
-      - core/src/projection.rs
-      - core/src/projection/composition.rs
-      - tests/test_projections.py
   workflow_dispatch:
 
 permissions:
@@ -24,6 +25,8 @@ jobs:
           fetch-depth: 0
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
+      - name: Prefetch locked Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Compile native CLI
         run: cargo build --offline --locked --release --manifest-path core/Cargo.toml
       - name: Measure pinned h11 source queries (candidate)
@@ -36,19 +39,16 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/excession-baseline" "$BASE_SHA"
           cargo build --offline --locked --release --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
           python3 benchmarks/micro/native_paired.py "$RUNNER_TEMP/excession-baseline/core/target/release/excession" baseline-calibration.json
-      - name: Install pinned JSON Schema validator
-        if: always()
-        run: python3 -m pip install --disable-pip-version-check -r requirements/research.txt
       - name: Validate native paired report envelopes
         if: always()
         run: |
           if [ -f native-calibration.json ]; then
-            python3 benchmarks/reporting.py build-native . native-calibration.json
-            python3 benchmarks/reporting.py validate native-calibration.report.json
+            core/target/release/excession benchmark report --kind native --directory . --input native-calibration.json
+            core/target/release/excession benchmark validate --report native-calibration.report.json
           fi
           if [ -f baseline-calibration.json ]; then
-            python3 benchmarks/reporting.py build-native . baseline-calibration.json
-            python3 benchmarks/reporting.py validate baseline-calibration.report.json
+            core/target/release/excession benchmark report --kind native --directory . --input baseline-calibration.json
+            core/target/release/excession benchmark validate --report baseline-calibration.report.json
           fi
       - name: Retain raw paired timings and source-parity receipt
         if: always()

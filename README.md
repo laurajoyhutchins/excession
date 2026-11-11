@@ -16,25 +16,32 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-Requirements: Rust 1.99.1, Python 3.13.5, Node 22.16.0/npm 10.9.2,
-Git with SHA-1 repositories, and native `libsqlite3` / `libcrypto`.
-Go 1.26.11 is optional for the Go research adapter. The Rust crate has
-no third-party Cargo dependencies and builds offline. JS/TS parsing uses
-the locally locked TypeScript package, not a global npm installation.
+The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
+crates. Git (SHA-1 object format) and native SQLite are required for
+repository operations; the digests use portable Rust without OpenSSL.
+Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
+Tree-sitter grammars and security scanners are opt-in adapters.
+
+Prebuilt Linux, macOS and Windows archives carry the binary and the
+locked TypeScript parser sidecar. See [portable installation and supported
+targets](docs/PORTABILITY.md) for runtime dependencies and limitations.
+
+For full development checks, the pinned mise workflow remains available:
 
 ```sh
-npm ci --ignore-scripts --no-audit --no-fund
-python3 -m pip install -r requirements/research.txt
-cargo install --offline --locked --path core --bin excession
-excession --help
-make check
+mise install
+mise run setup
+mise run check
+mise run cli
+mise exec -- core/target/debug/excession --help
 ```
 
 `make check` runs Rust tests, formatting, strict Clippy, the JS adapter
 checks, and Python integration tests. Use `make cli` for the development
 binary and `make go-check` for the optional Go adapter. See
-[development setup](docs/DEVELOPMENT.md) for toolchain files and separately
-pinned research/grammar dependencies.
+[development setup](docs/DEVELOPMENT.md) for mise tasks, native toolchain
+version files, and optional Tree-sitter grammars. Mise is a convenience layer;
+Cargo, npm, and pip remain usable independently.
 
 For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
 Python research requirements,
@@ -72,10 +79,10 @@ See [CLI](docs/CLI.md), [repository views](docs/REPOSITORY_VIEWS.md), and
 ## Self-analysis (dogfooding)
 
 A dedicated [self-analysis workflow](docs/SELF_ANALYSIS.md) uses
-**rust-analyzer SCIP** for resolved Rust symbols and references, and keeps
-optional Tree-sitter observations separate for non-Rust navigation. The
-existing SCIP reader audits all referenced source against pinned Git objects.
-Findings remain advisory and **never** authorize skipping tests.
+**rust-analyzer SCIP** for resolved Rust symbols and references, while
+Tree-sitter remains a separate syntax observation path. The SCIP consumer
+checks indexed source against pinned Git, and its results are advisory:
+they **never** authorize skipping tests.
 
 ## Multi-language syntax parsing
 
@@ -108,10 +115,9 @@ Parsed imports can be mapped to scoped, Git-bound file candidates with
 `excession syntax resolve --repo "$REPO" --report /tmp/syntax.json`.
 A separate `syntax resolve-audit` command independently replays the mapping.
 Go, JS/TS and Python use language-specific conservative path rules.
-**Rust is intentionally excluded:** use rust-analyzer's SCIP index instead
-of handwritten Rust path matching. Ambiguous, external, configuration-dependent
-and unsupported cases remain explicit. These are navigation candidates, not
-compiler-established edges.
+Rust intentionally has no handwritten import resolver: use rust-analyzer SCIP.
+Ambiguous, external, configuration-dependent and unsupported cases remain
+explicit. These are navigation candidates, not compiler-established edges.
 
 ## Refactoring candidates
 
@@ -120,11 +126,27 @@ deterministic, unverified import-cycle and repeated-body hypotheses from the
 existing Python/JavaScript index. `excession refactor audit` replays the
 indexed query against Git source identities and checks a saved report. It does
 not reparse semantic relations, prove equivalence, or modify source.
-An optional SCIP decoder JSON input enables language-native semantic-reference
-hypotheses without adding a Protobuf decoder or language parser to Rust.
-For nested Rust projects, use `--source-prefix core` to validate upstream
-rust-analyzer paths against repository-root Git identities.
+An optional decoded SCIP input enables language-native reference hypotheses
+without a custom Protobuf decoder or Rust language parser. For nested Rust
+projects, use `--source-prefix core` to bind index paths to repository-root Git.
 See [refactoring hypotheses](docs/REFACTORING.md).
+
+## Integrated compiler-backed discovery
+
+For supported Go, Rust and JS/TS projects, run the trusted-local language
+resolver and source-bound comparison together:
+
+```sh
+excession syntax native-run --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --entry src/main.rs --language rust --trusted-local true
+```
+
+The compiler runs only **after** cheap report and Git-revision checks.
+Output preserves the actual native input declaration, runtime statistics and
+a Git-backed boundary report with unresolved and divergent scopes. This is
+trusted-local parsing, not sandboxing or independently attested behavior.
 
 ## Native declaration boundary
 

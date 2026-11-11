@@ -17,9 +17,11 @@ The parser package is optional and must be installed into the Python environment
 used by the Excession executable:
 
 ```sh
-python3 -m pip install --require-hashes --only-binary=:all: -r requirements/locks/syntax-linux-cp313-x86_64.txt
-python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust","go","c","java","python","javascript","typescript"])'
-python3 tools/grammar_artifacts.py verify
+mise run syntax-setup       # fast default: Rust, Go, C, Java, Python, JS/TS
+mise run syntax-setup-all   # opt-in: also C++, Kotlin, C#, Ruby, PHP,
+                            # Swift, Scala, shell, Elixir, JSON/YAML/TOML/SQL
+# Without mise, install requirements/syntax.txt and prefetch grammars with
+# the tree-sitter-language-pack Python API in a trusted setup step.
 ```
 
 Prefetch happens in a **trusted setup step**, before analysis. Scans never
@@ -54,6 +56,9 @@ reported as examined. Non-UTF-8 sources are refused.
 The current initial extension selection covers Python, JS/TS, Rust, Go, C/C++,
 Java, Kotlin, C#, Ruby, PHP, Swift, Scala, shell, Elixir, JSON, YAML, TOML, and
 SQL. Actual parser availability and extraction depth differ by language.
+Prefetching a grammar does not install its language compiler or establish
+compiler-level dependency resolution. Optional compiler environments are
+listed in [development setup](DEVELOPMENT.md#other-supported-languages).
 
 Each included file has an explicit status:
 
@@ -139,9 +144,8 @@ observation. Missing imports are never treated as evidence of no dependency.
   nearest `go.mod`. All tracked non-test `.go` package files are candidates;
   build constraints, workspaces, vendoring, generated files and CGO are not
   evaluated.
-- **Rust:** no handcrafted resolver. Source syntax remains observable, but
-  only rust-analyzer SCIP is used for resolved Rust symbols/references.
-  This avoids guessing `crate::` paths, macro expansions or module ownership.
+- **Rust:** no handwritten import or module resolver. Tree-sitter retains
+  syntax observations; resolved Rust semantics come from rust-analyzer SCIP.
 
 A candidate edge means only that a **plausible tracked path** matches a parsed
 import. Native compiler resolution and complete build graphs remain separate
@@ -204,13 +208,54 @@ Do not treat this report as independent worker attestation, a verified
 behavioral guarantee, or permission to skip tests. Any compiler-backed
 promotion needs authenticated runtime evidence in a later contract.
 
+## Execute native discovery and compare immediately
+
+`native-run` is the integrated, opt-in path. Rust stages bounded Git
+source blobs and invokes the existing language-native adapters; the produced
+`excession.input-declaration.v1` is passed **in memory** to the boundary
+checker, with no intermediate user-editable declaration file.
+
+```sh
+excession syntax native-run --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --entry src/go/main.go --language go \
+  --trusted-local true > /tmp/native-run.json
+```
+
+The command accepts `go`, `javascript`, and `typescript`.
+Rust's native-run path was removed in favor of rust-analyzer SCIP.
+It first rejects malformed syntax/resolution reports, mismatched revisions,
+out-of-scope subjects, dirty checkouts, and incorrect Git trees. Only then
+does it reconstruct the pinned snapshot and execute the compiler-backed
+resolver. The returned JSON carries `declaration`, `stats` and `boundary`,
+which includes Git blob identities and any scope differences. The optional
+Tree-sitter grammars must be installed ahead of time for full replay.
+
+The reusable Rust authority and narrow Python language adapters originated
+from the ongoing [Rust-native discovery PR #32](https://github.com/laurajoyhutchins/excession/pull/32).
+This command does not import the remainder of that PR's stacked historical
+transport and evidence machinery.
+
+**Trust boundary:** `--trusted-local true` is mandatory because compiler
+parsers operate on untrusted source and this is not process isolation.
+The result says `TRUSTED_LOCAL_NOT_ATTESTED`: it records a locally observed
+compiler invocation and toolchain metadata, **not** an independently attested
+remote execution or complete runtime dependency set. Its static-versus-native
+comparison is still a scoped hypothesis, never permission to skip tests.
+
+To audit its stable boundary separately, extract the `declaration` and
+`boundary` members into individual JSON files and use `native-audit`.
+The `stats.elapsed_ns` timing is deliberately not a reproducible identity.
+
 ## Safety and reproducibility
 
 The adapter runs trusted, locally installed parser binaries and grammars, but
 does not run source under examination. Do not load an unreviewed grammar
-artifact on a shared privileged host. The package version alone is not a
-cryptographic grammar binary attestation. For an independently reproducible
-environment, pin downloaded parser artifacts and their hashes externally.
+artifact on a shared privileged host. The package version records the parser
+distribution, not independently authenticated grammar source code. Source
+authentication still comes from Excession's Git-bound replay and audit;
+do not mistake a successful parse for evidence completeness.
 
 Run unit tests without optional grammars:
 

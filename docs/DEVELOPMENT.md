@@ -1,77 +1,105 @@
 # Development environment
 
-Excession is a Rust application with small Python, JavaScript/TypeScript, and
-Go research adapters. Do not introduce a second Rust package or a Python
-application packaging layer just to manage the tests.
+Excession uses [mise](https://mise.jdx.dev/) for developer toolchains and tasks.
+It does not need an additional package-management or OS-attestation layer.
 
-## Pinned tools
+## Setup
 
-| Tool | Version source | Purpose |
+Install mise once, then in the repository checkout run:
+
+```sh
+mise install
+mise run setup
+mise run check
+mise run cli
+```
+
+`mise.toml` opts into the language-native version files so versions are not
+declared twice:
+
+| Runtime | Authoritative version file |
+| --- | --- |
+| Rust (including rustfmt and Clippy) | `rust-toolchain.toml` |
+| Python | `.python-version` |
+| Node.js | `.node-version` |
+| Go, optional adapter | `.go-version` |
+
+Mise creates a local `.venv` for Python dependencies, installs the ordinary
+pinned `requirements/research.txt`, and runs `npm ci` with the existing
+integrity-checked `package-lock.json`. Cargo keeps its `core/Cargo.lock`;
+Rust build and test commands use `--offline --locked`.
+
+Optional Go tests: `mise run go-check`. Install the default syntax grammars
+with `mise run syntax-setup`, or every language covered by Excession's
+recognized source extensions with `mise run syntax-setup-all`. The pinned
+parser packages remain in `requirements/syntax.txt`. Grammars are
+prefetched in a trusted setup step; scans and audits never download them.
+
+## Other supported languages
+
+These toolchains are optional **mise configuration environments**. They are
+not installed by ordinary `mise install`, `mise run setup`, or CI's
+default jobs. Choose only what a particular repository actually needs:
+
+| Source language | Optional environment | Toolchain |
 | --- | --- | --- |
-| Rust 1.99.1 | `rust-toolchain.toml` | CLI, library, Clippy, rustfmt |
-| Python 3.13.5 | `.python-version` | Standard-library integration tests and optional syntax bridge |
-| Node 22.16.0 / npm 10.9.2 | `.node-version`, `package.json` | Local TypeScript compiler used by JS adapters |
-| Go 1.26.11 | `.go-version` | Optional, standard-library-only Go research adapter |
+| Java, Kotlin, Scala | `jvm` | Temurin JDK 25 |
+| C# | `dotnet` | .NET SDK 10 |
+| Ruby | `ruby` | Ruby 4.0 |
+| PHP | `php` | PHP 8.4 via mise's registry |
+| Elixir | `beam` | Erlang/OTP 29 + Elixir 1.20.4 compiled for OTP 29 |
+| Swift | `swift` | Swift 6.4 (Linux/macOS only) |
+| C/C++ | `native` | CMake 3.31; native system Clang/GCC |
+| Bash/shell | none | Existing shell on the host |
+| JSON, YAML, TOML, SQL | none | No language runtime needed for syntax |
 
-Native SQLite and OpenSSL libraries, the Git executable, and the operating
-system are still system dependencies. These files pin language toolchains, not
-a complete hermetic OS image.
-
-## Setup and checks
-
-```sh
-npm ci --ignore-scripts --no-audit --no-fund
-python3 -m pip install --require-hashes --only-binary=:all: -r requirements/locks/research-linux-cp313-x86_64.txt
-make check
-make go-check                  # optional Go research adapter
-```
-
-The Rust dependency graph is empty; `core/Cargo.lock` remains committed, and
-Cargo commands use both `--locked` and `--offline`. The JS adapters import
-`typescript` from the repository's locked `node_modules`, never from a
-machine-global npm installation. `npm ci` verifies the tarball integrity
-recorded in `package-lock.json`.
-
-The direct Python integration suite uses `unittest`, but Rust adversarial
-checks run a Python research probe that imports pytest. Install the pinned
-`requirements/locks/research-linux-cp313-x86_64.txt` before `make check` (as CI does). The optional Tree-sitter adapter is installed
-separately:
+For example:
 
 ```sh
-python3 -m pip install --require-hashes --only-binary=:all: -r requirements/locks/syntax-linux-cp313-x86_64.txt
-python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java", "python", "javascript", "typescript"])'
-python3 tools/grammar_artifacts.py verify
+mise -E jvm install
+mise -E jvm exec -- javac -version
+mise -E dotnet install
+mise -E dotnet exec -- dotnet --info
+mise -E beam install
+mise -E beam exec -- elixir --version
 ```
 
-Do not download grammars during analysis. Grammar caches remain local and
-are not source-controlled. Python version pins are not wheel-hash locks, and
-a package version alone does not authenticate grammar binaries. Store
-trusted parser artifacts and their hashes externally when the exact compiled
-grammar bytes must be reproduced.
+`mise -E jvm,swift install` can combine profiles on a supported host.
+Kotlin and Scala compilers and dependency resolution belong to each
+inspected project's Gradle/Maven/sbt configuration, not to Excession.
+C/C++ semantics depend on a concrete compiler and build configuration,
+not merely the installed CMake version. Swift and native/plug-in backed
+toolchains have platform-specific installation requirements.
 
-For CI, the reviewed wheel SHA-256 lock is enforced with `--require-hashes`
-and `--only-binary` on CPython 3.13 Linux x86_64. Other operating systems
-need independent locks. After trusted grammar prefetch,
-`tools/grammar_artifacts.py record` inventories the native grammar bytes;
-`verify` requires the committed hash manifest offline, with no download.
-`make native-preflight` records loaded SQLite/OpenSSL versions and their
-SHA-256 digests. This is a native ABI observation, not an immutable OS lock.
+**Support levels differ:** the optional Tree-sitter grammar provides syntax
+observations only. JVM, .NET, Ruby, PHP, BEAM, and Swift toolchains are
+conveniences for native analysis and are *not* Excession-verified dependency
+resolvers. Only language-specific implementations with independent replay
+may promote dependency relationships. Missing parsers or build contexts
+remain explicit, not evidence of absent dependencies.
 
-Run `make rust-check`, `make python-check`, or `make node-check` for a
-focused loop; `make check` runs those checks together. For JUnit XML reports,
-install `cargo-nextest` 0.9.151 and run `make junit`. This emits a Rust
-report at `core/target/nextest/ci/junit.xml` and a Python report at
-`test-results/python.xml`, without replacing the ordinary test commands. Go is isolated
-behind `make go-check` and its path-filtered CI workflow. Generated SQLite
-indexes, test output, and local packages are ignored; checked-in fixture
-bundles and benchmark receipts are intentionally retained.
+Mise is not required to build Excession. Developers can run the underlying
+`make`, `cargo`, `npm`, and Python commands directly with compatible tools.
+Git and the system SQLite/OpenSSL development/runtime libraries are still
+system dependencies; this setup does not claim a hermetic OS image.
+
+## Test reports
+
+`make check` runs Rust format/Clippy/tests, Python integration checks, and
+the JavaScript adapter tests. For JUnit XML, install `cargo-nextest` 0.9.151
+and use `make junit` after `mise run setup`. Reports are written to
+`core/target/nextest/ci/junit.xml` and `test-results/python.xml`. CI keeps
+those artifacts on failure.
 
 ## Benchmark reports
 
-`python3 benchmarks/reporting.py validate path/to/report.json` checks the
-Draft 2020-12 schema, report content digest, and recorded raw-artifact hashes.
-The validator's pins are in `requirements/research.txt`, with CI wheel
-SHA-256 hashes in `requirements/locks/research-linux-cp313-x86_64.txt`.
-`make benchmark-schema-check` runs conversion and negative-case tests.
-Relational runs publish `report.json`; native CI wraps raw calibrations
-as separate `*.report.json` files. No unavailable measurements are invented.
+`excession benchmark report --kind relational --directory RESULTS` builds a
+schema-validated Rust report from existing relational receipts and source
+bundles. `excession benchmark report --kind native --directory . --input
+native-calibration.json` produces a separate native calibration envelope.
+
+`excession benchmark validate --report path/to/report.json` verifies the
+Draft 2020-12 schema, content digest, and referenced raw-artifact hashes.
+The Rust `jsonschema` dependency is pinned in `core/Cargo.lock`.
+`make benchmark-schema-check` runs report conversion and negative-case tests.
+This verification checks benchmark evidence, not the installed environment.

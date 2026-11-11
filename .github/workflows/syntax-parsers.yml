@@ -6,16 +6,19 @@ on:
       - '.github/workflows/syntax-parsers.yml'
       - 'rust-toolchain.toml'
       - '.python-version'
+      - 'mise.toml'
+      - 'mise.*.toml'
+      - 'tests/test_polyglot_grammars.py'
       - 'requirements/syntax.txt'
       - 'requirements/research.txt'
-      - 'requirements/locks/**'
-      - 'tools/grammar_artifacts.py'
-      - 'tests/test_grammar_artifacts.py'
       - 'core/adapters/tree_sitter.py'
       - 'core/src/syntax.rs'
       - 'core/src/preflight.rs'
       - 'core/src/syntax_resolution.rs'
       - 'core/src/native_boundary.rs'
+      - 'core/src/native_discovery.rs'
+      - 'tools/native_language_adapter.py'
+      - 'tools/excession_ts_resolve.cjs'
       - 'core/src/git.rs'
       - 'core/src/adapter.rs'
       - 'core/src/bin/excession.rs'
@@ -25,6 +28,7 @@ on:
       - 'tests/test_preflight_cli.py'
       - 'tests/test_syntax_resolution_cli.py'
       - 'tests/test_native_boundary_cli.py'
+      - 'tests/test_native_inline_cli.py'
       - 'docs/SYNTAX_PARSERS.md'
   workflow_dispatch:
 
@@ -33,36 +37,36 @@ permissions:
 
 jobs:
   grammar-smoke:
-    name: Rust, Go, C, Java grammar smoke
+    name: Multi-language syntax grammar smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
+      MISE_ENABLE_TOOLS: rust,python,node,go
       TREE_SITTER_LANGUAGE_PACK_CACHE_DIR: /tmp/excession-grammars
     steps:
       - uses: actions/checkout@v4
-      - name: Activate pinned Rust toolchain
+      - uses: jdx/mise-action@v5
+      - name: Confirm Rust toolchain
         run: rustup show active-toolchain
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: .python-version
       - name: Fast grammar-independent adapter contract tests
+        run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
+      - name: Prefetch all recognized syntax grammars with mise
+        run: mise run syntax-setup-all
+      - name: Check optional mise profiles without installing extra toolchains
         run: |
-          python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
-          python3 -m unittest discover -s tests -p test_grammar_artifacts.py -v
-      - name: Install SHA-256-locked parser and research wheels
-        run: >-
-          python3 -m pip install --disable-pip-version-check --require-hashes
-          --only-binary=:all:
-          -r requirements/locks/research-linux-cp313-x86_64.txt
-          -r requirements/locks/syntax-linux-cp313-x86_64.txt
-      - name: Trusted grammar prefetch
-        run: python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java", "python", "typescript", "javascript"])'
-      - name: Authenticate cached grammar library SHA-256 hashes offline
-        run: python3 tools/grammar_artifacts.py verify
+          for profile in jvm dotnet ruby php beam swift native; do
+            mise -E "$profile" config >/dev/null
+          done
+      - name: Check polyglot parser availability (offline)
+        run: python3 -m unittest discover -s tests -p test_polyglot_grammars.py -v
+      - name: Prefetch locked Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Install locked TypeScript compiler API
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build Excession CLI
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Run parser unit and Git integration tests (JUnit XML)
-        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py tests/test_preflight_cli.py tests/test_native_boundary_cli.py --junitxml=test-results/syntax-parsers.xml
+        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py tests/test_preflight_cli.py tests/test_native_boundary_cli.py tests/test_native_inline_cli.py --junitxml=test-results/syntax-parsers.xml
       - name: Retain JUnit test report
         if: always()
         uses: actions/upload-artifact@v4

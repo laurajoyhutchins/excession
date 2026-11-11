@@ -95,6 +95,18 @@ This reports missing translation units explicitly, preserves configuration
 differences, and does not claim complete dynamic or cross-TU call resolution.
 See [configured graph assembly](docs/CONFIGURED_GRAPHS.md).
 
+For both CMake and Kbuild, the recommended entrypoint is now the
+**language-neutral graph interface**, with consistent import and queries:
+
+```sh
+excession graph import --build build --target my-target
+excession graph ls --build build
+excession graph deps --build build --node my-target
+```
+
+See [the common graph interface](docs/GRAPH.md) for provider detection,
+short node names, source-to-artifact paths, provenance, and limitations.
+
 For Linux Kbuild, use its native saved command records and archive
 membership rather than CMake's File API:
 

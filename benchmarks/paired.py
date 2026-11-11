@@ -35,6 +35,7 @@ ROLES = {
     "tests": {"indexed-test"},
 }
 SCHEMA = "excession.benchmark.calibration.v1"
+ARMS = ("graph", "rust_graph", "view")
 
 
 def digest(path: Path) -> str:
@@ -165,7 +166,7 @@ def output_counts(data: dict[str, Any], arm: str, kind: str) -> dict[str, int]:
     A view emits its entire multi-role manifest even for a focused question.
     The number of selected files is not its raw response size.
     """
-    if arm == "graph":
+    if arm in ("graph", "rust_graph"):
         emitted = data["source_paths"]
         if not isinstance(emitted, list) or not all(isinstance(p, str) for p in emitted):
             raise ValueError("invalid graph output")
@@ -245,12 +246,17 @@ def run(args: argparse.Namespace) -> None:
     cache: dict[str, int] = {}
     for pair_index, (task, repeat) in enumerate(order):
         pair: dict[str, dict[str, Any]] = {}
-        for arm in (("graph", "view") if (repeat + pair_index) % 2 == 0 else ("view", "graph")):
+        rotation = (repeat + pair_index) % len(ARMS)
+        for arm in ARMS[rotation:] + ARMS[:rotation]:
             command_line = ([
                 sys.executable, str(Path(__file__).resolve()), "graph-query",
                 "--db", str(db_path), "--name", args.name,
                 "--revision", revision, "--seed", task["seed"], "--kind", task["kind"],
             ] if arm == "graph" else [
+                str(binary), "inspect", "graph", "--db", str(db_path),
+                "--name", args.name, "--rev", revision, "--seed", task["seed"],
+                "--kind", task["kind"],
+            ] if arm == "rust_graph" else [
                 str(binary), "view", "deps", "--db", str(db_path),
                 "--name", args.name, "--rev", revision, "--seed", task["seed"],
             ])
@@ -269,7 +275,7 @@ def run(args: argparse.Namespace) -> None:
             else:
                 try:
                     data = json.loads(stdout)
-                    paths = data["source_paths"] if arm == "graph" else view_paths(
+                    paths = data["source_paths"] if arm in ("graph", "rust_graph") else view_paths(
                         data, revision, task["seed"], task["kind"]
                     )
                     if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
@@ -292,18 +298,18 @@ def run(args: argparse.Namespace) -> None:
                     record["error"] = str(exc)[:1500]
             rows.append(record)
             pair[arm] = record
-        assert set(pair) == {"graph", "view"}
+        assert set(pair) == set(ARMS)
         parity = (
-            pair["graph"]["source_paths"] == pair["view"]["source_paths"]
-            if all(pair[arm]["status"] == "ok" for arm in ("graph", "view"))
+            pair["graph"]["source_paths"] == pair["rust_graph"]["source_paths"] == pair["view"]["source_paths"]
+            if all(pair[arm]["status"] == "ok" for arm in ARMS)
             else None
         )
-        for arm in ("graph", "view"):
+        for arm in ARMS:
             pair[arm]["paired_source_parity"] = parity
     with (output / "trials.jsonl").open("w", encoding="utf-8") as fp:
         for record in rows:
             fp.write(json.dumps(record, sort_keys=True) + "\n")
-    grouped = {arm: [r for r in rows if r["arm"] == arm] for arm in ("graph", "view")}
+    grouped = {arm: [r for r in rows if r["arm"] == arm] for arm in ARMS}
     successful = {arm: [r for r in records if r["status"] == "ok"] for arm, records in grouped.items()}
 
     def median(arm: str, field: str) -> float | None:

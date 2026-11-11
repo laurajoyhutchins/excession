@@ -60,14 +60,13 @@ source revisions, executable digest, independently assessed checks, unit-bearing
 metrics, and SHA-256 digests of referenced artifacts.
 
 ```sh
-python3 -m pip install -r requirements/research.txt
 make benchmark-schema-check
-python3 benchmarks/reporting.py validate /tmp/excession-relational-v1/report.json
-python3 benchmarks/reporting.py build-native . native-calibration.json
-python3 benchmarks/reporting.py validate native-calibration.report.json
+core/target/debug/excession benchmark validate --report /tmp/excession-relational-v1/report.json
+core/target/release/excession benchmark report --kind native --directory . --input native-calibration.json
+core/target/debug/excession benchmark validate --report native-calibration.report.json
 ```
 
-The CLI refuses missing or tampered artifacts, unavailable measurements
+The Rust CLI refuses missing or tampered artifacts, unavailable measurements
 encoded as zeros, duplicate metrics, unsafe paths, and false success labels.
 Report IDs are digests, **not signatures**. A native calibration explicitly
 declares a shared-index oracle, while relational experiments declare

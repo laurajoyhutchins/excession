@@ -90,19 +90,31 @@ def percentile(values: list[float]) -> dict[str, float]:
 
 
 def tamper_refusals(binary_a: Path, binary_b: Path, task: dict, work: Path) -> list[dict]:
-    """Corrupt copied index metadata; neither binary may accept a view."""
+    """Replace claims with other valid indexed objects where possible.
+
+    The dependency-target case tests a missing reference, not authenticity
+    of plausible semantic edges, which Git tree identity cannot establish.
+    """
     commit = task["commit"]
     source = Path(task["db"])
     cases = [
         ("module_blob_claim",
-         "UPDATE module SET blob_oid=? WHERE name='h11._connection' AND commit_oid=?",
-         ("0" * 40, commit)),
+         """UPDATE module SET blob_oid=(
+                SELECT blob_oid FROM module WHERE name='h11._headers' AND commit_oid=?
+            ) WHERE name='h11._connection' AND commit_oid=?""",
+         (commit, commit)),
         ("tree_entry_oid",
-         "UPDATE tree_entry SET oid=? WHERE path='h11/_connection.py' AND commit_oid=?",
-         ("0" * 40, commit)),
+         """UPDATE tree_entry SET oid=(
+                SELECT oid FROM tree_entry
+                WHERE path='h11/_headers.py' AND commit_oid=?
+            ) WHERE path='h11/_connection.py' AND commit_oid=?""",
+         (commit, commit)),
         ("revision_root_tree",
-         "UPDATE revision SET tree_oid=? WHERE commit_oid=?",
-         ("0" * 40, commit)),
+         """UPDATE revision SET tree_oid=(
+                SELECT oid FROM tree_entry
+                WHERE kind='tree' AND commit_oid=? LIMIT 1
+            ) WHERE commit_oid=?""",
+         (commit, commit)),
         ("missing_dependency_target",
          "UPDATE dependency SET target_name=? WHERE source_name='h11._connection' AND commit_oid=?",
          ("missing.module", commit)),

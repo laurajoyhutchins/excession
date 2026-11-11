@@ -1,0 +1,35 @@
+diff --git a/h11/_headers.py b/h11/_headers.py
+index b97d020b634a9f47f5ae6aa3b30e2bd13a6c48c4..31da3e2b23b55a624b36f105e62a6902e63286aa 100644
+--- a/h11/_headers.py
++++ b/h11/_headers.py
+@@ -12,6 +12,8 @@
+ except ImportError:
+     from typing_extensions import Literal  # type: ignore
+ 
++CONTENT_LENGTH_MAX_DIGITS = 20  # allow up to 1 billion TB - 1
++
+ 
+ # Facts
+ # -----
+@@ -173,6 +175,8 @@ def normalize_and_validate(
+                 raise LocalProtocolError("conflicting Content-Length headers")
+             value = lengths.pop()
+             validate(_content_length_re, value, "bad Content-Length")
++            if len(value) > CONTENT_LENGTH_MAX_DIGITS:
++                raise LocalProtocolError("bad Content-Length")
+             if seen_content_length is None:
+                 seen_content_length = value
+                 new_headers.append((raw_name, name, value))
+diff --git a/h11/tests/test_headers.py b/h11/tests/test_headers.py
+index ba53d088f6f8d22dede47873a03b70a7103da7ea..b57274cbbfee8fce3e89f012b6d0f4206f768f67 100644
+--- a/h11/tests/test_headers.py
++++ b/h11/tests/test_headers.py
+@@ -74,6 +74,8 @@ def test_normalize_and_validate() -> None:
+         )
+     with pytest.raises(LocalProtocolError):
+         normalize_and_validate([("Content-Length", "1 , 1,2")])
++    with pytest.raises(LocalProtocolError):
++        normalize_and_validate([("Content-Length", "1" * 21)])  # 1 billion TB
+ 
+     # transfer-encoding
+     assert normalize_and_validate([("Transfer-Encoding", "chunked")]) == [

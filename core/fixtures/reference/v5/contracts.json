@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repo": "laurajoyhutchins/h11",
+    "commit": "62c5068c971579d61fa1b55373390e12f25fd856",
+    "tree": "5a1cacdb9d0d6e8d18e8161924ae18130da6c130",
+    "object_format": "sha1"
+  },
+  "scope": "HTTP/1.1 chunked transfer-body codecs in h11; not a complete HTTP protocol specification",
+  "contracts": [
+    {
+      "id": "http1.chunked.reader",
+      "entrypoint": "h11._readers.ChunkedReader",
+      "introduced_at": "chunked-reader",
+      "implementation": "h11/_readers.py",
+      "blob_sha": "576804cc282032526e0a932c9853d586a094bad0",
+      "import_closure": [
+        "h11/_abnf.py",
+        "h11/_events.py",
+        "h11/_headers.py",
+        "h11/_readers.py",
+        "h11/_receivebuffer.py",
+        "h11/_state.py",
+        "h11/_util.py"
+      ],
+      "requires": [
+        "Input buffer contains bytes of a valid HTTP/1.1 chunked body, optionally fragmented across calls",
+        "Caller drains reader until an incomplete read or EndOfMessage"
+      ],
+      "guarantees": [
+        "Concatenated Data payloads exactly equal decoded body bytes, without chunk framing",
+        "Complete valid input terminates with EndOfMessage and preserves parsed trailers",
+        "Fragmentation boundaries do not change the payload or end-of-message observation",
+        "Invalid chunk size and footer are rejected",
+        "Premature EOF is rejected"
+      ],
+      "oracle": "reader_oracles.py",
+      "mutants": [
+        "chunk-length-plus-one",
+        "discard-only-lf",
+        "drop-trailers"
+      ]
+    },
+    {
+      "id": "http1.chunked.writer",
+      "entrypoint": "h11._writers.ChunkedWriter",
+      "introduced_at": "chunked-writer",
+      "implementation": "h11/_writers.py",
+      "blob_sha": "939cdb912a9debaea07fbf3a9ac04549c44d077c",
+      "import_closure": [
+        "h11/_abnf.py",
+        "h11/_events.py",
+        "h11/_headers.py",
+        "h11/_state.py",
+        "h11/_util.py",
+        "h11/_writers.py"
+      ],
+      "requires": [
+        "Zero or more Data events followed by EndOfMessage",
+        "Data payloads and trailers satisfy h11 event constructors"
+      ],
+      "guarantees": [
+        "Nonempty Data is emitted as lowercase hexadecimal size, CRLF, exact payload and CRLF",
+        "Empty Data emits no chunk",
+        "EndOfMessage emits terminal zero chunk and serialized trailers",
+        "Different nonempty Data events remain separately framed chunks"
+      ],
+      "oracle": "writer_oracles.py",
+      "mutants": [
+        "chunk-length-plus-one",
+        "omit-data-footer-cr",
+        "wrong-terminal-chunk"
+      ]
+    },
+    {
+      "id": "http1.chunked.composition",
+      "entrypoint": "ChunkedWriter -> ChunkedReader",
+      "introduced_at": "codec-composition",
+      "implementation": null,
+      "blob_sha": null,
+      "import_closure": [
+        "h11/_abnf.py",
+        "h11/_events.py",
+        "h11/_headers.py",
+        "h11/_readers.py",
+        "h11/_receivebuffer.py",
+        "h11/_state.py",
+        "h11/_util.py",
+        "h11/_writers.py"
+      ],
+      "requires": [
+        "Reader and writer contracts hold",
+        "Input event sequences have one EndOfMessage"
+      ],
+      "guarantees": [
+        "For bounded vectors the reader reconstructs the writer's concatenated payload and terminates exactly once"
+      ],
+      "oracle": "composition_oracles.py",
+      "mutants": []
+    }
+  ],
+  "nodes": [
+    {
+      "id": "foundation",
+      "parents": [],
+      "add_paths": [
+        "LICENSE.txt",
+        "h11/_abnf.py",
+        "h11/_events.py",
+        "h11/_headers.py",
+        "h11/_receivebuffer.py",
+        "h11/_state.py",
+        "h11/_util.py"
+      ],
+      "contract": null
+    },
+    {
+      "id": "chunked-reader",
+      "parents": [
+        "foundation"
+      ],
+      "add_paths": [
+        "h11/_readers.py"
+      ],
+      "contract": "http1.chunked.reader"
+    },
+    {
+      "id": "chunked-writer",
+      "parents": [
+        "foundation"
+      ],
+      "add_paths": [
+        "h11/_writers.py"
+      ],
+      "contract": "http1.chunked.writer"
+    },
+    {
+      "id": "codec-composition",
+      "parents": [
+        "chunked-reader",
+        "chunked-writer"
+      ],
+      "add_paths": [],
+      "contract": "http1.chunked.composition"
+    },
+    {
+      "id": "connection",
+      "parents": [
+        "codec-composition"
+      ],
+      "add_paths": [
+        "h11/_connection.py",
+        "h11/__init__.py",
+        "h11/_version.py",
+        "h11/py.typed"
+      ],
+      "contract": null
+    },
+    {
+      "id": "complete",
+      "parents": [
+        "connection"
+      ],
+      "add_paths": [],
+      "all_original_blobs": true,
+      "contract": null
+    }
+  ],
+  "limitations": [
+    "Module-level import closure is not a minimal semantic implementation",
+    "Finite deterministic oracles and mutation scores are not formal proofs",
+    "Git graph is one presentation of the contract DAG, not unique or original chronology",
+    "Synthetic first commit retains a parent in real upstream history because connector commit creation requires a parent",
+    "Oracles are external research evidence, not injected into the final upstream Git tree"
+  ],
+  "tests": {
+    "local_environment": "CPython 3.13.5",
+    "independent_reader_oracle_tests": 5,
+    "independent_writer_oracle_tests": 3,
+    "composition_oracle_tests": 1,
+    "semantic_mutants_reader": 3,
+    "semantic_mutants_writer": 3
+  }
+}

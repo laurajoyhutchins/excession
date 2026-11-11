@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "source_commit": "62c5068c971579d61fa1b55373390e12f25fd856",
+  "purpose": "Explicit contract implication relationships, grounded in independently published h11 contract specifications and bounded oracle evidence, not inferred from source import graph or Git parents.",
+  "claims": [
+    {
+      "id": "http1.chunked.reader",
+      "modules": [
+        "h11._readers"
+      ],
+      "depends_on": [],
+      "evidence_case": "chunked-reader-wire"
+    },
+    {
+      "id": "http1.chunked.writer",
+      "modules": [
+        "h11._writers"
+      ],
+      "depends_on": [],
+      "evidence_case": "chunked-writer-wire"
+    },
+    {
+      "id": "http1.chunked.composition",
+      "modules": [
+        "h11._readers",
+        "h11._writers"
+      ],
+      "depends_on": [
+        "http1.chunked.reader",
+        "http1.chunked.writer"
+      ],
+      "evidence_case": "chunked-codec-composition"
+    }
+  ],
+  "qualification": "This relation file is an explicit semantic assertion: original reader and writer oracles are necessary prerequisites to claiming their composition. It does not follow from branch ordering or structural imports."
+}

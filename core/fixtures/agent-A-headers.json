@@ -1,0 +1,193 @@
+{
+  "claim": "headers",
+  "cross_boundary": [
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    },
+    {
+      "_parsed": false,
+      "headers": "other",
+      "kind": "header-interface"
+    }
+  ],
+  "duration_ms": 1763.41,
+  "exit_code": 0,
+  "failed": 0,
+  "module_origin": "/mnt/data/relgit_two_agents_v9/agent-A-headers/h11/__init__.py",
+  "passed": 3,
+  "pytest": "9.0.2",
+  "python": "3.13.5",
+  "skipped": 0
+}

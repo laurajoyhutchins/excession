@@ -159,10 +159,30 @@ Clang code. It does not require or infer Linux Kbuild semantics. Clang analysis
 is a one-translation-unit observation, not a successful build or complete
 call graph. See [compiler-backed evidence](COMPILER_ANALYSIS.md).
 
+## Configured target graph assembly
+
+Use CMake's File API codemodel and a directory of Clang receipt JSON files
+to join selected target sources, configured target dependencies, generated
+artifacts, preprocessor inputs, declarations, and name-only call candidates:
+
+```sh
+excession graph assemble \
+  --repo /path/to/project --rev HEAD \
+  --build /tmp/cmake-debug --target example \
+  --observations /tmp/clang-receipts --db /tmp/configured.sqlite
+```
+
+Assembly reads existing build/analysis evidence; it does not execute
+the build or invoke Clang. A missing receipt yields explicit partial coverage,
+not a claim of complete dependency resolution. The selected target's graph
+is a configured snapshot, not proof of execution. See
+[configuration-scoped graph assembly](CONFIGURED_GRAPHS.md).
+
 ## Complete command families
 
 - `excession index`: index an exact Git revision and configured dependency roots.
 - `excession analyze clang`: Clang-backed, build-configuration-scoped C/C++ source observations. `kernel clang` is an alias.
+- `excession graph assemble`: reconcile exact Git source blobs, configured CMake target structure and prior Clang receipts into SQLite.
 - `excession refactor suggest|audit`: emit or replay bounded source-bound refactoring hypotheses.
 - `excession inspect dependencies|manifest|impact|review`: query indexed relations. Revision flags accept Git refs such as `HEAD`, resolved to commit IDs.
 - `excession security scan|ingest|audit`: run an installed trusted scanner, or import and independently recheck CodeQL SARIF or Semgrep JSON.

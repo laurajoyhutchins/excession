@@ -5,7 +5,7 @@ use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, compiler_clang, git, graph_baseline, index, kernel, native_boundary, preflight, projection,
+    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kernel, native_boundary, preflight, projection,
     refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
@@ -24,8 +24,10 @@ Usage:
   excession doctor [--json]
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests] [--import-base PATH]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession graph assemble --repo REPO --rev HEAD --build BUILD_DIR
+      --target CMAKE_TARGET --observations JSON_DIRECTORY --db SQLITE
   excession analyze clang --repo REPO --source PATH --compile-db JSON --trusted-local true
-      [--rev HEAD] [--compiler clang|clang++] [--config CONFIG]
+      [--rev HEAD] [--compiler clang|clang++] [--config CONFIG] [--object-prefix PREFIX]
   excession kernel clang --repo REPO --source PATH --compile-db JSON --trusted-local true
       [--rev HEAD] [--compiler clang] [--config .config]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
@@ -470,7 +472,7 @@ fn clang_command(tail: &[String]) -> Result<Response> {
     let opt = Options::parse(
         tail,
         &["repo", "source", "compile-db", "trusted-local"],
-        &["rev", "compiler", "config"],
+        &["rev", "compiler", "config", "object-prefix"],
     )?;
     let default_compiler = if opt.get("source").ends_with(".c") { "clang" } else { "clang++" };
     Ok(json(compiler_clang::scan(
@@ -479,7 +481,10 @@ fn clang_command(tail: &[String]) -> Result<Response> {
         opt.get("source"),
         opt.path("compile-db"),
         opt.get_or("compiler", default_compiler),
-        opt.0.get("config").map(Path::new),
+        compiler_clang::ClangOptions {
+            config: opt.0.get("config").map(Path::new),
+            object_prefix: opt.0.get("object-prefix").map(String::as_str),
+        },
         opt.get("trusted-local"),
     )?))
 }
@@ -507,6 +512,7 @@ fn execute(args: &[String]) -> Result<Response> {
                         | "browse"
                         | "kernel"
                         | "analyze"
+                        | "graph"
                         | "syntax"
                         | "semantic"
                         | "refactor"
@@ -524,6 +530,25 @@ fn execute(args: &[String]) -> Result<Response> {
         {
             Ok(Response::Message(HELP.to_owned()))
         }
+        [top, sub, tail @ ..] if top == "graph" => match sub.as_str() {
+            "assemble" => {
+                let opt = Options::parse(
+                    tail,
+                    &["repo", "build", "target", "observations", "db"],
+                    &["rev"],
+                )?;
+                let db = Db::open(opt.path("db"))?;
+                Ok(json(graph_assembly::assemble(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.path("build"),
+                    opt.get("target"),
+                    opt.path("observations"),
+                    &db,
+                )?))
+            }
+            _ => refuse(format!("unknown graph command: {sub}")),
+        },
         [top, sub, tail @ ..] if top == "analyze" => match sub.as_str() {
             "clang" => clang_command(tail),
             _ => refuse(format!("unknown analysis command: {sub}")),

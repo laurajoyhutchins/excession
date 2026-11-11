@@ -1,0 +1,57 @@
+name: Configured graph assembly
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/configured-graph.yml'
+      - 'core/src/graph_assembly.rs'
+      - 'core/src/lib.rs'
+      - 'core/src/bin/excession.rs'
+      - 'tests/configured_graph_probe.py'
+      - 'docs/CONFIGURED_GRAPHS.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  zlib-debug-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify native build/analysis tools
+        run: |
+          cmake --version | head -n 1
+          ninja --version
+          clang++ --version | head -n 1
+          python3 --version
+      - name: Build Excession without third-party Cargo downloads
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch pinned zlib project
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --filter=blob:none --branch v1.3.1 \
+            https://github.com/madler/zlib.git "$RUNNER_TEMP/zlib"
+          test "$(git -C "$RUNNER_TEMP/zlib" rev-parse HEAD)" = "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf"
+          test -z "$(git -C "$RUNNER_TEMP/zlib" status --porcelain)"
+      - name: Compare configured graph against two real CMake/Ninja builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/configured_graph_probe.py \
+            --repo "$RUNNER_TEMP/zlib" \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --output "$RUNNER_TEMP/configured-graphs"
+          cat "$RUNNER_TEMP/configured-graphs/summary.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload bounded summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-configured-graphs
+          path: ${{ runner.temp }}/configured-graphs/summary.json
+          if-no-files-found: warn
+          retention-days: 7

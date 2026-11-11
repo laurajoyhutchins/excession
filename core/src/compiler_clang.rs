@@ -8,6 +8,12 @@ use std::path::Path;
 
 const MAX_SOURCE: usize = 1024 * 1024;
 
+#[derive(Clone, Copy, Default)]
+pub struct ClangOptions<'a> {
+    pub config: Option<&'a Path>,
+    pub object_prefix: Option<&'a str>,
+}
+
 /// Reparse one tracked C/C++ translation unit with an existing compilation
 /// database. Works for CMake, Meson, Bear, Bazel exports and Linux Kbuild.
 /// This is a trusted-local compiler observation, not build verification.
@@ -17,7 +23,7 @@ pub fn scan(
     path: &str,
     compile_db: &Path,
     compiler: &str,
-    config: Option<&Path>,
+    options: ClangOptions<'_>,
     trusted_local: &str,
 ) -> Result<Value> {
     if trusted_local != "true" {
@@ -57,7 +63,7 @@ pub fn scan(
     if !compile_db.is_file() {
         return refuse("existing compilation database required");
     }
-    let config_json = match config {
+    let config_json = match options.config {
         Some(file) => Value::string(
             file.canonicalize()
                 .map_err(|e| format!("configuration file not readable: {e}"))?
@@ -80,6 +86,10 @@ pub fn scan(
         ),
         ("compiler", Value::string(compiler)),
         ("config", config_json),
+        (
+            "object_prefix",
+            options.object_prefix.map_or(Value::Null, Value::string),
+        ),
         ("trusted_local", Value::Bool(true)),
     ]);
     let observation = adapter::clang_ast(&request)?;
@@ -119,7 +129,7 @@ mod tests {
             "src/main.c",
             Path::new("compile_commands.json"),
             "clang",
-            None,
+            ClangOptions::default(),
             "false",
         );
         assert!(result.unwrap_err().contains("--trusted-local true"));
@@ -133,7 +143,7 @@ mod tests {
             "src/missing.rs",
             Path::new("compile_commands.json"),
             "clang",
-            None,
+            ClangOptions::default(),
             "true",
         );
         assert!(result.unwrap_err().contains("C/C++ translation unit"));

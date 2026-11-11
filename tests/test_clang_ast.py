@@ -121,6 +121,29 @@ class ClangDatabaseTests(unittest.TestCase):
                                 for x in observation["calls"]), observation["calls"])
             self.assertEqual(observation["calls"], clang.analyze(request)["calls"])
 
+    def test_choose_one_compile_command_for_multi_target_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "sample.c").write_text("int main(void) { return 0; }\\n")
+            db = root / "compile_commands.json"
+            entries = [
+                {"directory": str(root), "file": "sample.c",
+                 "arguments": ["clang", "-c", "sample.c", "-o",
+                               "CMakeFiles/example.dir/sample.c.o"]},
+                {"directory": str(root), "file": "sample.c",
+                 "arguments": ["clang", "-c", "sample.c", "-o",
+                               "CMakeFiles/example64.dir/sample.c.o"]},
+            ]
+            db.write_text(json.dumps(entries))
+            source = (root / "sample.c").resolve()
+            with self.assertRaisesRegex(ValueError, "exactly one"):
+                clang.load_command(db, source)
+            _, selected, _, _ = clang.load_command(
+                db, source, "CMakeFiles/example.dir/")
+            self.assertEqual(selected, entries[0])
+            with self.assertRaisesRegex(ValueError, "exactly one"):
+                clang.load_command(db, source, "CMakeFiles/unknown.dir/")
+
     def test_arbitrary_cross_compiler_name_is_only_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

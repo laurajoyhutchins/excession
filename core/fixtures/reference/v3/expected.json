@@ -1,0 +1,36 @@
+{
+  "h11": {
+    "chosen": "original",
+    "costs": {
+      "original": 8.0,
+      "projected": 13.27
+    },
+    "policy": {
+      "cross_boundary_weight": 1.0,
+      "edit_path_weight": 1.0,
+      "future_edits": 100,
+      "merge_conflict_weight": 20.0,
+      "migration_weight": 1.0,
+      "runtime_100ms_weight": 1.0,
+      "runtime_noise_fraction": 0.15
+    },
+    "reason": "Keep the verified baseline: projection has no lower weighted cost or failed verification."
+  },
+  "postcss": {
+    "chosen": "original",
+    "costs": {
+      "original": 80.0,
+      "projected": 88.23
+    },
+    "policy": {
+      "cross_boundary_weight": 1.0,
+      "edit_path_weight": 1.0,
+      "future_edits": 100,
+      "merge_conflict_weight": 20.0,
+      "migration_weight": 1.0,
+      "runtime_100ms_weight": 1.0,
+      "runtime_noise_fraction": 0.15
+    },
+    "reason": "Keep the verified baseline: projection has no lower weighted cost or failed verification."
+  }
+}

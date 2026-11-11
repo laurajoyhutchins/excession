@@ -1,0 +1,72 @@
+diff --git a/postcss/lib/parser.js b/postcss/lib/parser.js
+index 2a16584c7fdf2a9b2f685b220f914b0cf4281e20..f549f56d1d13a75e45f524ceb7543e243b94f998 100755
+--- a/postcss/lib/parser.js
++++ b/postcss/lib/parser.js
+@@ -354,8 +354,11 @@ class Parser {
+       if (prev && prev.type === 'rule' && !prev.raws.ownSemicolon) {
+         prev.raws.ownSemicolon = this.spaces
+         this.spaces = ''
++        // `ownSemicolon` also holds the spaces before the semicolon, but
++        // the position above is the semicolon itself, so the node ends
++        // right after it.
+         prev.source.end = this.getPosition(token[2])
+-        prev.source.end.offset += prev.raws.ownSemicolon.length
++        prev.source.end.offset++
+       }
+     }
+   }
+diff --git a/postcss/test/location.test.ts b/postcss/test/location.test.ts
+index 6c41aeffd83d8a9f6bc2b9888038a6ca36340995..b3db4dca858434e7c5d69ff40acca8f24d9e0c64 100644
+--- a/postcss/test/location.test.ts
++++ b/postcss/test/location.test.ts
+@@ -51,6 +51,50 @@ test('rule', () => {
+   })
+ })
+ 
++test('rule with own semicolon', () => {
++  let source = '.a{};'
++  let css = parse(source)
++
++  let rule = css.first as Rule
++  checkOffset(source, rule, '.a{};')
++  equal(rule.source!.end, {
++    column: 5,
++    line: 1,
++    offset: 5
++  })
++})
++
++test('rule with own semicolon after spaces', () => {
++  let source = '.a{}  ;'
++  let css = parse(source)
++
++  let rule = css.first as Rule
++  checkOffset(source, rule, '.a{}  ;')
++  equal(rule.source!.end, {
++    column: 7,
++    line: 1,
++    offset: 7
++  })
++})
++
++test('rule with own semicolon on the next line', () => {
++  let source = '.a{}\n;\n\n.b{}'
++  let css = parse(source)
++
++  let rule = css.first as Rule
++  checkOffset(source, rule, '.a{}\n;')
++  equal(rule.source!.end, {
++    column: 1,
++    line: 2,
++    offset: 6
++  })
++  equal((css.last as Rule).source!.start, {
++    column: 1,
++    line: 4,
++    offset: 8
++  })
++})
++
+ test('single decl (no semicolon)', () => {
+   let source = '.a{b:c}'
+   let css = parse(source)

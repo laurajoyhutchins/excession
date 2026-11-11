@@ -1,0 +1,26 @@
+{
+  "api_binding": {
+    "rows": 548,
+    "sha256": "ffd3629ccea1d57515157b2f0c150a610770ed4222d79afe1fd8f242b694c11b"
+  },
+  "dependency": {
+    "rows": 1828,
+    "sha256": "ddad6a5acbc6edbc1041201427e6ddc42f1dc9c3de7d87f76532d5d9d1b7078c"
+  },
+  "hazard": {
+    "rows": 12,
+    "sha256": "0094310b2bb5769c1e0cb60ef4ab00c64db83022c5cb473b003bf339cf462535"
+  },
+  "module": {
+    "rows": 400,
+    "sha256": "b1e7f29a085c8387bad315bfecf5d18f1b137914f6f67029d89358ec95bf9724"
+  },
+  "symbol": {
+    "rows": 4576,
+    "sha256": "7cede4f61c579c593ca2bd4602809073f08217345fac8170435b3949209eaa9f"
+  },
+  "tree_entry": {
+    "rows": 720,
+    "sha256": "03fc02d07e2f31865149fda3d0d615afb8a744cdae755c02bcf741d28d27e7d5"
+  }
+}

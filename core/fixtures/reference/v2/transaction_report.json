@@ -1,0 +1,247 @@
+{
+  "foreign_key_violations": [],
+  "h11": {
+    "adapter": "python",
+    "base": "c9ca5038f1b4035109cc835da09bfaab2c3b31de",
+    "checks": [
+      {
+        "detail": {
+          "output": "{\"all\": [\"Connection\", \"NEED_DATA\", \"PAUSED\", \"ConnectionClosed\", \"Data\", \"EndOfMessage\", \"Event\", \"InformationalResponse\", \"Request\", \"Response\", \"CLIENT\", \"CLOSED\", \"DONE\", \"ERROR\", \"IDLE\", \"MUST_CLOSE\", \"SEND_BODY\", \"SEND_RESPONSE\", \"SERVER\", \"SWITCHED_PROTOCOL\", \"ProtocolError\", \"LocalProtocolError\", \"RemoteProtocolError\"], \"conversations\": 100, \"sha256\": \"be71683ade14018bf4e0b664c33473302d45b7bbac6396b429cedaeaf76e2c72\", \"version\": \"0.16.0+dev\"}\n",
+          "returncode": 0
+        },
+        "name": "baseline-runtime-smoke",
+        "passed": true
+      },
+      {
+        "detail": {
+          "checked_moves": 1
+        },
+        "name": "file-modes-preserved",
+        "passed": true
+      },
+      {
+        "detail": {
+          "moves": 1,
+          "rewrites": 6
+        },
+        "name": "rewrite-only-import-literals",
+        "passed": true
+      },
+      {
+        "detail": {
+          "transformed_sources": 12
+        },
+        "name": "parses-generated-code",
+        "passed": true
+      },
+      {
+        "detail": {
+          "output": "{\"all\": [\"Connection\", \"NEED_DATA\", \"PAUSED\", \"ConnectionClosed\", \"Data\", \"EndOfMessage\", \"Event\", \"InformationalResponse\", \"Request\", \"Response\", \"CLIENT\", \"CLOSED\", \"DONE\", \"ERROR\", \"IDLE\", \"MUST_CLOSE\", \"SEND_BODY\", \"SEND_RESPONSE\", \"SERVER\", \"SWITCHED_PROTOCOL\", \"ProtocolError\", \"LocalProtocolError\", \"RemoteProtocolError\"], \"conversations\": 100, \"sha256\": \"be71683ade14018bf4e0b664c33473302d45b7bbac6396b429cedaeaf76e2c72\", \"version\": \"0.16.0+dev\"}\n",
+          "returncode": 0
+        },
+        "name": "runtime-smoke",
+        "passed": true
+      },
+      {
+        "detail": {
+          "baseline_sha256": "f6ffff21be20a67bc23142f2a5de7fb033e46d78fb247f7e2fd21b7128a2ecf5",
+          "projected_sha256": "f6ffff21be20a67bc23142f2a5de7fb033e46d78fb247f7e2fd21b7128a2ecf5"
+        },
+        "name": "differential-behavior",
+        "passed": true
+      },
+      {
+        "detail": {
+          "output": "h11 compatibility OK\n",
+          "returncode": 0
+        },
+        "name": "compatibility-smoke",
+        "passed": true
+      },
+      {
+        "detail": {
+          "tree": "8b2cdd5e4528c3147d48202b47bc6a70b9755574"
+        },
+        "name": "git-tree-readback",
+        "passed": true
+      },
+      {
+        "detail": {
+          "head": "601de6db5e094e22c68fb74a976f5beb75c5a4a0"
+        },
+        "name": "clean-projection",
+        "passed": true
+      },
+      {
+        "detail": {
+          "directories": 4,
+          "exact": true,
+          "mismatches": [],
+          "root_tree": "8b2cdd5e4528c3147d48202b47bc6a70b9755574"
+        },
+        "name": "sqlite-git-reconstruction",
+        "passed": true
+      },
+      {
+        "detail": "all referenced rows present",
+        "name": "foreign-keys",
+        "passed": true
+      },
+      {
+        "detail": {
+          "declarations": 22,
+          "logical": "h11._state",
+          "physical": "h11.protocol._state",
+          "unchanged_body_fingerprints": 22
+        },
+        "name": "logical-declarations-retained",
+        "passed": true
+      }
+    ],
+    "edit_count": 6,
+    "id": "8b0f531844b6522cfd2f55a65115e8ea1caf3266d79f8ffa8de41055f4006801",
+    "indexed_modules": 14,
+    "moves": {
+      "h11._state": {
+        "new": "h11/protocol/_state.py",
+        "old": "h11/_state.py"
+      }
+    },
+    "projection_commit": "601de6db5e094e22c68fb74a976f5beb75c5a4a0",
+    "projection_tree": "8b2cdd5e4528c3147d48202b47bc6a70b9755574",
+    "reconstruction_exact": true,
+    "repo": "h11",
+    "source_syntax_evidence": {
+      "cache_hit": false,
+      "cache_key": "c40d5ab8b07d99edbcc2873f3b831af34c4330a422076be6a69ca7412a87cde2",
+      "checked_source_files": 14,
+      "duration_ms": 26.58,
+      "errors": [],
+      "returncode": 0,
+      "scope": "exact indexed language source blobs"
+    },
+    "source_unchanged": true
+  },
+  "postcss": {
+    "adapter": "javascript",
+    "base": "173614d9cfa4660eddd3d42f55e3fb0ec4659427",
+    "checks": [
+      {
+        "detail": {
+          "output": "{\"sha256\":\"4c6ea5323a778215cb34bce263f33a664c7bce395ad406f471f2f53185d63160\",\"trials\":100,\"exported_type\":\"function\",\"parser_type\":\"function\"}\n",
+          "returncode": 0
+        },
+        "name": "baseline-runtime-smoke",
+        "passed": true
+      },
+      {
+        "detail": {
+          "checked_moves": 1
+        },
+        "name": "file-modes-preserved",
+        "passed": true
+      },
+      {
+        "detail": {
+          "moves": 1,
+          "rewrites": 7
+        },
+        "name": "rewrite-only-import-literals",
+        "passed": true
+      },
+      {
+        "detail": {
+          "transformed_sources": 30
+        },
+        "name": "parses-generated-code",
+        "passed": true
+      },
+      {
+        "detail": {
+          "output": "{\"sha256\":\"4c6ea5323a778215cb34bce263f33a664c7bce395ad406f471f2f53185d63160\",\"trials\":100,\"exported_type\":\"function\",\"parser_type\":\"function\"}\n",
+          "returncode": 0
+        },
+        "name": "runtime-smoke",
+        "passed": true
+      },
+      {
+        "detail": {
+          "baseline_sha256": "9e62127a0318a1270fff91d3611f30bfa71558890afbac85a1b71e3e86074697",
+          "projected_sha256": "9e62127a0318a1270fff91d3611f30bfa71558890afbac85a1b71e3e86074697"
+        },
+        "name": "differential-behavior",
+        "passed": true
+      },
+      {
+        "detail": {
+          "output": "PostCSS compatibility OK\n",
+          "returncode": 0
+        },
+        "name": "compatibility-smoke",
+        "passed": true
+      },
+      {
+        "detail": {
+          "tree": "47bfafbdaee435047c3673c3d8f3fbf7106aad41"
+        },
+        "name": "git-tree-readback",
+        "passed": true
+      },
+      {
+        "detail": {
+          "head": "be0339c42abac5846049550b8290dbe6bf7b4849"
+        },
+        "name": "clean-projection",
+        "passed": true
+      },
+      {
+        "detail": {
+          "directories": 14,
+          "exact": true,
+          "mismatches": [],
+          "root_tree": "47bfafbdaee435047c3673c3d8f3fbf7106aad41"
+        },
+        "name": "sqlite-git-reconstruction",
+        "passed": true
+      },
+      {
+        "detail": "all referenced rows present",
+        "name": "foreign-keys",
+        "passed": true
+      },
+      {
+        "detail": {
+          "declarations": 9,
+          "logical": "postcss.lib.parser",
+          "physical": "postcss.engine.parser",
+          "unchanged_body_fingerprints": 3
+        },
+        "name": "logical-declarations-retained",
+        "passed": true
+      }
+    ],
+    "edit_count": 7,
+    "id": "fa56a3275c45f9cd8106eade8f0f3ab00930b8816eef17027da38339dfd16799",
+    "indexed_modules": 53,
+    "moves": {
+      "postcss.lib.parser": {
+        "new": "postcss/engine/parser.js",
+        "old": "postcss/lib/parser.js"
+      }
+    },
+    "projection_commit": "be0339c42abac5846049550b8290dbe6bf7b4849",
+    "projection_tree": "47bfafbdaee435047c3673c3d8f3fbf7106aad41",
+    "reconstruction_exact": true,
+    "repo": "postcss",
+    "source_syntax_evidence": {
+      "cache_hit": false,
+      "cache_key": "e1b76f63f496b20a76ac4c3aeb2a1ce8bf18d0f9096e8eb005946b93020ddaa4",
+      "checked_source_files": 53,
+      "duration_ms": 558.25,
+      "errors": [],
+      "returncode": 0,
+      "scope": "exact indexed language source blobs"
+    },
+    "source_unchanged": true
+  }
+}

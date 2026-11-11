@@ -1,0 +1,441 @@
+{
+  "claim": "reader",
+  "cross_boundary": [
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "_parsed": false,
+      "headers": "empty",
+      "kind": "header-interface"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "_parsed": false,
+      "headers": "empty",
+      "kind": "header-interface"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "_parsed": false,
+      "headers": "empty",
+      "kind": "header-interface"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "_parsed": false,
+      "headers": "empty",
+      "kind": "header-interface"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__init__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    },
+    {
+      "kind": "reader-method",
+      "name": "ChunkedReader.__call__"
+    }
+  ],
+  "duration_ms": 1261.041,
+  "exit_code": 0,
+  "failed": 0,
+  "module_origin": "/mnt/data/relgit_two_agents_v9/agent-B-reader/h11/__init__.py",
+  "passed": 13,
+  "pytest": "9.0.2",
+  "python": "3.13.5",
+  "skipped": 0
+}

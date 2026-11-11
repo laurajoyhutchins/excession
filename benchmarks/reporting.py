@@ -55,14 +55,12 @@ def artifact(base: Path, relative_path: str, role: str, media_type: str) -> dict
 
 
 def run_id(report: dict) -> str:
-    """Stable report identity from subject and artifact content, not CI timing."""
-    payload = {
-        "suite": report["suite"], "subject": report["subject"],
-        "artifacts": [
-            {"path": a["path"], "sha256": a["sha256"], "bytes": a["bytes"]}
-            for a in sorted(report["artifacts"], key=lambda a: a["path"])
-        ],
-    }
+    """Deterministic digest of the entire normalized report except its own ID.
+
+    This is tamper evidence for the receipt, not a cryptographic signature.
+    Artifact hashes independently bind the raw inputs.
+    """
+    payload = {key: value for key, value in report.items() if key != "run_id"}
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     ).hexdigest()
@@ -77,7 +75,7 @@ def validate(report_path: Path) -> dict:
         pointer = "/" + "/".join(str(part) for part in first.path)
         raise ValueError(f"invalid benchmark report at {pointer}: {first.message}")
     if report["run_id"] != run_id(report):
-        raise ValueError("report run_id differs from artifact/subject identity")
+        raise ValueError("report run_id differs from normalized content identity")
     if len({a["path"] for a in report["artifacts"]}) != len(report["artifacts"]):
         raise ValueError("duplicate artifact path")
     if len({(m["arm"], m["name"], m["statistic"]) for m in report["measurements"]}) != len(report["measurements"]):

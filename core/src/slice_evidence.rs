@@ -431,5 +431,4 @@ mod tests {
         drop(db);
         fs::remove_dir_all(dir).unwrap();
     }
-
 }

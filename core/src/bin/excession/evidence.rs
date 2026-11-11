@@ -19,11 +19,9 @@ pub(super) fn run(verb: &str, opt: &Options) -> Result<Response> {
                 trusted,
             )?
         }
-        "contract-plan" => input_contract::plan_file(
-            opt.path("repo"),
-            opt.get("rev"),
-            opt.path("declaration"),
-        )?,
+        "contract-plan" => {
+            input_contract::plan_file(opt.path("repo"), opt.get("rev"), opt.path("declaration"))?
+        }
         "contract-compare" | "contract-audit" => {
             let db = Db::open(opt.path("db"))?;
             input_contract::transport(
@@ -36,11 +34,7 @@ pub(super) fn run(verb: &str, opt: &Options) -> Result<Response> {
         }
         "trace" => {
             let db = Db::open(opt.path("db"))?;
-            evidence_transport::trace(
-                opt.path("repo"),
-                opt.get("receipt-id"),
-                &db,
-            )?
+            evidence_transport::trace(opt.path("repo"), opt.get("receipt-id"), &db)?
         }
         "transport" | "transport-audit" => {
             let db = Db::open(opt.path("db"))?;

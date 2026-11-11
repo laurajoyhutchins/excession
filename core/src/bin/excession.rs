@@ -15,14 +15,14 @@ use std::path::Path;
 
 #[path = "excession/cli.rs"]
 mod cli;
+#[path = "excession/evidence.rs"]
+mod evidence_cli;
 #[path = "excession/graph.rs"]
 mod graph_cli;
 #[path = "excession/scan.rs"]
 mod scan;
 #[path = "excession/slice.rs"]
 mod slice_cli;
-#[path = "excession/evidence.rs"]
-mod evidence_cli;
 use cli::{Options, ParseOutcome};
 
 enum Response {

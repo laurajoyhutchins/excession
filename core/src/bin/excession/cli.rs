@@ -273,12 +273,24 @@ pub(super) fn command() -> Command {
             leaf("trace", &["repo", "receipt-id", "db"], &[]),
             leaf(
                 "transport",
-                &["repo", "source-manifest", "target-manifest", "receipt", "db"],
+                &[
+                    "repo",
+                    "source-manifest",
+                    "target-manifest",
+                    "receipt",
+                    "db",
+                ],
                 &[],
             ),
             leaf(
                 "transport-audit",
-                &["repo", "source-manifest", "target-manifest", "receipt", "db"],
+                &[
+                    "repo",
+                    "source-manifest",
+                    "target-manifest",
+                    "receipt",
+                    "db",
+                ],
                 &[],
             ),
         ],

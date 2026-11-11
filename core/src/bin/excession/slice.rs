@@ -32,10 +32,7 @@ pub(super) fn run(verb: &str, opt: &Options) -> Result<Response> {
             opt.get_or("assets", "[]"),
             boolean(opt.get_or("history", "false"))?,
         )?,
-        "validate" => slice_runtime::validate_cli(
-            opt.path("repo"),
-            opt.path("manifest"),
-        )?,
+        "validate" => slice_runtime::validate_cli(opt.path("repo"), opt.path("manifest"))?,
         "materialize" => slice_runtime::materialize_cli(
             opt.path("repo"),
             opt.path("manifest"),

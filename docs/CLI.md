@@ -128,9 +128,30 @@ excession view replay security --db "$OUT/security.sqlite" --repo "$REPO" \
 
 The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL and Semgrep remain optional external programs. An imported report records **unverified static candidates**, not confirmed CVEs. Before trusting a security view, independently audit the underlying scanner ingestion as shown above.
 
+## Compiler-backed C and C++ analysis
+
+For a chosen C/C++ source file and one JSON compilation database entry,
+`analyze clang` records real Clang AST declarations and calls, actual
+preprocessor dependency paths, and source/flag/headers/toolchain identities.
+This works on any SHA-1 Git repository and requires explicit trusted-local
+execution permission.
+
+```sh
+excession analyze clang \
+  --repo /path/to/project --rev HEAD \
+  --source src/main.cpp --compile-db /path/to/build/compile_commands.json \
+  --trusted-local true > /tmp/main-clang.json
+```
+
+`excession kernel clang` is a compatibility alias to the exact same Rust and
+Clang code. It does not require or infer Linux Kbuild semantics. Clang analysis
+is a one-translation-unit observation, not a successful build or complete
+call graph. See [compiler-backed evidence](COMPILER_ANALYSIS.md).
+
 ## Complete command families
 
 - `excession index`: index an exact Git revision and configured dependency roots.
+- `excession analyze clang`: Clang-backed, build-configuration-scoped C/C++ source observations. `kernel clang` is an alias.
 - `excession inspect dependencies|manifest|impact|review`: query indexed relations. Revision flags accept Git refs such as `HEAD`, resolved to commit IDs.
 - `excession security scan|ingest|audit`: run an installed trusted scanner, or import and independently recheck CodeQL SARIF or Semgrep JSON.
 - `excession view deps|security`: derive deterministic, source-bound views.

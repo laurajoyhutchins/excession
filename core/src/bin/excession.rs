@@ -5,7 +5,7 @@ use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, git, graph_baseline, index, kernel, native_boundary, preflight, projection,
+    Result, benchmark, git, graph_baseline, index, kernel, kernel_clang, native_boundary, preflight, projection,
     refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
@@ -24,6 +24,8 @@ Usage:
   excession doctor [--json]
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests] [--import-base PATH]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession kernel clang --repo REPO --source PATH --compile-db JSON --trusted-local true
+      [--rev HEAD] [--compiler clang] [--config .config]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
   excession syntax audit --repo REPO --report SAVED_JSON
   excession syntax preflight --report SAVED_JSON
@@ -501,18 +503,34 @@ fn execute(args: &[String]) -> Result<Response> {
         {
             Ok(Response::Message(HELP.to_owned()))
         }
-        [top, sub, tail @ ..] if top == "kernel" => {
-            if sub != "scan" {
-                return refuse(format!("unknown kernel command: {sub}"));
+        [top, sub, tail @ ..] if top == "kernel" => match sub.as_str() {
+            "scan" => {
+                let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
+                let roots = opt.get("roots").split(',').collect::<Vec<_>>();
+                Ok(json(kernel::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    &roots,
+                )?))
             }
-            let opt = Options::parse(tail, &["repo", "roots"], &["rev"])?;
-            let roots = opt.get("roots").split(',').collect::<Vec<_>>();
-            Ok(json(kernel::scan(
-                opt.path("repo"),
-                opt.get_or("rev", "HEAD"),
-                &roots,
-            )?))
-        }
+            "clang" => {
+                let opt = Options::parse(
+                    tail,
+                    &["repo", "source", "compile-db", "trusted-local"],
+                    &["rev", "compiler", "config"],
+                )?;
+                Ok(json(kernel_clang::scan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.get("source"),
+                    opt.path("compile-db"),
+                    opt.get_or("compiler", "clang"),
+                    opt.0.get("config").map(Path::new),
+                    opt.get("trusted-local"),
+                )?))
+            }
+            _ => refuse(format!("unknown kernel command: {sub}")),
+        },
         [top, tail @ ..] if top == "research" => {
             research::run(tail)?;
             Ok(Response::Bytes(Vec::new()))

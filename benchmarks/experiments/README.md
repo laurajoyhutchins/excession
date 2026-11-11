@@ -35,10 +35,11 @@ exact adjacency equality, query counts, status counts, median timing, total
 query time and stdout bytes. `trials.jsonl` records each comparison against
 the independent oracle. Neither graph nor view has a special oracle channel.
 
-**Incomplete experiments:** an equivalent-guarantee tamper/audit baseline
-and a truly incremental reuse baseline. The current runner measures repeated
-queries and changed histories, not whether Excession automatically caches
-views, and does not assert that it does.
+**Still incomplete:** scalable independent replay on several real repositories,
+truly incremental view maintenance and resource accounting for process memory.
+The retained relation runner measures repeated queries and changed histories,
+not automatic caching. The bounded full indexed-query audit below is now
+implemented separately.
 
 ## Additional retained experiments
 

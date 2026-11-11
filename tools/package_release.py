@@ -10,6 +10,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import subprocess
 from pathlib import Path
 import tarfile
 import tomllib
@@ -79,10 +80,14 @@ def package_version(parser: Path) -> str:
 def main() -> None:
     cli = argparse.ArgumentParser()
     cli.add_argument("--binary", type=Path, required=True)
-    cli.add_argument("--target", required=True)
+    cli.add_argument("--target", default="host")
     cli.add_argument("--output", type=Path, default=Path("dist"))
     args = cli.parse_args()
-    archive, checksum = build_archive(args.binary, args.target, args.output)
+    target = args.target
+    if target == "host":
+        version_text = subprocess.check_output(["rustc", "-vV"], text=True)
+        target = next(line.removeprefix("host: ") for line in version_text.splitlines() if line.startswith("host: "))
+    archive, checksum = build_archive(args.binary, target, args.output)
     print(archive)
     print(checksum)
 

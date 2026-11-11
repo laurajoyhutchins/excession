@@ -135,11 +135,15 @@ def main():
     # Module-level has_parser does not exist in v1.25. Use an offline registry
     # for both availability checks and extraction, never auto-downloading.
     registry = pack.LanguageRegistry.new()
+    # Fresh registries do not always register the package's on-disk cache
+    # automatically. Consult the explicit offline downloaded-language catalog,
+    # then use the package's global process entrypoint for those cached grammars.
+    cached = set(pack.downloaded_languages())
     offline = SimpleNamespace(
         detect_language_from_path=pack.detect_language_from_path,
-        has_parser=registry.has_parser,
+        has_parser=lambda language: language in cached or registry.has_parser(language),
         ProcessConfig=pack.ProcessConfig,
-        process=registry.process,
+        process=pack.process,
     )
     items = json.load(sys.stdin)
     result = {"parser_version": version("tree-sitter-language-pack"),

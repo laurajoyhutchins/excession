@@ -55,10 +55,12 @@ whether the index describes all language-level relations.
 - **Partial evidence controls already present:** `experiments/checked_tree_ab.py`
   compares authenticated before/after outputs and selected tamper refusals;
   `experiments/real_fixtures.py` independently checks Git source bindings.
-- **Not yet implemented as an equivalent-guarantee cross-tool comparison:**
-  tamper detection against an independent Git/SQLite auditor;
-  true cached incremental view maintenance; independent real-repository
-  relationship completeness; portable peak memory measurement.
+- **Independent full indexed-query replay implemented:**
+  `experiments/independent_audit.py` compares a separate Git/SQLite verifier
+  against native replay for intact and corrupted h11 evidence.
+- **Still incomplete:** true cached incremental view maintenance,
+  complete real-repository runtime relationships, portable peak memory
+  measurement, and comprehensive adversarial coverage beyond the bounded cases.
 
 The first experiment does not prove that Excession reuses computation between
 queries. It only records a workload where such reuse could be observed. Evidence

@@ -1,0 +1,47 @@
+name: Direct projection ID A/B
+
+on:
+  pull_request:
+    paths:
+      - core/src/projection.rs
+      - core/src/projection/composition.rs
+      - core/src/projection/workspace.rs
+      - core/src/json.rs
+      - benchmarks/direct_payload_ab.py
+      - .github/workflows/direct-payload-ab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Restore immediately preceding canonical implementation
+        run: git worktree add --detach "$RUNNER_TEMP/excession-before-direct-id" 90cb4d5c1cbe7fde704a6d9189aa03cb5eff7a66
+      - name: Build identical-toolchain native executables
+        run: |
+          cargo +1.99.1 build --offline --release --manifest-path "$RUNNER_TEMP/excession-before-direct-id/core/Cargo.toml"
+          cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
+      - name: Compare exact view identities and timings
+        run: |
+          python3 benchmarks/direct_payload_ab.py \
+            "$RUNNER_TEMP/excession-before-direct-id/core/target/release/excession" \
+            core/target/release/excession direct-payload-ab.json
+      - name: Retain raw identity and performance results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-projection-id-ab
+          path: direct-payload-ab.json
+          if-no-files-found: warn

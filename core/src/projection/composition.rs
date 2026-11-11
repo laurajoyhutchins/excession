@@ -183,4 +183,3 @@ pub fn select_replay(
 ) -> Result<Value> {
     replay(&select(repo, input, axis, value)?, output)
 }
-

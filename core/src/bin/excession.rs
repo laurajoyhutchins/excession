@@ -2,7 +2,7 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, projection, refuse, security_ingest, syntax,
+    Result, git, graph_baseline, index, projection, preflight, refuse, security_ingest, syntax,
     syntax_resolution, views,
 };
 use std::collections::BTreeMap;
@@ -21,8 +21,10 @@ Usage:
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests]
   excession syntax scan --repo REPO --roots src[,tests] [--rev HEAD]
   excession syntax audit --repo REPO --report SAVED_JSON
+  excession syntax preflight --report SAVED_JSON
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
+  excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
   excession view paths --db DB --name NAME --rev REV --seed MODULE --role ROLE
   excession view graph --db DB --name NAME --rev REV --seed MODULE --kind KIND
@@ -483,6 +485,14 @@ fn execute(args: &[String]) -> Result<Response> {
             "audit" => {
                 let opt = Options::parse(tail, &["repo", "report"], &[])?;
                 Ok(json(syntax::audit(opt.path("repo"), opt.path("report"))?))
+            }
+            "preflight" => {
+                let opt = Options::parse(tail, &["report"], &[])?;
+                Ok(json(preflight::syntax_file(opt.path("report"))?))
+            }
+            "resolve-preflight" => {
+                let opt = Options::parse(tail, &["report"], &[])?;
+                Ok(json(preflight::resolution_file(opt.path("report"))?))
             }
             "resolve" => {
                 let opt = Options::parse(tail, &["repo", "report"], &[])?;

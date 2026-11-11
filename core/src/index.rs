@@ -166,11 +166,7 @@ fn register_repository(db: &Db, root: &Path, name: &str, provenance: &str) -> Re
 fn record_object(db: &Db, repo_id: i64, oid: &str, kind: &str) -> Result<()> {
     db.execute(
         "INSERT OR IGNORE INTO git_object(repo_id,oid,kind) VALUES(?,?,?)",
-        &[
-            Param::Integer(repo_id),
-            Param::Text(oid),
-            Param::Text(kind),
-        ],
+        &[Param::Integer(repo_id), Param::Text(oid), Param::Text(kind)],
     )
 }
 

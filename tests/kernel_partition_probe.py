@@ -79,7 +79,7 @@ def create_fixture(root):
     (repo / "src" / "huge.h").write_bytes(b"a" * (1024 * 1024 + 5))
     # 102,000 short declarations fit inside 1 MiB but exceed the bounded
     # fact budget. The file must be explicitly unsupported, not truncated.
-    (repo / "src" / "budget.c").write_bytes(b"#define X\\n" * 102_000)
+    (repo / "src" / "budget.c").write_bytes(b"#define X\n" * 102_000)
     (repo / "src" / "README.md").write_text("Not part of kernel source syntax\n")
     command(["git", "-C", str(repo), "add", "."])
     command(["git", "-C", str(repo), "commit", "-qm", "fixture"])

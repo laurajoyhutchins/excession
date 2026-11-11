@@ -2,7 +2,8 @@ use relgit::sqlite::Db;
 use relgit::{Result, refuse};
 use relgit::{
     contracts, effects, git, historical, identity, impact, index, integration, json, optimizer,
-    overlap, scoped, security, security_discovery, security_survey, transactions, transform,
+    overlap, scoped, security, security_discovery, security_ingest, security_survey, transactions,
+    transform,
 };
 use std::env;
 use std::fs;
@@ -20,7 +21,9 @@ fn usage() -> String {
   relgit security-discover SCAN_GIT_DIR DATABASE
   relgit security-discover-audit SCAN_GIT_DIR DATABASE
   relgit security-survey SURVEY_GIT_DIR DATABASE
-  relgit security-survey-audit SURVEY_GIT_DIR DATABASE\nErrors are fatal; unsupported semantics are not silently inferred.".into()
+  relgit security-survey-audit SURVEY_GIT_DIR DATABASE
+  relgit security-ingest REPO REPORT DATABASE ENGINE
+  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\nErrors are fatal; unsupported semantics are not silently inferred.".into()
 }
 
 fn run() -> Result<()> {
@@ -29,6 +32,23 @@ fn run() -> Result<()> {
         return refuse(usage());
     };
     match action {
+        "security-ingest" | "security-ingest-audit" => {
+            if args.len() != 6 {
+                return refuse("Usage: relgit security-ingest[-audit] REPO REPORT DATABASE ENGINE");
+            }
+            let db = Db::open(Path::new(&args[4]))?;
+            println!(
+                "{}",
+                security_ingest::execute(
+                    Path::new(&args[2]),
+                    Path::new(&args[3]),
+                    &db,
+                    &args[5],
+                    action == "security-ingest-audit"
+                )?
+                .canonical()
+            );
+        }
         "security-survey" | "security-survey-audit" => {
             if args.len() != 4 {
                 return refuse("Usage: relgit security-survey[-audit] SURVEY_GIT_DIR DATABASE");

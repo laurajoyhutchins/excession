@@ -59,6 +59,8 @@ jobs:
           "RUSTFLAGS=-L native=$libdir" >> $env:GITHUB_ENV
       - name: Install locked TypeScript sidecar
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Fetch pinned Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Check standard digest vectors
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib digest::tests
       - name: Installed CLI test in independent checkout

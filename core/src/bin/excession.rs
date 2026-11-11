@@ -1,5 +1,6 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
+use excession::evidence_query;
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
@@ -46,6 +47,7 @@ Usage:
   excession security scan --repo REPO --report NEW_JSON --db DB --engine codeql|semgrep
       --config LOCAL_RULES --trusted-local true [--scanner EXECUTABLE]
       [--codeql-db PREBUILT_DB] [--timeout-seconds 300]
+  excession inspect evidence --repo REPO --focus FILE --syntax-report JSON --resolution-report JSON [--rev HEAD] [--declaration JSON] [--runtime-report JSON]
   excession inspect dependencies|manifest --db DB --name NAME --rev REV
   excession inspect impact --db DB --name NAME --rev REV --seed MODULE
   excession inspect review --db DB --name NAME --old REV --new REV
@@ -719,6 +721,22 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub, rest @ ..] if top == "inspect" && sub == "evidence" => {
+            let opt = Options::parse(
+                rest,
+                &["repo", "focus", "syntax-report", "resolution-report"],
+                &["rev", "declaration", "runtime-report"],
+            )?;
+            Ok(json(evidence_query::query(
+                opt.path("repo"),
+                opt.get_or("rev", "HEAD"),
+                opt.get("focus"),
+                opt.path("syntax-report"),
+                opt.path("resolution-report"),
+                opt.0.get("declaration").map(|s| Path::new(s.as_str())),
+                opt.0.get("runtime-report").map(|s| Path::new(s.as_str())),
+            )?))
+        }
         [top, sub, rest @ ..] if top == "inspect" => inspect_cmd(sub, rest),
         [top, sub, rest @ ..] if top == "view" && sub == "replay" => {
             let Some((verb, tail)) = rest.split_first() else {

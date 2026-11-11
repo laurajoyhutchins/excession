@@ -2,7 +2,7 @@
 //! CMake File API supplies target structure; Clang supplies TU facts.
 //! Neither is promoted into observed build execution or whole-program proof.
 use crate::json::{Value, obj};
-use crate::sqlite::{Db, Param};
+use crate::sqlite::Db;
 use crate::{Result, digest, git, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -537,76 +537,14 @@ pub fn assemble(
         ),
     ]);
     let id = body.sha256();
-    db.exec(
-        "CREATE TABLE IF NOT EXISTS configured_graph(\
-        graph_id TEXT PRIMARY KEY, source_commit TEXT NOT NULL,\
-        target TEXT NOT NULL, configuration TEXT NOT NULL, document TEXT NOT NULL);\
-        CREATE TABLE IF NOT EXISTS configured_observation(\
-        graph_id TEXT NOT NULL, report_id TEXT NOT NULL, source_path TEXT NOT NULL,\
-        document TEXT NOT NULL, PRIMARY KEY(graph_id,report_id),\
-        FOREIGN KEY(graph_id) REFERENCES configured_graph(graph_id));\
-        CREATE TABLE IF NOT EXISTS configured_entity(\
-        graph_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, document TEXT NOT NULL,\
-        PRIMARY KEY(graph_id,id), FOREIGN KEY(graph_id) REFERENCES configured_graph(graph_id));\
-        CREATE TABLE IF NOT EXISTS configured_edge(\
-        graph_id TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL,\
-        source_id TEXT NOT NULL, destination_id TEXT NOT NULL, status TEXT NOT NULL,\
-        evidence TEXT NOT NULL, PRIMARY KEY(graph_id,id),\
-        FOREIGN KEY(graph_id,source_id) REFERENCES configured_entity(graph_id,id),\
-        FOREIGN KEY(graph_id,destination_id) REFERENCES configured_entity(graph_id,id));",
+    let receipts = observed.iter().map(|(source, (receipt, _))| {
+        let document = receipt_documents
+            .get(receipt).ok_or("missing in-memory compiler receipt")?;
+        Ok((source.clone(), receipt.clone(), document.clone()))
+    }).collect::<Result<Vec<_>>>()?;
+    crate::configured_store::persist(
+        db, &id, &commit, target_name, config_name, &body, &nodes, &edges, &receipts
     )?;
-    db.transaction(|db| {
-        db.execute(
-            "INSERT OR IGNORE INTO configured_graph VALUES(?,?,?,?,?)",
-            &[
-                Param::Text(&id),
-                Param::Text(&commit),
-                Param::Text(target_name),
-                Param::Text(config_name),
-                Param::Text(&body.canonical()),
-            ],
-        )?;
-        for (source, (receipt, _)) in &observed {
-            let document = receipt_documents
-                .get(receipt)
-                .ok_or("missing in-memory compiler receipt")?;
-            db.execute(
-                "INSERT OR IGNORE INTO configured_observation VALUES(?,?,?,?)",
-                &[
-                    Param::Text(&id),
-                    Param::Text(receipt),
-                    Param::Text(source),
-                    Param::Text(&document.canonical()),
-                ],
-            )?;
-        }
-        for (node_id, node) in &nodes {
-            db.execute(
-                "INSERT OR IGNORE INTO configured_entity VALUES(?,?,?,?)",
-                &[
-                    Param::Text(&id),
-                    Param::Text(node_id),
-                    Param::Text(node.get("kind")?.str()?),
-                    Param::Text(&node.canonical()),
-                ],
-            )?;
-        }
-        for (edge_id, edge) in &edges {
-            db.execute(
-                "INSERT OR IGNORE INTO configured_edge VALUES(?,?,?,?,?,?,?)",
-                &[
-                    Param::Text(&id),
-                    Param::Text(edge_id),
-                    Param::Text(edge.get("kind")?.str()?),
-                    Param::Text(edge.get("from")?.str()?),
-                    Param::Text(edge.get("to")?.str()?),
-                    Param::Text(edge.get("status")?.str()?),
-                    Param::Text(edge.get("evidence")?.str()?),
-                ],
-            )?;
-        }
-        Ok(())
-    })?;
     let mut result = body.entries()?.clone();
     result.insert("graph_id".to_owned(), Value::string(id));
     Ok(Value::Object(result))

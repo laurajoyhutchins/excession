@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, native_boundary, native_depinfo, preflight, projection, refactor, refuse,
-    security_ingest, syntax, syntax_resolution, views,
+    Result, git, graph_baseline, index, native_boundary, native_depinfo, preflight, projection,
+    refactor, refuse, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -506,7 +506,14 @@ fn execute(args: &[String]) -> Result<Response> {
             "cargo-depfile" => {
                 let opt = Options::parse(
                     tail,
-                    &["repo", "package-root", "depfile", "subject", "rustc", "rustc-version"],
+                    &[
+                        "repo",
+                        "package-root",
+                        "depfile",
+                        "subject",
+                        "rustc",
+                        "rustc-version",
+                    ],
                     &["rev"],
                 )?;
                 Ok(json(native_depinfo::declaration(

@@ -278,11 +278,13 @@ fn static_native_scope_matches_four_languages_without_claiming_attestation() {
         if language == "rust" {
             assert!(arr(&report, "matching_edges").is_empty());
             assert!(arr(&report, "unresolved_imports").is_empty());
-            assert!(arr(&report, "native_only_sources")
-                .contains(&Value::string("src/math.rs")));
+            assert!(arr(&report, "native_only_sources").contains(&Value::string("src/math.rs")));
         } else {
-            assert!(arr(&report, "matching_edges").iter()
-                .any(|e| s(e, "source_path") == subject && s(e, "target_path") == target));
+            assert!(
+                arr(&report, "matching_edges")
+                    .iter()
+                    .any(|e| s(e, "source_path") == subject && s(e, "target_path") == target)
+            );
         }
         assert!(arr(&report, "static_only_edges").is_empty());
         for entry in arr(&report, "pinned_inputs") {

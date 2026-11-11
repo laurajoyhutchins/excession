@@ -282,7 +282,63 @@ def audit(repo: Path, manifest: dict[str, Any], directory: Path) -> None:
         raise Refusal(f"missing slice files: {sorted(set(expected) - found)}")
 
 
-def execute(repo: Path, manifest: dict[str, Any], directory: Path, timeout: int) -> dict[str, Any]:
+# Deliberately local and unsigned: namespace isolation is not a remote attestation.
+# The host controls argv, mount list, source inputs, and namespace setup. The
+# source program is never interpolated into shell code.
+_LINUX_WORKER = r"""set -eu
+jail="$1"
+source_dir="$2"
+entry="$3"
+cpu="$4"
+mkdir -p "$jail/usr" "$jail/work" "$jail/tmp" "$jail/dev"
+ln -s usr/lib "$jail/lib"
+ln -s usr/lib64 "$jail/lib64"
+ln -s usr/bin "$jail/bin"
+touch "$jail/dev/null"
+mount --make-rprivate /
+mount --bind /usr "$jail/usr"
+mount -o remount,bind,ro "$jail/usr"
+mount --bind "$source_dir" "$jail/work"
+mount -o remount,bind,ro "$jail/work"
+mount --bind /dev/null "$jail/dev/null"
+mount -t tmpfs -o size=32m,nosuid,nodev,noexec tmpfs "$jail/tmp"
+exec prlimit --cpu="$cpu" --as=1073741824 --nofile=128 -- \
+  /usr/sbin/chroot "$jail" /usr/bin/setpriv --bounding-set=-all --no-new-privs \
+  /usr/bin/python3 -I -B -c \
+  "import os,runpy,sys;os.write(2,b'EXCESSION_WORKER_READY\\n');sys.path.insert(0,'/work');runpy.run_path('/work/'+sys.argv[1],run_name='__main__')" \
+  "$entry"
+"""
+
+
+def _isolated_process(root: Path, entry: str, timeout: int) -> subprocess.CompletedProcess[bytes]:
+    if sys.platform != "linux":
+        raise Refusal("Linux namespace worker unavailable on this platform")
+    for program in ("unshare", "mount", "chroot", "setpriv", "prlimit"):
+        if shutil.which(program) is None:
+            raise Refusal(f"Linux namespace worker requires {program}; no unsandboxed fallback")
+    if not Path("/usr/bin/python3").is_file() or not Path("/usr/sbin/chroot").is_file():
+        raise Refusal("isolated worker requires /usr/bin/python3 and /usr/sbin/chroot")
+    with tempfile.TemporaryDirectory(prefix="excession-namespace-") as directory:
+        jail = Path(directory) / "root"
+        jail.mkdir()
+        cmd = ["unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork",
+               "--ipc", "--uts", "--net", "/bin/sh", "-c", _LINUX_WORKER,
+               "excession-sandbox", str(jail), str(root), entry, str(timeout + 2)]
+        # The ready marker comes from Python after entering the new namespaces.
+        # A namespace/setup failure is a refusal, not a failed test receipt.
+        result = subprocess.run(cmd, cwd=directory, capture_output=True,
+                                timeout=timeout + 8,
+                                env={"PATH": "/usr/sbin:/usr/bin:/bin", "LC_ALL": "C",
+                                     "PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"})
+        marker = b"EXCESSION_WORKER_READY\n"
+        if not result.stderr.startswith(marker):
+            raise Refusal("isolated worker setup did not establish execution boundary")
+        result.stderr = result.stderr[len(marker):]
+        return result
+
+
+def execute(repo: Path, manifest: dict[str, Any], directory: Path, timeout: int,
+            isolated_linux: bool = False) -> dict[str, Any]:
     if not 1 <= timeout <= 60:
         raise Refusal("execution timeout must be 1..60 seconds")
     audit(repo, manifest, directory)
@@ -292,9 +348,12 @@ def execute(repo: Path, manifest: dict[str, Any], directory: Path, timeout: int)
     # Native execution is only permitted by explicit --trusted-local; this
     # subprocess is not a security sandbox for arbitrary third-party code.
     try:
-        p = subprocess.run(cmd, cwd=root, capture_output=True, timeout=timeout, env={
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONNOUSERSITE": "1", "HOME": str(root), "LC_ALL": "C.UTF-8"})
+        if isolated_linux:
+            p = _isolated_process(root, manifest["entry"], timeout)
+        else:
+            p = subprocess.run(cmd, cwd=root, capture_output=True, timeout=timeout, env={
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONNOUSERSITE": "1", "HOME": str(root), "LC_ALL": "C.UTF-8"})
         if len(p.stdout) > MAX_OUTPUT or len(p.stderr) > MAX_OUTPUT:
             raise Refusal("execution output exceeds 1 MiB")
         status, out, err = p.returncode, p.stdout, p.stderr
@@ -307,7 +366,8 @@ def execute(repo: Path, manifest: dict[str, Any], directory: Path, timeout: int)
               "entry": manifest["entry"], "python": sys.version.split()[0],
               "exit_code": status, "stdout_sha256": digest(out), "stderr_sha256": digest(err),
               "status": "OBSERVED_PASS" if status == 0 else "OBSERVED_FAIL",
-              "scope": "FINITE_TRUSTED_LOCAL_EXECUTION"}
+              "scope": "FINITE_TRUSTED_LOCAL_EXECUTION",
+              "isolation": "LOCAL_LINUX_NAMESPACES_UNATTESTED" if isolated_linux else "NONE"}
     result["receipt_id"] = digest(canonical(result))
     return result
 
@@ -375,6 +435,8 @@ def cli() -> None:
     p.add_argument("directory", type=Path)
     p.add_argument("--timeout", type=int, default=10)
     p.add_argument("--trusted-local", action="store_true")
+    p.add_argument("--isolated-linux", action="store_true",
+                   help="use fail-closed unprivileged Linux namespaces")
     p = sub.add_parser("carry")
     p.add_argument("target_repo", type=Path)
     p.add_argument("source_manifest")
@@ -382,6 +444,7 @@ def cli() -> None:
     p.add_argument("--revision", default="HEAD")
     p.add_argument("--replay", action="store_true", help="rerun target slice as fresh evidence")
     p.add_argument("--trusted-local", action="store_true")
+    p.add_argument("--isolated-linux", action="store_true")
     args = parser.parse_args()
     try:
         if args.action == "plan":
@@ -395,7 +458,8 @@ def cli() -> None:
         elif args.action == "run":
             if not args.trusted_local:
                 raise Refusal("native execution requires explicit --trusted-local")
-            result = execute(args.repo, read_json(args.manifest), args.directory, args.timeout)
+            result = execute(args.repo, read_json(args.manifest), args.directory, args.timeout,
+                             args.isolated_linux)
         else:
             previous = read_json(args.source_manifest)
             result = carry(args.target_repo, previous,
@@ -407,7 +471,8 @@ def cli() -> None:
                 with tempfile.TemporaryDirectory(prefix="excession-replay-") as root:
                     directory = Path(root) / "slice"
                     materialize(args.target_repo, fresh, directory)
-                    result["fresh_target_receipt"] = execute(args.target_repo, fresh, directory, 10)
+                    result["fresh_target_receipt"] = execute(args.target_repo, fresh, directory, 10,
+                                                             args.isolated_linux)
         print(json.dumps(result, indent=2, sort_keys=True))
     except (Refusal, OSError, ValueError, KeyError, TypeError) as exc:
         parser.exit(2, f"excession slice refused: {exc}\n")

@@ -413,7 +413,10 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
     for source in files.values() {
         // Rust semantic resolution belongs to rust-analyzer/SCIP; syntactic
         // declarations remain available, but are not treated as graph edges.
-        if !matches!(source.language, "python" | "javascript" | "typescript" | "tsx" | "go") {
+        if !matches!(
+            source.language,
+            "python" | "javascript" | "typescript" | "tsx" | "go"
+        ) {
             continue;
         }
         for import in source.imports {

@@ -6,7 +6,6 @@ use crate::{Result, refuse};
 use crate::{git, index, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 const UPSTREAM: [(&str, &str, &str); 3] = [
     (

@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod adapter;
+pub mod benchmark;
 pub mod contracts;
 pub mod digest;
 pub mod effects;

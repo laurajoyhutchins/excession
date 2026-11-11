@@ -351,19 +351,30 @@ pub fn discover_and_compare(
     preflight::resolution(&resolution_report)?;
     let commit = git::oid(syntax_report.get("source_commit")?.str()?)?;
     if resolution_report.get("source_commit")?.str()? != commit
-        || resolution_report.get("source_tree")?.str()? != syntax_report.get("source_tree")?.str()?
-        || resolution_report.get("syntax_report_id")?.str()? != syntax_report.get("report_id")?.str()?
+        || resolution_report.get("source_tree")?.str()?
+            != syntax_report.get("source_tree")?.str()?
+        || resolution_report.get("syntax_report_id")?.str()?
+            != syntax_report.get("report_id")?.str()?
     {
         return refuse("native execution refused: mismatched syntax/resolution identities");
     }
-    let entry_in_scan = syntax_report.get("sources")?.array_ref()?.iter().any(|source| {
-        source.get("source_path").ok().and_then(|v| v.str().ok()) == Some(entry)
-            && source.get("language").ok().and_then(|v| v.str().ok())
-                .is_some_and(|observed| language_matches(language, observed))
-            && source.get("status").ok().and_then(|v| v.str().ok()) == Some("PARSED")
-    });
+    let entry_in_scan = syntax_report
+        .get("sources")?
+        .array_ref()?
+        .iter()
+        .any(|source| {
+            source.get("source_path").ok().and_then(|v| v.str().ok()) == Some(entry)
+                && source
+                    .get("language")
+                    .ok()
+                    .and_then(|v| v.str().ok())
+                    .is_some_and(|observed| language_matches(language, observed))
+                && source.get("status").ok().and_then(|v| v.str().ok()) == Some("PARSED")
+        });
     if !entry_in_scan {
-        return refuse("native execution refused: subject not successfully parsed in selected scope");
+        return refuse(
+            "native execution refused: subject not successfully parsed in selected scope",
+        );
     }
     git::clean(root)?;
     if git::rev(root, &format!("{commit}^{{tree}}"))? != syntax_report.get("source_tree")?.str()? {
@@ -381,7 +392,10 @@ pub fn discover_and_compare(
     let boundary = report(root, syntax_file, candidates_file, declaration)?;
     Ok(obj(&[
         ("schema", Value::string("excession.native-syntax-inline.v1")),
-        ("status", Value::string("LOCAL_NATIVE_DISCOVERY_AND_BOUNDARY_CHECK")),
+        (
+            "status",
+            Value::string("LOCAL_NATIVE_DISCOVERY_AND_BOUNDARY_CHECK"),
+        ),
         ("execution", Value::string("TRUSTED_LOCAL_NOT_ATTESTED")),
         ("declaration", declaration.clone()),
         ("stats", native.get("stats")?.clone()),

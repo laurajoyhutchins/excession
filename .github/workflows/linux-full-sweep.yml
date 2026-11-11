@@ -1,0 +1,49 @@
+name: One-off full Linux v6.12 syntax sweep
+
+# Full source scanning is intentionally opt-in because a pinned Linux
+# checkout and 500+ parsing partitions are substantially more expensive than
+# normal checkpoint CI. Independent bounded coverage tests run on each PR.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-source-sweep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Excession Rust CLI
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Download full pinned Linux source Git snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --single-branch --branch v6.12 \
+            https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
+          test "$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)" = "adc218676eef25575469234709c2d87185ca223a"
+          test -z "$(git -C "$RUNNER_TEMP/linux" status --porcelain)"
+      - name: Produce every bounded source receipt and audit source coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/linux_partition_sweep.py \
+            --repo "$RUNNER_TEMP/linux" \
+            --rev adc218676eef25575469234709c2d87185ca223a \
+            --size 128 \
+            --binary "$GITHUB_WORKSPACE/core/target/debug/excession" \
+            --out "$RUNNER_TEMP/kernel-sweep" \
+            > "$RUNNER_TEMP/kernel-sweep-report.json"
+          cat "$RUNNER_TEMP/kernel-sweep-report.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save compact summary, not huge source receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-full-kernel-sweep
+          path: ${{ runner.temp }}/kernel-sweep/summary.json
+          retention-days: 7
+          if-no-files-found: warn

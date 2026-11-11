@@ -19,9 +19,11 @@ excession kernel scan \
 
 The JSON report binds `source_commit`, `source_tree`, selected roots, every
 source path/blob/mode, source-line observations, diagnostic records and a
-canonical SHA-256 `report_id`. Each run is constrained to 1,500 regular
+canonical SHA-256 `report_id`. A single `kernel scan --roots` run is constrained to 1,500 regular
 source files, 1 MiB per source, 32 MiB total source input, 100,000
-observations, and 64 input files per parser invocation. The tool never runs
+observations, and 64 input files per parser invocation. For a whole Git
+tree, use the [bounded source inventory and partition audit](LINUX_WHOLE_SOURCE.md)
+rather than increasing these budgets. The tool never runs
 a Kbuild recipe, loads a compiled kernel module, or compiles source.
 
 ## Syntax observations

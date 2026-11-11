@@ -6,7 +6,7 @@ use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
-    kernel, native_boundary, preflight, projection, refactor, refuse, scip_refactor,
+    kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refuse, scip_refactor,
     security_ingest, syntax, syntax_resolution, views,
 };
 use std::env;
@@ -458,6 +458,25 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.get_or("rev", "HEAD"),
                     &roots,
                 )?))
+            }
+            "inventory" | "partition" | "audit" => {
+                let size = opt
+                    .get_or("size", "128")
+                    .parse::<usize>()
+                    .map_err(|_| "invalid kernel partition size")?;
+                let repo = opt.path("repo");
+                let rev = opt.get_or("rev", "HEAD");
+                match sub.as_str() {
+                    "inventory" => Ok(json(kernel::inventory(repo, rev, size)?)),
+                    "partition" => {
+                        let index = opt
+                            .get("index")
+                            .parse::<usize>()
+                            .map_err(|_| "invalid kernel partition index")?;
+                        Ok(json(kernel::scan_partition(repo, rev, index, size)?))
+                    }
+                    _ => Ok(json(kernel_coverage::audit(repo, rev, opt.path("dir"), size)?)),
+                }
             }
             "clang" => clang_command(opt),
             _ => refuse(format!("unknown kernel command: {sub}")),

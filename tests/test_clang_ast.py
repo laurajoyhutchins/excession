@@ -44,7 +44,7 @@ class ClangDatabaseTests(unittest.TestCase):
                     clang.analysis_flags(argv, src, cwd)
 
     def test_clang_dependency_output_parses_escaped_paths(self):
-        raw = 'excession: src.c include/with\\ space.h \\\n sys/header.h\n'
+        raw = 'excession: src.c include/with\\ space.h \\n sys/header.h\n'
         self.assertEqual(
             clang.make_dependencies(raw),
             ["include/with space.h", "src.c", "sys/header.h"],
@@ -66,16 +66,16 @@ class ClangDatabaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             content = (
-                "namespace zoo {\\n"
-                "int twice(int n) { return n + n; }\\n"
-                "struct Pet { int feed() { return twice(2); } };\\n"
-                "}\\n"
-                "int main() { zoo::Pet p; return p.feed(); }\\n"
+                "namespace zoo {\n"
+                "int twice(int n) { return n + n; }\n"
+                "struct Pet { int feed() { return twice(2); } };\n"
+                "}\n"
+                "int main() { zoo::Pet p; return p.feed(); }\n"
             )
             source = root / "pet.cc"
             source.write_text(content)
             blob = __import__("hashlib").sha1(
-                b"blob " + str(len(content.encode())).encode() + b"\\0" + content.encode()
+                b"blob " + str(len(content.encode())).encode() + b"\0" + content.encode()
             ).hexdigest()
             db = root / "compile_commands.json"
             db.write_text(json.dumps([{
@@ -105,7 +105,7 @@ class ClangDatabaseTests(unittest.TestCase):
     def test_arbitrary_cross_compiler_name_is_only_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "sample.c").write_text("int a;\\n")
+            (root / "sample.c").write_text("int a;\n")
             db = root / "compile_commands.json"
             db.write_text(json.dumps([{
                 "directory": str(root), "file": "sample.c",

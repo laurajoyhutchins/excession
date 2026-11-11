@@ -29,15 +29,24 @@ fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("{binary} parser adapter unavailable: {e}"))?;
-    {
+    let input = Value::array(entries.iter().cloned()).canonical();
+    let input_result = {
         let mut stdin = process.stdin.take().ok_or("missing child stdin")?;
-        stdin
-            .write_all(Value::array(entries.iter().cloned()).canonical().as_bytes())
-            .map_err(|e| format!("{binary} adapter input: {e}"))?;
-    }
+        stdin.write_all(input.as_bytes())
+    };
+    // Always collect the child status and stderr, including when it exits
+    // before consuming stdin. An early EPIPE would otherwise hide the real
+    // parser error and leave orphaned subprocess handles until drop.
     let output = process
         .wait_with_output()
         .map_err(|e| format!("{binary} adapter wait: {e}"))?;
+    if let Err(error) = input_result {
+        return refuse(format!(
+            "{binary} adapter input: {error}; child status: {}; stderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
     if !output.status.success() {
         return refuse(format!(
             "{binary} adapter failed: {}",

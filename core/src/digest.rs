@@ -56,7 +56,7 @@ pub fn sha1(data: &[u8]) -> String {
         0x1032_5476,
         0xc3d2_e1f0,
     ];
-    for chunk in padded(data).chunks_exact(64) {
+    for chunk in padded(data).as_chunks::<64>().0 {
         let mut words = [0_u32; 80];
         for (i, word) in words[..16].iter_mut().enumerate() {
             let start = i * 4;
@@ -173,7 +173,7 @@ pub fn sha256(data: &[u8]) -> String {
         0x1f83_d9ab,
         0x5be0_cd19,
     ];
-    for chunk in padded(data).chunks_exact(64) {
+    for chunk in padded(data).as_chunks::<64>().0 {
         let mut words = [0_u32; 64];
         for (i, word) in words[..16].iter_mut().enumerate() {
             let start = i * 4;

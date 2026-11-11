@@ -126,7 +126,13 @@ pub fn publish(db: &Db, model: &Value, manifest: &Value) -> Result<()> {
                         Param::Text(id),
                         Param::Text(claim_id),
                         Param::Text(support.get("receipt_id")?.str()?),
-                        Param::Text(support.get("observation_id").map(Value::str).transpose()?.unwrap_or("")),
+                        Param::Text(
+                            support
+                                .get("observation_id")
+                                .map(Value::str)
+                                .transpose()?
+                                .unwrap_or(""),
+                        ),
                         Param::Text(support.get("role")?.str()?),
                         Param::Text(support.get("observation_kind")?.str()?),
                     ],
@@ -254,7 +260,11 @@ pub fn audit(db: &Db, id: &str) -> Result<(Value, Value)> {
             support_rows.push(record(&[
                 claim.get("claim_id")?.str()?.to_owned(),
                 x.get("receipt_id")?.str()?.to_owned(),
-                x.get("observation_id").map(Value::str).transpose()?.unwrap_or("").to_owned(),
+                x.get("observation_id")
+                    .map(Value::str)
+                    .transpose()?
+                    .unwrap_or("")
+                    .to_owned(),
                 x.get("role")?.str()?.to_owned(),
                 x.get("observation_kind")?.str()?.to_owned(),
             ]));
@@ -392,7 +402,12 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         let (model, manifest) = sample();
-        let id = manifest.get("snapshot_id").unwrap().str().unwrap().to_owned();
+        let id = manifest
+            .get("snapshot_id")
+            .unwrap()
+            .str()
+            .unwrap()
+            .to_owned();
         {
             let db = Db::open(&path).unwrap();
             publish(&db, &model, &manifest).unwrap();

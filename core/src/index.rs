@@ -31,7 +31,15 @@ pub fn index_revision_for_evidence(
     commit: &str,
     provenance: &str,
 ) -> Result<i64> {
-    index_revision_inner(db, root, name, commit, provenance, &["h11", "tests"], SemanticMode::GitOnly)
+    index_revision_inner(
+        db,
+        root,
+        name,
+        commit,
+        provenance,
+        &["h11", "tests"],
+        SemanticMode::GitOnly,
+    )
 }
 
 pub fn index_revision_with_roots(

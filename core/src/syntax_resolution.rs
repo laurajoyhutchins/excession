@@ -223,40 +223,6 @@ fn python_candidates(
     matches
 }
 
-fn rust_candidates(
-    specifier: &str,
-    source: &str,
-    files: &BTreeMap<String, Source<'_>>,
-) -> Vec<String> {
-    let Some(rest) = specifier.strip_prefix("crate::") else {
-        return Vec::new();
-    };
-    let module = rest.split("::").next().unwrap_or("");
-    if module.is_empty()
-        || !module
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-    {
-        return Vec::new();
-    }
-    let Some((prefix, _)) = source.split_once("src/") else {
-        return Vec::new();
-    };
-    if !(files.contains_key(&format!("{prefix}src/lib.rs"))
-        || files.contains_key(&format!("{prefix}src/main.rs")))
-    {
-        return Vec::new();
-    }
-    let choices = [
-        format!("{prefix}src/{module}.rs"),
-        format!("{prefix}src/{module}/mod.rs"),
-    ];
-    choices
-        .into_iter()
-        .filter(|path| files.contains_key(path))
-        .collect()
-}
-
 fn go_candidates<'a>(
     specifier: &str,
     source: &str,
@@ -365,26 +331,6 @@ fn import_target(language: &str, statement: &str) -> Option<String> {
                 None
             }
         }
-        "rust" => {
-            let value = text
-                .strip_prefix("pub use ")
-                .or_else(|| text.strip_prefix("use "))
-                .unwrap_or(text)
-                .trim_end_matches(';')
-                .trim();
-            if value.starts_with("crate::")
-                && value.split("::").all(|segment| {
-                    !segment.is_empty()
-                        && segment
-                            .bytes()
-                            .all(|c| c.is_ascii_alphanumeric() || c == b'_')
-                })
-            {
-                Some(value.to_owned())
-            } else {
-                None
-            }
-        }
         "python" => {
             if let Some(rest) = text.strip_prefix("from ") {
                 let (module, _) = rest.split_once(" import ")?;
@@ -455,7 +401,7 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
             ]));
         } else if !matches!(
             language,
-            "python" | "javascript" | "typescript" | "tsx" | "go" | "rust"
+            "python" | "javascript" | "typescript" | "tsx" | "go"
         ) {
             skipped_sources.push(obj(&[
                 ("source_path", source.get("source_path")?.clone()),
@@ -465,6 +411,14 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
     }
     let mut seen_edges = BTreeSet::new();
     for source in files.values() {
+        // Rust semantic resolution belongs to rust-analyzer/SCIP; syntactic
+        // declarations remain available, but are not treated as graph edges.
+        if !matches!(
+            source.language,
+            "python" | "javascript" | "typescript" | "tsx" | "go"
+        ) {
+            continue;
+        }
         for import in source.imports {
             if candidate_edges.len() + unresolved_imports.len() >= MAX_RELATIONS {
                 return refuse("resolution exceeds 10,000 observations; narrow --roots");
@@ -495,11 +449,6 @@ pub fn candidates(root: &Path, syntax_report: &Path) -> Result<Value> {
                     python_candidates(spec, source.path, &files),
                     "PYTHON_MODULE_CANDIDATE",
                     "NO_UNIQUE_TRACKED_MODULE",
-                ),
-                "rust" => (
-                    rust_candidates(spec, source.path, &files),
-                    "RUST_CRATE_PATH_CANDIDATE",
-                    "UNRESOLVED_OR_NONLOCAL_RUST_IMPORT",
                 ),
                 "go" => {
                     let (targets, module) = go_candidates(spec, source.path, &modules, &files);
@@ -638,11 +587,6 @@ mod tests {
             import_target("go", "\"example.org/pkg\""),
             Some("example.org/pkg".into())
         );
-        assert_eq!(
-            import_target("rust", "use crate::widget::answer;"),
-            Some("crate::widget::answer".into())
-        );
-        assert_eq!(import_target("rust", "use crate::{a,b};"), None);
         assert_eq!(
             import_target("python", "import pkg.util"),
             Some("pkg.util".into())

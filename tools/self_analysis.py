@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run Excession against its own pinned Git source, without granting it test authority.
 
-The Rust CLI supplies source-bound syntax and conservative dependency candidates.
-This driver checks source identities independently with Git and retains both replay
-receipts. Incomplete language support is reported, never treated as no dependency.
+The Rust CLI supplies source-bound syntax, conservative non-Rust file candidates,
+and rust-analyzer SCIP references. This driver checks source identities
+independently with Git and retains replay receipts. Unknown edges stay unknown.
 """
 from __future__ import annotations
 
@@ -224,99 +224,78 @@ def independently_verify(
     }
 
 
-def native_boundary_evidence(
+def scip_evidence(
     repo: Path,
     binary: Path,
     out: Path,
     summary: dict[str, Any],
-    declarations: tuple[tuple[str, Path], ...],
-) -> list[dict[str, Any]]:
-    """Check real Cargo depfile declarations through Excession's native boundary.
-
-    The compiler-produced source set is configuration-specific. It is neither a
-    direct import graph nor evidence of complete dependencies. The originating
-    depfile is not a remotely authenticated compiler receipt.
-    """
-    source_commit = summary["source_commit"]
-    source_tree = summary["source_tree"]
-    tree = tracked_blobs(repo, source_commit)
-    result: list[dict[str, Any]] = []
-    for name, original in declarations:
-        raw = original.read_bytes()
-        declaration = json.loads(raw)
-        require(declaration["schema"] == "excession.input-declaration.v1"
-                and declaration["coverage"] == "DECLARED_INPUTS_ONLY"
-                and declaration["language"] == "rust",
-                f"{name}: unexpected native declaration contract")
-        assumptions = declaration["assumptions"]
-        require(assumptions["source-commit"] == source_commit
-                and assumptions["source-tree"] == source_tree,
-                f"{name}: native depfile source revision differs")
-        require(assumptions["rust-source-evidence"]
-                == "UNATTESTED_CARGO_DEPFILE_SOURCE_SET",
-                f"{name}: unsupported compiler evidence kind")
-        source_inputs = set()
-        for item in declaration["inputs"]:
-            path = item["path"]
-            require(path in tree, f"{name}: input not tracked by Git: {path}")
-            if item["role"] == "source":
-                source_inputs.add(path)
-        require(declaration["subject"] in source_inputs,
-                f"{name}: compiler depfile omitted declared subject")
-        preflight, _ = invoke_json(
-            binary, out / f"native-{name}-preflight.json",
-            "syntax", "native-preflight", "--declaration", str(original),
-        )
-        require(preflight["status"] == "DECLARATION_SHAPE_ONLY",
-                f"{name}: native declaration preflight did not pass")
-        boundary, _ = invoke_json(
-            binary, out / f"native-{name}-comparison.json",
-            "syntax", "native-compare", "--repo", str(repo),
-            "--syntax-report", str(out / "syntax.json"),
-            "--resolution-report", str(out / "dependencies.json"),
-            "--declaration", str(original),
-        )
-        receipt, _ = invoke_json(
-            binary, out / f"native-{name}-audit.json",
-            "syntax", "native-audit", "--repo", str(repo),
-            "--syntax-report", str(out / "syntax.json"),
-            "--resolution-report", str(out / "dependencies.json"),
-            "--declaration", str(original),
-            "--report", str(out / f"native-{name}-comparison.json"),
-        )
-        require(boundary["source_commit"] == source_commit
-                and boundary["source_tree"] == source_tree,
-                f"{name}: source identities differ from self-analysis")
-        require(boundary["provenance"] == "UNATTESTED_NATIVE_DECLARATION"
-                and boundary["coverage"] == "SCOPED_COMPARISON_ONLY",
-                f"{name}: boundary overstates source guarantees")
-        require(receipt["status"] == "DECLARATION_AND_GIT_REPLAY_MATCH"
-                and receipt["boundary_id"] == boundary["boundary_id"],
-                f"{name}: native boundary replay did not match")
-        pinned = boundary["pinned_inputs"]
-        require(len(pinned) == len(declaration["inputs"]),
-                f"{name}: native comparison omitted source inputs")
-        for item in pinned:
-            path = item["path"]
-            require(path in tree
-                    and (item["mode"], item["blob"]) == tree[path],
-                    f"{name}: independent Git identity mismatch: {path}")
-        result.append({
-            "subject": declaration["subject"],
-            "declaration_id": preflight["declaration_id"],
-            "boundary_id": boundary["boundary_id"],
-            "compiler_observed_source_files": len(source_inputs),
-            "matching_candidate_edges": len(boundary["matching_edges"]),
-            "static_only_candidate_edges": len(boundary["static_only_edges"]),
-            "native_only_sources": len(boundary["native_only_sources"]),
-            "unscanned_sources": len(boundary["unscanned_sources"]),
-            "unresolved_syntax_imports": len(boundary["unresolved_imports"]),
-            "source_input_paths": sorted(source_inputs),
-            "provenance": "UNATTESTED_CARGO_DEPFILE_SOURCE_SET",
-            "audit": receipt["status"],
-            "authority": "ADVISORY_ONLY",
-        })
-    return result
+    index: Path,
+) -> dict[str, Any]:
+    """Reuse Excession's SCIP/Git reader; do not implement Rust name resolution."""
+    require(index.is_file() and not index.is_relative_to(repo),
+            "decoded rust-analyzer SCIP must be outside source checkout")
+    report, elapsed_ms = invoke_json(
+        binary, out / "scip-report.json", "refactor", "scip-suggest",
+        "--repo", str(repo), "--rev", summary["source_commit"],
+        "--index", str(index), "--source-prefix", "core",
+    )
+    require(report["source_commit"] == summary["source_commit"]
+            and report["source_tree"] == summary["source_tree"],
+            "SCIP report differs from pinned Git revision")
+    require(report["status"] == "UNVERIFIED_SCIP_RELATIONS",
+            "SCIP reports stronger authority than supported")
+    require(report["indexer"]["name"] == "rust-analyzer",
+            "Rust source relationships must come from rust-analyzer")
+    coverage = report["coverage"]
+    require("rust" in coverage["languages"] and coverage["indexed_documents"] > 0,
+            "Rust SCIP index contains no usable Rust source documents")
+    receipt, replay_ms = invoke_json(
+        binary, out / "scip-audit.json", "refactor", "scip-audit",
+        "--repo", str(repo), "--rev", summary["source_commit"],
+        "--index", str(index), "--source-prefix", "core",
+        "--report", str(out / "scip-report.json"),
+    )
+    require(receipt["status"] == "REPLAYED_SCIP_INDEX"
+            and receipt["report_id"] == report["report_id"]
+            and receipt["source_commit"] == summary["source_commit"],
+            "SCIP/Git replay differs from report")
+    require(receipt["indexer_independently_executed"] is False,
+            "SCIP replay must not misrepresent indexer execution")
+    # Independently re-check the Git bindings emitted on every candidate.
+    # Rust itself validates every indexed document, including those without
+    # candidate edges. The Python check is deliberately a second guard only.
+    tree = tracked_blobs(repo, summary["source_commit"])
+    def check_source(source: dict[str, Any]) -> None:
+        path = source["path"]
+        require(path.startswith("core/") and path in tree,
+                f"SCIP candidate outside the pinned Cargo project: {path}")
+        require(source["blob"] == tree[path][1],
+                f"SCIP candidate source identity differs from Git: {path}")
+    for candidate in report["candidates"]:
+        for source in candidate.get("sources", []):
+            check_source(source)
+        for ref in candidate.get("references", []):
+            check_source(ref["from"])
+            check_source(ref["to"])
+        if "reference" in candidate:
+            check_source(candidate["reference"]["from"])
+            check_source(candidate["reference"]["to"])
+    return {
+        "source": "rust-analyzer/SCIP",
+        "indexer_version": report["indexer"]["version"],
+        "index_sha256": report["index_sha256"],
+        "report_id": report["report_id"],
+        "indexed_documents": coverage["indexed_documents"],
+        "indexed_occurrences": coverage["indexed_occurrences"],
+        "matched_cross_file_references": coverage["matched_cross_file_references"],
+        "unresolved_references": coverage["unresolved_references"],
+        "refactor_hypotheses": len(report["candidates"]),
+        "audit": receipt["status"],
+        "indexer_independently_executed": False,
+        "provenance": "INDEXER_OUTPUT_GIT_BOUND_NOT_ATTESTED",
+        "authority": "ADVISORY_ONLY",
+        "runtime_ms": {"ingest": elapsed_ms, "audit": replay_ms},
+    }
 
 
 def report_markdown(summary: dict[str, Any]) -> str:
@@ -339,15 +318,15 @@ def report_markdown(summary: dict[str, Any]) -> str:
         f"- Non-fully-parsed sources: `{json.dumps(syntax['nonfully_parsed_sources'], sort_keys=True)}`.",
         f"- Independent source binding: {summary['assurance']['source_binding']}.",
         f"- Excession replay: {syntax['audit']} / {dependencies['audit']}.",
-        *[
-            f"- Native Rust `{entry['subject']}`: "
-            f"{entry['compiler_observed_source_files']} compiler-declared source paths, "
-            f"{entry['matching_candidate_edges']} matching candidate edges, "
-            f"{entry['static_only_candidate_edges']} static-only candidates, "
-            f"{entry['unresolved_syntax_imports']} unresolved syntax imports; "
-            f"replay {entry['audit']}."
-            for entry in summary.get("native_boundaries", [])
-        ],
+        *([
+            f"- Rust semantic source: {summary['scip']['source']} "
+            f"({summary['scip']['indexed_documents']} documents, "
+            f"{summary['scip']['indexed_occurrences']} occurrences, "
+            f"{summary['scip']['matched_cross_file_references']} cross-file references; "
+            f"{summary['scip']['unresolved_references']} unresolved; "
+            f"{summary['scip']['refactor_hypotheses']} advisory hypotheses).",
+            f"- SCIP/Git replay: {summary['scip']['audit']}.",
+        ] if "scip" in summary else []),
         f"- Changed paths: {len(impact['changed_paths'])}; "
         f"candidate dependents: {len(impact['candidate_affected_sources'])}.",
         "",
@@ -378,8 +357,8 @@ def main() -> None:
     parser.add_argument("--rev", default="HEAD")
     parser.add_argument("--base-rev", default=None)
     parser.add_argument("--roots", default=",".join(DEFAULT_ROOTS))
-    parser.add_argument("--native-lib", type=Path, default=None)
-    parser.add_argument("--native-bin", type=Path, default=None)
+    parser.add_argument("--scip-index", type=Path, required=True,
+                        help="JSON decoded from a rust-analyzer SCIP index")
     arguments = parser.parse_args()
     repo = arguments.repo.resolve()
     binary = arguments.bin.resolve()
@@ -423,17 +402,9 @@ def main() -> None:
         "candidate_resolution": resolve_ms,
         "candidate_audit": resolution_audit_ms,
     }
-    native_declarations = tuple(
-        (name, path.resolve())
-        for name, path in (("lib", arguments.native_lib), ("bin", arguments.native_bin))
-        if path is not None
+    summary["scip"] = scip_evidence(
+        repo, binary, out, summary, arguments.scip_index.resolve(),
     )
-    if native_declarations:
-        require(len(native_declarations) == 2,
-                "self-analysis native comparison requires both lib and bin inputs")
-        summary["native_boundaries"] = native_boundary_evidence(
-            repo, binary, out, summary, native_declarations,
-        )
     (out / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8",
     )

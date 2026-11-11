@@ -73,13 +73,17 @@ project, so run unknown builds only in isolated workers.
 # Generate index.scip using the appropriate language-native indexer.
 scip print --json index.scip > /tmp/index.scip.json
 excession refactor scip-suggest --repo . --rev HEAD \
-  --index /tmp/index.scip.json > /tmp/scip-refactor.json
+  --index /tmp/index.scip.json --source-prefix core > /tmp/scip-refactor.json
 excession refactor scip-audit --repo . --rev HEAD \
-  --index /tmp/index.scip.json --report /tmp/scip-refactor.json
+  --index /tmp/index.scip.json --source-prefix core --report /tmp/scip-refactor.json
 ```
 
-This is an **optional decoded SCIP evidence input**, not a full native binary
-`.scip` importer or automatic indexer orchestration. We reuse the upstream
+This is **official SCIP-decoded evidence input**, not a new Protobuf decoder.
+For a Rust crate in `core/`, run `rust-analyzer scip ./core --output /tmp/index.scip`,
+then `scip print --json /tmp/index.scip > /tmp/index.scip.json`. The explicit
+`--source-prefix core` checks the upstream SCIP project root against the
+pinned Git checkout without rewriting its document paths. Indexing is
+still a separate, trusted-local preparatory step, not a sandboxed operation. We reuse the upstream
 SCIP decoder and inspect its Go JSON field names (e.g. `relative_path`,
 `symbol_roles`, and `TypedRange`); newer typed ranges and legacy `range`
 arrays are supported. No new Cargo dependencies are needed.

@@ -78,11 +78,11 @@ See [CLI](docs/CLI.md), [repository views](docs/REPOSITORY_VIEWS.md), and
 
 ## Self-analysis (dogfooding)
 
-A dedicated [self-analysis workflow](docs/SELF_ANALYSIS.md) runs Excession on
-its own clean, pinned Git source, audits syntax and conservative dependency
-candidates, and independently verifies source identities using Git. It keeps
-unresolved and unsupported observations visible. The resulting change-impact
-hints are advisory and **never** authorize skipping tests.
+A dedicated [self-analysis workflow](docs/SELF_ANALYSIS.md) uses
+**rust-analyzer SCIP** for resolved Rust symbols and references, while
+Tree-sitter remains a separate syntax observation path. The SCIP consumer
+checks indexed source against pinned Git, and its results are advisory:
+they **never** authorize skipping tests.
 
 ## Multi-language syntax parsing
 
@@ -114,9 +114,10 @@ See [syntax parser preflight](docs/SYNTAX_PARSERS.md#fast-preflight-before-expen
 Parsed imports can be mapped to scoped, Git-bound file candidates with
 `excession syntax resolve --repo "$REPO" --report /tmp/syntax.json`.
 A separate `syntax resolve-audit` command independently replays the mapping.
-Go, Rust, JS/TS and Python use language-specific conservative path rules.
+Go, JS/TS and Python use language-specific conservative path rules.
+Rust intentionally has no handwritten import resolver: use rust-analyzer SCIP.
 Ambiguous, external, configuration-dependent and unsupported cases remain
-explicit. These are **navigation candidates, not compiler-established edges**.
+explicit. These are navigation candidates, not compiler-established edges.
 
 ## Refactoring candidates
 
@@ -125,8 +126,9 @@ deterministic, unverified import-cycle and repeated-body hypotheses from the
 existing Python/JavaScript index. `excession refactor audit` replays the
 indexed query against Git source identities and checks a saved report. It does
 not reparse semantic relations, prove equivalence, or modify source.
-An optional SCIP decoder JSON input enables cross-language semantic-reference
-hypotheses without adding a Protobuf decoder or language parser to Rust.
+An optional decoded SCIP input enables language-native reference hypotheses
+without a custom Protobuf decoder or Rust language parser. For nested Rust
+projects, use `--source-prefix core` to bind index paths to repository-root Git.
 See [refactoring hypotheses](docs/REFACTORING.md).
 
 ## Integrated compiler-backed discovery

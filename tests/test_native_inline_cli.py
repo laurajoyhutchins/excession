@@ -134,30 +134,10 @@ class NativeInlineCLI(unittest.TestCase):
             body, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
         ).encode()).hexdigest()
 
-    def test_real_rustc_depfile_and_asset(self):
-        if not shutil.which("rustc"):
-            self.skipTest("rustc not installed")
-        value = json.loads(self.invoke("src/main.rs", "rust").stdout)
-        boundary = self.assert_valid(value, "rust", "src/main.rs")
-        paths = {x["path"] for x in boundary["pinned_inputs"]}
-        self.assertTrue({"Cargo.toml", "src/main.rs", "src/math.rs", "src/data.txt"} <= paths)
-        edges = {(x["source_path"], x["target_path"])
-                 for x in boundary["matching_edges"]}
-        self.assertIn(("src/main.rs", "src/math.rs"), edges)
-        self.assertIn("src/data.txt", boundary["native_only_sources"])
-
-        declaration = self.base / "native.json"
-        saved_boundary = self.base / "boundary.json"
-        declaration.write_text(json.dumps(value["declaration"]))
-        saved_boundary.write_text(json.dumps(boundary))
-        audit = json.loads(run(
-            BIN, "syntax", "native-audit", "--repo", self.repo,
-            "--syntax-report", self.syntax,
-            "--resolution-report", self.resolution,
-            "--declaration", declaration,
-            "--report", saved_boundary,
-        ).stdout)
-        self.assertEqual(audit["status"], "DECLARATION_AND_GIT_REPLAY_MATCH")
+    def test_rust_native_path_is_removed(self):
+        denied = self.invoke("src/main.rs", "rust", check=False)
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn(b"rust-analyzer SCIP", denied.stderr)
 
     def test_real_go_dependency_compilation(self):
         if not shutil.which("go"):
@@ -241,13 +221,13 @@ class NativeInlineCLI(unittest.TestCase):
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
         ).encode()).hexdigest()
         self.resolution.write_text(json.dumps(data))
-        denied = self.invoke("src/main.rs", "rust", check=False)
+        denied = self.invoke("src/go/main.go", "go", check=False)
         self.assertNotEqual(denied.returncode, 0)
         self.assertIn(b"mismatched syntax/resolution identities", denied.stderr)
 
     def test_dirty_checkout_refused_before_native_compiler(self):
         (self.repo / "extra.rs").write_text("fn extra() {}\n")
-        denied = self.invoke("src/main.rs", "rust", check=False)
+        denied = self.invoke("src/go/main.go", "go", check=False)
         self.assertNotEqual(denied.returncode, 0)
         self.assertIn(b"dirty checkout", denied.stderr)
 

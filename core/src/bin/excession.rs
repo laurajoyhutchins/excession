@@ -3,8 +3,8 @@
 use excession::evidence_query;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, git, graph_baseline, index, native_boundary, native_depinfo, preflight,
-    projection, refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, git, graph_baseline, index, native_boundary, preflight, projection,
+    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -28,7 +28,6 @@ Usage:
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
   excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust|python --import-roots ROOTS(PYTHON) --trusted-local true
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
-  excession syntax cargo-depfile --repo REPO --package-root core --depfile CARGO_D --subject core/src/lib.rs --rustc RUSTC --rustc-version VERSION [--rev HEAD]
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
   excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
@@ -54,8 +53,8 @@ Usage:
   excession inspect review --db DB --name NAME --old REV --new REV
   excession refactor suggest --db DB --name NAME --rev REV
   excession refactor audit --db DB --name NAME --rev REV --report SAVED_JSON
-  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON
-  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON
+  excession refactor scip-suggest --repo REPO --rev REV --index DECODED_SCIP_JSON [--source-prefix core]
+  excession refactor scip-audit --repo REPO --rev REV --index DECODED_SCIP_JSON --report SAVED_JSON [--source-prefix core]
   excession benchmark report --kind relational --directory RESULT_DIR
   excession benchmark report --kind native --directory RESULT_DIR --input RECEIPT.json
   excession benchmark validate --report SAVED_REPORT_JSON
@@ -510,29 +509,6 @@ fn execute(args: &[String]) -> Result<Response> {
                 let opt = Options::parse(tail, &["report"], &[])?;
                 Ok(json(preflight::resolution_file(opt.path("report"))?))
             }
-            "cargo-depfile" => {
-                let opt = Options::parse(
-                    tail,
-                    &[
-                        "repo",
-                        "package-root",
-                        "depfile",
-                        "subject",
-                        "rustc",
-                        "rustc-version",
-                    ],
-                    &["rev"],
-                )?;
-                Ok(json(native_depinfo::declaration(
-                    opt.path("repo"),
-                    opt.get("package-root"),
-                    opt.path("depfile"),
-                    opt.get("subject"),
-                    opt.path("rustc"),
-                    opt.get("rustc-version"),
-                    opt.get_or("rev", "HEAD"),
-                )?))
-            }
             "native-run" => {
                 let opt = Options::parse(
                     tail,
@@ -679,17 +655,23 @@ fn execute(args: &[String]) -> Result<Response> {
                 } else {
                     &["repo", "rev", "index"]
                 },
-                &[],
+                &["source-prefix"],
             )?;
             Ok(json(if sub == "scip-audit" {
-                scip_refactor::audit(
+                scip_refactor::audit_with_prefix(
                     opt.path("repo"),
                     opt.get("rev"),
                     opt.path("index"),
                     opt.path("report"),
+                    opt.0.get("source-prefix").map(String::as_str),
                 )?
             } else {
-                scip_refactor::suggest(opt.path("repo"), opt.get("rev"), opt.path("index"))?
+                scip_refactor::suggest_with_prefix(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.0.get("source-prefix").map(String::as_str),
+                )?
             }))
         }
         [top, sub, rest @ ..] if top == "refactor" => {

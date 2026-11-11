@@ -155,26 +155,6 @@ fn toolchain(name: &str, version_flag: &str) -> Result<(String, String)> {
     toolchain_at(&executable(name)?, version_flag)
 }
 
-/// Resolve the selected Rust toolchain while still in the caller's environment.
-/// Running the rustup shim from a staged checkout without a rust-toolchain file
-/// can silently select another compiler or fail without a default toolchain.
-/// Pin the *real* rustc executable for invocation and SHA-256 provenance.
-fn rustc_binary() -> Result<PathBuf> {
-    let launcher = executable("rustc")?;
-    let mut probe = Command::new(&launcher);
-    probe
-        .args(["--print", "sysroot"])
-        .env("RUSTUP_AUTO_INSTALL", "0");
-    let sysroot = String::from_utf8(run_bounded(probe, "native rustc sysroot")?)
-        .map_err(|_| "non-UTF8 rustc sysroot")?;
-    let compiler = PathBuf::from(sysroot.trim()).join("bin").join("rustc");
-    if !compiler.is_file() {
-        return refuse("selected Rust sysroot has no actual rustc executable");
-    }
-    compiler
-        .canonicalize()
-        .map_err(|e| format!("resolve rustc compiler: {e}"))
-}
 fn stage(repo: &Path, commit: &str, root: &Path) -> Result<(usize, usize, PinnedFiles)> {
     let entries = git::entries(repo, commit)?;
     let mut staged = BTreeMap::new();
@@ -308,10 +288,10 @@ pub fn discover(
     if !trusted {
         return refuse("native compiler invocation requires --trusted-local true");
     }
-    if !matches!(
-        language,
-        "go" | "javascript" | "typescript" | "rust" | "python"
-    ) {
+    if language == "rust" {
+        return refuse("Rust semantics use rust-analyzer SCIP; native Rust resolver removed");
+    }
+    if !matches!(language, "go" | "javascript" | "typescript" | "python") {
         return refuse("unsupported native language");
     }
     if (language == "python") != import_roots.is_some() {
@@ -341,20 +321,10 @@ pub fn discover(
     }
     let (tool, version_flag) = match language {
         "go" => ("go", "version"),
-        "rust" => ("rustc", "--version"),
         "python" => ("python3", "--version"),
         _ => ("node", "--version"),
     };
-    let pinned_rustc = if language == "rust" {
-        Some(rustc_binary()?)
-    } else {
-        None
-    };
-    let (version, binary_sha256) = if let Some(ref path) = pinned_rustc {
-        toolchain_at(path, version_flag)?
-    } else {
-        toolchain(tool, version_flag)?
-    };
+    let (version, binary_sha256) = toolchain(tool, version_flag)?;
     let (adapter_python_version, adapter_python_sha256) = toolchain("python3", "--version")?;
     let helper = snapshot.directory.join("typescript.cjs");
     fs::write(&helper, TYPESCRIPT_HELPER)
@@ -371,9 +341,6 @@ pub fn discover(
         .arg(&helper)
         .arg(roots)
         .current_dir(&root);
-    if let Some(ref compiler) = pinned_rustc {
-        cmd.env("EXCESSION_NATIVE_RUSTC", compiler);
-    }
     let raw = run_bounded(cmd, "language-native resolver")?;
     let found = json::parse(&raw)?;
     if found.entries()?.len() != if language == "python" { 4 } else { 3 } {

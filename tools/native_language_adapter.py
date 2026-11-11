@@ -9,7 +9,6 @@ hashes, or stage files. Those responsibilities belong to the Rust core.
 """
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -114,49 +113,6 @@ def typescript(root, entry, helper):
     return set(result["sources"]), set(result["configuration"]), {
         "typescript-api-sha256": sha,
         "typescript-options": result["options_sha256"]}
-
-
-def rust(root, entry):
-    config = root / "Cargo.toml"
-    if not config.is_file():
-        raise Unsupported("Rust requires tracked Cargo.toml")
-    manifest = tomllib.loads(config.read_text())
-    if "workspace" in manifest or any(manifest.get(key) for key in (
-            "dependencies", "dev-dependencies", "build-dependencies", "patch", "replace")):
-        raise Unsupported("Rust workspace/external dependencies need Cargo-aware adapter")
-    package = manifest.get("package", {})
-    if not isinstance(package, dict) or package.get("build") is not None or (root / "build.rs").exists():
-        raise Unsupported("Rust build script is unsupported")
-    if (root / ".cargo/config.toml").exists():
-        raise Unsupported("Rust Cargo configuration needs additional interpretation")
-    edition = package.get("edition", "2015")
-    if edition not in ("2015", "2018", "2021", "2024") or entry not in ("src/lib.rs", "src/main.rs"):
-        raise Unsupported("unsupported Rust crate root/edition")
-    for filename in root.rglob("*.rs"):
-        if re.search(r"\b(?:env|option_env|concat|include)!\s*\(", filename.read_text(errors="replace")):
-            raise Unsupported("Rust compile-time environment or dynamic include unsupported")
-    depfile = root.parent / "rust-dependencies.d"
-    selected = os.environ.get("EXCESSION_NATIVE_RUSTC")
-    if not selected:
-        raise Unsupported("Rust authority did not pin a compiler executable")
-    rustc = Path(selected)
-    if not rustc.is_absolute() or not rustc.is_file():
-        raise Unsupported("Rust authority supplied an invalid compiler path")
-    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root.parent),
-           "LC_ALL": "C", "TZ": "UTC", "CARGO_MANIFEST_DIR": str(root),
-           "CARGO_PKG_NAME": str(package.get("name", "probe"))}
-    run([str(rustc), "--crate-name", "excession_native_probe", "--crate-type",
-         "lib" if entry == "src/lib.rs" else "bin", "--edition", edition,
-         "--emit", f"dep-info={depfile}", str(root / entry)], cwd=root, env=env)
-    first = depfile.read_text().splitlines()[0]
-    if ": " not in first or any(x in first for x in ("\\ ", "\\#", "\\:")):
-        raise Unsupported("unsupported rustc dep-info encoding")
-    selected = {relative(root, p) for p in first.split(": ", 1)[1].split()}
-    if entry not in selected:
-        raise Unsupported("rustc dep-info omitted entry")
-    return selected, {p for p in ("Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml")
-                      if (root / p).is_file()}, {
-        "rustc-edition": edition, "rustc-mode": "dep-info-no-externs"}
 
 
 def python_roots(root, raw):
@@ -436,8 +392,6 @@ def main():
         src, config, assumptions = go(root, entry)
     elif lang in ("javascript", "typescript"):
         src, config, assumptions = typescript(root, entry, helper)
-    elif lang == "rust":
-        src, config, assumptions = rust(root, entry)
     else:
         raise Unsupported("unsupported language")
     result = {"sources": sorted(src), "configuration": sorted(config),

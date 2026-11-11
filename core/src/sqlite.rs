@@ -129,13 +129,20 @@ impl Db {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_database(prefix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "{prefix}-{}-{}.db",
+            std::process::id(),
+            NEXT_DATABASE.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
     #[test]
     fn existing_file_and_row_contract() {
-        let file = std::env::temp_dir().join(format!(
-            "excession-bundled-sqlite-{}-{}.db",
-            std::process::id(),
-            std::thread::current().name().unwrap_or("unnamed")
-        ));
+        let file = temp_database("excession-bundled-sqlite");
         let _ = std::fs::remove_file(&file);
         {
             let db = Db::open(&file).expect("create");
@@ -182,11 +189,7 @@ mod tests {
 
     #[test]
     fn fk_and_binding() {
-        let d = std::env::temp_dir().join(format!(
-            "excession-sqlite-test-{}-{}.db",
-            std::process::id(),
-            std::thread::current().name().unwrap_or("unnamed")
-        ));
+        let d = temp_database("excession-sqlite-test");
         let _ = std::fs::remove_file(&d);
         let db = Db::open(&d).expect("open");
         db.init_schema().expect("schema");

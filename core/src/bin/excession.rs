@@ -1,7 +1,9 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
-use excession::{Result, git, index, kernel, kernel_clang, projection, refuse, security_ingest, views};
+use excession::{
+    Result, git, index, kernel, kernel_clang, projection, refuse, security_ingest, views,
+};
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};

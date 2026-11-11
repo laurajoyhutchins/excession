@@ -190,7 +190,7 @@
       "required": [
         "snapshot_id",
         "link_report_id",
-        "role"
+        "assessment"
       ],
       "properties": {
         "snapshot_id": {
@@ -199,8 +199,14 @@
         "link_report_id": {
           "$ref": "#/$defs/sha256"
         },
-        "role": {
+        "assessment": {
           "const": "ANNOTATION_ONLY"
+        },
+        "role": {
+          "enum": [
+            "CONCEPT_ANNOTATION",
+            "INVESTIGATION_HYPOTHESIS"
+          ]
         }
       }
     }

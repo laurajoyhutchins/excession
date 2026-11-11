@@ -9,16 +9,17 @@ identities, SQLite records, and reported flows. A scanner finding is not a
 confirmed vulnerability or a CVE.
 
 The **only installed Rust executable** is `excession`. The library and Cargo
-package are also named `excession`. The earlier research implementation is
-accessible through the `excession research ...` command family, not through
-an additional binary. See [migration notes](docs/MIGRATION.md), the
+package are also named `excession`. The positional `research` command is
+retired; historical protocols remain in Git history, not in the supported CLI.
+See [migration notes](docs/MIGRATION.md), the
 [architecture](docs/ARCHITECTURE.md), and [origins](docs/ORIGINS.md).
 
 ## Install and verify
 
-The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
-crates. Git (SHA-1 object format) and native SQLite are required for
-repository operations; the digests use portable Rust without OpenSSL.
+The Rust CLI uses pinned Cargo dependencies, including clap for its single
+modern command grammar. After installing the locked dependencies, it builds
+offline with Rust 1.99.1. Git (SHA-1 object format) and native SQLite are
+required for repository operations; digests currently use portable Rust.
 Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
 Tree-sitter grammars and security scanners are opt-in adapters.
 
@@ -177,21 +178,14 @@ configuration. This is trusted-local execution, **not a sandbox**; database
 creation and untrusted builds require their own isolation. The executable
 neither downloads scanners nor asserts that a finding is exploitable.
 
-## Research compatibility
+## Historical experiments
 
-Pinned earlier experiments retain their original Git blobs, schema strings,
-identity-forming metadata, and fixture bundles. They can be replayed through
-one binary:
-
-```sh
-excession research --help
-excession research compose SPEC_JSON DATABASE
-excession research compose-audit SPEC_JSON DATABASE
-```
-
-The `research` commands accept historical positional arguments. They are
-separate from the modern named-option CLI and intentionally preserve existing
-research receipts. See [migration notes](docs/MIGRATION.md) for the mapping.
+Pinned earlier experiments retain their Git objects, schema strings,
+identity-forming metadata, and fixture bundles. Their positional command
+interface is **not supported** by the current executable. Reproduce an old
+protocol using its pinned historical Git revision and environment, rather
+than adding a second command grammar to Excession. Supported source-bound
+view and audit workflows are documented in the [CLI](docs/CLI.md).
 
 ## Benchmarks
 

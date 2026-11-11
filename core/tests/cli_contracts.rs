@@ -185,13 +185,10 @@ fn cli_help_version_and_rejection_contract() {
     assert!(String::from_utf8_lossy(&checked(&["--help"])).contains("Excession"));
     assert!(String::from_utf8_lossy(&checked(&["view", "--help"])).contains("Excession"));
     assert!(String::from_utf8_lossy(&checked(&["--version"])).starts_with("excession "));
-    assert!(
-        String::from_utf8_lossy(&checked(&["research", "--help"]))
-            .contains("excession research carry")
-    );
-    assert!(
-        String::from_utf8_lossy(&checked(&["research"])).contains("excession research project")
-    );
+    // Historical positional research commands are intentionally not exposed
+    // through the supported CLI.
+    rejected(cli(&["research"]));
+    rejected(cli(&["research", "--help"]));
     for args in [
         vec!["view", "deps", "--db", f.db.to_str().unwrap()],
         vec![
@@ -231,18 +228,9 @@ fn cli_help_version_and_rejection_contract() {
     }
 }
 #[test]
-fn view_dependency_plan_matches_research_and_replays() {
+fn view_dependency_plan_replays_without_legacy_command() {
     let f = Fixture::temp();
     let (plan, saved) = f.plan("h11._connection", "deps.json");
-    let old = parsed(&[
-        "research",
-        "view-plan-deps",
-        f.db.to_str().unwrap(),
-        "h11",
-        "HEAD",
-        "h11._connection",
-    ]);
-    assert_eq!(plan, old);
     assert_eq!(str_field(&plan, "source_commit"), f.commit);
     let args = [
         "view",
@@ -267,22 +255,12 @@ fn view_dependency_plan_matches_research_and_replays() {
     rejected(cli(&args));
 }
 #[test]
-fn single_binary_dispatch_and_research_digest() {
+fn one_supported_binary_without_legacy_dispatch() {
     let manifest =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")).unwrap();
     assert!(manifest.contains("name = \"excession\""));
     assert_eq!(manifest.matches("[[bin]]").count(), 1);
-    let f = Fixture::temp();
-    let src = f.root.join("canonical.json");
-    fs::write(&src, r#"{"x":1}"#).unwrap();
-    let text =
-        String::from_utf8(checked(&["research", "json-check", src.to_str().unwrap()])).unwrap();
-    let digest = text
-        .trim()
-        .strip_prefix("canonical_sha256=")
-        .expect("canonical digest");
-    assert_eq!(digest.len(), 64);
-    assert!(digest.bytes().all(|c| c.is_ascii_hexdigit()));
+    rejected(cli(&["research", "json-check", "canonical.json"]));
 }
 #[test]
 fn virtual_navigation_reads_authenticated_git_bytes() {

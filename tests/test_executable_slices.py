@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import os
+from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[1] / "tools" / "excession_slice.py"
 spec = importlib.util.spec_from_file_location("excession_slice", MODULE)
@@ -157,6 +159,38 @@ class SliceIntegrationTests(unittest.TestCase):
         slices.materialize(self.repo, manifest, out)
         with self.assertRaises(slices.Refusal):
             slices.execute(self.repo, manifest, out, 10)
+
+    def test_isolated_worker_setup_failure_is_not_test_failure(self):
+        with patch.object(slices.subprocess, "run", return_value=subprocess.CompletedProcess(
+                ["unshare"], 127, b"", b"namespace unavailable")):
+            with self.assertRaisesRegex(slices.Refusal, "execution boundary"):
+                slices._isolated_process(self.root, "tests/check.py", 2)
+
+    @unittest.skipUnless(os.environ.get("EXCESSION_RUN_NAMESPACE_TESTS") == "1",
+                         "opt-in Linux namespace integration")
+    def test_linux_namespace_limits_filesystem_access(self):
+        self.write("tests/check.py", "from pathlib import Path\n"
+                   "from pkg.core import value\nassert value() == 7\n"
+                   "assert not Path('/etc/passwd').exists()\n"
+                   "assert Path('/work/pkg/core.py').exists()\n"
+                   "assert not Path('/work/unrelated.py').exists()\n")
+        self.commit("isolation probe")
+        manifest = slices.plan(self.repo, "tests/check.py")
+        out = self.root / "namespace"
+        slices.materialize(self.repo, manifest, out)
+        result = slices.execute(self.repo, manifest, out, 10, isolated_linux=True)
+        self.assertEqual(result["status"], "OBSERVED_PASS", result)
+        self.assertEqual(result["isolation"], "LOCAL_LINUX_NAMESPACES_UNATTESTED")
+        slices.audit(self.repo, manifest, out)
+        self.write("tests/check.py", "from pathlib import Path\nPath('/work/escape.txt').write_text('bad')\n")
+        self.commit("forbidden write")
+        second = slices.plan(self.repo, "tests/check.py")
+        second_out = self.root / "namespace2"
+        slices.materialize(self.repo, second, second_out)
+        denied = slices.execute(self.repo, second, second_out, 10, isolated_linux=True)
+        self.assertEqual(denied["status"], "OBSERVED_FAIL")
+        self.assertFalse((second_out / "escape.txt").exists())
+        slices.audit(self.repo, second, second_out)
 
     def test_forged_manifest_rejected(self):
         manifest, _, _ = self.base_run()

@@ -26,14 +26,30 @@ All reports go outside that worktree. The workflow preserves these artifacts:
 | dependencies.json | Conservative candidate edges, unresolved imports, skipped sources |
 | dependencies-audit.json | Independently regenerated resolution receipt |
 | summary.json | Independently Git-checked counts, revision delta, advisory impact hints, measured phase times |
+| native-lib.json / native-bin.json | Cargo depfile inputs, toolchain binary hash and pinned Git identities, using the existing input-declaration v1 contract |
+| native-*-comparison.json | Language boundary agreement, native-only inputs, static-only candidates and unresolved syntax |
+| native-*-audit.json | Regenerated comparison receipts tied to the exact syntax and native declarations |
 | summary.md | Short human-readable CI job summary |
 
 A missing grammar, partially parsed file, unresolved import, external import,
 or unsupported language is **not** evidence of an absent dependency. The report
 retains these categories instead of collapsing them to zero. Candidate impact
 is a graph traversal over *reported candidates only*; it cannot authorize
-skipping any test. We do not compare the candidate graph to the Cargo compiler
-closure or claim semantic completeness.
+skipping any test.
+
+The workflow now also builds the **same pinned source** in a fresh external
+Cargo target directory and reads Cargo's generated library and binary
+depfiles. `excession syntax cargo-depfile` refuses untracked, modified,
+external and unbounded source inputs, binds the declared paths to exact Git
+blobs, and records hashes of the depfile and installed rustc executable.
+Existing `native-preflight`, `native-compare`, and `native-audit` commands
+then compare that *configured compiler source set* to syntax-derived
+candidates and regenerate their evidence. They do **not** establish complete
+direct import edges or full runtime dependency closure. The depfile has no
+independent remote worker attestation, and configuration-specific source sets
+may omit tests or conditional modules by design. Non-Rust compile-time input
+files use the v1 `configuration` role, without claiming those files are
+necessarily build configuration settings.
 
 A failure in the source, independent blob, replay, or report consistency checks
 fails this dedicated job, but does not turn unknown dependencies into a
@@ -51,12 +67,29 @@ python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "p
 
 SOURCE="$(mktemp -d)"
 git worktree add --detach "$SOURCE" HEAD
+export CARGO_TARGET_DIR=/tmp/excession-native-target
+cargo +1.99.1 build --locked --offline --manifest-path "$SOURCE/core/Cargo.toml" --bin excession
+RUSTC="$(rustup which rustc --toolchain 1.99.1)"
+VERSION="$("$RUSTC" --version)"
+mkdir -p /tmp/excession-self-analysis
+core/target/debug/excession syntax cargo-depfile \
+  --repo "$SOURCE" --package-root core \
+  --depfile "$CARGO_TARGET_DIR/debug/libexcession.d" \
+  --subject core/src/lib.rs --rustc "$RUSTC" --rustc-version "$VERSION" \
+  > /tmp/excession-self-analysis/native-lib.json
+core/target/debug/excession syntax cargo-depfile \
+  --repo "$SOURCE" --package-root core \
+  --depfile "$CARGO_TARGET_DIR/debug/excession.d" \
+  --subject core/src/bin/excession.rs --rustc "$RUSTC" --rustc-version "$VERSION" \
+  > /tmp/excession-self-analysis/native-bin.json
 python3 tools/self_analysis.py \
   --repo "$SOURCE" \
   --bin "$PWD/core/target/debug/excession" \
   --out /tmp/excession-self-analysis \
   --rev HEAD \
-  --base-rev HEAD^
+  --base-rev HEAD^ \
+  --native-lib /tmp/excession-self-analysis/native-lib.json \
+  --native-bin /tmp/excession-self-analysis/native-bin.json
 git worktree remove "$SOURCE"
 ```
 

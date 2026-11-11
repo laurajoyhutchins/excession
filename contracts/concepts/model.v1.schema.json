@@ -176,8 +176,30 @@
             "NATIVE_VERIFICATION",
             "REVIEW_EVENT"
           ]
+        },
+        "observation_id": {
+          "$ref": "#/$defs/sha256"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "observation_kind": {
+                "const": "STATIC_IMPORT_CANDIDATE"
+              }
+            },
+            "required": [
+              "observation_kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "observation_id"
+            ]
+          }
+        }
+      ]
     },
     "claim": {
       "type": "object",

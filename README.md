@@ -123,6 +123,23 @@ An optional SCIP decoder JSON input enables cross-language semantic-reference
 hypotheses without adding a Protobuf decoder or language parser to Rust.
 See [refactoring hypotheses](docs/REFACTORING.md).
 
+## Integrated compiler-backed discovery
+
+For supported Go, Rust and JS/TS projects, run the trusted-local language
+resolver and source-bound comparison together:
+
+```sh
+excession syntax native-run --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --entry src/main.rs --language rust --trusted-local true
+```
+
+The compiler runs only **after** cheap report and Git-revision checks.
+Output preserves the actual native input declaration, runtime statistics and
+a Git-backed boundary report with unresolved and divergent scopes. This is
+trusted-local parsing, not sandboxing or independently attested behavior.
+
 ## Native declaration boundary
 
 To compare native compiler-declared inputs with conservative syntax

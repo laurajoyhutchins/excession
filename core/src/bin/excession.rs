@@ -25,6 +25,7 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
+  excession syntax native-run --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --entry PATH --language go|javascript|typescript|rust --trusted-local true
   excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
   excession syntax cargo-depfile --repo REPO --package-root core --depfile CARGO_D --subject core/src/lib.rs --rustc RUSTC --rustc-version VERSION [--rev HEAD]
   excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
@@ -528,6 +529,33 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.path("rustc"),
                     opt.get("rustc-version"),
                     opt.get_or("rev", "HEAD"),
+                )?))
+            }
+            "native-run" => {
+                let opt = Options::parse(
+                    tail,
+                    &[
+                        "repo",
+                        "syntax-report",
+                        "resolution-report",
+                        "entry",
+                        "language",
+                        "trusted-local",
+                    ],
+                    &[],
+                )?;
+                let trusted = match opt.get("trusted-local") {
+                    "true" => true,
+                    "false" => false,
+                    _ => return refuse("--trusted-local requires true or false"),
+                };
+                Ok(json(native_boundary::discover_and_compare(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("resolution-report"),
+                    opt.get("entry"),
+                    opt.get("language"),
+                    trusted,
                 )?))
             }
             "native-preflight" => {

@@ -14,6 +14,9 @@ on:
       - 'core/src/preflight.rs'
       - 'core/src/syntax_resolution.rs'
       - 'core/src/native_boundary.rs'
+      - 'core/src/native_discovery.rs'
+      - 'tools/native_language_adapter.py'
+      - 'tools/excession_ts_resolve.cjs'
       - 'core/src/git.rs'
       - 'core/src/adapter.rs'
       - 'core/src/bin/excession.rs'
@@ -23,6 +26,7 @@ on:
       - 'tests/test_preflight_cli.py'
       - 'tests/test_syntax_resolution_cli.py'
       - 'tests/test_native_boundary_cli.py'
+      - 'tests/test_native_inline_cli.py'
       - 'docs/SYNTAX_PARSERS.md'
   workflow_dispatch:
 
@@ -35,7 +39,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      MISE_ENABLE_TOOLS: rust,python
+      MISE_ENABLE_TOOLS: rust,python,node,go
       TREE_SITTER_LANGUAGE_PACK_CACHE_DIR: /tmp/excession-grammars
     steps:
       - uses: actions/checkout@v4
@@ -48,10 +52,12 @@ jobs:
         run: mise run syntax-setup
       - name: Prefetch locked Cargo dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Install locked TypeScript compiler API
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build Excession CLI
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Run parser unit and Git integration tests (JUnit XML)
-        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py tests/test_preflight_cli.py tests/test_native_boundary_cli.py --junitxml=test-results/syntax-parsers.xml
+        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py tests/test_syntax_resolution_cli.py tests/test_preflight_cli.py tests/test_native_boundary_cli.py tests/test_native_inline_cli.py --junitxml=test-results/syntax-parsers.xml
       - name: Retain JUnit test report
         if: always()
         uses: actions/upload-artifact@v4

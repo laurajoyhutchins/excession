@@ -1,0 +1,91 @@
+name: Historical performance experiments
+
+# Historic A/B controls are reproducible on demand, not a commit gate.
+# The Rust/Python tests and independent source-bound audits remain separate.
+on:
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: Pinned historical experiment
+        required: true
+        default: manifest-output
+        type: choice
+        options:
+          - manifest-output
+          - direct-id
+          - canonical-json
+          - checked-tree
+          - projection-phases
+
+permissions:
+  contents: read
+
+jobs:
+  historical:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.5'
+      - name: Use repository-pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Build candidate once
+        run: cargo build --offline --locked --release --manifest-path core/Cargo.toml
+      - name: Run selected source-pinned experiment
+        env:
+          EXPERIMENT: ${{ inputs.experiment }}
+        run: |
+          set -euo pipefail
+          case "$EXPERIMENT" in
+            manifest-output)
+              BASE=670c3e4b80d8cc887719c4a020cd254489a2b83d
+              SCRIPT=benchmarks/manifest_output_ab.py
+              RECEIPT=manifest-output-ab.json
+              ;;
+            direct-id)
+              BASE=90cb4d5c1cbe7fde704a6d9189aa03cb5eff7a66
+              SCRIPT=benchmarks/direct_payload_ab.py
+              RECEIPT=direct-payload-ab.json
+              ;;
+            canonical-json)
+              BASE=2a7080f3404b42a9f90357e91d1a40af1ead7e3e
+              SCRIPT=benchmarks/canonical_ab.py
+              RECEIPT=canonical-ab.json
+              ;;
+            checked-tree)
+              BASE=fa1d15248210ee6ec2a4c744603b271d613fa7b5
+              SCRIPT=benchmarks/experiments/checked_tree_ab.py
+              RECEIPT=checked-tree-ab.json
+              ;;
+            projection-phases)
+              python3 benchmarks/micro/projection_phases.py \
+                core/target/release/excession projection-phases.json
+              exit 0
+              ;;
+            *)
+              echo "Unsupported experiment: $EXPERIMENT" >&2
+              exit 2
+              ;;
+          esac
+          git worktree add --detach "$RUNNER_TEMP/excession-before" "$BASE"
+          cargo build --offline --release \
+            --manifest-path "$RUNNER_TEMP/excession-before/core/Cargo.toml"
+          python3 "$SCRIPT" \
+            "$RUNNER_TEMP/excession-before/core/target/release/excession" \
+            core/target/release/excession "$RECEIPT"
+      - name: Preserve measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-${{ inputs.experiment }}
+          path: |
+            manifest-output-ab.json
+            direct-payload-ab.json
+            canonical-ab.json
+            checked-tree-ab.json
+            projection-phases.json
+          if-no-files-found: warn

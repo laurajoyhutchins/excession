@@ -5,14 +5,11 @@ on:
     paths:
       - benchmarks/micro/native_paired.py
       - core/src/benchmark.rs
-      - core/Cargo.lock
       - core/Cargo.toml
+      - core/Cargo.lock
       - benchmarks/schemas/**
       - .github/workflows/native-paired.yml
       - core/src/graph_baseline.rs
-      - core/src/projection.rs
-      - core/src/projection/composition.rs
-      - tests/test_projections.py
   workflow_dispatch:
 
 permissions:
@@ -28,7 +25,7 @@ jobs:
           fetch-depth: 0
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
-      - name: Resolve locked Rust dependencies
+      - name: Prefetch locked Cargo dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Compile native CLI
         run: cargo build --offline --locked --release --manifest-path core/Cargo.toml

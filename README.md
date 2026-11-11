@@ -29,6 +29,17 @@ make check
 `make check` runs Rust tests, Rust formatting and strict Clippy, plus the Python
 integration suite. Use `make cli` for a local development binary.
 
+For JUnit XML reports, install `cargo-nextest` 0.9.151 and `pytest` 9.0.2,
+then run `make junit`. This retains the existing `unittest` test cases while
+producing separate Rust and Python reports:
+
+- `core/target/nextest/ci/junit.xml` (Rust, including failure output)
+- `test-results/python.xml` (Python, including skipped and failed tests)
+
+CI uploads JUnit XML as artifacts, including after a test failure.
+`make check` remains the dependency-light local validation path; Rust doctests
+are also checked by `cargo test --doc` in the JUnit workflow.
+
 ## One repository, multiple layouts
 
 ```sh

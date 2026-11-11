@@ -32,11 +32,16 @@ jobs:
           python-version: '3.13.5'
       - name: Install optional parser and prefetch grammars
         run: |
-          python3 -m pip install --disable-pip-version-check tree-sitter-language-pack==1.25.0
+          python3 -m pip install --disable-pip-version-check pytest==9.0.2 tree-sitter-language-pack==1.25.0
           python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java"])'
       - name: Build Excession CLI
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
-      - name: Run parser unit and Git integration tests
-        run: |
-          python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
-          python3 -m unittest discover -s tests -p test_syntax_cli.py -v
+      - name: Run parser unit and Git integration tests (JUnit XML)
+        run: python3 -m pytest -q tests/test_tree_sitter_bridge.py tests/test_syntax_cli.py --junitxml=test-results/syntax-parsers.xml
+      - name: Retain JUnit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-syntax-parsers-junit
+          path: test-results/syntax-parsers.xml
+          if-no-files-found: warn

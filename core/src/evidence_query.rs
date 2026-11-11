@@ -25,7 +25,9 @@ fn validate_wire(report: &Value) -> Result<()> {
     let validator = jsonschema::draft202012::new(&schema)
         .map_err(|e| format!("compile evidence contract: {e}"))?;
     if let Err(error) = validator.validate(&document) {
-        return refuse(format!("evidence query violates its versioned JSON Schema: {error}"));
+        return refuse(format!(
+            "evidence query violates its versioned JSON Schema: {error}"
+        ));
     }
     Ok(())
 }

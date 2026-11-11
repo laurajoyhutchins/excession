@@ -124,7 +124,7 @@ impl Discovery {
             ("source_commit", Value::string(&self.commit)),
             ("source_tree", Value::string(&self.tree)),
             ("repository_path", Value::string(self.root.to_string_lossy())),
-            ("roots", Value::array(self.roots.iter().map(Value::string).collect())),
+            ("roots", Value::array(self.roots.iter().map(Value::string))),
             ("adapters", Value::array(adapters)),
             ("index_path", Value::string(self.index_path.to_string_lossy())),
             ("coverage", obj(&[

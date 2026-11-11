@@ -1,0 +1,163 @@
+{
+  "schema": "excession.benchmark.calibration.v1",
+  "corpus": "h11-crossrepo.bundle; calibration, not held out",
+  "notes": "Only focus-path tasks have manually declared gold. Other graph/view outputs are compared for parity, not graded as independently correct.",
+  "tasks": [
+    {
+      "id": "h11-01",
+      "seed": "h11._connection",
+      "kind": "focus",
+      "question": "Locate the source module for h11._connection.",
+      "expected_source_paths": [
+        "h11/_connection.py"
+      ]
+    },
+    {
+      "id": "h11-02",
+      "seed": "h11._connection",
+      "kind": "dependencies_direct",
+      "question": "Find modules directly imported by h11._connection."
+    },
+    {
+      "id": "h11-03",
+      "seed": "h11._connection",
+      "kind": "dependencies_all",
+      "question": "Find the transitive static dependency closure of h11._connection, excluding itself."
+    },
+    {
+      "id": "h11-04",
+      "seed": "h11._connection",
+      "kind": "dependents_direct",
+      "question": "Find modules that directly import h11._connection."
+    },
+    {
+      "id": "h11-05",
+      "seed": "h11._connection",
+      "kind": "dependents_all",
+      "question": "Find all modules that depend transitively on h11._connection, excluding itself."
+    },
+    {
+      "id": "h11-06",
+      "seed": "h11._connection",
+      "kind": "tests",
+      "question": "Find indexed test modules reachable from h11._connection in either static dependency direction, excluding the seed."
+    },
+    {
+      "id": "h11-07",
+      "seed": "h11._headers",
+      "kind": "focus",
+      "question": "Locate the source module for h11._headers.",
+      "expected_source_paths": [
+        "h11/_headers.py"
+      ]
+    },
+    {
+      "id": "h11-08",
+      "seed": "h11._headers",
+      "kind": "dependencies_direct",
+      "question": "Find modules directly imported by h11._headers."
+    },
+    {
+      "id": "h11-09",
+      "seed": "h11._headers",
+      "kind": "dependencies_all",
+      "question": "Find the transitive static dependency closure of h11._headers, excluding itself."
+    },
+    {
+      "id": "h11-10",
+      "seed": "h11._headers",
+      "kind": "dependents_direct",
+      "question": "Find modules that directly import h11._headers."
+    },
+    {
+      "id": "h11-11",
+      "seed": "h11._headers",
+      "kind": "dependents_all",
+      "question": "Find all modules that depend transitively on h11._headers, excluding itself."
+    },
+    {
+      "id": "h11-12",
+      "seed": "h11._headers",
+      "kind": "tests",
+      "question": "Find indexed test modules reachable from h11._headers in either static dependency direction, excluding the seed."
+    },
+    {
+      "id": "h11-13",
+      "seed": "h11._events",
+      "kind": "focus",
+      "question": "Locate the source module for h11._events.",
+      "expected_source_paths": [
+        "h11/_events.py"
+      ]
+    },
+    {
+      "id": "h11-14",
+      "seed": "h11._events",
+      "kind": "dependencies_direct",
+      "question": "Find modules directly imported by h11._events."
+    },
+    {
+      "id": "h11-15",
+      "seed": "h11._events",
+      "kind": "dependencies_all",
+      "question": "Find the transitive static dependency closure of h11._events, excluding itself."
+    },
+    {
+      "id": "h11-16",
+      "seed": "h11._events",
+      "kind": "dependents_direct",
+      "question": "Find modules that directly import h11._events."
+    },
+    {
+      "id": "h11-17",
+      "seed": "h11._events",
+      "kind": "dependents_all",
+      "question": "Find all modules that depend transitively on h11._events, excluding itself."
+    },
+    {
+      "id": "h11-18",
+      "seed": "h11._events",
+      "kind": "tests",
+      "question": "Find indexed test modules reachable from h11._events in either static dependency direction, excluding the seed."
+    },
+    {
+      "id": "h11-19",
+      "seed": "h11._util",
+      "kind": "focus",
+      "question": "Locate the source module for h11._util.",
+      "expected_source_paths": [
+        "h11/_util.py"
+      ]
+    },
+    {
+      "id": "h11-20",
+      "seed": "h11._util",
+      "kind": "dependencies_direct",
+      "question": "Find modules directly imported by h11._util."
+    },
+    {
+      "id": "h11-21",
+      "seed": "h11._util",
+      "kind": "dependencies_all",
+      "question": "Find the transitive static dependency closure of h11._util, excluding itself."
+    },
+    {
+      "id": "h11-22",
+      "seed": "h11._util",
+      "kind": "dependents_direct",
+      "question": "Find modules that directly import h11._util."
+    },
+    {
+      "id": "h11-23",
+      "seed": "h11._util",
+      "kind": "dependents_all",
+      "question": "Find all modules that depend transitively on h11._util, excluding itself."
+    },
+    {
+      "id": "h11-24",
+      "seed": "h11._util",
+      "kind": "tests",
+      "question": "Find indexed test modules reachable from h11._util in either static dependency direction, excluding the seed."
+    }
+  ]
+}

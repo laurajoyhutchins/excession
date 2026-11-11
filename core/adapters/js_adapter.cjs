@@ -3,10 +3,12 @@
 // TypeScript's production parser is used for JS/TS syntax, never regex rewrites.
 const fs = require('node:fs');
 const crypto = require('node:crypto');
-const path = require('node:path');
-const { execFileSync } = require('node:child_process');
-const globalRoot = execFileSync('npm', ['root', '-g'], {encoding:'utf8'}).trim();
-const ts = require(path.join(globalRoot,'typescript'));
+// Rust supplies an explicit trusted sidecar. Direct adapter tests may use
+// the locally locked package, but the installed CLI never resolves via cwd.
+const ts = process.env.EXCESSION_TYPESCRIPT_JS
+  ? require(process.env.EXCESSION_TYPESCRIPT_JS)
+  : require('typescript');
+if (ts.version !== '5.8.3') throw Error('Unsupported TypeScript parser version');
 const items = JSON.parse(fs.readFileSync(0,'utf8'));
 const printer = ts.createPrinter({removeComments:true});
 const out=[];

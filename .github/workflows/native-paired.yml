@@ -1,0 +1,70 @@
+name: Native retrieval calibration
+
+on:
+  pull_request:
+    paths:
+      - benchmarks/micro/native_paired.py
+      - core/src/benchmark.rs
+      - core/Cargo.toml
+      - core/Cargo.lock
+      - benchmarks/schemas/**
+      - .github/workflows/native-paired.yml
+      - core/src/graph_baseline.rs
+      - 'core/src/research/benchmark.rs'
+      - 'core/src/graph/graph_baseline.rs'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  native-paired:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+      - name: Prefetch locked Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Compile native CLI
+        run: cargo build --offline --locked --release --manifest-path core/Cargo.toml
+      - name: Measure pinned h11 source queries (candidate)
+        run: python3 benchmarks/micro/native_paired.py core/target/release/excession native-calibration.json
+      - name: Compile and measure unmodified baseline on same runner
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/excession-baseline" "$BASE_SHA"
+          cargo fetch --locked --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
+          cargo build --offline --locked --release --manifest-path "$RUNNER_TEMP/excession-baseline/core/Cargo.toml"
+          python3 benchmarks/micro/native_paired.py "$RUNNER_TEMP/excession-baseline/core/target/release/excession" baseline-calibration.json
+      - name: Validate native paired report envelopes
+        if: always()
+        run: |
+          if [ -f native-calibration.json ]; then
+            core/target/release/excession benchmark report --kind native --directory . --input native-calibration.json
+            core/target/release/excession benchmark validate --report native-calibration.report.json
+          fi
+          if [ -f baseline-calibration.json ]; then
+            core/target/release/excession benchmark report --kind native --directory . --input baseline-calibration.json
+            core/target/release/excession benchmark validate --report baseline-calibration.report.json
+          fi
+      - name: Retain raw paired timings and source-parity receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-retrieval-calibration
+          path: |
+            native-calibration.json
+            baseline-calibration.json
+            native-calibration.report.json
+            baseline-calibration.report.json
+          if-no-files-found: warn

@@ -137,7 +137,7 @@ fn tampered_refactor_advice_and_index_relations_are_refused() {
     let f=Fixture::new("python");
     let mut report=f.suggest();
     let mut candidates=items(&report,"candidates").to_vec();
-    edit(&mut candidates[0],"action").clone_from(&Value::string("forged advice"));
+    candidates[0].entries_mut().unwrap().insert("action".into(),Value::string("forged advice"));
     report.entries_mut().unwrap().insert("candidates".into(),Value::array(candidates));
     fs::write(&f.report,report.canonical()).unwrap();
     denied(f.audit());

@@ -1,0 +1,57 @@
+name: Security finding validity experiment
+
+on:
+  push:
+    branches: [security/source-bound-validity-oracle]
+    paths:
+      - '.github/workflows/security-validity.yml'
+      - 'benchmarks/security-validity/**'
+      - 'tools/assess_security_findings.py'
+      - 'core/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Install scanner and build Excession
+        run: |
+          python3 -m pip install --user 'semgrep>=1,<2'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          cargo build --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Execute real Semgrep scan
+        run: |
+          mkdir -p "$RUNNER_TEMP/validity"
+          semgrep --version | tee "$RUNNER_TEMP/validity/semgrep-version.txt"
+          semgrep scan --metrics off --config benchmarks/security-validity/semgrep.yml --json --output "$RUNNER_TEMP/validity/semgrep.json" benchmarks/security-validity
+          test -s "$RUNNER_TEMP/validity/semgrep.json"
+      - name: Import, audit and assess
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/validity"
+          EX="$PWD/core/target/debug/excession"
+          "$EX" security ingest --repo "$PWD" --report "$OUT/semgrep.json" --db "$OUT/findings.sqlite" --engine semgrep > "$OUT/ingest.json"
+          "$EX" security audit --repo "$PWD" --report "$OUT/semgrep.json" --db "$OUT/findings.sqlite" --engine semgrep > "$OUT/audit.json"
+          RUN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$OUT/ingest.json")
+          python3 tools/assess_security_findings.py --repo "$PWD" --db "$OUT/findings.sqlite" --run-id "$RUN_ID" --report "$OUT/semgrep.json" --ground-truth "$PWD/benchmarks/security-validity/ground-truth.json" --excession "$EX" --trusted-local true > "$OUT/validity.json"
+          python3 -m json.tool "$OUT/validity.json"
+          git rev-parse HEAD > "$OUT/commit.txt"
+          cargo --version > "$OUT/cargo-version.txt"
+      - name: Retain original reports and adjudication
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-validity-evidence
+          path: ${{ runner.temp }}/validity/
+          if-no-files-found: warn
+          retention-days: 30

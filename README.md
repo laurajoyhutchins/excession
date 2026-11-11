@@ -23,18 +23,19 @@ no third-party Cargo dependencies and builds offline. JS/TS parsing uses
 the locally locked TypeScript package, not a global npm installation.
 
 ```sh
-npm ci --ignore-scripts --no-audit --no-fund
-python3 -m pip install -r requirements/research.txt
-cargo install --offline --locked --path core --bin excession
-excession --help
-make check
+mise install
+mise run setup
+mise run check
+mise run cli
+mise exec -- core/target/debug/excession --help
 ```
 
 `make check` runs Rust tests, formatting, strict Clippy, the JS adapter
 checks, and Python integration tests. Use `make cli` for the development
 binary and `make go-check` for the optional Go adapter. See
-[development setup](docs/DEVELOPMENT.md) for toolchain files and separately
-pinned research/grammar dependencies.
+[development setup](docs/DEVELOPMENT.md) for mise tasks, native toolchain
+version files, and optional Tree-sitter grammars. Mise is a convenience layer;
+Cargo, npm, and pip remain usable independently.
 
 For JUnit XML reports, install `cargo-nextest` 0.9.151 and the pinned
 Python research requirements,

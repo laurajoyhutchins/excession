@@ -161,10 +161,14 @@ class SliceIntegrationTests(unittest.TestCase):
             slices.execute(self.repo, manifest, out, 10)
 
     def test_isolated_worker_setup_failure_is_not_test_failure(self):
+        manifest, _, out = self.base_run()
+        # This mock exercises compatibility-layer refusal propagation. The
+        # optional namespace integration test exercises actual Rust setup.
         with patch.object(slices.subprocess, "run", return_value=subprocess.CompletedProcess(
-                ["unshare"], 127, b"", b"namespace unavailable")):
+                ["excession", "slice", "run"], 2, b"",
+                b"REFUSED: isolated worker setup did not establish execution boundary")):
             with self.assertRaisesRegex(slices.Refusal, "execution boundary"):
-                slices._isolated_process(self.root, "tests/check.py", 2)
+                slices.execute(self.repo, manifest, out, 2, isolated_linux=True)
 
     @unittest.skipUnless(os.environ.get("EXCESSION_RUN_NAMESPACE_TESTS") == "1",
                          "opt-in Linux namespace integration")

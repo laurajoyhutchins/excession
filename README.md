@@ -85,8 +85,20 @@ excession evidence contract-audit --repo "$REPO" \
 ```
 
 See [language-neutral input contracts](docs/INPUT_CONTRACTS.md) for the schema,
-limits, and real Go/JavaScript historical tests. The earlier Python slice
-transport remains intact and shares the same changed-path comparison primitive.
+limits, and real Go/JavaScript historical tests. The Python executable-slice import semantics remain in a narrow CPython AST
+adapter; the **slice planner, Git source construction, execution, auditing,
+receipts, and conservative historical carry now run in Rust**. The old
+`tools/excession_slice.py` CLI is a compatibility wrapper. See
+[Rust-owned executable slices](docs/EXECUTABLE_SLICES.md).
+
+## Rust-owned executable slices
+
+The native `excession slice plan|validate|materialize|source-audit|run|carry`
+commands now replace the previous Python Git and execution implementation.
+Only CPython `ast` is needed for Python import resolution; the Rust core owns
+all canonical Git/receipt identities and read-only filesystem operations.
+Execution remains explicitly trusted-local and is **not** a remotely attested
+or behavior-preservation proof. See [the slice guide](docs/EXECUTABLE_SLICES.md).
 
 ## Historical dependency discovery adapters
 

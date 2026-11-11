@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -141,7 +142,7 @@ class HistoricalTransport(unittest.TestCase):
         self.assertEqual(outcome["decision"], "SOURCE_MATCH_ONLY")
         forged = json.loads(json.dumps(target_plan))
         forged["entries"][0]["blob"] = "0" * 40
-        forged["view_id"] = slices.digest(slices.canonical({k: v for k, v in forged.items() if k != "view_id"}))
+        forged["view_id"] = hashlib.sha256(json.dumps({k: v for k, v in forged.items() if k != "view_id"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         fake_path = self.root / "forged.json"
         fake_path.write_text(json.dumps(forged))
         self.exec("evidence", "transport", "--repo", self.repo, "--source-manifest", source,

@@ -78,8 +78,9 @@ with a 256-edge limit. It does not infer transitive proof preservation.
 
 - Rust validates commit/tree identity and all declared source paths, Git
   blob modes and bytes, SHA-256 digests, and exact stored SQL rows.
-- Python rederives an import closure from Git source, but Rust cannot prove
-  that Python's static analysis includes every runtime dependency.
+- Rust reconstructs the declared closure using a bounded CPython AST adapter
+  on authenticated Git source. Neither Rust nor that static adapter proves
+  that it includes every runtime dependency.
 - A historical commit alone **does not supply a historical test pass**.
   Only a previously obtained finite observation may become an origin.
 - Execution receipts remain **unsigned local claims**; a hash does not prove

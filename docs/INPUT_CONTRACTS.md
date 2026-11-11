@@ -81,7 +81,7 @@ A new comparison requires a new row, preserving earlier historical evidence.
 
 ## Relationship to existing Python evidence
 
-`tools/excession_slice.py` still computes its bounded Python static closure and
+`core/adapters/python_slice_imports.py` computes the bounded CPython static closure as a language adapter; Rust constructs and validates executable-slice evidence and
 produces its own finite execution receipt. Its historical transport now shares
 the **same Rust changed-path comparison primitive** as the language-neutral
 contract, but retains its stronger source-receipt requirements and conservative

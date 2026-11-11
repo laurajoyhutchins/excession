@@ -16,6 +16,8 @@ def command(argv: list[str], timeout: float) -> tuple[subprocess.CompletedProces
         proc = subprocess.run(argv, capture_output=True, check=False, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         proc = subprocess.CompletedProcess(argv, 124, exc.stdout or b"", exc.stderr or b"timed out")
+    except FileNotFoundError as exc:
+        proc = subprocess.CompletedProcess(argv, 127, b"", str(exc).encode())
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     return proc, {
         "wall_ms": round((time.perf_counter_ns() - start) / 1_000_000, 3),

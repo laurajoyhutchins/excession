@@ -6,6 +6,7 @@ on:
       - '.github/workflows/syntax-parsers.yml'
       - 'core/adapters/tree_sitter.py'
       - 'core/src/syntax.rs'
+      - 'core/src/preflight.rs'
       - 'core/src/syntax_resolution.rs'
       - 'core/src/git.rs'
       - 'core/src/adapter.rs'
@@ -13,6 +14,7 @@ on:
       - 'core/src/lib.rs'
       - 'tests/test_tree_sitter_bridge.py'
       - 'tests/test_syntax_cli.py'
+      - 'tests/test_preflight_cli.py'
       - 'tests/test_syntax_resolution_cli.py'
       - 'docs/SYNTAX_PARSERS.md'
   workflow_dispatch:
@@ -32,6 +34,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13.5'
+      - name: Fast grammar-independent adapter contract tests
+        run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
       - name: Install optional parser and prefetch grammars
         run: |
           python3 -m pip install --disable-pip-version-check tree-sitter-language-pack==1.25.0
@@ -40,6 +44,6 @@ jobs:
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Run parser unit and Git integration tests
         run: |
-          python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
           python3 -m unittest discover -s tests -p test_syntax_cli.py -v
+          python3 -m unittest discover -s tests -p test_preflight_cli.py -v
           python3 -m unittest discover -s tests -p test_syntax_resolution_cli.py -v

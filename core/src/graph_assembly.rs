@@ -42,12 +42,21 @@ fn read_reply(reply: &Path, filename: &str) -> Result<Value> {
     }
     read_json(&reply.join(filename))
 }
-fn sha_file(path: &Path) -> Result<String> {
+fn sha_file_with_limit(path: &Path, max_bytes: usize) -> Result<String> {
+    let size = fs::metadata(path)
+        .map_err(|e| format!("read dependency metadata {}: {e}", path.display()))?
+        .len();
+    if size > max_bytes as u64 {
+        return refuse("dependency file exceeds hash limit");
+    }
     let bytes = fs::read(path).map_err(|e| format!("read dependency {}: {e}", path.display()))?;
-    if bytes.len() > MAX_JSON {
+    if bytes.len() > max_bytes {
         return refuse("dependency file exceeds hash limit");
     }
     Ok(digest::sha256(&bytes))
+}
+fn sha_file(path: &Path) -> Result<String> {
+    sha_file_with_limit(path, MAX_JSON)
 }
 fn as_path(source: &Path, build: &Path, name: &str) -> Result<PathBuf> {
     let original = Path::new(name);
@@ -140,6 +149,27 @@ fn validate_receipt(
     let blob = git::blob(repo, commit, &path)?;
     if obs.get("source_blob")?.str()? != blob {
         return refuse("compiler receipt source blob mismatch");
+    }
+
+    let compiler_path = obs.get("effective_compiler")?.str()?;
+    if sha_file_with_limit(Path::new(compiler_path), 256 * 1024 * 1024)?
+        != obs.get("compiler_sha256")?.str()?
+    {
+        return refuse("compiler executable changed after observation");
+    }
+    if let Some(config) = optional(obs, "config") {
+        match config {
+            Value::Object(_) => {
+                let config_path = config.get("path")?.str()?;
+                if sha_file_with_limit(Path::new(config_path), 4 * 1024 * 1024)?
+                    != config.get("sha256")?.str()?
+                {
+                    return refuse("configuration file changed after observation");
+                }
+            }
+            Value::Null => {}
+            _ => return refuse("invalid optional compiler configuration"),
+        }
     }
     for dep in obs.get("dependencies")?.array_ref()? {
         let name = dep.get("path")?.str()?;

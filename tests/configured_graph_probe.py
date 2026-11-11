@@ -103,6 +103,25 @@ def one_configuration(repo, base, variant, binary, db):
     assert graph["unobserved_sources"] == []
     assert graph["graph_id"] == json.loads(run(assemble_cmd))["graph_id"]
 
+    # A generated header is a local dependency with exact byte evidence.
+    # After it changes, reusing the old compiler receipt must be refused.
+    generated = next(
+        (Path(item["path"]) for item in receipt["observation"]["dependencies"]
+         if Path(item["path"]).is_relative_to(build)
+         and Path(item["path"]).is_file()),
+        None,
+    )
+    assert generated is not None, "zlib build should provide a generated header"
+    initial = generated.read_bytes()
+    try:
+        generated.write_bytes(initial + b"\\n/* stale dependency probe */\\n")
+        stale = subprocess.run(assemble_cmd, capture_output=True, text=True)
+        assert stale.returncode != 0
+        assert "compiler dependency changed" in stale.stderr
+    finally:
+        generated.write_bytes(initial)
+
+
     edge_types = {edge["kind"] for edge in graph["edges"]}
     required = {
         "TARGET_SOURCE", "DEPENDS_ON_TARGET", "PRODUCES_ARTIFACT",

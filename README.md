@@ -16,11 +16,17 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-Requirements: Rust 1.99.1, Python 3.13.5, Node 22.16.0/npm 10.9.2,
-Git with SHA-1 repositories, and native `libsqlite3` / `libcrypto`.
-Go 1.26.11 is optional for the Go research adapter. The Rust crate has
-no third-party Cargo dependencies and builds offline. JS/TS parsing uses
-the locally locked TypeScript package, not a global npm installation.
+The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
+crates. Git (SHA-1 object format) and native SQLite are required for
+repository operations; the digests use portable Rust without OpenSSL.
+Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
+Tree-sitter grammars and security scanners are opt-in adapters.
+
+Prebuilt Linux, macOS and Windows archives carry the binary and the
+locked TypeScript parser sidecar. See [portable installation and supported
+targets](docs/PORTABILITY.md) for runtime dependencies and limitations.
+
+For full development checks, the pinned mise workflow remains available:
 
 ```sh
 mise install

@@ -310,7 +310,7 @@ mod tests {
         std::fs::write(root.join("second.bin"), second).unwrap();
         let a = text(&root, &["hash-object", "-w", "first.bin"]).unwrap();
         let b = text(&root, &["hash-object", "-w", "second.bin"]).unwrap();
-        let tree = text(&root, &["hash-object", "-w", "-t", "tree", "/dev/null"]).unwrap();
+        let tree = text(&root, &["hash-object", "-w", "-t", "tree", "--stdin"]).unwrap();
 
         let mut reader = BlobReader::open(&root).unwrap();
         assert_eq!(reader.read(&a).unwrap(), first);

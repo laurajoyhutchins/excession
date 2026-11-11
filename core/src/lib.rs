@@ -7,6 +7,7 @@ pub mod benchmark;
 pub mod contracts;
 pub mod digest;
 pub mod effects;
+pub mod evidence_query;
 pub mod git;
 pub mod graph_baseline;
 pub mod historical;

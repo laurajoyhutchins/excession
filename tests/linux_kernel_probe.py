@@ -74,12 +74,15 @@ def main():
         binary, "view", "cat", "--repo", str(repo),
         "--manifest", str(manifest_path), "--path", focus["virtual_path"]
     ], binary=True)
-    original_bytes, _ = run([
+    original_bytes, git_show_seconds = run([
         "git", "-C", str(repo), "show", f"{commit}:{SOURCE}"
     ], binary=True)
     if virtual_bytes != original_bytes:
         raise RuntimeError("Excession virtual source bytes differ from Git")
 
+    _, git_grep_seconds = run([
+        "git", "-C", str(repo), "grep", "-n", "-F", "from linux import", "--", SOURCE
+    ])
     expected = set()
     tree = ast.parse(original_bytes, filename=SOURCE)
     for item in ast.walk(tree):
@@ -116,6 +119,10 @@ def main():
         "focused_source": SOURCE,
         "index_roots": ["scripts/gdb"],
         "python_import_base": "scripts/gdb",
+        "simpler_baselines_seconds": {
+            "git_show_source_blob": git_show_seconds,
+            "git_grep_import_statement": git_grep_seconds
+        },
         "timings_seconds": {
             "index": index_seconds,
             "view_deps": project_seconds,
@@ -135,6 +142,7 @@ def main():
         "limitations": [
             "No C or Kbuild/Kconfig semantic relationships are indexed.",
             "Python imports are resolved relative to the explicit --import-base.",
+            "Git grep and show timings are retrieval-only, not equivalent workloads.",
             "A matching Git object and view replay do not establish executable equivalence."
         ]
     }

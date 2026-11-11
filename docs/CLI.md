@@ -64,6 +64,28 @@ excession view cat --repo "$REPO" --manifest "$OUT/connection.json" \
 
 A virtual path must be obtained from the manifest or `view ls`. The code above is a representative h11 path, not a generic path for other projects.
 
+## Python import roots in monorepositories
+
+By default, module identities follow their Git paths. Some repositories put a
+nested package directory directly on Python's import search path, so a source
+file such as `scripts/gdb/linux/tasks.py` imports `linux.utils`, not
+`scripts.gdb.linux.utils`. Set an explicit physical `--import-base`
+containing all indexed roots:
+
+```sh
+# LINUX is a clean checkout of torvalds/linux, for example v6.12.
+excession index --repo "$LINUX" --db "$OUT/linux.sqlite" --name linux \\
+  --rev HEAD --roots scripts/gdb --import-base scripts/gdb
+excession view deps --db "$OUT/linux.sqlite" --name linux \\
+  --rev HEAD --seed linux.tasks > "$OUT/tasks.json"
+```
+
+The Git commit, source paths, file modes and blob OIDs remain unchanged.
+This mapping only changes logical Python module names for the given index,
+and it does not infer runtime `sys.path`, dynamic imports, C includes,
+Kbuild, or Kconfig dependencies. Different module naming configurations
+should use distinct databases.
+
 ## Optional physical materialization
 
 ```sh

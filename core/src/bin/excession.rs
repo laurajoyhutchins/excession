@@ -3,7 +3,8 @@
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, git, graph_baseline, index, native_boundary, native_depinfo, preflight,
-    projection, refactor, refuse, scip_index, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    projection, refactor, refuse, scip_index, scip_refactor, security_ingest, syntax,
+    syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -312,8 +313,11 @@ fn inspect_cmd(verb: &str, argv: &[String]) -> Result<Response> {
         let opt = Options::parse(argv, &["repo", "db", "name", "rev", "index"], &[])?;
         let db = Db::open(opt.path("db"))?;
         return Ok(json(scip_index::audit(
-            &db, opt.path("repo"), opt.get("name"),
-            opt.get("rev"), opt.path("index"),
+            &db,
+            opt.path("repo"),
+            opt.get("name"),
+            opt.get("rev"),
+            opt.path("index"),
         )?));
     }
     let (req, extra): (&[&str], &[&str]) = match verb {
@@ -632,7 +636,9 @@ fn execute(args: &[String]) -> Result<Response> {
             )?;
             if opt.0.contains_key("scip-index") {
                 if opt.0.contains_key("roots") {
-                    return refuse("--roots is not used with SCIP; the SCIP documents define the scope");
+                    return refuse(
+                        "--roots is not used with SCIP; the SCIP documents define the scope",
+                    );
                 }
                 let db = Db::open(opt.path("db"))?;
                 return Ok(json(scip_index::import(

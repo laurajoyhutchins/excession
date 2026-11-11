@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod adapter;
+pub mod compiler_clang;
 pub mod benchmark;
 pub mod contracts;
 pub mod digest;
@@ -16,7 +17,6 @@ pub mod identity;
 pub mod impact;
 pub mod index;
 pub mod kernel;
-pub mod kernel_clang;
 pub mod kernel_links;
 pub mod integration;
 pub mod json;

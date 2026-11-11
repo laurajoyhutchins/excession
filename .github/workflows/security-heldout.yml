@@ -46,7 +46,6 @@ jobs:
             repository: aio-libs/aiohttp
             commit: 1c335944d6a8b1298baf179b7c0b3069f10c514b
     env:
-      OUT: ${{ runner.temp }}/heldout
       CASE_ID: ${{ matrix.case }}
       PHASE: ${{ matrix.phase }}
       SOURCE_REPO: ${{ matrix.repository }}
@@ -59,6 +58,10 @@ jobs:
           repository: ${{ matrix.repository }}
           ref: ${{ matrix.commit }}
           persist-credentials: false
+      - name: Initialize temporary evidence directory
+        run: |
+          echo "OUT=$RUNNER_TEMP/heldout" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/heldout"
       - name: Restore exact Excession harness commit outside upstream checkout
         shell: bash
         run: |

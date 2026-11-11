@@ -16,14 +16,15 @@ an additional binary. See [migration notes](docs/MIGRATION.md), the
 
 ## Install and verify
 
-The Rust CLI builds offline with Rust 1.99.1 and no third-party Cargo
-crates. Git (SHA-1 object format) and native SQLite are required for
-repository operations; the digests use portable Rust without OpenSSL.
-Python 3.13.5 and Node 22.16.0 are optional language runtimes, and Go,
-Tree-sitter grammars and security scanners are opt-in adapters.
+The Rust CLI uses pinned Cargo dependencies, maintained RustCrypto digests,
+and a bundled SQLite engine. No system SQLite or OpenSSL installation is
+required for release binaries. Git (SHA-1 object format) remains required for
+repository operations. Python 3.13.5 and Node 22.16.0 are optional language
+runtimes; Go, Tree-sitter grammars and security scanners are opt-in adapters.
+Cargo's dependency cache must be populated before offline development builds.
 
-Prebuilt Linux, macOS and Windows archives carry the binary and the
-locked TypeScript parser sidecar. See [portable installation and supported
+Prebuilt Linux, macOS and Windows (including Linux musl and ARM64) archives
+carry the binary, bundled SQLite, and the locked TypeScript parser sidecar. See [portable installation and supported
 targets](docs/PORTABILITY.md) for runtime dependencies and limitations.
 
 For full development checks, the pinned mise workflow remains available:
@@ -34,6 +35,7 @@ mise run setup
 mise run check
 mise run cli
 mise exec -- core/target/debug/excession --help
+mise exec -- core/target/debug/excession doctor --json
 ```
 
 `make check` runs Rust tests, formatting, strict Clippy, the JS adapter

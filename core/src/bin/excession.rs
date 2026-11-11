@@ -1,12 +1,12 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! Historical experiments run under `excession research` without a second CLI.
+use excession::doctor;
 use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph, kernel, native_boundary,
-    preflight, projection, refactor, refuse, scip_refactor, security_ingest, syntax,
-    syntax_resolution, views,
+    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph, kernel, native_boundary, preflight, projection,
+    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -21,6 +21,7 @@ mod scan;
 const HELP: &str = r#"Excession | Git-authenticated repository exploration and security evidence
 
 Usage:
+  excession doctor [--json]
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests] [--import-base PATH]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
   excession graph kbuild --repo LINUX --build BUILD_DIR --archive init/built-in.a
@@ -469,19 +470,13 @@ fn browse(repo: &Path, manifest: &Path, max: usize) -> Result<()> {
     Ok(())
 }
 
-/// Shared configuration-scoped C/C++ analysis; the older kernel command is
-/// an alias, not an independent parser or evidence generator.
 fn clang_command(tail: &[String]) -> Result<Response> {
     let opt = Options::parse(
         tail,
         &["repo", "source", "compile-db", "trusted-local"],
         &["rev", "compiler", "config", "object-prefix"],
     )?;
-    let default_compiler = if opt.get("source").ends_with(".c") {
-        "clang"
-    } else {
-        "clang++"
-    };
+    let default_compiler = if opt.get("source").ends_with(".c") { "clang" } else { "clang++" };
     Ok(json(compiler_clang::scan(
         opt.path("repo"),
         opt.get_or("rev", "HEAD"),
@@ -506,6 +501,8 @@ fn execute(args: &[String]) -> Result<Response> {
             "excession {}",
             env!("CARGO_PKG_VERSION")
         ))),
+        [a] if a == "doctor" => Ok(Response::Message(doctor::format_human(&doctor::report())?)),
+        [a, flag] if a == "doctor" && flag == "--json" => Ok(json(doctor::report())),
         [top, a]
             if a == "--help"
                 && matches!(

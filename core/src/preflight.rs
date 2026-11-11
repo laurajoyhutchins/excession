@@ -49,7 +49,8 @@ fn source_path(value: &Value) -> Result<()> {
 
 fn digest(value: &Value, id: &str) -> Result<String> {
     let mut payload = value.entries()?.clone();
-    let asserted = bounded_string(payload.remove(id).ok_or("preflight: missing report digest")?.as_ref(), 64)?;
+    let claimed = payload.remove(id).ok_or("preflight: missing report digest")?;
+    let asserted = bounded_string(&claimed, 64)?;
     // Compare against the canonical body, excluding the asserted digest.
     let calculated = Value::Object(payload).sha256();
     if asserted != calculated {
@@ -121,7 +122,9 @@ fn source_record(source: &Value, roots: &BTreeSet<String>) -> Result<()> {
         }
         count += 1;
         keys(imp, &["source", "line", "wildcard"])?;
-        bounded_string(imp.get("source")?, 4096)?;
+        if imp.get("source")?.str()?.len() > 4096 {
+            return refuse("preflight: oversized import statement");
+        }
         positive_line(imp.get("line")?)?;
         imp.get("wildcard")?.bool()?;
     }
@@ -132,7 +135,9 @@ fn source_record(source: &Value, roots: &BTreeSet<String>) -> Result<()> {
         count += 1;
         keys(note, &["line", "message"])?;
         positive_line(note.get("line")?)?;
-        bounded_string(note.get("message")?, 2048)?;
+        if note.get("message")?.str()?.len() > 2048 {
+            return refuse("preflight: oversized diagnostic");
+        }
     }
     if !parsed && count != 0 {
         return refuse("preflight: failed parser supplied syntax observations");

@@ -73,22 +73,41 @@ impl Value {
         }
     }
     pub fn canonical(&self) -> String {
+        // Preserve the canonical byte contract while avoiding the temporary
+        // String and Vec allocations at every nested array/object level.
+        let mut output = String::new();
+        self.write_canonical(&mut output);
+        output
+    }
+
+    fn write_canonical(&self, output: &mut String) {
         match self {
-            Self::Null => "null".into(),
-            Self::Bool(v) => v.to_string(),
-            Self::Number(v) => v.clone(),
-            Self::String(v) => quoted(v),
-            Self::Array(a) => format!(
-                "[{}]",
-                a.iter().map(Value::canonical).collect::<Vec<_>>().join(",")
-            ),
-            Self::Object(o) => format!(
-                "{{{}}}",
-                o.iter()
-                    .map(|(k, v)| format!("{}:{}", quoted(k), v.canonical()))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
+            Self::Null => output.push_str("null"),
+            Self::Bool(v) => output.push_str(if *v { "true" } else { "false" }),
+            Self::Number(v) => output.push_str(v),
+            Self::String(v) => write_quoted(v, output),
+            Self::Array(values) => {
+                output.push('[');
+                for (i, value) in values.iter().enumerate() {
+                    if i != 0 {
+                        output.push(',');
+                    }
+                    value.write_canonical(output);
+                }
+                output.push(']');
+            }
+            Self::Object(fields) => {
+                output.push('{');
+                for (i, (key, value)) in fields.iter().enumerate() {
+                    if i != 0 {
+                        output.push(',');
+                    }
+                    write_quoted(key, output);
+                    output.push(':');
+                    value.write_canonical(output);
+                }
+                output.push('}');
+            }
         }
     }
     pub fn sha256(&self) -> String {
@@ -100,8 +119,9 @@ pub fn obj(pairs: &[(&str, Value)]) -> Value {
     Value::object(pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())))
 }
 
-fn quoted(s: &str) -> String {
-    let mut out = String::from("\"");
+fn write_quoted(s: &str, out: &mut String) {
+    use std::fmt::Write as _;
+    out.push('"');
     for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
@@ -111,23 +131,26 @@ fn quoted(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if c <= '\u{1f}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if c <= '\u{1f}' => {
+                write!(out, "\\u{:04x}", c as u32).expect("writing a String cannot fail");
+            }
             c if (c as u32) > 0x7f && (c as u32) <= 0xffff => {
-                out.push_str(&format!("\\u{:04x}", c as u32))
+                write!(out, "\\u{:04x}", c as u32).expect("writing a String cannot fail");
             }
             c if (c as u32) > 0xffff => {
                 let u = (c as u32) - 0x10000;
-                out.push_str(&format!(
+                write!(
+                    out,
                     "\\u{:04x}\\u{:04x}",
                     0xd800 + (u >> 10),
                     0xdc00 + (u & 0x3ff)
-                ));
+                )
+                .expect("writing a String cannot fail");
             }
             c => out.push(c),
         }
     }
     out.push('"');
-    out
 }
 
 struct Parser<'a> {
@@ -355,6 +378,104 @@ mod tests {
         assert_eq!(v.canonical(), r#"{"a":[true,null,"\ud83d\ude00"],"z":1}"#);
         assert_eq!(parse(v.canonical().as_bytes()).expect("round trip"), v);
     }
+    // Retain a structurally independent copy of the previous serializer in
+    // tests. The optimized writer must preserve historical view hashes even
+    // for nested records and non-ASCII characters.
+    fn reference_canonical(value: &Value) -> String {
+        fn quote(value: &str) -> String {
+            let mut out = String::from("\"");
+            for c in value.chars() {
+                match c {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    '\u{8}' => out.push_str("\\b"),
+                    '\u{c}' => out.push_str("\\f"),
+                    '\n' => out.push_str("\\n"),
+                    '\r' => out.push_str("\\r"),
+                    '\t' => out.push_str("\\t"),
+                    c if c <= '\u{1f}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+                    c if (c as u32) > 0x7f && (c as u32) <= 0xffff => {
+                        out.push_str(&format!("\\u{:04x}", c as u32))
+                    }
+                    c if (c as u32) > 0xffff => {
+                        let u = (c as u32) - 0x10000;
+                        out.push_str(&format!(
+                            "\\u{:04x}\\u{:04x}",
+                            0xd800 + (u >> 10),
+                            0xdc00 + (u & 0x3ff)
+                        ));
+                    }
+                    c => out.push(c),
+                }
+            }
+            out.push('"');
+            out
+        }
+        match value {
+            Value::Null => "null".into(),
+            Value::Bool(v) => v.to_string(),
+            Value::Number(v) => v.clone(),
+            Value::String(v) => quote(v),
+            Value::Array(v) => format!(
+                "[{}]",
+                v.iter()
+                    .map(reference_canonical)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            Value::Object(v) => format!(
+                "{{{}}}",
+                v.iter()
+                    .map(|(k, v)| format!("{}:{}", quote(k), reference_canonical(v)))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        }
+    }
+
+    #[test]
+    fn canonical_matches_preoptimization_bytes_and_hashes() {
+        let records = [
+            Value::Null,
+            Value::Bool(true),
+            Value::number("-1.250e+4"),
+            Value::string("plain"),
+            Value::string(
+                "\"\\\n\r\t\u{8}\u{c}\0\u{1f}\u{7f}\u{80}\u{e9}\u{20ac}\u{ffff}\u{10000}😀",
+            ),
+            obj(&[
+                ("z", Value::array([])),
+                ("é", Value::string("astral 🎼")),
+                (
+                    "nested",
+                    Value::array([
+                        obj(&[("b", Value::Bool(false)), ("a", Value::number("0.000"))]),
+                        Value::Null,
+                    ]),
+                ),
+            ]),
+        ];
+        for record in &records {
+            let expected = reference_canonical(record);
+            assert_eq!(record.canonical(), expected);
+            assert_eq!(record.sha256(), crate::digest::sha256(expected.as_bytes()));
+        }
+        let mut sample = Value::String("a".into());
+        for i in 0..95 {
+            sample = Value::array([
+                sample,
+                obj(&[
+                    ("🧪", Value::number(i)),
+                    ("slashes", Value::string("\\/\"")),
+                    ("a", Value::array([])),
+                ]),
+            ]);
+        }
+        let old = reference_canonical(&sample);
+        assert_eq!(sample.canonical(), old);
+        assert_eq!(crate::json::parse(old.as_bytes()).unwrap(), sample);
+    }
+
     #[test]
     fn strict_refusals() {
         for s in [

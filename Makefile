@@ -31,7 +31,7 @@ python-junit: build
 junit: rust-junit python-junit
 
 benchmark-schema-check:
-	python3 -m unittest discover -s tests -p test_benchmark_reporting.py -v
+	cargo test --offline --locked --manifest-path core/Cargo.toml benchmark::tests
 
 cli:
 	cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession

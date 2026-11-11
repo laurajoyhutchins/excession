@@ -2,7 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, projection, refuse, security_ingest, syntax, syntax_resolution, views,
+    Result, git, graph_baseline, index, projection, refuse, security_ingest, syntax,
+    syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -486,13 +487,16 @@ fn execute(args: &[String]) -> Result<Response> {
             "resolve" => {
                 let opt = Options::parse(tail, &["repo", "report"], &[])?;
                 Ok(json(syntax_resolution::candidates(
-                    opt.path("repo"), opt.path("report"),
+                    opt.path("repo"),
+                    opt.path("report"),
                 )?))
             }
             "resolve-audit" => {
                 let opt = Options::parse(tail, &["repo", "syntax-report", "report"], &[])?;
                 Ok(json(syntax_resolution::audit(
-                    opt.path("repo"), opt.path("syntax-report"), opt.path("report"),
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("report"),
                 )?))
             }
             _ => refuse(format!("unknown syntax command {sub}")),

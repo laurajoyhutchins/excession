@@ -116,13 +116,15 @@ def environment() -> dict:
     return facts
 
 
-def write_report(out: Path, report: dict) -> Path:
+def write_report(out: Path, report: dict, filename: str = "report.json") -> Path:
+    if Path(filename).name != filename or not filename.endswith(".json"):
+        raise ValueError("report filename must be a plain JSON filename")
     out.mkdir(parents=True, exist_ok=True)
     report["run_id"] = run_id(report)
-    destination = out / "report.json"
+    destination = out / filename
     # Check schema and every linked artifact before publishing a report.
     data = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    temporary = out / ".report.json.tmp"
+    temporary = out / ("." + filename + ".tmp")
     temporary.write_text(data, encoding="utf-8")
     try:
         validate(temporary)
@@ -268,7 +270,7 @@ def build_native(out: Path, raw_name: str) -> Path:
         "artifacts": [artifact(out, raw_name, "raw-samples", "application/json")],
         "limitations": [receipt["limitations"]],
     }
-    return write_report(out, report)
+    return write_report(out, report, Path(raw_name).stem + ".report.json")
 
 
 def main() -> None:

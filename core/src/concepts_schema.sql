@@ -24,9 +24,10 @@ CREATE TABLE IF NOT EXISTS concept_support (
     snapshot_id TEXT NOT NULL,
     claim_id TEXT NOT NULL,
     receipt_id TEXT NOT NULL,
+    observation_id TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL CHECK(role IN ('SUPPORTS', 'CONTRADICTS')),
     kind TEXT NOT NULL,
-    PRIMARY KEY (snapshot_id, claim_id, receipt_id, role, kind),
+    PRIMARY KEY (snapshot_id, claim_id, receipt_id, observation_id, role, kind),
     FOREIGN KEY (snapshot_id,claim_id) REFERENCES concept_claim(snapshot_id, claim_id)
 );
 CREATE TABLE IF NOT EXISTS concept_definition (

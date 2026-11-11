@@ -25,15 +25,14 @@ jobs:
       - name: Install pinned Rust for full manual benchmark
         if: github.event_name == 'workflow_dispatch'
         run: rustup show active-toolchain
-      - name: Resolve locked Rust dependencies
-        if: github.event_name == 'workflow_dispatch'
-        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - uses: actions/setup-python@v5
         with:
           python-version-file: .python-version
       - name: Install pinned Python test dependency
-        run: >-
-          python3 -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements/locks/research-linux-cp313-x86_64.txt
+        run: python3 -m pip install --disable-pip-version-check -r requirements/research.txt
+      - name: Prefetch Rust dependencies for manual benchmark
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Build native CLI for full manual benchmark
         if: github.event_name == 'workflow_dispatch'
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession

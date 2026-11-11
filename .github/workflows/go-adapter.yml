@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.go-version'
+      - 'mise.toml'
       - '.github/workflows/go-adapter.yml'
       - 'core/adapters/*.go'
   workflow_dispatch:
@@ -15,10 +16,10 @@ jobs:
   go:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      MISE_ENABLE_TOOLS: go
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: .go-version
+      - uses: jdx/mise-action@v5
       - name: Standard-library-only adapter tests
-        run: GO111MODULE=off go test ./core/adapters
+        run: mise run go-check

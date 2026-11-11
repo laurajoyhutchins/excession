@@ -121,12 +121,20 @@ impl BlobReader {
 
     pub fn read(&mut self, expected_oid: &str) -> Result<Vec<u8>> {
         oid(expected_oid)?;
-        let stdin = self.stdin.as_mut().ok_or("Git blob reader already closed")?;
+        let stdin = self
+            .stdin
+            .as_mut()
+            .ok_or("Git blob reader already closed")?;
         writeln!(stdin, "{expected_oid}").map_err(|e| format!("Git batch request: {e}"))?;
         stdin.flush().map_err(|e| format!("Git batch flush: {e}"))?;
 
         let mut header = String::new();
-        if self.stdout.read_line(&mut header).map_err(|e| e.to_string())? == 0 {
+        if self
+            .stdout
+            .read_line(&mut header)
+            .map_err(|e| e.to_string())?
+            == 0
+        {
             return refuse("Git batch ended before blob response");
         }
         let mut fields = header.trim_end_matches('\n').split_ascii_whitespace();
@@ -158,7 +166,10 @@ impl BlobReader {
 
     pub fn finish(mut self) -> Result<()> {
         self.stdin.take(); // EOF lets Git exit normally after its final response.
-        let status = self.child.wait().map_err(|e| format!("Git batch wait: {e}"))?;
+        let status = self
+            .child
+            .wait()
+            .map_err(|e| format!("Git batch wait: {e}"))?;
         self.finished = true;
         if !status.success() {
             return refuse(format!("git cat-file --batch exited with {status}"));
@@ -276,12 +287,14 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir(&root).unwrap();
-        assert!(Command::new("git")
-            .args(["init", "-q"])
-            .arg(&root)
-            .status()
-            .unwrap()
-            .success());
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .arg(&root)
+                .status()
+                .unwrap()
+                .success()
+        );
 
         let first = b"first\n";
         let second = b"\0\xff\nsecond";
@@ -302,5 +315,4 @@ mod tests {
         drop(reader);
         let _ = std::fs::remove_dir_all(&root);
     }
-
 }

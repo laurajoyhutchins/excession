@@ -73,22 +73,41 @@ impl Value {
         }
     }
     pub fn canonical(&self) -> String {
+        // Preserve the canonical byte contract while avoiding the temporary
+        // String and Vec allocations at every nested array/object level.
+        let mut output = String::new();
+        self.write_canonical(&mut output);
+        output
+    }
+
+    fn write_canonical(&self, output: &mut String) {
         match self {
-            Self::Null => "null".into(),
-            Self::Bool(v) => v.to_string(),
-            Self::Number(v) => v.clone(),
-            Self::String(v) => quoted(v),
-            Self::Array(a) => format!(
-                "[{}]",
-                a.iter().map(Value::canonical).collect::<Vec<_>>().join(",")
-            ),
-            Self::Object(o) => format!(
-                "{{{}}}",
-                o.iter()
-                    .map(|(k, v)| format!("{}:{}", quoted(k), v.canonical()))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
+            Self::Null => output.push_str("null"),
+            Self::Bool(v) => output.push_str(if *v { "true" } else { "false" }),
+            Self::Number(v) => output.push_str(v),
+            Self::String(v) => write_quoted(v, output),
+            Self::Array(values) => {
+                output.push('[');
+                for (i, value) in values.iter().enumerate() {
+                    if i != 0 {
+                        output.push(',');
+                    }
+                    value.write_canonical(output);
+                }
+                output.push(']');
+            }
+            Self::Object(fields) => {
+                output.push('{');
+                for (i, (key, value)) in fields.iter().enumerate() {
+                    if i != 0 {
+                        output.push(',');
+                    }
+                    write_quoted(key, output);
+                    output.push(':');
+                    value.write_canonical(output);
+                }
+                output.push('}');
+            }
         }
     }
     pub fn sha256(&self) -> String {
@@ -100,8 +119,9 @@ pub fn obj(pairs: &[(&str, Value)]) -> Value {
     Value::object(pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())))
 }
 
-fn quoted(s: &str) -> String {
-    let mut out = String::from("\"");
+fn write_quoted(s: &str, out: &mut String) {
+    use std::fmt::Write as _;
+    out.push('"');
     for c in s.chars() {
         match c {
             '"' => out.push_str("\\\""),
@@ -111,23 +131,21 @@ fn quoted(s: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if c <= '\u{1f}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if c <= '\u{1f}' => {
+                write!(out, "\\u{:04x}", c as u32).expect("writing a String cannot fail");
+            }
             c if (c as u32) > 0x7f && (c as u32) <= 0xffff => {
-                out.push_str(&format!("\\u{:04x}", c as u32))
+                write!(out, "\\u{:04x}", c as u32).expect("writing a String cannot fail");
             }
             c if (c as u32) > 0xffff => {
                 let u = (c as u32) - 0x10000;
-                out.push_str(&format!(
-                    "\\u{:04x}\\u{:04x}",
-                    0xd800 + (u >> 10),
-                    0xdc00 + (u & 0x3ff)
-                ));
+                write!(out, "\\u{:04x}\\u{:04x}", 0xd800 + (u >> 10), 0xdc00 + (u & 0x3ff))
+                    .expect("writing a String cannot fail");
             }
             c => out.push(c),
         }
     }
     out.push('"');
-    out
 }
 
 struct Parser<'a> {

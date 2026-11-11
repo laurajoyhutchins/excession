@@ -82,7 +82,7 @@ def run(args: argparse.Namespace) -> dict:
             row = {
                 "task_id": task["id"], "repeat": repeat, "arm": arm,
                 "source_commit": revision,
-                "status": "ok" if proc.returncode == 0 else "error",
+                "status": "ok" if proc.returncode == 0 else ("unsupported" if proc.returncode == 127 else "error"),
                 "returncode": proc.returncode, "raw_stdout_bytes": len(proc.stdout),
                 "raw_stdout_sha256": hashlib.sha256(proc.stdout).hexdigest(),
                 **timings,
@@ -110,7 +110,7 @@ def run(args: argparse.Namespace) -> dict:
         "task_count": len(tasks), "repetitions": args.repetitions,
         "status_counts": {
             arm: {state: sum(r["status"] == state for r in rows)
-                  for state in ("ok", "error", "invalid-output")}
+                  for state in ("ok", "error", "unsupported", "invalid-output")}
             for arm, rows in by_arm.items()
         },
         "declared_path_matches": {

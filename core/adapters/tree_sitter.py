@@ -131,9 +131,19 @@ def main():
             "install the pinned optional parser package and prefetch grammars"
         ) from exc
     from importlib.metadata import version
+    from types import SimpleNamespace
+    # Module-level has_parser does not exist in v1.25. Use an offline registry
+    # for both availability checks and extraction, never auto-downloading.
+    registry = pack.LanguageRegistry.new()
+    offline = SimpleNamespace(
+        detect_language_from_path=pack.detect_language_from_path,
+        has_parser=registry.has_parser,
+        ProcessConfig=pack.ProcessConfig,
+        process=registry.process,
+    )
     items = json.load(sys.stdin)
     result = {"parser_version": version("tree-sitter-language-pack"),
-              "sources": parse_items(items, pack)}
+              "sources": parse_items(items, offline)}
     print(json.dumps(result, sort_keys=True, separators=(",", ":"),
                      ensure_ascii=False))
 

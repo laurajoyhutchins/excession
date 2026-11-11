@@ -434,7 +434,11 @@ fn execute(args: &[String]) -> Result<Response> {
             Ok(Response::Bytes(Vec::new()))
         }
         [top, tail @ ..] if top == "index" => {
-            let opt = Options::parse(tail, &["repo", "db", "name"], &["rev", "roots", "import-base"])?;
+            let opt = Options::parse(
+                tail,
+                &["repo", "db", "name"],
+                &["rev", "roots", "import-base"],
+            )?;
             let roots = opt
                 .get_or("roots", "src,tests")
                 .split(',')

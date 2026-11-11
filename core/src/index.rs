@@ -25,7 +25,16 @@ pub fn index_revision_for_evidence(
     commit: &str,
     provenance: &str,
 ) -> Result<i64> {
-    index_revision_inner(db, root, name, commit, provenance, &["h11", "tests"], false, None)
+    index_revision_inner(
+        db,
+        root,
+        name,
+        commit,
+        provenance,
+        &["h11", "tests"],
+        false,
+        None,
+    )
 }
 
 pub fn index_revision_with_roots(
@@ -59,7 +68,14 @@ pub fn index_revision_with_import_base(
         return refuse("every module root must be inside --import-base");
     }
     index_revision_inner(
-        db, root, name, commit, provenance, roots, true, Some(import_base),
+        db,
+        root,
+        name,
+        commit,
+        provenance,
+        roots,
+        true,
+        Some(import_base),
     )
 }
 
@@ -555,13 +571,24 @@ mod import_base_tests {
     fn git_paths_remain_distinct_from_python_import_names() {
         let path = "scripts/gdb/linux/tasks.py";
         let roots = &["scripts/gdb"];
-        assert_eq!(module_name(path, roots).unwrap().0, "scripts.gdb.linux.tasks");
         assert_eq!(
-            module_name_with_import_base(path, roots, Some("scripts/gdb")).unwrap().0,
+            module_name(path, roots).unwrap().0,
+            "scripts.gdb.linux.tasks"
+        );
+        assert_eq!(
+            module_name_with_import_base(path, roots, Some("scripts/gdb"))
+                .unwrap()
+                .0,
             "linux.tasks"
         );
         assert_eq!(
-            module_name_with_import_base("scripts/gdb/linux/__init__.py", roots, Some("scripts/gdb")).unwrap().0,
+            module_name_with_import_base(
+                "scripts/gdb/linux/__init__.py",
+                roots,
+                Some("scripts/gdb")
+            )
+            .unwrap()
+            .0,
             "linux"
         );
         assert!(

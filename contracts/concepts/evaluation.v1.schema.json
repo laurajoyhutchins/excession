@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/concepts/evaluation.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Excession semantic intelligence experiment report v1 (proposed)",
+  "required": [
+    "schema",
+    "experiment_id",
+    "baseline_revision",
+    "semantic_revision",
+    "oracle_manifest_id",
+    "corpus",
+    "metrics",
+    "unsupported_cases",
+    "tool_versions",
+    "evaluation_status"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts-evaluation.v1"
+    },
+    "experiment_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "baseline_revision": {
+      "$ref": "#/$defs/oid"
+    },
+    "semantic_revision": {
+      "$ref": "#/$defs/oid"
+    },
+    "oracle_manifest_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "corpus": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repo",
+          "commit",
+          "purpose"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "commit": {
+            "$ref": "#/$defs/oid"
+          },
+          "purpose": {
+            "enum": [
+              "CONTRACT_NEGATIVE",
+              "REAL_REPOSITORY",
+              "HELD_OUT_ORACLE"
+            ]
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "true_positive",
+        "false_positive",
+        "false_negative",
+        "unresolved",
+        "wall_seconds",
+        "peak_rss_bytes"
+      ],
+      "properties": {
+        "true_positive": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "false_positive": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "false_negative": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wall_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "peak_rss_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "unsupported_cases": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tool_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evaluation_status": {
+      "enum": [
+        "SYNTHETIC_SCHEMA_FIXTURE",
+        "INDEPENDENTLY_MEASURED"
+      ]
+    }
+  },
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

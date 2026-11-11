@@ -15,10 +15,9 @@ const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 
 fn eligible(path: &str) -> bool {
     [
-        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".rs", ".go",
-        ".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".kts", ".cs",
-        ".rb", ".php", ".swift", ".scala", ".sh", ".ex", ".exs",
-        ".json", ".yaml", ".yml", ".toml", ".sql",
+        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".rs", ".go", ".c", ".h", ".cc",
+        ".cpp", ".hpp", ".java", ".kt", ".kts", ".cs", ".rb", ".php", ".swift", ".scala", ".sh",
+        ".ex", ".exs", ".json", ".yaml", ".yml", ".toml", ".sql",
     ]
     .iter()
     .any(|extension| path.ends_with(extension))
@@ -42,12 +41,7 @@ fn positive_line(value: &Value, lines: usize) -> Result<()> {
     Ok(())
 }
 
-fn validate_structure(
-    value: &Value,
-    data: &[u8],
-    depth: usize,
-    count: &mut usize,
-) -> Result<()> {
+fn validate_structure(value: &Value, data: &[u8], depth: usize, count: &mut usize) -> Result<()> {
     if depth > 64 || *count >= MAX_OBSERVATIONS {
         return refuse("parser structure exceeds depth or observation limit");
     }
@@ -85,8 +79,12 @@ fn validate_observation(observation: &Value, expected: &Entry, data: &[u8]) -> R
     let status = observation.get("status")?.str()?;
     if !matches!(
         status,
-        "PARSED" | "PARSED_WITH_ERRORS" | "UNSUPPORTED_LANGUAGE"
-            | "GRAMMAR_NOT_INSTALLED" | "RESOURCE_LIMIT" | "PARSER_ERROR"
+        "PARSED"
+            | "PARSED_WITH_ERRORS"
+            | "UNSUPPORTED_LANGUAGE"
+            | "GRAMMAR_NOT_INSTALLED"
+            | "RESOURCE_LIMIT"
+            | "PARSER_ERROR"
     ) {
         return refuse("unrecognized parser status");
     }
@@ -97,7 +95,8 @@ fn validate_observation(observation: &Value, expected: &Entry, data: &[u8]) -> R
     let structure = observation.get("structure")?.array_ref()?;
     let imports = observation.get("imports")?.array_ref()?;
     let diagnostics = observation.get("diagnostics")?.array_ref()?;
-    if status != "PARSED" && status != "PARSED_WITH_ERRORS"
+    if status != "PARSED"
+        && status != "PARSED_WITH_ERRORS"
         && (!structure.is_empty() || !imports.is_empty() || !diagnostics.is_empty())
     {
         return refuse("unavailable or failed parser supplied observations");
@@ -144,8 +143,8 @@ fn consume_batch(
     }
     let mut input = Vec::with_capacity(batch.len());
     for (entry, data) in batch.iter() {
-        let content = std::str::from_utf8(data)
-            .map_err(|_| format!("non-UTF-8 source: {}", entry.path))?;
+        let content =
+            std::str::from_utf8(data).map_err(|_| format!("non-UTF-8 source: {}", entry.path))?;
         input.push(adapter::js_entry(&entry.path, content));
     }
     let parsed = adapter::tree_sitter(&input)?;
@@ -204,7 +203,10 @@ pub fn scan(root: &Path, reference: &str, roots: &[&str]) -> Result<Value> {
                 && matches!(e.mode.as_str(), "100644" | "100755")
                 && selected(&e.path, roots)
                 && eligible(&e.path)
-                && !e.path.split('/').any(|part| part == "node_modules" || part == "vendor")
+                && !e
+                    .path
+                    .split('/')
+                    .any(|part| part == "node_modules" || part == "vendor")
         })
         .collect::<Vec<_>>();
     selected_files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -221,7 +223,9 @@ pub fn scan(root: &Path, reference: &str, roots: &[&str]) -> Result<Value> {
     let mut parser_version = None;
     for entry in selected_files {
         let data = reader.read_capped(&entry.oid, MAX_SOURCE_BYTES)?;
-        total = total.checked_add(data.len()).ok_or("source byte count overflow")?;
+        total = total
+            .checked_add(data.len())
+            .ok_or("source byte count overflow")?;
         if total > MAX_TOTAL_BYTES {
             return refuse("syntax selection exceeds 16 MiB; narrow --roots");
         }
@@ -235,12 +239,18 @@ pub fn scan(root: &Path, reference: &str, roots: &[&str]) -> Result<Value> {
     let payload = obj(&[
         ("schema", Value::string("excession.syntax-observations.v1")),
         ("parser", Value::string("tree-sitter-language-pack")),
-        ("parser_version", Value::string(parser_version.unwrap_or_default())),
+        (
+            "parser_version",
+            Value::string(parser_version.unwrap_or_default()),
+        ),
         ("completeness", Value::string("CONSERVATIVE_SYNTAX_ONLY")),
         ("source_commit", Value::string(commit)),
         ("source_tree", Value::string(tree)),
-        ("roots", Value::array(roots.iter().map(|r| Value::string(*r)))),
-        ("source_count", Value::integer(sources.len() as i64)),
+        (
+            "roots",
+            Value::array(roots.iter().map(|r| Value::string(*r))),
+        ),
+        ("source_count", Value::number(sources.len())),
         ("sources", Value::array(sources)),
     ]);
     let mut manifest = payload.entries()?.clone();

@@ -60,13 +60,13 @@ config BAR
     def test_python_unicode_line_separators_are_not_physical_lines(self):
         # Python str.splitlines treats form feed, vertical tab and next-line
         # as line breaks. Clang/Rust C physical locations are LF-based.
-        source = "#define A 1\\fcontinued\\vstill_one_line\\n#include <real.h>\\n"
+        source = "#define A 1\fcontinued\vstill_one_line\n#include <real.h>\n"
         facts, _ = parser.c_facts(source)
         include = next(f for f in facts if f["kind"] == "c_include")
         self.assertEqual(include["line"], 2)
         self.assertEqual(parser.physical_line_count(source), 2)
-        self.assertEqual(list(parser.logical_lines("one\\vtwo\\nthree")),
-                         [(1, "one\\vtwo"), (2, "three")])
+        self.assertEqual(list(parser.logical_lines("one\vtwo\nthree")),
+                         [(1, "one\vtwo"), (2, "three")])
 
     def test_c_preprocessor_rejects_unmatched_blocks(self):
         _, diagnostics = parser.c_facts("#else\n#if FOO\n#include <x.h>\n")

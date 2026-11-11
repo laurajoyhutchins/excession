@@ -2,8 +2,8 @@
 //! Historical experiments run under `excession research` without a second CLI.
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, git, graph_baseline, index, preflight, projection, refactor, refuse, security_ingest,
-    syntax, syntax_resolution, views,
+    Result, git, graph_baseline, index, native_boundary, preflight, projection, refactor, refuse,
+    security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -25,6 +25,9 @@ Usage:
   excession syntax resolve --repo REPO --report SAVED_SYNTAX_JSON
   excession syntax resolve-audit --repo REPO --syntax-report SAVED_SYNTAX_JSON --report SAVED_RESOLUTION_JSON
   excession syntax resolve-preflight --report SAVED_RESOLUTION_JSON
+  excession syntax native-preflight --declaration NATIVE_DECLARATION_JSON
+  excession syntax native-compare --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON
+  excession syntax native-audit --repo REPO --syntax-report SYNTAX_JSON --resolution-report CANDIDATES_JSON --declaration NATIVE_DECLARATION_JSON --report BOUNDARY_JSON
   excession view deps --db DB --name NAME --rev REV --seed MODULE
   excession view paths --db DB --name NAME --rev REV --seed MODULE --role ROLE
   excession view graph --db DB --name NAME --rev REV --seed MODULE --kind KIND
@@ -498,6 +501,45 @@ fn execute(args: &[String]) -> Result<Response> {
             "resolve-preflight" => {
                 let opt = Options::parse(tail, &["report"], &[])?;
                 Ok(json(preflight::resolution_file(opt.path("report"))?))
+            }
+            "native-preflight" => {
+                let opt = Options::parse(tail, &["declaration"], &[])?;
+                Ok(json(native_boundary::preflight_file(
+                    opt.path("declaration"),
+                )?))
+            }
+            "native-compare" => {
+                let opt = Options::parse(
+                    tail,
+                    &["repo", "syntax-report", "resolution-report", "declaration"],
+                    &[],
+                )?;
+                Ok(json(native_boundary::compare(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("resolution-report"),
+                    opt.path("declaration"),
+                )?))
+            }
+            "native-audit" => {
+                let opt = Options::parse(
+                    tail,
+                    &[
+                        "repo",
+                        "syntax-report",
+                        "resolution-report",
+                        "declaration",
+                        "report",
+                    ],
+                    &[],
+                )?;
+                Ok(json(native_boundary::audit(
+                    opt.path("repo"),
+                    opt.path("syntax-report"),
+                    opt.path("resolution-report"),
+                    opt.path("declaration"),
+                    opt.path("report"),
+                )?))
             }
             "resolve" => {
                 let opt = Options::parse(tail, &["repo", "report"], &[])?;

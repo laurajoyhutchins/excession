@@ -147,6 +147,62 @@ import. Native compiler resolution and complete build graphs remain separate
 from this feature. Other languages and missing grammars are explicitly marked
 unsupported, not silently assigned empty dependency sets.
 
+## Compiler-declaration boundary, before view assembly
+
+Once an independent language-native resolver has produced an
+`excession.input-declaration.v1` file, validate it **before** producing
+a repository view. The [compiler-assisted native resolver PR](https://github.com/laurajoyhutchins/excession/pull/22)
+is a separate, stacked implementation; this boundary accepts its documented
+declaration contract without requiring the resolver to be installed.
+
+```sh
+# No Git, Tree-sitter or compiler required for this first check.
+excession syntax native-preflight --declaration native.json
+
+# Full Git/parser replay plus a source-scoped comparison:
+excession syntax native-compare --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --declaration native.json > /tmp/native-boundary.json
+
+excession syntax native-audit --repo "$REPO" \
+  --syntax-report /tmp/syntax.json \
+  --resolution-report /tmp/candidates.json \
+  --declaration native.json --report /tmp/native-boundary.json
+```
+
+The fast preflight accepts only Go, Rust, JavaScript and TypeScript declarations,
+and checks language, source subject, 1–512 unique source/configuration inputs,
+the native-v1 discovery identifier, toolchain version/platform, and a lowercase
+64-hex toolchain fingerprint. It is **not compiler attestation**; the byte-hash
+and version are unverified self-reported metadata.
+
+The full comparison requires clean pinned Git, validates every declared file
+against the exact commit and its Git blob OID, checks that the subject was
+parsed in the selected syntax scan, and **independently regenerates** the entire
+syntax candidate report. It then compares only candidate edges whose *source*
+belongs to the declared native input set and matches its language.
+
+Results keep separate sets of:
+- `matching_edges`: candidate targets also declared as native source inputs
+- `static_only_edges`: candidate targets outside that native source scope
+- `native_only_sources`: declared source files not explained as candidate targets
+- `unscanned_sources` and `unresolved_imports`: observed coverage limitations
+- `pinned_inputs`: all declared source/configuration files with exact Git blob IDs
+
+`REVIEW_STATIC_NATIVE_SCOPE_DIFFERENCE` is **not proof that a compiler missed
+a dependency**. Build tags, conditional compilation, compiler-owned libraries,
+untracked runtime effects, static over-approximation, and an intentionally
+narrow syntax scope can all explain differences. Even
+`NO_STATIC_NATIVE_DISAGREEMENT_OBSERVED` is not a completeness guarantee.
+
+The source declaration format does not independently pin a compiler run to
+a commit. The comparison binds its paths to the caller-selected syntax commit,
+but **cannot prove a native compiler produced them for that commit**.
+Do not treat this report as independent worker attestation, a verified
+behavioral guarantee, or permission to skip tests. Any compiler-backed
+promotion needs authenticated runtime evidence in a later contract.
+
 ## Safety and reproducibility
 
 The adapter runs trusted, locally installed parser binaries and grammars, but

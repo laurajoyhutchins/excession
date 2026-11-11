@@ -120,6 +120,18 @@ indexed query against Git source identities and checks a saved report. It does
 not reparse semantic relations, prove equivalence, or modify source.
 See [refactoring hypotheses](docs/REFACTORING.md).
 
+## Native declaration boundary
+
+To compare native compiler-declared inputs with conservative syntax
+candidates **before constructing repository views**, use
+`excession syntax native-preflight --declaration native.json` followed by
+`excession syntax native-compare --repo "$REPO" --syntax-report /tmp/syntax.json
+--resolution-report /tmp/candidates.json --declaration native.json`.
+The comparison reports in-scope candidate agreements, scope differences,
+unresolved imports, and exact Git input identities. It never authenticates
+a compiler process or asserts complete dependency closure. See
+[language-specific boundary checks](docs/SYNTAX_PARSERS.md#compiler-declaration-boundary-before-view-assembly).
+
 ## Source-bound scanner evidence
 
 ```sh

@@ -26,6 +26,7 @@ jobs:
       - name: Compile Rust CLI without third-party downloads
         run: |
           rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Ensure native Linux build dependencies
         shell: bash

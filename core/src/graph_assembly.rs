@@ -10,8 +10,6 @@ use std::path::{Component, Path, PathBuf};
 
 const MAX_JSON: usize = 48 * 1024 * 1024;
 const MAX_TUS: usize = 128;
-const MAX_NODES: usize = 30_000;
-const MAX_EDGES: usize = 80_000;
 
 fn read_json(path: &Path) -> Result<Value> {
     let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
@@ -78,20 +76,7 @@ fn push_node(
     kind: &str,
     payload: Value,
 ) -> Result<()> {
-    if nodes.len() >= MAX_NODES && !nodes.contains_key(&id) {
-        return refuse("graph node budget exceeded");
-    }
-    let entry = obj(&[
-        ("id", Value::string(&id)),
-        ("kind", Value::string(kind)),
-        ("payload", payload),
-    ]);
-    if let Some(old) = nodes.insert(id, entry.clone())
-        && old != entry
-    {
-        return refuse("conflicting graph entity identity");
-    }
-    Ok(())
+    crate::configured_store::push_node(nodes, id, kind, payload)
 }
 fn push_edge(
     edges: &mut BTreeMap<String, Value>,
@@ -101,18 +86,7 @@ fn push_edge(
     status: &str,
     evidence: &str,
 ) -> Result<()> {
-    if edges.len() >= MAX_EDGES {
-        return refuse("graph edge budget exceeded");
-    }
-    let entry = obj(&[
-        ("from", Value::string(from)),
-        ("to", Value::string(to)),
-        ("kind", Value::string(kind)),
-        ("status", Value::string(status)),
-        ("evidence", Value::string(evidence)),
-    ]);
-    edges.insert(entry.sha256(), entry);
-    Ok(())
+    crate::configured_store::push_edge(edges, from, to, kind, status, evidence)
 }
 fn source_suffix(path: &str) -> bool {
     [".c", ".cc", ".cpp", ".cxx", ".C"]
@@ -190,7 +164,7 @@ pub fn assemble(
     rev: &str,
     build: &Path,
     target_name: &str,
-    observations: &Path,
+    observations: Option<&Path>,
     db: &Db,
 ) -> Result<Value> {
     git::verify_repo(repo)?;
@@ -378,11 +352,16 @@ pub fn assemble(
     }
     let mut observed = BTreeMap::<String, (String, Value)>::new();
     let mut receipt_documents = BTreeMap::<String, Value>::new();
-    let entries = fs::read_dir(observations)
-        .map_err(|e| format!("observation directory unavailable: {e}"))?;
     let mut count = 0;
-    for file in entries {
-        let path = file.map_err(|e| e.to_string())?.path();
+    let files = if let Some(directory) = observations {
+        fs::read_dir(directory)
+            .map_err(|e| format!("observation directory unavailable: {e}"))?
+            .map(|item| item.map(|file| file.path()).map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        Vec::new()
+    };
+    for path in files {
         if path.extension().and_then(|x| x.to_str()) != Some("json") {
             continue;
         }
@@ -537,13 +516,25 @@ pub fn assemble(
         ),
     ]);
     let id = body.sha256();
-    let receipts = observed.iter().map(|(source, (receipt, _))| {
-        let document = receipt_documents
-            .get(receipt).ok_or("missing in-memory compiler receipt")?;
-        Ok((source.clone(), receipt.clone(), document.clone()))
-    }).collect::<Result<Vec<_>>>()?;
+    let receipts = observed
+        .iter()
+        .map(|(source, (receipt, _))| {
+            let document = receipt_documents
+                .get(receipt)
+                .ok_or("missing in-memory compiler receipt")?;
+            Ok((source.clone(), receipt.clone(), document.clone()))
+        })
+        .collect::<Result<Vec<_>>>()?;
     crate::configured_store::persist(
-        db, &id, &commit, target_name, config_name, &body, &nodes, &edges, &receipts
+        db,
+        &id,
+        &commit,
+        target_name,
+        config_name,
+        &body,
+        &nodes,
+        &edges,
+        &receipts,
     )?;
     let mut result = body.entries()?.clone();
     result.insert("graph_id".to_owned(), Value::string(id));

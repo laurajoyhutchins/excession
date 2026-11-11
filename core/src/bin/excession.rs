@@ -5,14 +5,17 @@ use excession::evidence_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
-    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph, kernel, native_boundary, preflight, projection,
-    refactor, refuse, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
+    kernel, native_boundary, preflight, projection, refactor, refuse, scip_refactor,
+    security_ingest, syntax, syntax_resolution, views,
 };
 use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
+#[path = "excession/graph.rs"]
+mod graph_cli;
 #[path = "excession/research.rs"]
 mod research;
 #[path = "excession/scan.rs"]
@@ -24,6 +27,12 @@ Usage:
   excession doctor [--json]
   excession index --repo REPO --db DB --name NAME [--rev HEAD] [--roots package,tests] [--import-base PATH]
   excession kernel scan --repo REPO --roots drivers/rtc[,include/linux] [--rev HEAD]
+  excession graph import --build BUILD_DIR --target TARGET [--repo .] [--provider auto]
+      [--db SQLITE] [--rev HEAD] [--observations RECEIPTS] [--trusted-local true]
+  excession graph ls --build BUILD_DIR [--db SQLITE]
+  excession graph show --build BUILD_DIR [--id GRAPH_ID]
+  excession graph deps --build BUILD_DIR --node SOURCE_OR_TARGET [--depth 2]
+  excession graph path --build BUILD_DIR --from TARGET --to SOURCE [--depth 8]
   excession graph kbuild --repo LINUX --build BUILD_DIR --archive init/built-in.a
       --db SQLITE --trusted-local true [--rev HEAD] [--ar ar|llvm-ar]
   excession graph assemble --repo REPO --rev HEAD --build BUILD_DIR
@@ -476,7 +485,11 @@ fn clang_command(tail: &[String]) -> Result<Response> {
         &["repo", "source", "compile-db", "trusted-local"],
         &["rev", "compiler", "config", "object-prefix"],
     )?;
-    let default_compiler = if opt.get("source").ends_with(".c") { "clang" } else { "clang++" };
+    let default_compiler = if opt.get("source").ends_with(".c") {
+        "clang"
+    } else {
+        "clang++"
+    };
     Ok(json(compiler_clang::scan(
         opt.path("repo"),
         opt.get_or("rev", "HEAD"),
@@ -533,6 +546,7 @@ fn execute(args: &[String]) -> Result<Response> {
             Ok(Response::Message(HELP.to_owned()))
         }
         [top, sub, tail @ ..] if top == "graph" => match sub.as_str() {
+            "import" | "ls" | "show" | "deps" | "path" => graph_cli::run(sub, tail),
             "kbuild" => {
                 let opt = Options::parse(
                     tail,
@@ -562,7 +576,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.get_or("rev", "HEAD"),
                     opt.path("build"),
                     opt.get("target"),
-                    opt.path("observations"),
+                    Some(opt.path("observations")),
                     &db,
                 )?))
             }

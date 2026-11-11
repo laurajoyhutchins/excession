@@ -34,6 +34,7 @@ jobs:
       - name: Compile Excession with no Cargo downloads
         run: |
           rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
 
       - name: Fetch independently pinned C and C++ repositories

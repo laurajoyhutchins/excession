@@ -24,6 +24,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+          cache: false
       - name: Install scanner and build Excession
         run: |
           python3 -m venv "$RUNNER_TEMP/semgrep-venv"
@@ -77,6 +78,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+          cache: false
       - name: Initialize CodeQL Go database
         uses: github/codeql-action/init@v3
         with:

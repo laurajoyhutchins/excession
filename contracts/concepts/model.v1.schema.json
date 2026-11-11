@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/concepts/model.v1.schema.json",
   "title": "Excession semantic model v1 (proposed)",
-  "description": "Contract scaffold for source-bound semantic proposals. Shape validation is not source authentication or evidence replay.",
+  "description": "Source-bound proposed semantic model. Shape validation does not authenticate Git, producer output, or runtime behavior. For verified behavioral claims, independent verification receipt and named contract are required.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -242,7 +242,101 @@
           "minItems": 1,
           "uniqueItems": true
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "predicate": {
+                "const": "BEHAVIORALLY_EQUIVALENT_UNDER"
+              }
+            },
+            "required": [
+              "predicate"
+            ]
+          },
+          "then": {
+            "required": [
+              "verification_contract_id"
+            ],
+            "properties": {
+              "behavioral_verification": {
+                "const": "VERIFIED_UNDER_CONTRACT"
+              },
+              "support": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "const": "SUPPORTS"
+                    },
+                    "observation_kind": {
+                      "const": "NATIVE_VERIFICATION"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "observation_kind"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "behavioral_verification": {
+                "const": "VERIFIED_UNDER_CONTRACT"
+              }
+            },
+            "required": [
+              "behavioral_verification"
+            ]
+          },
+          "then": {
+            "required": [
+              "verification_contract_id"
+            ],
+            "properties": {
+              "support": {
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "const": "SUPPORTS"
+                    },
+                    "observation_kind": {
+                      "const": "NATIVE_VERIFICATION"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "observation_kind"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "predicate": {
+                "const": "REALIZES_CONCEPT"
+              }
+            },
+            "required": [
+              "predicate"
+            ]
+          },
+          "then": {
+            "required": [
+              "concept_id"
+            ]
+          }
+        }
+      ]
     },
     "concept": {
       "type": "object",

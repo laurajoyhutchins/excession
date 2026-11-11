@@ -59,9 +59,9 @@ bundles and benchmark receipts are intentionally retained.
 
 ## Benchmark reports
 
-`python3 benchmarks/reporting.py validate path/to/report.json` checks the
+`core/target/debug/excession benchmark validate --report path/to/report.json` checks the
 Draft 2020-12 schema, report content digest, and recorded raw-artifact hashes.
-The validator and its dependencies are pinned in `requirements/research.txt`.
+The validator is the Rust `jsonschema` crate pinned through `core/Cargo.lock`.
 `make benchmark-schema-check` runs conversion and negative-case tests.
 Relational runs publish `report.json`; native CI wraps raw calibrations
 as separate `*.report.json` files. No unavailable measurements are invented.

@@ -135,10 +135,16 @@ def rust(root, entry):
         if re.search(r"\b(?:env|option_env|concat|include)!\s*\(", filename.read_text(errors="replace")):
             raise Unsupported("Rust compile-time environment or dynamic include unsupported")
     depfile = root.parent / "rust-dependencies.d"
+    selected = os.environ.get("EXCESSION_NATIVE_RUSTC")
+    if not selected:
+        raise Unsupported("Rust authority did not pin a compiler executable")
+    rustc = Path(selected)
+    if not rustc.is_absolute() or not rustc.is_file():
+        raise Unsupported("Rust authority supplied an invalid compiler path")
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(root.parent),
            "LC_ALL": "C", "TZ": "UTC", "CARGO_MANIFEST_DIR": str(root),
            "CARGO_PKG_NAME": str(package.get("name", "probe"))}
-    run([str(find("rustc")), "--crate-name", "excession_native_probe", "--crate-type",
+    run([str(rustc), "--crate-name", "excession_native_probe", "--crate-type",
          "lib" if entry == "src/lib.rs" else "bin", "--edition", edition,
          "--emit", f"dep-info={depfile}", str(root / entry)], cwd=root, env=env)
     first = depfile.read_text().splitlines()[0]

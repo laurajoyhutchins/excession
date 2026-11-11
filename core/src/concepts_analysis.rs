@@ -88,11 +88,11 @@ pub fn annotate_refactor(db: &Db, name: &str, revision: &str, snapshot_id: &str)
                     return refuse("concept membership is not a realizes-concept claim");
                 }
                 for subject in claim.get("subjects")?.array_ref()? {
-                    if let Some(identity) = subjects.get(subject.str()?) {
-                        if evidence.contains(identity) {
-                            matched.insert(identity.clone());
-                            membership_claims.insert(id.to_owned());
-                        }
+                    if let Some(identity) = subjects.get(subject.str()?)
+                        && evidence.contains(identity)
+                    {
+                        matched.insert(identity.clone());
+                        membership_claims.insert(id.to_owned());
                     }
                 }
             }

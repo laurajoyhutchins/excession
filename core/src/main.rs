@@ -3,7 +3,6 @@ use relgit::{Result, refuse};
 use relgit::{
     contracts, effects, git, historical, identity, impact, index, integration, json, optimizer,
     overlap, projection, scoped, security, security_discovery, security_ingest, security_survey,
-    slice_evidence,
     transactions, transform,
 };
 use std::env;
@@ -25,7 +24,7 @@ fn usage() -> String {
   relgit security-survey SURVEY_GIT_DIR DATABASE
   relgit security-survey-audit SURVEY_GIT_DIR DATABASE
   relgit security-ingest REPO REPORT DATABASE ENGINE
-  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\n  relgit slice-evidence-ingest REPO MANIFEST RECEIPT DB\n  relgit slice-evidence-audit REPO MANIFEST RECEIPT DB\n  relgit view-plan-deps DB REPO_NAME REVISION SEED_MODULE\n  relgit view-plan-replay-deps DB REPO_NAME REVISION SEED_MODULE MANIFEST\n  relgit view-plan-security DB SOURCE_REPO RUN_ID\n  relgit view-plan-replay-security DB SOURCE_REPO RUN_ID MANIFEST\n  relgit view-materialize SOURCE_REPO MANIFEST OUT_DIR\n  relgit view-audit SOURCE_REPO MANIFEST OUT_DIR
+  relgit security-ingest-audit REPO REPORT DATABASE ENGINE\n  relgit view-plan-deps DB REPO_NAME REVISION SEED_MODULE\n  relgit view-plan-replay-deps DB REPO_NAME REVISION SEED_MODULE MANIFEST\n  relgit view-plan-security DB SOURCE_REPO RUN_ID\n  relgit view-plan-replay-security DB SOURCE_REPO RUN_ID MANIFEST\n  relgit view-materialize SOURCE_REPO MANIFEST OUT_DIR\n  relgit view-audit SOURCE_REPO MANIFEST OUT_DIR
   relgit view-compose SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST
   relgit view-compose-replay SOURCE_REPO union|intersection|difference LEFT_MANIFEST RIGHT_MANIFEST OUTPUT_MANIFEST
   relgit view-select SOURCE_REPO MANIFEST role|source-prefix|virtual-prefix VALUE
@@ -43,20 +42,6 @@ fn run() -> Result<()> {
         return refuse(usage());
     };
     match action {
-        "slice-evidence-ingest" | "slice-evidence-audit" => {
-            if args.len() != 6 {
-                return refuse("Usage: relgit slice-evidence-ingest|slice-evidence-audit REPO MANIFEST RECEIPT DATABASE");
-            }
-            let db = Db::open(Path::new(&args[5]))?;
-            let result = slice_evidence::evidence(
-                Path::new(&args[2]),
-                Path::new(&args[3]),
-                Path::new(&args[4]),
-                &db,
-                action == "slice-evidence-audit",
-            )?;
-            println!("{}", result.canonical());
-        }
         "view-compose" | "view-compose-replay" => {
             if args.len() != if action == "view-compose" { 6 } else { 7 } {
                 return refuse(

@@ -125,3 +125,13 @@ or generate independently verified executable source reorganizations.
 
 Third-party source fixtures retain their upstream licensing obligations; see
 [third-party material](THIRD_PARTY.md).
+
+## Native dependency resolution (opt-in)
+
+For a pinned historical Git revision, `tools/excession_native.py` uses
+`go list`, Node/TypeScript resolution, or `rustc --emit dep-info` to discover
+tracked inputs and create the same language-independent declaration consumed
+by `excession evidence contract-plan`. It is local and offline, with explicit
+`--trusted-local` consent and refusals for unsupported compiler semantics.
+The output is still `DECLARED_INPUTS_ONLY`, not proof of behavioral preservation
+or a safe test skip. See [native dependency resolution and benchmarks](docs/NATIVE_DEPENDENCY_RESOLUTION.md).

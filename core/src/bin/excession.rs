@@ -6,8 +6,8 @@ use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
-    kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refuse, scip_refactor,
-    security_ingest, syntax, syntax_resolution, views,
+    kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refuse,
+    scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -475,7 +475,12 @@ fn execute(args: &[String]) -> Result<Response> {
                             .map_err(|_| "invalid kernel partition index")?;
                         Ok(json(kernel::scan_partition(repo, rev, index, size)?))
                     }
-                    _ => Ok(json(kernel_coverage::audit(repo, rev, opt.path("dir"), size)?)),
+                    _ => Ok(json(kernel_coverage::audit(
+                        repo,
+                        rev,
+                        opt.path("dir"),
+                        size,
+                    )?)),
                 }
             }
             "clang" => clang_command(opt),

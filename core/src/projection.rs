@@ -324,10 +324,10 @@ fn check_indexed_bindings(plan: &Plan, modules: &BTreeMap<String, Module>) -> Re
     let mut known = BTreeMap::<&str, (&str, &str)>::new();
     for module in modules.values() {
         let identity = (module.blob.as_str(), module.mode.as_str());
-        if let Some(previous) = known.insert(module.path.as_str(), identity) {
-            if previous != identity {
-                return refuse("inconsistent indexed module bindings for one source path");
-            }
+        if let Some(previous) = known.insert(module.path.as_str(), identity)
+            && previous != identity
+        {
+            return refuse("inconsistent indexed module bindings for one source path");
         }
     }
     for entry in &plan.entries {

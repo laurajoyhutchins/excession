@@ -486,38 +486,81 @@ fn changed_scip_index_invalidates_audit() {
 #[test]
 fn scip_nested_project_root_and_prefix_are_source_bound() {
     let f = Fixture::new("scip");
-    let mut index = json::parse(br#"{
+    let mut index = json::parse(
+        br#"{
         "metadata":{"tool_info":{"name":"rust-analyzer","version":"1.99.1"}},
         "documents":[{"relative_path":"src/lib.rs","language":"rust",
           "position_encoding":1,"occurrences":[
           {"range":[0,7,11],"symbol":"scip rust cargo example 0.1.0 api/emit().",
            "symbol_roles":1}]}]
-    }"#).unwrap();
+    }"#,
+    )
+    .unwrap();
     let project_root = format!("file://{}", f.repo.join("core").display());
-    edit(&mut index, "metadata").entries_mut().unwrap().insert(
-        "project_root".into(), Value::string(&project_root));
+    edit(&mut index, "metadata")
+        .entries_mut()
+        .unwrap()
+        .insert("project_root".into(), Value::string(&project_root));
     fs::write(&f.index, index.canonical()).unwrap();
-    let args = ["refactor","scip-suggest","--repo",f.repo(),"--rev",&f.commit,
-        "--index",f.index.to_str().unwrap(),"--source-prefix","core"];
+    let args = [
+        "refactor",
+        "scip-suggest",
+        "--repo",
+        f.repo(),
+        "--rev",
+        &f.commit,
+        "--index",
+        f.index.to_str().unwrap(),
+        "--source-prefix",
+        "core",
+    ];
     let report = data(&args);
-    assert_eq!(str_at(&report,"source_commit"), f.commit);
-    assert_eq!(report.get("coverage").unwrap().get("indexed_documents")
-        .unwrap().integer().unwrap(),1);
-    assert_eq!(items(report.get("coverage").unwrap(),"languages"),
-        &[Value::string("rust")]);
+    assert_eq!(str_at(&report, "source_commit"), f.commit);
+    assert_eq!(
+        report
+            .get("coverage")
+            .unwrap()
+            .get("indexed_documents")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        items(report.get("coverage").unwrap(), "languages"),
+        &[Value::string("rust")]
+    );
     fs::write(&f.report, report.canonical()).unwrap();
-    let receipt = data(&["refactor","scip-audit","--repo",f.repo(),"--rev",&f.commit,
-        "--index",f.index.to_str().unwrap(),"--report",f.report.to_str().unwrap(),
-        "--source-prefix","core"]);
-    assert_eq!(receipt.get("report_id").unwrap(), report.get("report_id").unwrap());
+    let receipt = data(&[
+        "refactor",
+        "scip-audit",
+        "--repo",
+        f.repo(),
+        "--rev",
+        &f.commit,
+        "--index",
+        f.index.to_str().unwrap(),
+        "--report",
+        f.report.to_str().unwrap(),
+        "--source-prefix",
+        "core",
+    ]);
+    assert_eq!(
+        receipt.get("report_id").unwrap(),
+        report.get("report_id").unwrap()
+    );
     edit(&mut index, "metadata").entries_mut().unwrap().insert(
-        "project_root".into(), Value::string("file:///unrelated/checkout"));
-    fs::write(&f.index,index.canonical()).unwrap();
+        "project_root".into(),
+        Value::string("file:///unrelated/checkout"),
+    );
+    fs::write(&f.index, index.canonical()).unwrap();
     denied(cli(&args));
-    edit(&mut index, "metadata").entries_mut().unwrap().insert(
-        "project_root".into(), Value::string(&project_root));
-    edit(&mut item(edit(&mut index,"documents"),0),"relative_path")
+    edit(&mut index, "metadata")
+        .entries_mut()
+        .unwrap()
+        .insert("project_root".into(), Value::string(&project_root));
+    edit(&mut item(edit(&mut index, "documents"), 0), "relative_path")
         .clone_from(&Value::string("../lib.rs"));
-    fs::write(&f.index,index.canonical()).unwrap();
+    fs::write(&f.index, index.canonical()).unwrap();
     denied(cli(&args));
 }

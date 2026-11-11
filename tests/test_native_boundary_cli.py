@@ -118,7 +118,14 @@ class NativeBoundaryCLI(unittest.TestCase):
                 self.assertEqual(report["provenance"], "UNATTESTED_NATIVE_DECLARATION")
                 self.assertEqual(report["source_commit"], self.rev)
                 edges = {(e["source_path"], e["target_path"]) for e in report["matching_edges"]}
-                self.assertIn(pair, edges)
+                if language == "rust":
+                    # Rust declarations can still be audited as input claims,
+                    # but semantic reference edges now come from SCIP only.
+                    self.assertEqual(edges, set())
+                    self.assertEqual(report["unresolved_imports"], [])
+                    self.assertIn("src/math.rs", report["native_only_sources"])
+                else:
+                    self.assertIn(pair, edges)
                 self.assertEqual(report["static_only_edges"], [])
                 for item in report["pinned_inputs"]:
                     oid = run("git", "-C", self.repo, "rev-parse",
@@ -165,7 +172,7 @@ class NativeBoundaryCLI(unittest.TestCase):
 
     def test_boundary_audit_rejects_tampering(self):
         result = self.evaluate(declaration(
-            "rust", "src/main.rs", ["src/main.rs", "src/math.rs"], ["Cargo.toml"]
+            "go", "src/go/main.go", ["src/go/main.go", "src/lib/lib.go"], ["go.mod"]
         ))
         result["matching_edges"][0]["target_blob"] = "0" * 40
         self.boundary.write_text(json.dumps(result))

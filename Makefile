@@ -1,4 +1,4 @@
-.PHONY: check rust-check python-check build
+.PHONY: check rust-check python-check build cli install-cli
 build:
 	cargo build --offline --manifest-path core/Cargo.toml
 rust-check:
@@ -8,3 +8,8 @@ rust-check:
 python-check: build
 	python3 -m unittest discover -s tests -v
 check: rust-check python-check
+
+cli:
+	cargo build --offline --manifest-path core/Cargo.toml --bin excession
+install-cli:
+	cargo install --offline --locked --path core --bin excession

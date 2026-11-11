@@ -12,6 +12,30 @@ See [the architectural specification](docs/ARCHITECTURE.md).
 
 **Repository exploration:** generate dependency/security-flow views, compose them by original Git source identity, filter or namespace them, and browse their virtual files without a copied checkout. See [composable views](docs/COMPOSABLE_VIEWS.md) and [repository projections](docs/REPOSITORY_VIEWS.md).
 
+## Dedicated CLI
+
+Install the first-party `excession` executable, not the historical `relgit` binary:
+
+```bash
+cargo install --offline --locked --path core --bin excession
+excession --help
+```
+
+The command groups are `excession index`, `excession view`, `excession browse`,
+`excession security`, and `excession inspect`. For example:
+
+```bash
+excession index --repo /path/to/h11 --db /tmp/h11.sqlite --name h11 --roots h11,tests
+excession view deps --db /tmp/h11.sqlite --name h11 --rev HEAD \
+  --seed h11._connection > /tmp/h11-view.json
+excession browse --repo /path/to/h11 --manifest /tmp/h11-view.json
+```
+
+The CLI preserves exact Git blob provenance and never interprets a virtual
+layout as executable code. See the [complete CLI reference](docs/CLI.md),
+including composition, scanner ingestion, independent audit, and the read-only
+browser. `relgit` remains available only for historical compatibility.
+
 ## Build and test (offline, no external dependencies)
 
 ```bash
@@ -31,8 +55,21 @@ python3 tools/pipeline.py import --engine codeql \
   --repo /path/to/clean/checkout \
   --report /tmp/codeql.sarif \
   --evidence /tmp/candidates.sqlite \
-  --rust ./core/target/debug/relgit
+  --rust ./core/target/debug/excession
 ```
+
+For trusted local scanner execution, `excession security scan` can launch an
+installed Semgrep/CodeQL executable with a reviewed ruleset and bounded runtime,
+then independently audit its report. This **is not isolated execution**:
+
+```bash
+excession security scan --repo /path/to/clean/checkout \
+  --engine semgrep --config /path/to/rules.yaml --trusted-local true \
+  --report /tmp/semgrep.json --db /tmp/candidates.sqlite
+```
+
+The CLI is the preferred interface; the Python runner remains as a compatible
+orchestration adapter. See [CLI reference](docs/CLI.md).
 
 The `semgrep` engine supports JSON scan output. The source checkout must be clean;
 the database and report must be outside it.
@@ -49,11 +86,11 @@ The same pinned Git revision can now be browsed through deterministic **dependen
 
 ```bash
 # First index the source, using the existing static dependency index:
-relgit index /tmp/index.sqlite h11 /path/to/h11 HEAD h11,tests
-relgit view-plan-deps /tmp/index.sqlite h11 HEAD h11._connection > /tmp/dep-view.json
-relgit view-materialize /path/to/h11 /tmp/dep-view.json /tmp/dep-view
-relgit view-plan-replay-deps /tmp/index.sqlite h11 HEAD h11._connection /tmp/dep-view.json
-relgit view-audit /path/to/h11 /tmp/dep-view.json /tmp/dep-view
+excession index --repo /path/to/h11 --db /tmp/index.sqlite --name h11 --roots h11,tests
+excession view deps --db /tmp/index.sqlite --name h11 --rev HEAD --seed h11._connection > /tmp/dep-view.json
+excession view materialize --repo /path/to/h11 --manifest /tmp/dep-view.json --output /tmp/dep-view
+excession view replay deps --db /tmp/index.sqlite --name h11 --rev HEAD --seed h11._connection --manifest /tmp/dep-view.json
+excession view audit --repo /path/to/h11 --manifest /tmp/dep-view.json --output /tmp/dep-view
 ```
 
 For security-focused views, first import and independently audit a CodeQL SARIF or Semgrep JSON report, then call `view-plan-security DB SOURCE_REPO RUN_ID`. Scanner flow labels remain **unverified scanner claims**, not confirmed trust boundaries. Views are copies of pinned Git blobs, permissioned read-only, with deterministic manifests and an independent audit. Details, refusal limits and all six CLI commands: [Repository views](docs/REPOSITORY_VIEWS.md).
@@ -95,6 +132,6 @@ an externally assigned identifier. Local observations alone do not create one.
 
 ## Naming and provenance
 
-**Excession** is the project and repository name. `relgit` remains the internal Rust CLI name for compatibility with the imported, tested engine. It is not an independent security scanner. The original six-commit RelGit Security history is retained; see [Origins](docs/ORIGINS.md).
+**Excession** is the project, repository, and dedicated CLI name. `relgit` remains an additional Rust binary for compatibility with inherited experiments. It is not an independent security scanner. The original six-commit RelGit Security history is retained; see [Origins](docs/ORIGINS.md).
 
 The GitHub repository lives at <https://github.com/laurajoyhutchins/excession>.

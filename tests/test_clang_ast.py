@@ -44,7 +44,7 @@ class ClangDatabaseTests(unittest.TestCase):
                     clang.analysis_flags(argv, src, cwd)
 
     def test_clang_dependency_output_parses_escaped_paths(self):
-        raw = 'excession: src.c include/with\\ space.h \\n sys/header.h\n'
+        raw = 'excession: src.c include/with\\ space.h \\\n sys/header.h\n'
         self.assertEqual(
             clang.make_dependencies(raw),
             ["include/with space.h", "src.c", "sys/header.h"],

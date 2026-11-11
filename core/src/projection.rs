@@ -410,7 +410,10 @@ pub fn dependency_paths(
         ("source_tree", Value::string(&plan.tree)),
         ("view_id", Value::string(plan.payload().sha256())),
         ("role", Value::string(role)),
-        ("source_paths", Value::array(paths.into_iter().map(Value::string))),
+        (
+            "source_paths",
+            Value::array(paths.into_iter().map(Value::string)),
+        ),
     ]))
 }
 

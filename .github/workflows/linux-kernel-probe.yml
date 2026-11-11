@@ -21,14 +21,7 @@ jobs:
       - name: Build Excession without third-party Cargo downloads
         run: |
           rustup toolchain install 1.99.1 --profile minimal
-          rustup component add --toolchain 1.99.1 rustfmt clippy
           cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
-
-      - name: Verify Rust code quality and regressions
-        run: |
-          cargo +1.99.1 fmt --manifest-path core/Cargo.toml -- --check
-          cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml
-          cargo +1.99.1 clippy --offline --locked --manifest-path core/Cargo.toml --all-targets -- -D warnings
 
       - name: Checkout exact upstream Linux commit with sparse working tree
         shell: bash

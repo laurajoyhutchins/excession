@@ -485,14 +485,31 @@ mod tests {
         assert_eq!(configured_store::relation("unknown-new-edge"), "unknown");
         let mut entities = BTreeMap::new();
         configured_store::push_typed_node(
-            &mut entities, "source:lib.rs".to_owned(), "source",
-            "rust-language-native-source", obj(&[])
-        ).unwrap();
-        assert_eq!(entities["source:lib.rs"].get("role").unwrap().str().unwrap(), "source");
-        assert!(configured_store::push_typed_node(
-            &mut entities, "source:invalid".to_owned(), "invented-role",
-            "rust-language-native-source", obj(&[])
-        ).is_err());
+            &mut entities,
+            "source:lib.rs".to_owned(),
+            "source",
+            "rust-language-native-source",
+            obj(&[]),
+        )
+        .unwrap();
+        assert_eq!(
+            entities["source:lib.rs"]
+                .get("role")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "source"
+        );
+        assert!(
+            configured_store::push_typed_node(
+                &mut entities,
+                "source:invalid".to_owned(),
+                "invented-role",
+                "rust-language-native-source",
+                obj(&[])
+            )
+            .is_err()
+        );
     }
     #[test]
     fn common_graph_queries_preserve_source_and_evidence() {

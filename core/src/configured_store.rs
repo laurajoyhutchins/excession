@@ -56,10 +56,19 @@ pub fn push_typed_node(
     kind: &str,
     payload: Value,
 ) -> Result<()> {
-    if !matches!(neutral_role,
-        "target" | "artifact" | "source" | "analysis" | "symbol"
-        | "reference" | "input" | "observation" | "action"
-        | "configuration" | "unknown"
+    if !matches!(
+        neutral_role,
+        "target"
+            | "artifact"
+            | "source"
+            | "analysis"
+            | "symbol"
+            | "reference"
+            | "input"
+            | "observation"
+            | "action"
+            | "configuration"
+            | "unknown"
     ) {
         return refuse("unrecognized neutral node role");
     }
@@ -103,15 +112,27 @@ pub fn push_typed_edge(
     status: &str,
     evidence: &str,
 ) -> Result<()> {
-    if !matches!(neutral_relation,
-        "depends_on" | "uses" | "produces" | "analyzed_as"
-        | "reads" | "declares" | "contains" | "may_refer_to"
-        | "observed_with" | "has_evidence" | "unknown"
+    if !matches!(
+        neutral_relation,
+        "depends_on"
+            | "uses"
+            | "produces"
+            | "analyzed_as"
+            | "reads"
+            | "declares"
+            | "contains"
+            | "may_refer_to"
+            | "observed_with"
+            | "has_evidence"
+            | "unknown"
     ) {
         return refuse("unrecognized neutral relationship");
     }
-    if from.is_empty() || to.is_empty() || kind.is_empty()
-        || status.is_empty() || evidence.is_empty()
+    if from.is_empty()
+        || to.is_empty()
+        || kind.is_empty()
+        || status.is_empty()
+        || evidence.is_empty()
     {
         return refuse("graph relationship needs identities, native kind, status, and evidence");
     }

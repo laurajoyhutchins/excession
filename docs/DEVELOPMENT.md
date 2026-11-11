@@ -80,8 +80,12 @@ remain explicit, not evidence of absent dependencies.
 
 Mise is not required to build Excession. Developers can run the underlying
 `make`, `cargo`, `npm`, and Python commands directly with compatible tools.
-Git and the system SQLite/OpenSSL development/runtime libraries are still
-system dependencies; this setup does not claim a hermetic OS image.
+Git remains an external dependency. rusqlite compiles the bundled SQLite C
+sources using a host C compiler, so building Excession requires a working
+native C build environment, but running its release archives does not require
+a separately installed SQLite or OpenSSL library. The dependency cache must
+be populated once before `cargo --offline --locked`; this does not claim a
+hermetic OS image. Run `excession doctor --json` to inspect local capabilities.
 
 ## Test reports
 

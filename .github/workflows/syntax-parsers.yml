@@ -6,6 +6,7 @@ on:
       - '.github/workflows/syntax-parsers.yml'
       - 'rust-toolchain.toml'
       - '.python-version'
+      - 'mise.toml'
       - 'requirements/syntax.txt'
       - 'requirements/research.txt'
       - 'core/adapters/tree_sitter.py'
@@ -37,25 +38,18 @@ jobs:
     name: Rust, Go, C, Java grammar smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      MISE_ENABLE_TOOLS: rust,python,node,go
+      TREE_SITTER_LANGUAGE_PACK_CACHE_DIR: /tmp/excession-grammars
     steps:
       - uses: actions/checkout@v4
-      - name: Activate pinned Rust toolchain
+      - uses: jdx/mise-action@v5
+      - name: Confirm Rust toolchain
         run: rustup show active-toolchain
-      - uses: actions/setup-python@v5
-        with:
-          python-version-file: .python-version
       - name: Fast grammar-independent adapter contract tests
         run: python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
-      - name: Install optional parser and prefetch grammars
-        run: |
-          python3 -m pip install --disable-pip-version-check -r requirements/research.txt -r requirements/syntax.txt
-          python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "go", "c", "java", "python", "typescript", "javascript"])'
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: .go-version
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
+      - name: Install and prefetch optional grammars with mise
+        run: mise run syntax-setup
       - name: Install locked TypeScript compiler API
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build Excession CLI

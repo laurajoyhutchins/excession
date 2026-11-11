@@ -17,8 +17,9 @@ The parser package is optional and must be installed into the Python environment
 used by the Excession executable:
 
 ```sh
-python3 -m pip install -r requirements/syntax.txt
-python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust","go","c","java","python","javascript","typescript"])'
+mise run syntax-setup
+# Or without mise, install requirements/syntax.txt and prefetch grammars
+# through the tree-sitter-language-pack API in a trusted setup step.
 ```
 
 Prefetch happens in a **trusted setup step**, before analysis. Scans never
@@ -246,9 +247,10 @@ The `stats.elapsed_ns` timing is deliberately not a reproducible identity.
 
 The adapter runs trusted, locally installed parser binaries and grammars, but
 does not run source under examination. Do not load an unreviewed grammar
-artifact on a shared privileged host. The package version alone is not a
-cryptographic grammar binary attestation. For an independently reproducible
-environment, pin downloaded parser artifacts and their hashes externally.
+artifact on a shared privileged host. The package version records the parser
+distribution, not independently authenticated grammar source code. Source
+authentication still comes from Excession's Git-bound replay and audit;
+do not mistake a successful parse for evidence completeness.
 
 Run unit tests without optional grammars:
 

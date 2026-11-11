@@ -59,7 +59,9 @@ fn read_json(path: &Path, bound: usize) -> Result<Value> {
 }
 
 fn hex64(v: &str) -> bool {
-    v.len() == 64 && v.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    v.len() == 64
+        && v.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 fn check_digest(value: &Value) -> Result<String> {
     let hash = value.str()?;
@@ -77,7 +79,10 @@ fn without_identity(value: &Value, key: &str) -> Result<Value> {
     Ok(copy)
 }
 
-fn source_rows(repo: &Path, manifest: &Value) -> Result<(String, String, String, String, Vec<Source>)> {
+fn source_rows(
+    repo: &Path,
+    manifest: &Value,
+) -> Result<(String, String, String, String, Vec<Source>)> {
     if manifest.get("schema")?.str()? != "excession.executable-slice.v1"
         || manifest.get("scope")?.str()? != "STATIC_IMPORT_CLOSURE_ONLY"
         || manifest.get("semantic_equivalence")?.str()? != "UNVERIFIED"
@@ -134,24 +139,43 @@ fn source_rows(repo: &Path, manifest: &Value) -> Result<(String, String, String,
         if bytes < 0 || bytes > MAX_SOURCE_BYTES as i64 {
             return refuse("source blob size out of bounds");
         }
-        total = total.checked_add(bytes as usize).ok_or("source bytes overflow")?;
+        total = total
+            .checked_add(bytes as usize)
+            .ok_or("source bytes overflow")?;
         if total > MAX_SOURCE_BYTES {
             return refuse("slice source budget exceeded");
         }
         let mode = git::text(repo, &["ls-tree", "HEAD", "--", &path])?;
         if !mode.starts_with("100644 blob ") {
-            return refuse(format!("source is not a regular tracked nonexecutable blob: {path}"));
+            return refuse(format!(
+                "source is not a regular tracked nonexecutable blob: {path}"
+            ));
         }
         if git::blob(repo, "HEAD", &path)? != blob {
             return refuse(format!("source Git blob identity differs: {path}"));
+        }
+        let declared_size = git::text(repo, &["cat-file", "-s", &blob])?
+            .parse::<usize>()
+            .map_err(|_| "invalid Git blob size")?;
+        if declared_size != bytes as usize {
+            return refuse("Git blob size differs from manifest");
         }
         let data = git::command(repo, &["cat-file", "blob", &blob])?;
         if data.len() != bytes as usize || digest::sha256(&data) != sha {
             return refuse(format!("source bytes differ from manifest: {path}"));
         }
-        result.push(Source { path, blob, sha256: sha, bytes });
+        result.push(Source {
+            path,
+            blob,
+            sha256: sha,
+            bytes,
+        });
     }
-    if !paths.contains(&entry) || assets.iter().any(|a| !paths.contains(a.str().unwrap_or(""))) {
+    if !paths.contains(&entry)
+        || assets
+            .iter()
+            .any(|a| !paths.contains(a.str().unwrap_or("")))
+    {
         return refuse("slice entry or declared asset absent from source closure");
     }
     Ok((view, commit, tree, entry, result))
@@ -172,8 +196,7 @@ fn validated_receipt(receipt: &Value, view: &str, commit: &str, entry: &str) -> 
     }
     let exit = receipt.get("exit_code")?.integer()?;
     let status = receipt.get("status")?.str()?;
-    if !(0..=255).contains(&exit)
-        && exit != 124
+    if !(-255..=255).contains(&exit)
         || (exit == 0 && status != "OBSERVED_PASS")
         || (exit != 0 && status != "OBSERVED_FAIL")
     {
@@ -190,7 +213,13 @@ fn validated_receipt(receipt: &Value, view: &str, commit: &str, entry: &str) -> 
 
 /// Record a source-bound, UNSIGNED receipt or independently replay its storage.
 /// A successful audit does not authenticate the Python execution environment.
-pub fn evidence(repo: &Path, manifest_path: &Path, receipt_path: &Path, db: &Db, audit: bool) -> Result<Value> {
+pub fn evidence(
+    repo: &Path,
+    manifest_path: &Path,
+    receipt_path: &Path,
+    db: &Db,
+    audit: bool,
+) -> Result<Value> {
     let manifest = read_json(manifest_path, MAX_MANIFEST_BYTES)?;
     let receipt = read_json(receipt_path, MAX_RECEIPT_BYTES)?;
     let (view, commit, tree, entry, sources) = source_rows(repo, &manifest)?;
@@ -199,9 +228,14 @@ pub fn evidence(repo: &Path, manifest_path: &Path, receipt_path: &Path, db: &Db,
     let receipt_json = receipt.canonical();
     let state = "UNSIGNED_LOCAL_OBSERVATION";
     let expected = vec![vec![
-        Some(id.clone()), Some(view.clone()), Some(commit.clone()),
-        Some(tree.clone()), Some(entry.clone()), Some(manifest_json.clone()),
-        Some(receipt_json.clone()), Some(state.to_owned()),
+        Some(id.clone()),
+        Some(view.clone()),
+        Some(commit.clone()),
+        Some(tree.clone()),
+        Some(entry.clone()),
+        Some(manifest_json.clone()),
+        Some(receipt_json.clone()),
+        Some(state.to_owned()),
     ]];
     if audit {
         let actual = db.query(
@@ -221,23 +255,37 @@ pub fn evidence(repo: &Path, manifest_path: &Path, receipt_path: &Path, db: &Db,
     } else {
         db.exec(SCHEMA)?;
         db.transaction(|db| {
-            if !db.query("SELECT receipt_id FROM executable_slice_receipt WHERE receipt_id=?", &[Param::Text(&id)])?.is_empty() {
+            if !db
+                .query(
+                    "SELECT receipt_id FROM executable_slice_receipt WHERE receipt_id=?",
+                    &[Param::Text(&id)],
+                )?
+                .is_empty()
+            {
                 return refuse("duplicate slice receipt; use audit for existing evidence");
             }
             db.execute(
                 "INSERT INTO executable_slice_receipt VALUES(?,?,?,?,?,?,?,?)",
                 &[
-                    Param::Text(&id), Param::Text(&view), Param::Text(&commit),
-                    Param::Text(&tree), Param::Text(&entry),
-                    Param::Text(&manifest_json), Param::Text(&receipt_json), Param::Text(state),
+                    Param::Text(&id),
+                    Param::Text(&view),
+                    Param::Text(&commit),
+                    Param::Text(&tree),
+                    Param::Text(&entry),
+                    Param::Text(&manifest_json),
+                    Param::Text(&receipt_json),
+                    Param::Text(state),
                 ],
             )?;
             for source in &sources {
                 db.execute(
                     "INSERT INTO executable_slice_source VALUES(?,?,?,?,?)",
                     &[
-                        Param::Text(&id), Param::Text(&source.path), Param::Text(&source.blob),
-                        Param::Text(&source.sha256), Param::Integer(source.bytes),
+                        Param::Text(&id),
+                        Param::Text(&source.path),
+                        Param::Text(&source.blob),
+                        Param::Text(&source.sha256),
+                        Param::Integer(source.bytes),
                     ],
                 )?;
             }
@@ -281,22 +329,42 @@ mod tests {
             ("python", Value::string("3.13")),
         ]);
         let id = receipt.sha256();
-        receipt.entries_mut().unwrap().insert("receipt_id".into(), Value::string(id));
+        receipt
+            .entries_mut()
+            .unwrap()
+            .insert("receipt_id".into(), Value::string(id));
         assert!(validated_receipt(&receipt, &"1".repeat(64), &"1".repeat(40), "check.py").is_ok());
-        receipt.entries_mut().unwrap().insert("status".into(), Value::string("OBSERVED_FAIL"));
+        receipt
+            .entries_mut()
+            .unwrap()
+            .insert("status".into(), Value::string("OBSERVED_FAIL"));
         assert!(validated_receipt(&receipt, &"1".repeat(64), &"1".repeat(40), "check.py").is_err());
     }
     #[test]
     fn git_sqlite_roundtrip_rejects_forged_rows() {
         use std::process::Command;
         use std::time::{SystemTime, UNIX_EPOCH};
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let dir = std::env::temp_dir().join(format!("excession-slice-{}-{nonce}", std::process::id()));
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("excession-slice-{}-{nonce}", std::process::id()));
         let repo = dir.join("repo");
         fs::create_dir_all(&repo).unwrap();
         let command = |args: &[&str]| {
-            let output = Command::new("git").arg("-C").arg(&repo).args(args).output().unwrap();
-            assert!(output.status.success(), "{:?}: {}", args, String::from_utf8_lossy(&output.stderr));
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{:?}: {}",
+                args,
+                String::from_utf8_lossy(&output.stderr)
+            );
         };
         command(&["init", "-q"]);
         command(&["config", "user.name", "Slice Test"]);
@@ -325,7 +393,10 @@ mod tests {
             ("semantic_equivalence", Value::string("UNVERIFIED")),
         ]);
         let view = manifest.sha256();
-        manifest.entries_mut().unwrap().insert("view_id".into(), Value::string(&view));
+        manifest
+            .entries_mut()
+            .unwrap()
+            .insert("view_id".into(), Value::string(&view));
         let mut receipt = obj(&[
             ("schema", Value::string("excession.slice-observation.v1")),
             ("view_id", Value::string(view)),
@@ -339,7 +410,10 @@ mod tests {
             ("scope", Value::string("FINITE_TRUSTED_LOCAL_EXECUTION")),
         ]);
         let id = receipt.sha256();
-        receipt.entries_mut().unwrap().insert("receipt_id".into(), Value::string(id.clone()));
+        receipt
+            .entries_mut()
+            .unwrap()
+            .insert("receipt_id".into(), Value::string(id.clone()));
         let manifest_file = dir.join("manifest.json");
         let receipt_file = dir.join("receipt.json");
         fs::write(&manifest_file, manifest.canonical()).unwrap();
@@ -351,7 +425,8 @@ mod tests {
         db.execute(
             "UPDATE executable_slice_source SET blob_oid=? WHERE receipt_id=?",
             &[Param::Text(&"0".repeat(40)), Param::Text(&id)],
-        ).unwrap();
+        )
+        .unwrap();
         assert!(evidence(&repo, &manifest_file, &receipt_file, &db, true).is_err());
         drop(db);
         fs::remove_dir_all(dir).unwrap();

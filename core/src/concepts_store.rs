@@ -128,7 +128,7 @@ pub fn publish(db: &Db, model: &Value, manifest: &Value) -> Result<()> {
                         Param::Text(support.get("receipt_id")?.str()?),
                         Param::Text(
                             support
-                                .get("observation_id")
+                                .get("observation_id").ok()
                                 .map(Value::str)
                                 .transpose()?
                                 .unwrap_or(""),
@@ -260,7 +260,7 @@ pub fn audit(db: &Db, id: &str) -> Result<(Value, Value)> {
             support_rows.push(record(&[
                 claim.get("claim_id")?.str()?.to_owned(),
                 x.get("receipt_id")?.str()?.to_owned(),
-                x.get("observation_id")
+                x.get("observation_id").ok()
                     .map(Value::str)
                     .transpose()?
                     .unwrap_or("")

@@ -127,11 +127,7 @@ fn view_cmd(verb: &str, argv: &[String], replay: bool) -> Result<Response> {
             }
         }
         ("paths", false) => {
-            let opt = Options::parse(
-                argv,
-                &["db", "name", "rev", "seed", "role"],
-                &[],
-            )?;
+            let opt = Options::parse(argv, &["db", "name", "rev", "seed", "role"], &[])?;
             let db = Db::open(opt.path("db"))?;
             projection::dependency_paths(
                 &db,

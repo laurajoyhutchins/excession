@@ -24,7 +24,13 @@ EXTENSIONS = {
     "python": (".py",),
     "typescript": (".js", ".jsx", ".ts", ".tsx", ".cjs", ".mjs"),
 }
-HISTORICAL_FAMILIES = frozenset({"h11", "click", "requests", "postcss"})
+HISTORICAL_ROOTS = {
+    "h11": "h11,tests",
+    "click": "click,src,tests",
+    "requests": "requests,src,tests",
+    "postcss": "lib,src,tests",
+}
+HISTORICAL_FAMILIES = frozenset(HISTORICAL_ROOTS)
 
 
 def command(args: list[object], *, cwd: Path | None = None,
@@ -53,7 +59,7 @@ def cases(manifest: Path, historical: bool, names: set[str]) -> list[dict]:
             result.append({
                 "name": f"{family}-{commit[:9]}", "family": family,
                 "source": "historical", "commit": commit,
-                "roots": f"{family},tests",
+                "roots": HISTORICAL_ROOTS[family],
             })
     if names:
         result = [x for x in result if x["name"] in names
@@ -101,8 +107,38 @@ def tracked_sources(repo: Path, commit: str, roots: list[str],
     return eligible
 
 
+def typescript_fixture_config(stage: Path, sources: set[str]) -> Path:
+    """Explicit sidecar project, preserving the pinned repository's own config.
+
+    Git-tracked fixture roots are the source inventory. Unlike an inferred
+    TypeScript project, this includes JavaScript even when an upstream tsconfig
+    selects only .ts declarations or test sources. This is a *separate* project
+    scope, not a claim about the original build's selected source files.
+    """
+    if not sources:
+        raise ValueError("cannot configure an empty TypeScript fixture scope")
+    filename = stage / "tsconfig.excession-scip-fixture.json"
+    if filename.exists():
+        raise ValueError("fixture overlay would overwrite a source file")
+    config = {
+        "compilerOptions": {
+            "allowJs": True,
+            "checkJs": False,
+            "noEmit": True,
+            "skipLibCheck": True,
+        },
+        "files": sorted(sources),
+        "include": [],
+    }
+    if (stage / "tsconfig.json").is_file():
+        config["extends"] = "./tsconfig.json"
+    filename.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
+    return filename
+
+
 def generate_index(stage: Path, output: Path, binary: Path, scip: Path,
-                   language: str, roots: list[str], project: str) -> bytes:
+                   language: str, roots: list[str], project: str,
+                   source_files: set[str]) -> bytes:
     """External indexers only touch a disposable copy; never the pinned tree."""
     encoded = output.with_suffix(".scip")
     if language == "python":
@@ -120,9 +156,8 @@ def generate_index(stage: Path, output: Path, binary: Path, scip: Path,
             (stage / "package.json").write_text(
                 '{"name":"scip-fixture","private":true,"version":"0.0.0"}\n'
             )
-        argv = [binary, "index", "--output", encoded]
-        if not (stage / "tsconfig.json").exists():
-            argv.append("--infer-tsconfig")
+        configured = typescript_fixture_config(stage, source_files)
+        argv = [binary, "index", configured.name, "--output", encoded]
     else:
         raise ValueError("unsupported source language")
     command(argv, cwd=stage)
@@ -207,10 +242,32 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
                 stage, output,
                 args.python_indexer if language == "python"
                 else args.typescript_indexer,
-                args.scip, language, roots, family,
+                args.scip, language, roots, family, included,
             )
             elapsed_ms = round((time.perf_counter_ns() - start) / 1_000_000, 3)
             producer = "upstream indexer executed in disposable checkout"
+        config_file = stage / "tsconfig.excession-scip-fixture.json"
+        if language == "typescript" and not args.decoded_dir:
+            # Save the exact generated analysis project alongside the index.
+            # It never replaces the pinned repository's original tsconfig.
+            provenance = evidence / f"{name}-{language}.tsconfig.json"
+            shutil.copyfile(config_file, provenance)
+            configuration = {
+                "scope": "explicit_git_fixture_files",
+                "analysis_tsconfig_sha256": digest(provenance.read_bytes()),
+                "analysis_tsconfig_path": provenance.name,
+                "original_tsconfig_sha256": (
+                    digest((repo / "tsconfig.json").read_bytes())
+                    if (repo / "tsconfig.json").is_file() else None
+                ),
+            }
+        elif language == "typescript":
+            configuration = {
+                "scope": "externally_supplied_unknown",
+                "analysis_tsconfig_sha256": None,
+            }
+        else:
+            configuration = {"scope": "python_fixture_roots"}
         decoded = output.read_bytes()
         parsed = json.loads(decoded)
         documents = parsed.get("documents")
@@ -248,6 +305,7 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             "report_id": report["report_id"],
             "generation_wall_ms": elapsed_ms,
             "evidence_origin": producer,
+            "analysis_configuration": configuration,
             "coverage": finding,
         })
     if not result["languages"]:

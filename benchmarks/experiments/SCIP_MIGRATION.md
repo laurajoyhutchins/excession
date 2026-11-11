@@ -32,7 +32,8 @@ python3 benchmarks/experiments/scip_fixture_migration.py \
 ```
 
 The dedicated [SCIP fixture workflow](../../.github/workflows/scip-fixtures.yml)
-runs the six-fixture suite on relevant PRs and supports the historical sweep
+runs the six-fixture suite and one pinned historical PostCSS revision on
+relevant PRs. It also supports the complete 16-revision historical sweep
 through manual dispatch. The official SCIP decoder release archive is verified
 by SHA-256, and the tool versions are pinned in CI.
 
@@ -56,12 +57,25 @@ decoded indexes, generated binary SCIP files, reports and audit receipts.
 | Axios | 0 / 72 expected `lib` files | `PARTIAL` |
 | Mixed import fixture | Python 4 / 4; JS/TS 1 / 4 | `PARTIAL` |
 
-SCIP TypeScript indexed other source files in Axios but not the 72 scoped
-`lib` files. That is a real configuration/coverage difference, not a
-source-integrity failure. The fixture runner does **not** replace a
-repository's existing TypeScript project configuration or synthesize
-missing symbol relationships to produce apparent completeness.
-Neither of the two partial fixtures is claimed to have complete coverage.
+This is the baseline run before fixing the fixture analysis configuration.
+Axios's pinned `tsconfig.json` selects TypeScript declarations and tests but
+does not set `allowJs`; `scip-typescript` indexed other files and none of
+the 72 declared `lib` JavaScript files. The mixed-language fixture similarly
+left three of four JS/TS source files out of the inferred project.
+
+The migration runner now generates an **explicit, disposable SCIP analysis
+project** when a fixture has JavaScript/TypeScript sources. It lists precisely
+the Git-tracked files within the fixture's declared roots, sets `allowJs`,
+and extends the repository's existing `tsconfig.json` if one exists. The
+original configuration is never overwritten. The generated analysis config,
+its SHA-256 digest, and the original `tsconfig.json` digest are preserved
+alongside the resulting SCIP index and replay receipt.
+
+This *fixture-scoped* analysis is distinct from a project's original build
+configuration. It does not prove that those JavaScript files are compiled,
+imported, or reachable in any deployment. Indexed files outside the declared
+roots continue to be reported separately rather than silently redefining the
+denominator. Updated measurements must come from a new real indexer run.
 
 ## Evidence contract
 

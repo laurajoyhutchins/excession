@@ -18,8 +18,13 @@ fn run(cwd: &Path, program: &str, args: &[&str]) -> Output {
         .args(args)
         .output()
         .expect("launch test command");
-    assert!(out.status.success(), "{} {:?} failed: {}", program, args,
-        String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{} {:?} failed: {}",
+        program,
+        args,
+        String::from_utf8_lossy(&out.stderr)
+    );
     out
 }
 fn git(cwd: &Path, args: &[&str]) -> String {
@@ -45,38 +50,79 @@ fn index_of_pinned_git_bytes_is_identical_in_dirty_checkout() {
     fs::write(repo.join("pkg/a.py"), "from pkg import b\n").unwrap();
     fs::write(repo.join("pkg/b.py"), "VALUE = 1\n").unwrap();
     git(&repo, &["add", "."]);
-    git(&repo, &[
-        "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-        "commit", "-q", "-m", "baseline",
-    ]);
+    git(
+        &repo,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "baseline",
+        ],
+    );
     let expected = git(&repo, &["rev-parse", "HEAD"]);
     let bin = env!("CARGO_BIN_EXE_excession");
     let repo_path = repo.to_str().unwrap();
     let clean_db = root.join("out/clean.sqlite");
     let dirty_db = root.join("out/dirty.sqlite");
     let indexed = |path: &Path| {
-        run(&repo, bin, &[
-            "index", "--repo", repo_path, "--db", path.to_str().unwrap(),
-            "--name", "test", "--rev", "HEAD", "--roots", "pkg",
-        ]).stdout
+        run(
+            &repo,
+            bin,
+            &[
+                "index",
+                "--repo",
+                repo_path,
+                "--db",
+                path.to_str().unwrap(),
+                "--name",
+                "test",
+                "--rev",
+                "HEAD",
+                "--roots",
+                "pkg",
+            ],
+        )
+        .stdout
     };
     let clean = indexed(&clean_db);
     // Stage one file, modify a second without staging, and add an untracked file.
     fs::write(repo.join("pkg/b.py"), "VALUE = 99\n").unwrap();
     git(&repo, &["add", "pkg/b.py"]);
-    fs::write(repo.join("pkg/a.py"), "raise RuntimeError('should not execute')\n").unwrap();
+    fs::write(
+        repo.join("pkg/a.py"),
+        "raise RuntimeError('should not execute')\n",
+    )
+    .unwrap();
     fs::write(repo.join("untracked.py"), "UNKNOWN = True\n").unwrap();
     let status_before = git(&repo, &["status", "--porcelain", "-uall"]);
     assert!(!status_before.is_empty());
     let dirty = indexed(&dirty_db);
     assert_eq!(clean, dirty, "pinned Git-derived index metadata changed");
     assert_eq!(git(&repo, &["rev-parse", "HEAD"]), expected);
-    assert_eq!(git(&repo, &["status", "--porcelain", "-uall"]), status_before);
+    assert_eq!(
+        git(&repo, &["status", "--porcelain", "-uall"]),
+        status_before
+    );
     let inspect = |path: &Path| {
-        run(&repo, bin, &[
-            "inspect", "dependencies", "--db", path.to_str().unwrap(),
-            "--name", "test", "--rev", "HEAD",
-        ]).stdout
+        run(
+            &repo,
+            bin,
+            &[
+                "inspect",
+                "dependencies",
+                "--db",
+                path.to_str().unwrap(),
+                "--name",
+                "test",
+                "--rev",
+                "HEAD",
+            ],
+        )
+        .stdout
     };
     assert_eq!(inspect(&clean_db), inspect(&dirty_db));
 }

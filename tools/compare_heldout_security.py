@@ -74,11 +74,11 @@ def summarize(manifest: dict, evidence_dir: Path) -> dict:
         for phase in ("vulnerable", "patched"):
             folder = evidence_dir / f"heldout-{case['id']}-{phase}"
             metadata = read_json(folder / "metadata.json")
-            oracle = read_json(folder / "native-oracle.json")
             if (metadata.get("case") != case["id"] or metadata.get("phase") != phase
                 or metadata.get("source_commit") != case[phase]["commit"]
                 or metadata.get("source_blob") != case[phase]["blob"]):
                 raise ValueError(f"source/provenance mismatch: {folder}")
+            oracle = read_json(folder / "native-oracle.json")
             if (oracle.get("source_commit") != case[phase]["commit"]
                 or oracle.get("source_blob") != case[phase]["blob"]
                 or oracle.get("behavior", {}).get("outside_read") is not (phase == "vulnerable")

@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path};
 
-const SCHEMA: &str = include_str!("../../benchmarks/schemas/benchmark-report.v1.schema.json");
+const SCHEMA: &str = include_str!("../../../benchmarks/schemas/benchmark-report.v1.schema.json");
 const REPORT_SCHEMA: &str = "excession.benchmark-report.v1";
 
 fn read(path: &Path) -> Result<Value> {

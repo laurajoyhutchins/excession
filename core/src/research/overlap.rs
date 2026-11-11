@@ -302,7 +302,7 @@ fn rewrite(source: &str, qualname: &str, e: &Edit) -> Result<String> {
     ]);
     let mut child = crate::adapter::python_command()
         .arg("-c")
-        .arg(include_str!("../adapters/python_ast_slots.py"))
+        .arg(include_str!("../../adapters/python_ast_slots.py"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -344,7 +344,7 @@ fn rewrite_operation(
     ]);
     let mut child = crate::adapter::python_command()
         .arg("-c")
-        .arg(include_str!("../adapters/python_ast_operations.py"))
+        .arg(include_str!("../../adapters/python_ast_operations.py"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -399,12 +399,12 @@ fn infer_source(
     } else if language == "javascript" {
         let mut c = crate::adapter::node_command();
         c.arg("-e")
-            .arg(include_str!("../adapters/js_infer_effect.cjs"));
+            .arg(include_str!("../../adapters/js_infer_effect.cjs"));
         c
     } else {
         let mut c = crate::adapter::python_command();
         c.arg("-c")
-            .arg(include_str!("../adapters/python_infer_effect.py"));
+            .arg(include_str!("../../adapters/python_infer_effect.py"));
         c
     }
     .stdin(Stdio::piped())

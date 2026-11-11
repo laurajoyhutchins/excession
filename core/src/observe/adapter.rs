@@ -24,17 +24,17 @@ pub fn node_command() -> Command {
 }
 
 pub fn python(entries: &[Value]) -> Result<Value> {
-    let code = include_str!("../adapters/python_ast.py");
+    let code = include_str!("../../adapters/python_ast.py");
     run("python3", code, entries)
 }
 
 pub fn javascript(entries: &[Value]) -> Result<Value> {
-    let code = include_str!("../adapters/js_adapter.cjs");
+    let code = include_str!("../../adapters/js_adapter.cjs");
     run("node", code, entries)
 }
 
 pub fn tree_sitter(entries: &[Value]) -> Result<Value> {
-    let code = include_str!("../adapters/tree_sitter.py");
+    let code = include_str!("../../adapters/tree_sitter.py");
     run("python3", code, entries)
 }
 

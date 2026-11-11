@@ -253,10 +253,6 @@ def run(args: argparse.Namespace) -> int:
     if relative not in tracked:
         raise ValueError("entrypoint must be a tracked Git blob")
     collector = WitnessCollector(repo, tracked)
-    if collector.module_binding(relative)["status"] == "GIT_BOUND":
-        # A file path is not an imported module name. This branch is never
-        # expected, and source identity is checked explicitly below.
-        raise ValueError("invalid entrypoint identity state")
     mode, expected_oid = tracked[relative]
     raw = target.read_bytes()
     actual = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()

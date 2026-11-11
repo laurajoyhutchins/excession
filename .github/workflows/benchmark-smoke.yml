@@ -25,7 +25,7 @@ jobs:
       - name: Unit tests and real-binary smoke
         run: python3 -m unittest discover -s tests -p test_benchmarks.py -v
       - name: Full 24-task paired calibration
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
         shell: bash
         run: |
           git clone -q core/fixtures/h11-crossrepo.bundle "$RUNNER_TEMP/h11"
@@ -37,7 +37,7 @@ jobs:
             --name h11 --roots h11,tests --repetitions 3
           cat "$RUNNER_TEMP/excession-benchmark/summary.json"
       - name: Retain reproducible calibration receipts
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: excession-paired-calibration

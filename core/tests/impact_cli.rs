@@ -107,6 +107,15 @@ fn reports_importer_as_candidate_without_authorizing_test_skips() {
         "PARTIAL"
     );
     let effects = result.get("effects").unwrap().array_ref().unwrap();
+    assert!(effects.iter().all(|effect| {
+        effect
+            .get("claim_id")
+            .unwrap()
+            .str()
+            .unwrap()
+            .len()
+            == 64
+    }));
     assert!(
         effects.iter().any(|effect| {
             effect

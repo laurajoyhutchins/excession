@@ -40,7 +40,8 @@
         "required": [
           "entity",
           "assessment",
-          "hops"
+          "hops",
+          "claim_id"
         ],
         "properties": {
           "entity": {
@@ -59,6 +60,9 @@
             "items": {
               "$ref": "#/$defs/hop"
             }
+          },
+          "claim_id": {
+            "$ref": "common.v1.schema.json#/$defs/sha256"
           }
         }
       }

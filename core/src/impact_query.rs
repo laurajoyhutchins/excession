@@ -82,11 +82,16 @@ fn walk(
                     hops.push(edge.clone());
                     hops.extend(suffix.iter().cloned());
                     let entity = edge.get("source")?.clone();
-                    effects.push(obj(&[
+                    let mut effect = obj(&[
                         ("entity", entity),
                         ("assessment", Value::string("CANDIDATE_PATH")),
                         ("hops", Value::array(hops.clone())),
-                    ]));
+                    ]);
+                    let claim_id = effect.sha256();
+                    effect
+                        .entries_mut()?
+                        .insert("claim_id".to_owned(), Value::string(claim_id));
+                    effects.push(effect);
                     if effects.len() >= MAX_EFFECTS {
                         return Ok(true);
                     }

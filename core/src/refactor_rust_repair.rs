@@ -2,7 +2,7 @@
 //! Neither compiler errors nor an import quick fix establishes semantic
 //! correctness. Repairs remain explicitly unverified until independent gates.
 use crate::json::{self, Value, obj};
-use crate::{Result, digest, git, refactor_codegen, refactor_rust_analyzer, refuse, scip_refactor};
+use crate::{Result, digest, git, refactor_codegen, refactor_module_api, refactor_rust_analyzer, refuse, scip_refactor};
 use serde_json::{Value as Json, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -382,34 +382,56 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
     let mut actions = actions.into_iter().collect::<Vec<_>>();
     actions.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
     let candidate_count = actions.len();
-    if candidate_count != 1 {
+    if candidate_count > 1 {
         return Ok(obj(&[
             ("schema", Value::string("excession.rust-repair.v1")),
-            (
-                "status",
-                Value::string(if candidate_count == 0 {
-                    "NO_SUPPORTED_NATIVE_REPAIR"
-                } else {
-                    "AMBIGUOUS_NATIVE_REPAIRS"
-                }),
-            ),
+            ("status", Value::string("AMBIGUOUS_NATIVE_REPAIRS")),
             ("source_commit", Value::string(revision)),
             ("parent_plan_id", Value::string(parent_id)),
             ("supported_action_count", Value::number(candidate_count)),
-            (
-                "verification",
-                Value::string(
-                    "OPEN_OBLIGATIONS: require explicit review; no source edit was performed.",
-                ),
-            ),
+            ("verification", Value::string(
+                "OPEN_OBLIGATIONS: multiple native actions; no edit was performed."
+            )),
         ]));
     }
-    let (file, title, action) = actions.remove(0);
-    let workspace_edit = action.get("edit").ok_or("native quickfix has no edit")?;
-    let (edits, outputs) = refactor_rust_analyzer::collect_edits(repo, &revision, workspace_edit)?;
-    if !outputs.contains_key(&file) {
-        return refuse("native quickfix does not edit the diagnostic source file");
-    }
+    let (file, title, edits, outputs, repair_kind, helpers) = if candidate_count == 1 {
+        let (file, title, action) = actions.remove(0);
+        let workspace_edit = action.get("edit").ok_or("native quickfix has no edit")?;
+        let (edits, outputs) =
+            refactor_rust_analyzer::collect_edits(repo, &revision, workspace_edit)?;
+        if !outputs.contains_key(&file) {
+            return refuse("native quickfix does not edit the diagnostic source file");
+        }
+        (file, title, edits, outputs, "native-import-quickfix", Vec::new())
+    } else {
+        let missing = errors.iter().map(|error| refactor_module_api::Missing {
+            path: &error.path,
+            line: error.line,
+            column: error.column,
+            code: &error.code,
+            message: &error.message,
+        }).collect::<Vec<_>>();
+        let Some(proposal) = refactor_module_api::propose(repo, &base, &plan, &missing)? else {
+            return Ok(obj(&[
+                ("schema", Value::string("excession.rust-repair.v1")),
+                ("status", Value::string("NO_SUPPORTED_NATIVE_REPAIR")),
+                ("source_commit", Value::string(revision)),
+                ("parent_plan_id", Value::string(parent_id)),
+                ("supported_action_count", Value::number(0)),
+                ("verification", Value::string(
+                    "OPEN_OBLIGATIONS: no supported native fix or exact-body API preservation recipe."
+                )),
+            ]));
+        };
+        (
+            proposal.path,
+            format!("Preserve public path of {}", proposal.moved_function),
+            proposal.edits,
+            proposal.outputs,
+            "byte-conservative-extract-module-api",
+            proposal.helpers,
+        )
+    };
     let plan_identity = obj(&[
         ("parent_plan_id", Value::string(&parent_id)),
         ("source_commit", Value::string(&revision)),
@@ -418,6 +440,7 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
             Value::string(digest::sha256(&diagnostic_bytes)),
         ),
         ("action_title", Value::string(&title)),
+        ("repair_kind", Value::string(repair_kind)),
         ("edits", edits.clone()),
     ]);
     // The language server must never mutate a pinned Git checkout.
@@ -504,6 +527,8 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
         ),
         ("action_title", Value::string(title)),
         ("action_source", Value::string(file)),
+        ("repair_kind", Value::string(repair_kind)),
+        ("parent_helpers", Value::array(helpers.iter().map(Value::string))),
         ("plan_id", Value::string(plan_identity.sha256())),
         ("edits", edits),
         (
@@ -526,7 +551,7 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
         (
             "verification",
             Value::string(
-                "OPEN_OBLIGATIONS: rerun independent compiler, regression tests, public API compatibility and fresh rust-analyzer SCIP. A native quickfix does not prove equivalence.",
+                "OPEN_OBLIGATIONS: rerun independent compiler, public API compatibility, regression tests, and fresh rust-analyzer SCIP. A source-level bridge does not prove behavioral equivalence.",
             ),
         ),
     ]))

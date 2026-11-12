@@ -64,8 +64,7 @@ pub fn javascript_with_config(entries: &[Value], configs: &[Value]) -> Result<Va
 }
 
 pub fn tree_sitter(entries: &[Value]) -> Result<Value> {
-    let code = include_str!("../adapters/tree_sitter.py");
-    run("python3", code, entries)
+    crate::native_syntax::parse(entries)
 }
 
 /// Load the locked TypeScript parser from a sidecar or an explicitly trusted

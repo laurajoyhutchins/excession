@@ -2,6 +2,10 @@ name: Excession self-analysis (advisory)
 
 # Deep dogfooding is scheduled/on-demand, not a PR admission gate.
 on:
+  # Temporary dogfood branch only. Do not merge this trigger into main.
+  push:
+    branches:
+      - dogfood/self-audit-20261111
   workflow_dispatch:
   schedule:
     - cron: '0 8 * * 1'

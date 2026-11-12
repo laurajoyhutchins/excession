@@ -354,7 +354,16 @@ struct Query<'a> {
 }
 
 fn query(request: Query<'_>) -> Result<Value> {
-    let Query { binary, db, workload, snapshot, seed, kind, arm, repetition } = request;
+    let Query {
+        binary,
+        db,
+        workload,
+        snapshot,
+        seed,
+        kind,
+        arm,
+        repetition,
+    } = request;
     let mut cmd = Command::new(binary);
     cmd.arg("view")
         .arg(if arm == "graph" { "graph" } else { "paths" })

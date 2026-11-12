@@ -2,6 +2,7 @@
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
 use excession::analyze;
+use excession::agent;
 use excession::change_inventory;
 use excession::discovery;
 use excession::doctor;
@@ -454,6 +455,35 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             _ => refuse(format!("unknown graph command: {sub}")),
+        },
+        [top, sub] if top == "agent" => {
+            let limit = opt
+                .get_or("limit", "32")
+                .parse::<usize>()
+                .map_err(|_| "--limit must be an integer from 1 to 64")?;
+            let roots = opt.0.get("roots").map(String::as_str);
+            let db = opt.0.get("db").map(String::as_str);
+            match sub.as_str() {
+                "context" => Ok(json(agent::context(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.get("focus"),
+                    opt.0.get("task").map(String::as_str),
+                    limit,
+                    roots,
+                    db,
+                )?)),
+                "verify" => Ok(json(agent::verify(
+                    opt.path("repo"),
+                    opt.get("base"),
+                    opt.get("candidate"),
+                    limit,
+                    roots,
+                    db,
+                    opt.0.get("receipts").map(|p| Path::new(p)),
+                )?)),
+                _ => refuse(format!("unknown agent command: {sub}")),
+            }
         },
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
         [top] if top == "analyze" => {

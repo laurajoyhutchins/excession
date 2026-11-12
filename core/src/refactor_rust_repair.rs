@@ -297,6 +297,7 @@ fn candidates(
 
 pub struct Request<'a> {
     pub repo: &'a Path,
+    pub source_repo: &'a Path,
     pub base: &'a str,
     pub plan: &'a Path,
     pub index: &'a Path,
@@ -330,8 +331,25 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
     }
     let plan = json::parse(&plan_bytes)?;
     let prefix = request.source_prefix.unwrap_or("");
+    // SCIP project_root is an exact original-checkout identity, not merely
+    // the Git blob tree. A generated worktree cannot masquerade as that root.
+    git::clean(request.source_repo)?;
+    if git::rev(request.source_repo, "HEAD")? != base {
+        return refuse("original SCIP checkout must be clean at the exact source base");
+    }
+    let original_common = git::text(
+        request.source_repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let candidate_common = git::text(
+        repo, &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    if std::path::Path::new(&original_common).canonicalize().map_err(|e| e.to_string())?
+        != std::path::Path::new(&candidate_common).canonicalize().map_err(|e| e.to_string())?
+    {
+        return refuse("original SCIP source and generated candidate are different Git repositories");
+    }
     scip_refactor::audit_with_prefix(
-        repo,
+        request.source_repo,
         &base,
         request.index,
         request.report,

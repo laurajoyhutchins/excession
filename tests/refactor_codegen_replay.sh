@@ -143,7 +143,7 @@ jq -e '.status == "APPLIED_UNVERIFIED"
   and (.verification | startswith("UNRESOLVED:"))' "$TMP/assist-applied.json"
 run_repair() {
   "$BIN" refactor rust-repair --repo "$ASSIST_OUT" --base "$OLD_REV" \
-    --plan "$TMP/assist-applied.json" \
+    --source-repo "$OLD" --plan "$TMP/assist-applied.json" \
     --index "$TMP/index.scip.json" --report "$TMP/scip-report.json" \
     --diagnostics "$TMP/assist-compiler.jsonl" \
     --source-prefix core \

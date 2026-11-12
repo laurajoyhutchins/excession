@@ -233,7 +233,10 @@ pub(super) fn command() -> Command {
             .about("Find or apply rust-analyzer refactoring code actions with Git/SCIP evidence"),
             leaf(
                 "rust-repair",
-                &["repo", "base", "plan", "index", "report", "diagnostics"],
+                &[
+                    "repo", "source-repo", "base", "plan", "index",
+                    "report", "diagnostics",
+                ],
                 &["source-prefix", "rust-analyzer", "output"],
             )
             .about(

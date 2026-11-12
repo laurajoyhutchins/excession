@@ -298,7 +298,8 @@ compiler evidence into a guarantee of behavioral equivalence.
 
 `excession refactor rust-repair` accepts a **clean, detached linked
 worktree** containing an exact committed candidate produced by
-`rust-assist`. The caller supplies the previous `APPLIED_UNVERIFIED`
+`rust-assist`, plus `--source-repo` pointing to the clean original
+checkout at the base revision. The caller supplies the previous `APPLIED_UNVERIFIED`
 JSON plan, original Git base revision, independently re-audited original
 rust-analyzer SCIP index/report, and independently captured
 `cargo check --locked --offline --message-format=json` diagnostics.
@@ -332,7 +333,8 @@ Example:
 cargo check --locked --offline --message-format=json \
   --manifest-path /candidate/core/Cargo.toml > /tmp/compiler.jsonl
 excession refactor rust-repair \
-  --repo /candidate --base <original-git-sha> \
+  --repo /candidate --source-repo /original-clean-checkout \
+  --base <original-git-sha> \
   --plan /tmp/rust-assist-applied.json \
   --index /tmp/original.scip.json --report /tmp/original-report.json \
   --diagnostics /tmp/compiler.jsonl \
@@ -346,3 +348,9 @@ regression tests, and a newly generated/audited SCIP index for the precise
 candidate commit. If no supported native quick fix exists, the correct
 behavior is to preserve that limitation rather than generate a speculative
 re-export or invent a Rust import.
+
+The original clean checkout is required because a SCIP index's
+`project_root` is a path-bound observation, not merely a set of Git blobs.
+The repair executor authenticates the SCIP report **there**, while replaying
+the generated candidate's exact Git blobs in its separate detached worktree.
+Both checkouts must share the same canonical Git common directory.

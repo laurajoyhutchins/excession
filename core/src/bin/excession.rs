@@ -709,6 +709,7 @@ fn execute(args: &[String]) -> Result<Response> {
         [top, sub] if top == "refactor" && sub == "rust-repair" => Ok(json(
             refactor_rust_repair::repair(&refactor_rust_repair::Request {
                 repo: opt.path("repo"),
+                source_repo: opt.path("source-repo"),
                 base: opt.get("base"),
                 plan: opt.path("plan"),
                 index: opt.path("index"),

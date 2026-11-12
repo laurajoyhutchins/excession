@@ -159,6 +159,7 @@ fn request_actions(
     relative: &Path,
     source: &str,
     selection: [usize; 4],
+    title: Option<&str>,
 ) -> Result<Vec<Json>> {
     let canonical = workspace.canonicalize().map_err(|e| e.to_string())?;
     let file = canonical.join(relative);
@@ -205,8 +206,16 @@ fn request_actions(
         }
         // Some rust-analyzer versions advertise lazy edits. Ask the same
         // server to resolve the action, never fabricate text modifications.
-        let candidate = if candidate.get("edit").is_none() && candidate.get("data").is_some() {
-            server.request("codeAction/resolve", candidate)?
+        let candidate = if title == candidate.get("title").and_then(Json::as_str)
+            && candidate.get("edit").is_none()
+            && candidate.get("data").is_some()
+        {
+            let original_title = string(&candidate, "title")?.to_owned();
+            let updated = server.request("codeAction/resolve", candidate)?;
+            if string(&updated, "title")? != original_title {
+                return refuse("resolved rust-analyzer code action changed identity");
+            }
+            updated
         } else {
             candidate
         };
@@ -477,7 +486,10 @@ pub fn execute(request: &Request<'_>) -> Result<Value> {
         return refuse("reversed rust-analyzer selection");
     }
     let relative = file.strip_prefix(&crate_root).map_err(|_| "source outside Cargo workspace")?;
-    let actions = request_actions(request.analyzer, &crate_root, relative, &source, request.selection)?;
+    let actions = request_actions(
+        request.analyzer, &crate_root, relative, &source,
+        request.selection, request.title,
+    )?;
     if request.title.is_none() {
         if request.output.is_some() {
             return refuse("cannot apply an unspecified rust-analyzer action");

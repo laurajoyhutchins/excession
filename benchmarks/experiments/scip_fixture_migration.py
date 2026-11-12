@@ -17,6 +17,7 @@ from pathlib import Path
 
 from real_fixtures import checkout
 from concepts_scip_oracle import reconcile
+from scip_source_anchors import load_manifest, verify_anchors
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLES = ROOT / "core/fixtures"
@@ -321,6 +322,12 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             concept_oracle = reconcile(
                 parsed, batch, model, manifest, audit, repo, commit, tree
             )
+            source_anchors = verify_anchors(
+                repo, commit, parsed,
+                load_manifest(ROOT / "benchmarks/fixtures/concepts-scip-source-anchors.json"),
+                name, language,
+            )
+            concept_oracle["source_anchors"] = source_anchors
             artifacts = {
                 "batch": batch, "model": model, "snapshot": manifest,
                 "audit": audit, "oracle": concept_oracle,
@@ -378,6 +385,8 @@ def main() -> None:
     parser.add_argument("--decoded-dir", type=Path)
     parser.add_argument("--concepts", action="store_true",
                         help="compile and independently reconcile source-bound semantic concepts")
+    parser.add_argument("--require-positive-source-anchors", action="store_true",
+                        help="require real source-level independently attested import fixtures")
     parser.add_argument("--require-positive-concepts", action="store_true",
                         help="require at least one independently reconstructed cross-file reference")
     parser.add_argument("--scip", type=Path, default=Path("scip"))
@@ -429,9 +438,16 @@ def main() -> None:
         results["independently_oracled_native_references"] = native_matches
         # A zero-reference smoke would not demonstrate the semantic bridge.
         results["concepts_positive_evidence"] = native_matches > 0
+        results["independent_source_import_anchors"] = sum(
+            (language.get("concepts") or {}).get("source_anchors", {}).get("verified_source_imports", 0)
+            for fixture in results["fixtures"] for language in fixture.get("languages", [])
+        )
         if args.require_positive_concepts and native_matches == 0:
             invalid = True
             results["diagnostic"] = "no independently validated SCIP cross-file reference"
+        if args.require_positive_source_anchors and not results["independent_source_import_anchors"]:
+            invalid = True
+            results["diagnostic"] = "no source-verified native SCIP import anchors"
     if observed == 0:
         invalid = True
         results["status"] = "NO_VALID_SCIP_OBSERVATIONS"

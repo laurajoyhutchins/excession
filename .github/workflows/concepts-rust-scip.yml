@@ -6,6 +6,8 @@ on:
       - .github/workflows/concepts-rust-scip.yml
       - benchmarks/experiments/scip_self_oracle.py
       - benchmarks/experiments/concepts_scip_oracle.py
+      - benchmarks/experiments/scip_source_anchors.py
+      - benchmarks/fixtures/concepts-scip-source-anchors.json
       - core/src/scip_refactor.rs
       - core/src/concepts_scip.rs
       - core/src/concepts_compile.rs

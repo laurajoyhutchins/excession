@@ -15,6 +15,7 @@ import sys
 import tempfile
 
 from concepts_scip_oracle import reconcile, native_references
+from scip_source_anchors import load_manifest, verify_anchors
 
 
 def run(*args: object) -> bytes:
@@ -71,8 +72,17 @@ def main() -> None:
         )
 
     diagnostics = args.indexer_diagnostics.read_text(errors="replace") if args.indexer_diagnostics else ""
+    source_anchors = verify_anchors(
+        repo, commit, native,
+        load_manifest(Path(__file__).resolve().parents[1] /
+                      "fixtures/concepts-scip-source-anchors.json"),
+        "excession", "rust", source_prefix=args.source_prefix,
+    )
+    if source_anchors["verified_source_imports"] < 3:
+        raise ValueError("native Excession SCIP failed frozen source import acceptance")
     report = {
         "schema": "excession.concepts-rust-native-evidence.v1",
+        "source_anchors": source_anchors,
         "indexer_duplicate_symbol_warning": "Duplicate symbols encountered" in diagnostics,
         "indexer": "rust-analyzer scip",
         "decoder": "scip print --json",

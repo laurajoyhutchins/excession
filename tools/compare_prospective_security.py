@@ -137,7 +137,6 @@ def aggregate(manifest: dict, evidence_dir: Path) -> dict:
             try:
                 metadata = json.loads((path / "metadata.json").read_text())
                 oracle = json.loads((path / "oracle.json").read_text())
-                status = json.loads((path / "scan-status.json").read_text())
                 assert metadata["case"] == case["id"] and metadata["phase"] == phase
                 assert metadata["source_commit"] == case[phase]["commit"]
                 assert metadata["source_blob"] == case[phase]["blob"]
@@ -146,6 +145,7 @@ def aggregate(manifest: dict, evidence_dir: Path) -> dict:
                 assert oracle["status"] in ("OBSERVED_EXPECTED", "OBSERVED_CONTRADICTION",
                                             "INCONCLUSIVE")
                 oracle_status = oracle["status"]
+                status = json.loads((path / "scan-status.json").read_text())
                 assert status["phase"] == phase and status["case"] == case["id"]
                 assert status["scanner_version"] == manifest["scanner"]["version"]
                 assert status["rules_commit"] == manifest["scanner"]["rules_commit"]

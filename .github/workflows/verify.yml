@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      MISE_ENABLE_TOOLS: rust,python,node
+      MISE_ENABLE_TOOLS: rust,node
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v5
@@ -48,6 +48,12 @@ jobs:
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: JavaScript adapter tests
         run: npm run check && npm test
+      - name: Install pinned optional Python for independent oracles
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - name: Install opt-in Python test dependencies
+        run: mise run setup-python
       - name: Python-specific tooling and independent oracle tests (JUnit XML)
         env:
           EXCESSION_REQUIRE_BIN: '1'

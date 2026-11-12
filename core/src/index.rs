@@ -106,7 +106,10 @@ fn index_revision_inner(
         SemanticMode::GitOnly => None,
         SemanticMode::Parse { import_base } => import_base,
     };
-    git::clean(root)?;
+    // Committed revision reads use immutable Git objects via BlobReader.
+    // A dirty working tree cannot change their meaning; trusted-local
+    // execution paths retain their own stricter source policies.
+    git::verify_repo(root)?;
     let commit = git::rev(root, commit)?;
     if git::text(root, &["cat-file", "-t", &commit])? != "commit" {
         return refuse("Git reference is not a commit");

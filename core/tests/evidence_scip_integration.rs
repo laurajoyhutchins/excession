@@ -617,3 +617,132 @@ fn paginated_scip_references_are_complete_and_scope_bound() {
         "bad-cursor",
     ]));
 }
+
+
+#[test]
+fn native_predicate_audit_authenticates_real_import_without_promoting_semantics() {
+    let f = Fixture::new();
+    let imported = data(f.import());
+    let snapshot = s(&imported, "snapshot_id");
+    let inspected = data(f.inspect(snapshot, Some("src/a.rs")));
+    let observation = &inspected.get("observations").unwrap().array_ref().unwrap()[0];
+    let id = s(observation, "observation_id");
+    let verify = |source: &str, predicate: &str, observation_id: &str, commit: &str| {
+        cli(&[
+            "inspect",
+            "verify-observation",
+            "--db", f.db(),
+            "--repo", f.repo(),
+            "--rev", commit,
+            "--snapshot", snapshot,
+            "--observation", observation_id,
+            "--source", source,
+            "--predicate", predicate,
+        ])
+    };
+    let approved = data(verify("src/a.rs", "SCIP_SYMBOL_REFERENCE", id, &f.commit));
+    assert_eq!(s(&approved, "schema"), "excession.predicate-audit.v1");
+    assert_eq!(s(&approved, "status"), "SOURCE_BOUND_NATIVE_CANDIDATE");
+    assert_eq!(s(&approved, "semantic_correctness"), "NOT_ESTABLISHED");
+    assert_eq!(s(&approved, "producer_execution"), "UNATTESTED");
+    assert_eq!(s(&approved, "source_identity"), "INDEPENDENT_GIT_MATCH");
+    assert_eq!(s(&approved, "producer_payload_integrity"), "IMMUTABLE_SQLITE_REPLAY_MATCH");
+    assert!(!approved.get("verified_call_or_dependency").unwrap().bool().unwrap());
+    assert!(!approved.get("verified_security_finding").unwrap().bool().unwrap());
+    assert_eq!(s(approved.get("from").unwrap(), "path"), "src/a.rs");
+    assert_eq!(s(approved.get("to").unwrap(), "path"), "src/b.rs");
+    assert_eq!(
+        s(&data(verify("src/a.rs", "SCIP_SYMBOL_REFERENCE", id, &f.commit)), "report_id"),
+        s(&approved, "report_id"),
+        "a pinned native predicate audit must be reproducible"
+    );
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/evidence-core/predicate-audit.v1.schema.json"
+    )).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let output: serde_json::Value = serde_json::from_str(&approved.canonical()).unwrap();
+    assert!(validator.is_valid(&output), "actual predicate result violates published schema");
+
+    for result in [
+        verify("src/a.rs", "CALL", id, &f.commit),
+        verify("src/a.rs", "VULNERABILITY", id, &f.commit),
+        verify("src/b.rs", "SCIP_SYMBOL_REFERENCE", id, &f.commit),
+        verify("src/a.rs", "SCIP_SYMBOL_REFERENCE", &"f".repeat(64), &f.commit),
+        verify("src/a.rs", "SCIP_SYMBOL_REFERENCE", id, &"a".repeat(40)),
+    ] {
+        refusal(result);
+    }
+
+    let db = Db::open(&f.db).unwrap();
+    db.execute(
+        "UPDATE evidence_observation_v1 SET document='{}'
+         WHERE snapshot_id=? AND observation_id=?",
+        &[Param::Text(snapshot), Param::Text(id)],
+    ).unwrap();
+    refusal(verify("src/a.rs", "SCIP_SYMBOL_REFERENCE", id, &f.commit));
+}
+
+#[test]
+fn self_consistent_forged_native_line_or_blob_still_refuses_git_predicate_audit() {
+    use excession::evidence::identity::{SourceRef, Subject};
+    use excession::evidence_store::{self, Batch, Observation, Receipt};
+    use excession::json::obj;
+
+    let f = Fixture::new();
+    let from = SourceRef::from_git(&f.repo, &f.commit, "src/a.rs").unwrap();
+    let to = SourceRef::from_git(&f.repo, &f.commit, "src/b.rs").unwrap();
+    let subject_id = Subject::Source(from.clone()).id().unwrap();
+    let receipt = Receipt {
+        producer: "scip:unattested-caller".into(),
+        version: "fixture".into(),
+        native_id: "untrusted-index".into(),
+        raw_json: "{}".into(),
+    };
+    let receipt_id = s(&receipt.document().unwrap(), "receipt_id").to_owned();
+    let db = Db::open(&f.db).unwrap();
+    for (bad_line, bad_blob) in [(true, false), (false, true)] {
+        let destination_blob = if bad_blob {
+            "f".repeat(40)
+        } else {
+            to.blob.clone()
+        };
+        let payload = obj(&[
+            ("relation", Value::string("SCIP_SYMBOL_REFERENCE")),
+            ("line", Value::number(if bad_line { 100 } else { 1 })),
+            ("symbol", Value::string("scip rust cargo demo 0.1.0 demo/bar().")),
+            ("from", obj(&[
+                ("path", Value::string("src/a.rs")),
+                ("blob", Value::string(&from.blob)),
+                ("language", Value::string("rust")),
+            ])),
+            ("to", obj(&[
+                ("path", Value::string("src/b.rs")),
+                ("blob", Value::string(destination_blob)),
+                ("language", Value::string("rust")),
+            ])),
+        ]);
+        let observation = Observation {
+            receipt_id: receipt_id.clone(),
+            subject_id: subject_id.clone(),
+            native_kind: "SCIP_SYMBOL_REFERENCE".into(),
+            payload,
+        };
+        let observation_id = s(&observation.document().unwrap(), "observation_id").to_owned();
+        let snapshot = evidence_store::persist(&db, &Batch {
+            source_commit: f.commit.clone(),
+            receipts: vec![receipt.clone()],
+            observations: vec![observation],
+        }).unwrap();
+        let output = cli(&[
+            "inspect", "verify-observation",
+            "--db", f.db(),
+            "--repo", f.repo(),
+            "--rev", &f.commit,
+            "--snapshot", &snapshot,
+            "--observation", &observation_id,
+            "--source", "src/a.rs",
+            "--predicate", "SCIP_SYMBOL_REFERENCE",
+        ]);
+        refusal(output);
+    }
+}

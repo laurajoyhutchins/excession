@@ -1,7 +1,7 @@
 //! Git-backed SCIP semantic bridge acceptance. The SCIP JSON is a synthetic
 //! official-decoder-shaped fixture; producer execution is not attested.
 use excession::json::{self, Value, obj};
-use excession::{concepts_compile, concepts_scip, concepts_value, scip_refactor};
+use excession::{concepts_author, concepts_compile, concepts_scip, concepts_value, scip_refactor};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -517,4 +517,144 @@ fn value_gate_refuses_stale_source_and_wrong_native_index_binding() {
         )
         .is_err()
     );
+}
+
+fn ontology_draft(batch: &Value) -> Value {
+    let references = batch.get("observations").unwrap().array_ref().unwrap();
+    let first = references[0].get("observation_id").unwrap().clone();
+    let second = references[1].get("observation_id").unwrap().clone();
+    let member = |path: &str, reference: Value| obj(&[
+        ("path", Value::string(path)),
+        ("observations", Value::array([reference])),
+    ]);
+    obj(&[
+        ("schema", Value::string("excession.concepts-ontology-proposal.v1")),
+        ("source_commit", batch.get("source_commit").unwrap().clone()),
+        ("source_tree", batch.get("source_tree").unwrap().clone()),
+        ("batch_id", batch.get("batch_id").unwrap().clone()),
+        ("author_label", Value::string("agent-draft-unverified")),
+        ("concepts", Value::array([obj(&[
+            ("key", Value::string("cross-language-feature")),
+            ("name", Value::string("Cross-language feature boundary")),
+            ("definition", Value::string("The Rust and Python files might participate in a shared feature; source inspection is needed.")),
+            ("rationale", Value::string("Distinct SCIP symbol occurrences connect these files in both directions.")),
+            ("aliases", Value::array(vec![])),
+            ("members", Value::array([
+                member("alpha.rs", first.clone()),
+                member("beta.py", second.clone()),
+            ])),
+        ])])),
+        ("relations", Value::array([obj(&[
+            ("predicate", Value::string("SHARES_INTERFACE")),
+            ("paths", Value::array([Value::string("alpha.rs"), Value::string("beta.py")])),
+            ("observations", Value::array([first])),
+            ("rationale", Value::string("Source-bound symbol reference, interface remains unverified.")),
+        ])])),
+    ])
+}
+
+#[test]
+fn llm_creates_a_new_ontology_rather_than_a_reciprocal_pair_rule() {
+    let f = Fixture::new();
+    let batch = concepts_scip::normalize_index(&f.repo, &f.commit, &f.index, None).unwrap();
+    let draft = ontology_draft(&batch);
+    let artifact = concepts_author::preview(&f.repo, &f.commit, &f.index, None, &draft).unwrap();
+    let model = artifact.get("model").unwrap();
+    assert_eq!(model.get("concepts").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(model.get("claims").unwrap().array_ref().unwrap().len(), 3);
+    let concept = &model.get("concepts").unwrap().array_ref().unwrap()[0];
+    assert_eq!(concept.get("origin").unwrap().str().unwrap(), "LLM_PROPOSAL");
+    assert_eq!(concept.get("review_status").unwrap().str().unwrap(), "UNREVIEWED");
+    assert_eq!(concept.get("membership_claims").unwrap().array_ref().unwrap().len(), 2);
+    assert_eq!(model.get("subjects").unwrap().array_ref().unwrap().len(), 2);
+    for claim in model.get("claims").unwrap().array_ref().unwrap() {
+        assert_eq!(claim.get("assessment").unwrap().str().unwrap(), "PROPOSED");
+        assert_eq!(claim.get("behavioral_verification").unwrap().str().unwrap(), "UNTESTED");
+    }
+
+    let db = excession::sqlite::Db::open(&f.db).unwrap();
+    let published = concepts_author::publish(
+        &db, &f.repo, &f.commit, &f.index, None, &draft
+    ).unwrap();
+    assert_eq!(published.get("status").unwrap().str().unwrap(), "PUBLISHED_UNREVIEWED");
+    let id = published.get("snapshot_id").unwrap().str().unwrap();
+    let accepted = concepts_author::audit(
+        &db, &f.repo, &f.commit, &f.index, None, &draft, id
+    ).unwrap();
+    assert_eq!(accepted.get("status").unwrap().str().unwrap(), "LLM_PROPOSAL_REPLAYED_UNREVIEWED");
+    assert_eq!(published, concepts_author::publish(
+        &db, &f.repo, &f.commit, &f.index, None, &draft
+    ).unwrap());
+
+    let original = concepts_compile::compile(&batch).unwrap();
+    assert_ne!(original.get("model_id").unwrap(), model.get("model_id").unwrap());
+}
+
+#[test]
+fn llm_ontology_refuses_invented_observations_missing_files_and_authority() {
+    let f = Fixture::new();
+    let batch = concepts_scip::normalize_index(&f.repo, &f.commit, &f.index, None).unwrap();
+    let baseline = ontology_draft(&batch);
+
+    let mut stale = baseline.clone();
+    stale.entries_mut().unwrap().insert(
+        "source_commit".into(), Value::string("f".repeat(40))
+    );
+    assert!(concepts_author::model(&batch, &stale).is_err());
+    let mut invented = baseline.clone();
+    let concepts = invented.entries_mut().unwrap().get_mut("concepts").unwrap();
+    if let Value::Array(items) = concepts {
+        let members = items[0].entries_mut().unwrap().get_mut("members").unwrap();
+        if let Value::Array(files) = members {
+            files[0].entries_mut().unwrap().insert(
+                "observations".into(), Value::array([Value::string("e".repeat(64))])
+            );
+        }
+    }
+    assert!(concepts_author::model(&batch, &invented).is_err());
+
+    let mut missing = baseline.clone();
+    let concepts = missing.entries_mut().unwrap().get_mut("concepts").unwrap();
+    if let Value::Array(items) = concepts {
+        let members = items[0].entries_mut().unwrap().get_mut("members").unwrap();
+        if let Value::Array(files) = members {
+            files[0].entries_mut().unwrap().insert(
+                "path".into(), Value::string("absent.rs")
+            );
+        }
+    }
+    assert!(concepts_author::model(&batch, &missing).is_err());
+
+    let mut illegal = baseline.clone();
+    let concepts = illegal.entries_mut().unwrap().get_mut("concepts").unwrap();
+    if let Value::Array(items) = concepts {
+        items[0].entries_mut().unwrap().insert(
+            "review_status".into(), Value::string("ACCEPTED")
+        );
+    }
+    assert!(concepts_author::model(&batch, &illegal).is_err());
+}
+
+#[test]
+fn llm_tool_context_shows_genuine_pinned_source_and_observation_ids() {
+    let f = Fixture::new();
+    let context = concepts_author::context(
+        &f.repo, &f.commit, &f.index, None, "alpha.rs", 1
+    ).unwrap();
+    assert_eq!(context.get("source").unwrap().get("path").unwrap().str().unwrap(), "alpha.rs");
+    assert!(context.get("matching_observation_count").unwrap().integer().unwrap() > 0);
+    assert!(!context.get("observations").unwrap().array_ref().unwrap().is_empty());
+    assert_eq!(
+        context.get("coverage").unwrap().str().unwrap(),
+        "PARTIAL_NATIVE_INDEX_ONLY"
+    );
+    let snippet = context.get("excerpt").unwrap().array_ref().unwrap();
+    assert_eq!(snippet[0].get("line").unwrap().integer().unwrap(), 1);
+    assert!(snippet[0].get("text").unwrap().str().unwrap().contains("fn alpha"));
+    assert!(concepts_author::context(
+        &f.repo, &f.commit, &f.index, None, "../escape", 1
+    ).is_err());
+    assert!(concepts_author::context(
+        &f.repo, &f.commit, &f.index, None, "absent.py", 1
+    ).is_err());
 }

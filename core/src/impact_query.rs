@@ -112,7 +112,9 @@ fn observe(
 ) -> Result<Option<Value>> {
     match analyze::run(path, rev, roots, database) {
         Ok((report, _)) => Ok(Some(report)),
-        Err(message) if message.starts_with("no supported Python/JavaScript source directories") => {
+        Err(message)
+            if message.starts_with("no supported Python/JavaScript source directories") =>
+        {
             Ok(None)
         }
         Err(message) => Err(message),
@@ -151,14 +153,24 @@ pub fn run(
         let Some(report) = observe(path, revision, roots, database)? else {
             gaps.push(obj(&[
                 ("reason", Value::string("MISSING_ADAPTER")),
-                ("detail", Value::string("no supported static module graph for selected revision")),
+                (
+                    "detail",
+                    Value::string("no supported static module graph for selected revision"),
+                ),
             ]));
             continue;
         };
-        source_count = source_count.checked_add(
-            report.get("coverage")?.get("analyzed_sources")?.integer()?
-        ).ok_or("analyzed source count overflow")?;
-        gaps.extend(report.get("coverage")?.get("gaps")?.array_ref()?.iter().cloned());
+        source_count = source_count
+            .checked_add(report.get("coverage")?.get("analyzed_sources")?.integer()?)
+            .ok_or("analyzed source count overflow")?;
+        gaps.extend(
+            report
+                .get("coverage")?
+                .get("gaps")?
+                .array_ref()?
+                .iter()
+                .cloned(),
+        );
         truncated |= walk(&incoming(&report)?, &changed, &mut effects)?;
         if truncated {
             break;
@@ -178,15 +190,20 @@ pub fn run(
         ("change_inventory_id", changes.get("report_id")?.clone()),
         ("effects", Value::array(effects)),
         ("unknown", Value::array(gaps.clone())),
-        ("coverage", obj(&[
-            ("status", Value::string("PARTIAL")),
-            ("analyzed_sources", Value::number(source_count)),
-            ("gaps", Value::array(gaps)),
-        ])),
+        (
+            "coverage",
+            obj(&[
+                ("status", Value::string("PARTIAL")),
+                ("analyzed_sources", Value::number(source_count)),
+                ("gaps", Value::array(gaps)),
+            ]),
+        ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
     let id = result.sha256();
-    result.entries_mut()?.insert("report_id".to_owned(), Value::string(id));
+    result
+        .entries_mut()?
+        .insert("report_id".to_owned(), Value::string(id));
     Ok(result)
 }
 
@@ -209,38 +226,63 @@ mod tests {
 
     #[test]
     fn refuses_promoting_static_candidates_into_observed_proof() {
-        let report = obj(&[("relationships", Value::array([obj(&[
-            ("kind", Value::string("STATIC_IMPORT")),
-            ("source", obj(&[("path", Value::string("src/a.py"))])),
-            ("target", obj(&[("path", Value::string("src/b.py"))])),
-            ("evidence", Value::array([obj(&[
-                ("assessment", Value::string("OBSERVED")),
-            ])])),
-        ])]))]);
+        let report = obj(&[(
+            "relationships",
+            Value::array([obj(&[
+                ("kind", Value::string("STATIC_IMPORT")),
+                ("source", obj(&[("path", Value::string("src/a.py"))])),
+                ("target", obj(&[("path", Value::string("src/b.py"))])),
+                (
+                    "evidence",
+                    Value::array([obj(&[("assessment", Value::string("OBSERVED"))])]),
+                ),
+            ])]),
+        )]);
         assert!(incoming(&report).is_err());
     }
 
     #[test]
     fn traverses_reverse_import_with_original_evidence() {
-        let input = obj(&[("relationships", Value::array([obj(&[
-            ("kind", Value::string("STATIC_IMPORT")),
-            ("source", obj(&[("path", Value::string("pkg/first.py"))])),
-            ("target", obj(&[("path", Value::string("pkg/second.py"))])),
-            ("evidence", Value::array([obj(&[
-                ("assessment", Value::string("CANDIDATE")),
-                ("receipt_id", Value::string("receipt")),
-            ])])),
-        ])]))]);
+        let input = obj(&[(
+            "relationships",
+            Value::array([obj(&[
+                ("kind", Value::string("STATIC_IMPORT")),
+                ("source", obj(&[("path", Value::string("pkg/first.py"))])),
+                ("target", obj(&[("path", Value::string("pkg/second.py"))])),
+                (
+                    "evidence",
+                    Value::array([obj(&[
+                        ("assessment", Value::string("CANDIDATE")),
+                        ("receipt_id", Value::string("receipt")),
+                    ])]),
+                ),
+            ])]),
+        )]);
         let mut effects = Vec::new();
-        assert!(!walk(
-            &incoming(&input).unwrap(),
-            &BTreeSet::from(["pkg/second.py".to_owned()]),
-            &mut effects
-        ).unwrap());
+        assert!(
+            !walk(
+                &incoming(&input).unwrap(),
+                &BTreeSet::from(["pkg/second.py".to_owned()]),
+                &mut effects
+            )
+            .unwrap()
+        );
         assert_eq!(effects.len(), 1);
-        assert_eq!(effects[0].get("assessment").unwrap().str().unwrap(), "CANDIDATE_PATH");
-        assert_eq!(effects[0].get("hops").unwrap().array_ref().unwrap()[0]
-            .get("evidence").unwrap().array_ref().unwrap()[0]
-            .get("receipt_id").unwrap().str().unwrap(), "receipt");
+        assert_eq!(
+            effects[0].get("assessment").unwrap().str().unwrap(),
+            "CANDIDATE_PATH"
+        );
+        assert_eq!(
+            effects[0].get("hops").unwrap().array_ref().unwrap()[0]
+                .get("evidence")
+                .unwrap()
+                .array_ref()
+                .unwrap()[0]
+                .get("receipt_id")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "receipt"
+        );
     }
 }

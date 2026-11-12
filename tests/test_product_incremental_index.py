@@ -141,6 +141,16 @@ class ProductionPythonIncremental(unittest.TestCase):
         self.assertIn(("pkg/top.py", "pkg/mid.py"), edges)
         self.assertNotIn(("pkg/unrelated.py", "pkg/core.py"), edges)
 
+    def test_changed_importer_resolves_unchanged_target_from_full_catalog(self):
+        self.write("pkg/mid.py", "from . import core\n")
+        head = self.commit("change import syntax")
+        report = self.compare_fresh(head, 1, 4)
+        self.assertIn(
+            ("pkg/mid.py", "pkg/core.py"),
+            {(edge["source"]["path"], edge["target"]["path"])
+             for edge in report["relationships"]},
+        )
+
     def test_nonsource_commit_reuses_entire_catalog(self):
         self.write("README.md", "No Python change.\n")
         head = self.commit("change README")

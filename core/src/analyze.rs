@@ -126,12 +126,26 @@ fn checked_cache_destination(source_root: &Path, destination: &Path) -> Result<P
     Ok(destination.to_path_buf())
 }
 
+/// User-facing analysis requires at least one discovered supported source root.
 pub fn run(
     path: &Path,
     rev: &str,
     explicit_roots: Option<&str>,
     db_override: Option<&str>,
 ) -> Result<(Value, PathBuf)> {
+    run_if_supported(path, rev, explicit_roots, db_override)?.ok_or_else(|| {
+        "no supported Python/JavaScript source directories detected; provide --roots or use configured native graph commands".to_owned()
+    })
+}
+
+/// Impact analysis may investigate a revision without supported roots.
+/// Treat this as an explicit absence of a static graph, not an analyzer failure.
+pub fn run_if_supported(
+    path: &Path,
+    rev: &str,
+    explicit_roots: Option<&str>,
+    db_override: Option<&str>,
+) -> Result<Option<(Value, PathBuf)>> {
     let discovered = discovery::inspect(path, rev)?;
     let roots: Vec<String> = if let Some(spec) = explicit_roots {
         let roots: Vec<String> = spec
@@ -150,9 +164,7 @@ pub fn run(
         discovered.roots.clone()
     };
     if roots.is_empty() {
-        return refuse(
-            "no supported Python/JavaScript source directories detected; provide --roots or use configured native graph commands",
-        );
+        return Ok(None);
     }
     let capabilities = doctor::report();
     let cap = capabilities.get("capabilities")?;
@@ -289,7 +301,7 @@ pub fn run(
     report
         .entries_mut()?
         .insert("report_id".into(), Value::string(report_id));
-    Ok((report, db_path))
+    Ok(Some((report, db_path)))
 }
 
 pub fn human(report: &Value, db_path: &Path) -> Result<String> {

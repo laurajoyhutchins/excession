@@ -115,15 +115,8 @@ fn observe(
     roots: Option<&str>,
     database: Option<&str>,
 ) -> Result<Option<Value>> {
-    match analyze::run(path, rev, roots, database) {
-        Ok((report, _)) => Ok(Some(report)),
-        Err(message)
-            if message.starts_with("no supported Python/JavaScript source directories") =>
-        {
-            Ok(None)
-        }
-        Err(message) => Err(message),
-    }
+    Ok(analyze::run_if_supported(path, rev, roots, database)?
+        .map(|(report, _)| report))
 }
 
 /// Investigate both revision graphs. A removed source is considered under the
@@ -157,10 +150,10 @@ pub fn run(
         }
         let Some(report) = observe(path, revision, roots, database)? else {
             gaps.push(obj(&[
-                ("reason", Value::string("MISSING_ADAPTER")),
+                ("reason", Value::string("EXCLUDED_SCOPE")),
                 (
                     "detail",
-                    Value::string("no supported static module graph for selected revision"),
+                    Value::string("no supported static module roots in selected revision"),
                 ),
             ]));
             continue;

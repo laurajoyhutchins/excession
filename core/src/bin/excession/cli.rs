@@ -172,9 +172,10 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Validate and generate benchmark reports");
-    let refactor = group(
-        "refactor",
-        vec![
+    let refactor =
+        group(
+            "refactor",
+            vec![
             leaf("suggest", &["db", "name", "rev"], &[]),
             leaf("audit", &["db", "name", "rev", "report"], &[]),
             leaf(
@@ -243,8 +244,8 @@ pub(super) fn command() -> Command {
                 "Select an unambiguous native import repair from independent compiler diagnostics",
             ),
         ],
-    )
-    .about("Source-bound refactoring hypotheses and guarded recipes");
+        )
+        .about("Source-bound refactoring hypotheses and guarded recipes");
     let configured_graph = group(
         "graph",
         vec![

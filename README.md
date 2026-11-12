@@ -11,50 +11,58 @@ The core is a Rust CLI with Git as source authority and SQLite for indexed
 relations and evidence. It reuses language-native parsers, symbol indexers,
 compilers, and scanners rather than replacing them.
 
-## Try it
+## Get started
 
-Build the CLI with the repository's pinned Rust toolchain:
+Excession is a local Rust CLI. It reads pinned Git source objects, indexes
+observed relationships, and explains *candidate* change impact with source
+evidence. Git is required; Python and Node are needed for their respective
+language adapters. Check the actual available tools first:
 
 ```sh
 cargo install --locked --path core --bin excession
-excession --help
+excession doctor
 ```
 
-Git is required. See [portable releases](docs/PORTABILITY.md) for prebuilt
-binaries and [development setup](docs/DEVELOPMENT.md) for toolchains.
-
-For example, index an existing clean checkout of
-[h11](https://github.com/python-hyper/h11), or another Python/JavaScript
-repository with the roots and seed adjusted to match its modules:
+From a supported Python or JavaScript repository:
 
 ```sh
-REPO=/path/to/clean/h11
-OUT=/tmp/excession-h11
-mkdir -p "$OUT"
-
-excession index --repo "$REPO" --db "$OUT/index.sqlite" \
-  --name h11 --rev HEAD --roots h11,tests
-
-excession view deps --db "$OUT/index.sqlite" \
-  --name h11 --rev HEAD --seed h11._connection > "$OUT/deps.json"
-
-excession browse --repo "$REPO" --manifest "$OUT/deps.json"
-
-excession view replay deps --db "$OUT/index.sqlite" \
-  --name h11 --rev HEAD --seed h11._connection \
-  --manifest "$OUT/deps.json"
+cd /path/to/repository
+excession discover .
+excession analyze .
+excession impact . --base HEAD~1 --json > /tmp/excession-impact.json
 ```
 
-The index records static module relationships. `view deps` selects a focused
-layout, `browse` explores it, and `view replay` checks that the saved view
-can be regenerated. Virtual views read the original Git blobs on demand;
-they do not copy the checkout.
+The impact report's `effects` entries include deterministic `claim_id` values.
+If the report contains a candidate effect, inspect its evidence:
+
+```sh
+excession explain . --report /tmp/excession-impact.json \
+  --id YOUR_CLAIM_ID
+excession explain . --report /tmp/excession-impact.json \
+  --id YOUR_CLAIM_ID --audit
+```
+
+The `--audit` result distinguishes source replay from independent semantic
+validation. Source replay does **not** establish that an affected module is
+broken or that a test can safely be skipped. Reports explicitly preserve
+unsupported and unresolved coverage.
+
+These workflows operate on committed revisions. They can read pinned Git
+objects even when the working tree is dirty; they do not include uncommitted
+edits. Default SQLite caches live outside the repository. Exact-output workflows
+also support `--json` and explicit revisions/roots.
+
+For advanced reproducible queries, the existing `index`, `inspect`,
+`view`, `browse`, `graph`, `refactor` and `security` commands remain
+available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md),
+and [development setup](docs/DEVELOPMENT.md).
 
 ## What you can investigate
 
 | Question | Excession commands | Evidence |
 | --- | --- | --- |
-| What does this module relate to? | `index`, `inspect dependencies`, `view deps` | Python/JavaScript module relationships at a Git revision |
+| What does this module relate to? | `analyze`, `index`, `inspect dependencies`, `view deps` | Python/JavaScript static candidate relationships at a Git revision |
+| What might a committed source change affect? | `changes`, `impact`, `explain` | Exact Git diffs and bounded candidate relationship paths, with uncertainty |
 | Can I see a smaller, useful slice of the tree? | `view select`, `compose`, `mount`, `browse` | Virtual paths pointing to original Git blobs |
 | Where might refactoring help? | `refactor suggest`, `refactor scip-suggest` | Cycles, repeated bodies, and symbol-reference hypotheses |
 | What syntax and imports can be observed? | `syntax scan`, `syntax resolve`, `semantic scan` | Tree-sitter and language-aware source observations |
@@ -139,8 +147,8 @@ mise run cli
 JUnit output, grammar setup, and supported toolchains are documented in
 [development setup](docs/DEVELOPMENT.md).
 
-The older experiments remain available through `excession research ...`
-without a second executable. See [migration notes](docs/MIGRATION.md).
+The old positional `excession research` entry point was retired; it is
+not a supported command. See [migration notes](docs/MIGRATION.md).
 Benchmarks and their measurement contracts live in
 [benchmarks](benchmarks/README.md).
 

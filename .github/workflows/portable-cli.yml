@@ -91,7 +91,7 @@ jobs:
           python -m unittest tests.test_release_manifest -v
           python tools/release_manifest.py --dist dist --source-commit "$(git rev-parse HEAD)"
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/')
         with:
           name: excession-${{ runner.os }}-${{ runner.arch }}
           path: dist/*
@@ -153,7 +153,7 @@ jobs:
 
   acceptance:
     name: Installed Linux archive vs independent pinned upstream source
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/'))
     needs: [portability]
     runs-on: ubuntu-24.04
     timeout-minutes: 25

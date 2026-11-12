@@ -21,6 +21,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "benchmarks/experiments"))
 from real_fixtures import checkout, git_blobs, verify_product_workflow  # noqa: E402
 from tools.release_manifest import build_manifest  # noqa: E402

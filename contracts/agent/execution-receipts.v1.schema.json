@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/agent/execution-receipts.v1.schema.json",
+  "title": "Excession external execution observations v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "receipts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.execution-receipts.v1"
+    },
+    "receipts": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "status",
+          "source_commit",
+          "source_tree",
+          "producer",
+          "command",
+          "exit_code",
+          "log_sha256"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "TEST",
+              "BUILD"
+            ]
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "SKIPPED"
+            ]
+          },
+          "source_commit": {
+            "$ref": "#/$defs/gitOid"
+          },
+          "source_tree": {
+            "$ref": "#/$defs/gitOid"
+          },
+          "producer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "exit_code": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "log_sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

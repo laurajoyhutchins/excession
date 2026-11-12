@@ -476,14 +476,24 @@ pub fn list_sources(
         .collect::<Vec<_>>();
     let next = offset.saturating_add(selected.len());
     Ok(obj(&[
-        ("schema", Value::string("excession.concepts-indexed-sources.v1")),
+        (
+            "schema",
+            Value::string("excession.concepts-indexed-sources.v1"),
+        ),
         ("source_commit", batch.get("source_commit")?.clone()),
         ("source_tree", batch.get("source_tree")?.clone()),
         ("batch_id", batch.get("batch_id")?.clone()),
         ("sources", Value::array(selected)),
         ("total_matched", Value::number(total)),
         ("offset", Value::number(offset)),
-        ("next_offset", if next < total { Value::number(next) } else { Value::Null }),
+        (
+            "next_offset",
+            if next < total {
+                Value::number(next)
+            } else {
+                Value::Null
+            },
+        ),
         ("coverage", Value::string("PARTIAL_NATIVE_INDEX_ONLY")),
     ]))
 }

@@ -133,16 +133,33 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
     let fields = args.entries()?;
     match name {
         "search_code_sources" => {
-            if fields.keys().any(|key| !matches!(key.as_str(), "search" | "offset")) {
+            if fields
+                .keys()
+                .any(|key| !matches!(key.as_str(), "search" | "offset"))
+            {
                 return refuse("unexpected source search parameter");
             }
-            let search = args.get("search").ok().map(Value::str).transpose()?.unwrap_or("");
-            let offset = args.get("offset").ok().map(Value::integer).transpose()?.unwrap_or(0);
+            let search = args
+                .get("search")
+                .ok()
+                .map(Value::str)
+                .transpose()?
+                .unwrap_or("");
+            let offset = args
+                .get("offset")
+                .ok()
+                .map(Value::integer)
+                .transpose()?
+                .unwrap_or(0);
             if !(0..=1_000_000).contains(&offset) {
                 return refuse("source search offset must be 0..1000000");
             }
             concepts_author::list_sources(
-                repo, revision, index, prefix, search,
+                repo,
+                revision,
+                index,
+                prefix,
+                search,
                 usize::try_from(offset).map_err(|e| e.to_string())?,
             )
         }

@@ -145,7 +145,9 @@ def _dulwich_merge(path: Path) -> dict:
     # 'true file; echo ...' would execute a second shell command; a shell-
     # quoted path passes through as a single argument to 'true'. No shell run.
     benign_tokens = shlex.split(benign_command)
-    malicious_tokens = shlex.split(adverse_command)
+    lexer = shlex.shlex(adverse_command, posix=True, punctuation_chars=";&|")
+    lexer.whitespace_split = True
+    malicious_tokens = list(lexer)
     return {
         "adverse_rejected": not (";" in malicious_tokens),
         "benign_allowed": benign_tokens == ["true", "ok.txt"],

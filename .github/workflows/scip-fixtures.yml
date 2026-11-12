@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - benchmarks/experiments/scip_fixture_migration.py
+      - benchmarks/experiments/concepts_scip_oracle.py
+      - tests/test_concepts_scip_oracle.py
+      - core/src/concepts_scip.rs
+      - core/src/concepts_compile.rs
       - tests/test_scip_fixture_migration.py
       - core/src/scip_refactor.rs
       - core/tests/refactor_contracts.rs
@@ -65,8 +69,10 @@ jobs:
         run: |
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --locked --offline --release --manifest-path core/Cargo.toml --bin excession
-      - name: Verify evidence classification contract
-        run: python3 -m unittest discover -s tests -p test_scip_fixture_migration.py -v
+      - name: Verify evidence and independent concept oracle contracts
+        run: |
+          python3 -m unittest discover -s tests -p test_scip_fixture_migration.py -v
+          python3 -m unittest discover -s tests -p test_concepts_scip_oracle.py -v
       - name: Run real native SCIP on pinned fixtures
         shell: bash
         env:
@@ -87,7 +93,7 @@ jobs:
             --scip "$RUNNER_TEMP/scip-cli/scip" \
             --python-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-python" \
             --typescript-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-typescript" \
-            --trusted-local "${args[@]}"
+            --trusted-local --concepts "${args[@]}"
       - name: Validate a pinned historical PostCSS bundle revision
         shell: bash
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.historical }}
@@ -100,12 +106,12 @@ jobs:
             --scip "$RUNNER_TEMP/scip-cli/scip" \
             --python-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-python" \
             --typescript-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-typescript" \
-            --trusted-local
+            --trusted-local --concepts
       - name: Preserve actual indexes, audits and coverage gaps
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: scip-source-evidence
+          name: scip-source-and-concept-evidence
           path: |
             scip-fixture-results.json
             scip-fixture-evidence/

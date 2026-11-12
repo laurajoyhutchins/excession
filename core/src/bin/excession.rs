@@ -708,6 +708,27 @@ fn execute(args: &[String]) -> Result<Response> {
                 };
                 Ok(Response::Message(format!("VALID {}", output.display())))
             }
+            "run-relational" => {
+                let parse_sizes = |key: &str, default: &str| -> Result<Vec<usize>> {
+                    opt.get_or(key, default).split(',').map(|value| {
+                        value.parse::<usize>().map_err(|_| format!("invalid --{key} element: {value}"))
+                    }).collect()
+                };
+                let revisions = opt.get_or("revisions", "3").parse::<usize>()
+                    .map_err(|_| "invalid --revisions".to_owned())?;
+                let repetitions = opt.get_or("repetitions", "2").parse::<usize>()
+                    .map_err(|_| "invalid --repetitions".to_owned())?;
+                let config = benchmark::relational::Config {
+                    out: opt.path("out").to_path_buf(),
+                    sizes: parse_sizes("sizes", "8,24")?,
+                    fanouts: parse_sizes("fanouts", "1,3")?,
+                    revisions,
+                    repetitions,
+                };
+                let binary = std::env::current_exe().map_err(|e| format!("resolve benchmark executable: {e}"))?;
+                let report = benchmark::relational::run(&config, &binary)?;
+                Ok(Response::Message(format!("VALID {}", report.display())))
+            }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
         [top, sub] if top == "inspect" && sub == "scip-evidence" => {

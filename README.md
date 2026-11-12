@@ -54,7 +54,7 @@ also support `--json` and explicit revisions/roots.
 
 For advanced reproducible queries, the existing `index`, `inspect`,
 `view`, `browse`, `graph`, `refactor` and `security` commands remain
-available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md),
+available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md), [release procedure](docs/RELEASE.md),
 and [development setup](docs/DEVELOPMENT.md).
 
 ## What you can investigate
@@ -78,7 +78,18 @@ relationships remain visible rather than being filled in by guesses.
 
 ### Find refactoring candidates
 
-Using the index created above:
+For an advanced, explicitly indexed checkout, choose a repository and external
+output directory before querying its recorded module relations:
+
+```sh
+REPO=/path/to/h11
+OUT=/tmp/excession-h11
+mkdir -p "$OUT"
+excession index --repo "$REPO" --db "$OUT/index.sqlite" \
+  --name h11 --rev HEAD --roots h11,tests
+```
+
+Then inspect or audit the candidates:
 
 ```sh
 excession refactor suggest --db "$OUT/index.sqlite" \

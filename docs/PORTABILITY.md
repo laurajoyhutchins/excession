@@ -60,9 +60,11 @@ excession index --repo /path/to/checkout --db /path/to/index.sqlite \
   --name project --rev HEAD --roots src,tests
 ```
 
-The checkout must be a clean SHA-1 Git repository. Git SHA-256 object
-repositories are not yet supported. The index executes locally installed
-language parsers, not the target project's code.
+The checkout must use the currently supported SHA-1 Git object format;
+Git SHA-256 repositories are not yet supported. Committed-revision indexing
+reads immutable Git objects and can run in a dirty checkout, but it does not
+include staged, unstaged or untracked edits. Trusted-local compilers and
+scanners retain their separate clean-checkout and isolation policies.
 
 ### Optional interpreters and adapters
 
@@ -98,9 +100,10 @@ the complete matrix, preserving the fast default for unrelated changes.
 The Portable CLI workflow checks SHA-1/SHA-256 standard vectors, runs a
 Rust integration test from paths containing spaces and Unicode, builds the
 release for Linux x86-64/ARM64, macOS Intel/Apple Silicon and Windows, then
-extracts each archive *outside the build checkout*. The extracted binary
-indexes a Git fixture in JavaScript using its bundled TypeScript parser,
-exercising Git access, compiled-in SQLite, and language adapter discovery.
+extracts each archive *outside the build checkout*. The extracted binary runs a two-revision JavaScript fixture through
+`analyze`, `impact`, `explain` and a replay audit using its bundled TypeScript
+parser, then refuses a mutated report. This exercises Git access, compiled-in
+SQLite and an actual static dependency; it does not establish completeness.
 An additional musl binary is tested in network-isolated Alpine.
 
 The existing Linux verify workflow remains authoritative for full Rust,

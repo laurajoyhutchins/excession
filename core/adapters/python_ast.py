@@ -141,12 +141,42 @@ def importable_names(items):
 
 
 def main():
-    items=json.load(sys.stdin)
-    if not isinstance(items,list): raise ValueError('invalid module input')
+    payload=json.load(sys.stdin)
+    if isinstance(payload,list):
+        # Original full-analysis input remains unchanged.
+        items=payload
+        catalog=items
+    elif isinstance(payload,dict) and set(payload)=={'catalog','entries'}:
+        # Rust supplies the entire module catalog, but only changed source
+        # contents. Import resolution must never use the changed subset alone.
+        catalog=payload['catalog']
+        items=payload['entries']
+        if not isinstance(catalog,list):
+            raise ValueError('invalid module catalog')
+        if any(not isinstance(entry,dict) or
+               set(entry)!={'name','path'} or
+               not all(isinstance(value,str) for value in entry.values())
+               for entry in catalog):
+            raise ValueError('invalid catalog entry')
+        if len({entry['name'] for entry in catalog})!=len(catalog):
+            raise ValueError('ambiguous module catalog')
+        full={entry['name']:entry['path'] for entry in catalog}
+        if len({entry['path'] for entry in catalog})!=len(catalog):
+            raise ValueError('duplicate catalog path')
+    else:
+        raise ValueError('invalid module input')
+    if not isinstance(items,list):
+        raise ValueError('invalid module records')
     for item in items:
-        if not isinstance(item,dict) or set(item)!= {'name','path','content'}: raise ValueError('invalid input record')
-        if not all(isinstance(v,str) for v in item.values()): raise ValueError('invalid input types')
-    available,names=importable_names(items)
+        if not isinstance(item,dict) or set(item)!= {'name','path','content'}:
+            raise ValueError('invalid input record')
+        if not all(isinstance(v,str) for v in item.values()):
+            raise ValueError('invalid input types')
+        if isinstance(payload,dict) and full.get(item['name'])!=item['path']:
+            raise ValueError('source not in immutable module catalog')
+    if len({item['name'] for item in items})!=len(items):
+        raise ValueError('duplicate source module')
+    available,names=importable_names(catalog)
     result=[parse_item(item,available,names[item['name']]) for item in items]
     print(json.dumps(result,sort_keys=True,separators=(',',':'),ensure_ascii=False))
 

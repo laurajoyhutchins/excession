@@ -562,16 +562,48 @@ mod tests {
 
     #[test]
     fn agent_grammar_requires_pinned_focus_or_candidate() {
-        assert!(parse(&strings(&["agent", "context", "--repo", "x", "--rev", "HEAD"])).is_err());
-        assert!(parse(&strings(&["agent", "verify", "--repo", "x", "--base", "HEAD~1"])).is_err());
-        assert!(parse(&strings(&[
-            "agent", "context", "--repo", "x", "--rev", "HEAD",
-            "--focus", "src/main.rs", "--limit", "8",
-        ])).is_ok());
-        assert!(parse(&strings(&[
-            "agent", "verify", "--repo", "x", "--base", "HEAD~1",
-            "--candidate", "HEAD", "--receipts", "/tmp/receipts.json",
-        ])).is_ok());
+        assert!(
+            parse(&strings(&[
+                "agent", "context", "--repo", "x", "--rev", "HEAD"
+            ]))
+            .is_err()
+        );
+        assert!(
+            parse(&strings(&[
+                "agent", "verify", "--repo", "x", "--base", "HEAD~1"
+            ]))
+            .is_err()
+        );
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "context",
+                "--repo",
+                "x",
+                "--rev",
+                "HEAD",
+                "--focus",
+                "src/main.rs",
+                "--limit",
+                "8",
+            ]))
+            .is_ok()
+        );
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "verify",
+                "--repo",
+                "x",
+                "--base",
+                "HEAD~1",
+                "--candidate",
+                "HEAD",
+                "--receipts",
+                "/tmp/receipts.json",
+            ]))
+            .is_ok()
+        );
     }
 
     #[test]

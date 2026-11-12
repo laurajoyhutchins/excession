@@ -1,7 +1,7 @@
 //! A rebuildable Git tree index. Tree hashes are computed independently from SQL rows.
+use crate::git;
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
-use crate::git;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -135,10 +135,12 @@ fn index_revision_inner(
             &entries,
             roots,
             import_base,
-            python_plan.as_ref().map(|plan| crate::semantic::ReuseSelection {
-                paths: &plan.reused,
-                total: plan.total,
-            }),
+            python_plan
+                .as_ref()
+                .map(|plan| crate::semantic::ReuseSelection {
+                    paths: &plan.reused,
+                    total: plan.total,
+                }),
         )?),
     };
 
@@ -303,7 +305,6 @@ pub fn changed_paths(db: &Db, repo: i64, old: &str, new: &str) -> Result<Vec<Fil
         })
         .collect())
 }
-
 
 #[cfg(test)]
 mod import_base_tests {

@@ -199,6 +199,7 @@ def fixture_report(evidence: Path, stem: str) -> tuple[dict, list[dict]]:
         "source_commit": source["source_commit"],
         "source_tree": source["source_tree"],
         "baseline_report_id": source["report_id"],
+        "native_index_sha256": source["index_sha256"],
         "model_id": model["model_id"],
         "baseline_reciprocal_pairs": len(base),
         "proposed_concept_pairs": len(proposed),
@@ -312,7 +313,8 @@ def attach_measured_costs(report: dict, run_summaries: list[Path]) -> None:
         if meta is None:
             fail(f"missing independently source-bound performance receipt: {stem}")
         if (meta["source_commit"] != fixture["source_commit"] or
-                meta["source_tree"] != fixture["source_tree"]):
+                meta["source_tree"] != fixture["source_tree"] or
+                meta["index_sha256"] != fixture["native_index_sha256"]):
             fail(f"performance evidence from another Git revision: {stem}")
         cost = meta["execution_cost"]
         if not isinstance(cost, dict) or cost.get("sample_count") != 1:

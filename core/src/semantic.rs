@@ -11,7 +11,6 @@ use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-
 #[derive(Clone)]
 struct PythonSnapshot {
     producer: String,
@@ -47,19 +46,22 @@ fn python_catalog(
     roots: &[&str],
     import_base: Option<&str>,
 ) -> String {
-    let modules = files.iter()
+    let modules = files
+        .iter()
         .filter(|(path, _)| path.ends_with(".py"))
-        .map(|(path, (name, _))| obj(&[
-            ("name", Value::string(name)),
-            ("path", Value::string(path)),
-        ]))
+        .map(|(path, (name, _))| {
+            obj(&[("name", Value::string(name)), ("path", Value::string(path))])
+        })
         .collect::<Vec<_>>();
     let mut roots = roots.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
     roots.sort();
     roots.dedup();
     let catalog = obj(&[
         ("modules", Value::array(modules)),
-        ("roots", Value::array(roots.iter().map(|root| Value::string(root)))),
+        (
+            "roots",
+            Value::array(roots.iter().map(|root| Value::string(root))),
+        ),
         ("import_base", Value::string(import_base.unwrap_or(""))),
     ]);
     digest::sha256(catalog.canonical().as_bytes())
@@ -71,13 +73,26 @@ fn python_catalog(
 fn python_rows_digest(db: &Db, repo: i64, commit: &str) -> Result<String> {
     let tables = [
         ("module", "name,path,blob_oid,is_test", "name,path"),
-        ("dependency", "source_name,target_name,line,syntax",
-         "source_name,target_name,line,syntax"),
-        ("symbol", "module_name,qualname,kind,signature,body_fingerprint,line",
-         "module_name,qualname"),
-        ("api_binding", "module_name,public_name,target,explicitly_exported",
-         "module_name,public_name"),
-        ("hazard", "module_name,line,reason", "module_name,line,reason"),
+        (
+            "dependency",
+            "source_name,target_name,line,syntax",
+            "source_name,target_name,line,syntax",
+        ),
+        (
+            "symbol",
+            "module_name,qualname,kind,signature,body_fingerprint,line",
+            "module_name,qualname",
+        ),
+        (
+            "api_binding",
+            "module_name,public_name,target,explicitly_exported",
+            "module_name,public_name",
+        ),
+        (
+            "hazard",
+            "module_name,line,reason",
+            "module_name,line,reason",
+        ),
     ];
     let mut inventory = Vec::new();
     for (table, fields, order) in tables {
@@ -85,18 +100,23 @@ fn python_rows_digest(db: &Db, repo: i64, commit: &str) -> Result<String> {
             "SELECT {fields} FROM {table} WHERE repo_id=? AND commit_oid=? ORDER BY {order}"
         );
         let rows = db.query(&sql, &[Param::Integer(repo), Param::Text(commit)])?;
-        let records = rows.into_iter().map(|columns| {
-            Value::array(columns.into_iter().map(|field| match field {
-                Some(value) => Value::string(value),
-                None => Value::Null,
-            }))
-        }).collect::<Vec<_>>();
+        let records = rows
+            .into_iter()
+            .map(|columns| {
+                Value::array(columns.into_iter().map(|field| match field {
+                    Some(value) => Value::string(value),
+                    None => Value::Null,
+                }))
+            })
+            .collect::<Vec<_>>();
         inventory.push(obj(&[
             ("table", Value::string(table)),
             ("rows", Value::array(records)),
         ]));
     }
-    Ok(digest::sha256(Value::array(inventory).canonical().as_bytes()))
+    Ok(digest::sha256(
+        Value::array(inventory).canonical().as_bytes(),
+    ))
 }
 
 fn snapshot(db: &Db, repo: i64, commit: &str) -> Result<Option<PythonSnapshot>> {
@@ -118,9 +138,7 @@ fn snapshot(db: &Db, repo: i64, commit: &str) -> Result<Option<PythonSnapshot>> 
     }))
 }
 
-fn authenticate_snapshot(
-    db: &Db, repo: i64, commit: &str, record: &PythonSnapshot,
-) -> Result<()> {
+fn authenticate_snapshot(db: &Db, repo: i64, commit: &str, record: &PythonSnapshot) -> Result<()> {
     let observed = python_rows_digest(db, repo, commit)?;
     if record.rows != observed {
         return refuse("stored Python index rows disagree with completed snapshot");
@@ -156,8 +174,12 @@ WHERE newer.repo_id=? AND newer.commit_oid=?
 ORDER BY newer.path";
 
 fn reusable_python(
-    db: &Db, repo: i64, root: &Path, commit: &str,
-    producer: &str, catalog: &str,
+    db: &Db,
+    repo: i64,
+    root: &Path,
+    commit: &str,
+    producer: &str,
+    catalog: &str,
 ) -> Result<Option<(String, BTreeSet<String>)>> {
     let Some(parent) = first_parent(root, commit)? else {
         return Ok(None);
@@ -177,7 +199,11 @@ fn reusable_python(
     authenticate_snapshot(db, repo, &parent, &prior)?;
     let rows = db.query(
         MATCHED_PYTHON_MODULES,
-        &[Param::Text(&parent), Param::Integer(repo), Param::Text(commit)],
+        &[
+            Param::Text(&parent),
+            Param::Integer(repo),
+            Param::Text(commit),
+        ],
     )?;
     let mut paths = BTreeSet::new();
     for row in rows {
@@ -192,14 +218,22 @@ fn reusable_python(
 /// fields. This does not upgrade a static candidate into verified behavior.
 fn carry_python_rows(db: &Db, repo: i64, parent: &str, commit: &str) -> Result<()> {
     let specifications = [
-        ("dependency", "source_name",
-         "source_name,target_name,line,syntax"),
-        ("symbol", "module_name",
-         "module_name,qualname,kind,signature,body_fingerprint,line"),
-        ("api_binding", "module_name",
-         "module_name,public_name,target,explicitly_exported"),
-        ("hazard", "module_name",
-         "module_name,line,reason"),
+        (
+            "dependency",
+            "source_name",
+            "source_name,target_name,line,syntax",
+        ),
+        (
+            "symbol",
+            "module_name",
+            "module_name,qualname,kind,signature,body_fingerprint,line",
+        ),
+        (
+            "api_binding",
+            "module_name",
+            "module_name,public_name,target,explicitly_exported",
+        ),
+        ("hazard", "module_name", "module_name,line,reason"),
     ];
     for (table, module_column, fields) in specifications {
         let sql = format!(
@@ -224,11 +258,18 @@ fn carry_python_rows(db: &Db, repo: i64, parent: &str, commit: &str) -> Result<(
                    AND newer.path LIKE '%.py' AND new_entry.mode=old_entry.mode
              )"
         );
-        db.execute(&sql, &[
-            Param::Integer(repo), Param::Text(commit),
-            Param::Integer(repo), Param::Text(parent),
-            Param::Text(parent), Param::Integer(repo), Param::Text(commit),
-        ])?;
+        db.execute(
+            &sql,
+            &[
+                Param::Integer(repo),
+                Param::Text(commit),
+                Param::Integer(repo),
+                Param::Text(parent),
+                Param::Text(parent),
+                Param::Integer(repo),
+                Param::Text(commit),
+            ],
+        )?;
     }
     Ok(())
 }
@@ -406,9 +447,7 @@ pub fn index_sources(
             blob_reader.finish()?;
             return Ok(());
         }
-        if let Some((parent, paths)) =
-            reusable_python(db, id, root, commit, &producer, &catalog)?
-        {
+        if let Some((parent, paths)) = reusable_python(db, id, root, commit, &producer, &catalog)? {
             reuse_parent = Some(parent);
             reusable_paths = paths;
         }
@@ -419,12 +458,12 @@ pub fn index_sources(
         python_identity = Some((producer, catalog));
     }
 
-    let python_module_catalog = files.iter()
+    let python_module_catalog = files
+        .iter()
         .filter(|(path, _)| path.ends_with(".py"))
-        .map(|(path, (name, _))| obj(&[
-            ("name", Value::string(name)),
-            ("path", Value::string(path)),
-        ]))
+        .map(|(path, (name, _))| {
+            obj(&[("name", Value::string(name)), ("path", Value::string(path))])
+        })
         .collect::<Vec<_>>();
     let mut py = Vec::new();
     let mut js = Vec::new();
@@ -581,9 +620,13 @@ pub fn index_sources(
              (repo_id,commit_oid,producer_sha256,catalog_sha256,rows_sha256,
               parsed_modules,reused_modules) VALUES(?,?,?,?,?,?,?)",
             &[
-                Param::Integer(id), Param::Text(commit),
-                Param::Text(&producer), Param::Text(&catalog), Param::Text(&rows),
-                Param::Integer(parsed as i64), Param::Integer(reused as i64),
+                Param::Integer(id),
+                Param::Text(commit),
+                Param::Text(&producer),
+                Param::Text(&catalog),
+                Param::Text(&rows),
+                Param::Integer(parsed as i64),
+                Param::Integer(reused as i64),
             ],
         )?;
     }

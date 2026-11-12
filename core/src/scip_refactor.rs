@@ -698,8 +698,8 @@ mod tests {
             "rust-analyzer",
             &root,
             &module,
-            &[declaration.clone()],
-            &[shared_type.clone()]
+            std::slice::from_ref(&declaration),
+            std::slice::from_ref(&shared_type)
         ));
         // A real API use from the crate root is not just module layout.
         let mut api_use = declaration.clone();
@@ -709,21 +709,21 @@ mod tests {
             &root,
             &module,
             &[declaration.clone(), api_use],
-            &[shared_type.clone()]
+            std::slice::from_ref(&shared_type)
         ));
         assert!(!likely_rust_module_structure(
             "rust-analyzer",
             &root,
             &module,
-            &[shared_type.clone()],
-            &[declaration.clone()]
+            std::slice::from_ref(&shared_type),
+            std::slice::from_ref(&declaration)
         ));
         assert!(!likely_rust_module_structure(
             "other-indexer",
             &root,
             &module,
-            &[declaration.clone()],
-            &[shared_type.clone()]
+            std::slice::from_ref(&declaration),
+            std::slice::from_ref(&shared_type)
         ));
         let mut nested = module.clone();
         nested.path = "core/src/semantic/worker.rs".into();

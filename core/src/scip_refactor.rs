@@ -180,7 +180,7 @@ fn reference(v: &Reference, documents: &BTreeMap<String, Document>) -> Value {
 /// Recognize one narrowly defined low-signal SCIP shape, without parsing Rust
 /// or treating a path layout as evidence of behavior. This is only advisory
 /// triage: all native references and source identities remain in the report.
-fn crate_root_sibling_module(root: &str, child: &str) -> Option<&str> {
+fn crate_root_sibling_module<'a>(root: &str, child: &'a str) -> Option<&'a str> {
     let (directory, filename) = root.rsplit_once('/')?;
     if !(directory == "src" || directory.ends_with("/src"))
         || !matches!(filename, "lib.rs" | "main.rs")

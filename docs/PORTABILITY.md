@@ -105,6 +105,14 @@ extracts each archive *outside the build checkout*. The extracted binary runs a 
 parser, then refuses a mutated report. This exercises Git access, compiled-in
 SQLite and an actual static dependency; it does not establish completeness.
 An additional musl binary is tested in network-isolated Alpine.
+Before publishing a tag, the release workflow extracts its actual Linux
+archive and runs the public CLI on pinned h11 and Axios revisions using the
+existing independent Git/AST/TypeScript source-import oracle. The release is
+blocked on a missing fixture or mismatched source edge. The test records
+wall-time, report sizes and a whole-run peak-child-RSS observation, while
+remaining explicitly limited to supported static in-repository import edges.
+The publication gate also requires all six distinct platform archives with
+a consistent TypeScript sidecar digest.
 
 The existing Linux verify workflow remains authoritative for full Rust,
 Python, JavaScript and historical suites. A green portability build proves

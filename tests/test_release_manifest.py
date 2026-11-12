@@ -55,6 +55,25 @@ class ManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exact lowercase"):
                 build_manifest(dist, "0.2.0", "HEAD")
 
+    def test_mismatched_sidecar_across_targets_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dist = Path(directory)
+            create_archive(dist, "x86_64-unknown-linux-gnu")
+            other = create_archive(dist, "aarch64-unknown-linux-gnu")
+            # Replacing the second parser after packaging, with an updated
+            # checksum, must not let inconsistent native bundles ship.
+            with tarfile.open(other, "w:gz") as out:
+                payload = b"a different TypeScript parser"
+                member = tarfile.TarInfo("excession/lib/typescript.js")
+                member.size = len(payload)
+                out.addfile(member, io.BytesIO(payload))
+            digest = hashlib.sha256(other.read_bytes()).hexdigest()
+            (dist / (other.name + ".sha256")).write_text(
+                f"{digest}  {other.name}\n", encoding="ascii"
+            )
+            with self.assertRaisesRegex(ValueError, "inconsistent"):
+                build_manifest(dist, "0.2.0", "a" * 40)
+
     def test_missing_sidecar_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             dist = Path(directory)

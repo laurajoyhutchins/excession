@@ -44,9 +44,13 @@ jobs:
         run: cargo nextest run --offline --locked --manifest-path core/Cargo.toml --profile ci
       - name: Rust doctests
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --doc
+      - name: Build CLI for mandatory impact acceptance
+        run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: JavaScript adapter tests
         run: npm run check && npm test
       - name: Python-specific tooling and independent oracle tests (JUnit XML)
+        env:
+          EXCESSION_REQUIRE_BIN: '1'
         run: python3 -m pytest -q tests --junitxml=test-results/python.xml
       - name: Retain test reports on failure
         if: failure()

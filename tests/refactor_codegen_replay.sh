@@ -14,7 +14,7 @@ ID="$(jq -r 'first(.candidates[] | select(.kind == "reciprocal_symbol_references
 test -n "$ID"
 "$BIN" agent context --repo "$OLD" --rev "$OLD_REV" \
   --focus core/src/semantic.rs --task "Extract a shared Rust module" \
-  --limit 8 > "$TMP/agent-context.json"
+  --roots core/src --limit 8 > "$TMP/agent-context.json"
 jq -e --arg base "$OLD_REV" \
   '.schema == "excession.agent-context.v1" and .source_commit == $base and .sources[0].path == "core/src/semantic.rs" and .coverage.status == "PARTIAL" and .safe_to_skip_unlisted_tests == false' \
   "$TMP/agent-context.json"
@@ -64,7 +64,7 @@ jq -n --arg commit "$CANDIDATE" --arg tree "$TREE" \
       exit_code:0,log_sha256:$test}
   ]}' > "$TMP/agent-receipts.json"
 "$BIN" agent verify --repo "$OUT" --base "$OLD_REV" \
-  --candidate "$CANDIDATE" --limit 16 \
+  --candidate "$CANDIDATE" --roots core/src --limit 16 \
   --receipts "$TMP/agent-receipts.json" > "$TMP/agent-verification.json"
 jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" --arg tree "$TREE" \
   '.schema == "excession.agent-verification.v1" and .base_commit == $base

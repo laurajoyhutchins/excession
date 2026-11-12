@@ -128,7 +128,6 @@ fn schema_rejects_false_verification_and_missing_identity() {
     assert!(!schema.is_valid(&duplicate));
 }
 
-
 #[test]
 fn cli_appends_and_audits_uncertainty_without_fabricating_verification() {
     use std::process::{Command, Output};

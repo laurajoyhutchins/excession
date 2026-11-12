@@ -93,9 +93,10 @@ hermetic OS image. Run `excession doctor --json` to inspect local capabilities.
 
 ## Test reports
 
-`make check` runs Rust format/Clippy/tests and JavaScript adapter tests.
-`make check-full` additionally runs opt-in Python integration checks and
-independent oracles. The CI Verify workflow still runs both suites;
+`make check` runs Rust formatting, Clippy, Rust library unit tests and
+JavaScript adapter tests. It does not run Rust integration tests that invoke
+Python-native oracles. `make check-full` additionally runs those full Rust
+integration tests plus Python tooling and independent oracles. The CI Verify workflow still runs both suites;
 optional Python dependencies are installed after the Rust/JS steps.
 For JUnit XML, install `cargo-nextest` 0.9.151 and use `make junit` after
 installing the Python test dependencies. Reports are written to

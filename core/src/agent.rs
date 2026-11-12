@@ -440,14 +440,14 @@ mod tests {
     #[test]
     fn pinned_context_and_verify_keep_unsupported_work_explicit() {
         let (root, base, candidate) = git_fixture();
-        let context = context(
+        let ctx = context(
             &root, &base, "src/service.rs",
             Some("change service"), 4, None, None,
         ).unwrap();
-        assert_eq!(context.get("source_commit").unwrap().str().unwrap(), base);
-        assert_eq!(context.get("relationships").unwrap().array_ref().unwrap().len(), 0);
-        assert_eq!(context.get("test_candidates").unwrap().array_ref().unwrap().len(), 1);
-        assert!(!context.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+        assert_eq!(ctx.get("source_commit").unwrap().str().unwrap(), base);
+        assert_eq!(ctx.get("relationships").unwrap().array_ref().unwrap().len(), 0);
+        assert_eq!(ctx.get("test_candidates").unwrap().array_ref().unwrap().len(), 1);
+        assert!(!ctx.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
         assert!(context(&root, &base, "../outside", None, 4, None, None).is_err());
         assert!(context(&root, &base, "missing.rs", None, 4, None, None).is_err());
 

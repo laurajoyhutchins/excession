@@ -47,7 +47,9 @@ fn cargo_errors(bytes: &[u8], prefix: &str) -> Result<Vec<ErrorLocation>> {
             .and_then(Json::as_str)
             .unwrap_or("");
         let reason = message.get("message").and_then(Json::as_str).unwrap_or("");
-        if reason.len() > 1024 { return refuse("compiler diagnostic message exceeds bound"); }
+        if reason.len() > 1024 {
+            return refuse("compiler diagnostic message exceeds bound");
+        }
         if !matches!(code, "E0432" | "E0425" | "E0433") {
             continue;
         }

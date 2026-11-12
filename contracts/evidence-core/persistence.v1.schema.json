@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/persistence.v1.schema.json",
+  "title": "Excession immutable evidence snapshot manifest v1",
+  "description": "Complete membership manifest of retained producer receipts and normalized observations; source identity/semantic/execution verification remains separate. IDs are domain-separated content hashes validated in Rust.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "snapshot_id",
+    "source_commit",
+    "source_authentication",
+    "receipt_ids",
+    "observation_ids"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.evidence-snapshot.v1"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "source_authentication": {
+      "const": "NOT_CHECKED"
+    },
+    "receipt_ids": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "observation_ids": {
+      "type": "array",
+      "maxItems": 20000,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    }
+  }
+}

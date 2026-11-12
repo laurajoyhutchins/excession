@@ -240,7 +240,7 @@
           }
         ]
       },
-      "maxItems": 10000
+      "maxItems": 20000
     },
     "gaps": {
       "type": "array",

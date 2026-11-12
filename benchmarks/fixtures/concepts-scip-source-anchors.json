@@ -1,0 +1,62 @@
+{
+  "schema": "excession.concepts-source-anchors.v1",
+  "description": "Hand-selected, source-checked static imports in pinned repositories. Positive subset only, not exhaustive semantics or behavioral equivalence.",
+  "cases": [
+    {
+      "fixture": "itsdangerous",
+      "language": "python",
+      "source": "src/itsdangerous/serializer.py",
+      "target": "src/itsdangerous/signer.py",
+      "kind": "RELATIVE_PYTHON_IMPORT",
+      "module": "signer"
+    },
+    {
+      "fixture": "click",
+      "language": "python",
+      "source": "src/click/core.py",
+      "target": "src/click/parser.py",
+      "kind": "RELATIVE_PYTHON_IMPORT",
+      "module": "parser"
+    },
+    {
+      "fixture": "requests",
+      "language": "python",
+      "source": "src/requests/sessions.py",
+      "target": "src/requests/models.py",
+      "kind": "RELATIVE_PYTHON_IMPORT",
+      "module": "models"
+    },
+    {
+      "fixture": "axios",
+      "language": "typescript",
+      "source": "lib/adapters/http.js",
+      "target": "lib/utils.js",
+      "kind": "ESM_IMPORT",
+      "specifier": "../utils.js"
+    },
+    {
+      "fixture": "excession",
+      "language": "rust",
+      "source": "core/src/concepts_scip.rs",
+      "target": "core/src/scip_refactor.rs",
+      "kind": "RUST_CRATE_USE",
+      "module": "scip_refactor"
+    },
+    {
+      "fixture": "excession",
+      "language": "rust",
+      "source": "core/src/concepts_compile.rs",
+      "target": "core/src/concepts_normalize.rs",
+      "kind": "RUST_CRATE_USE",
+      "module": "concepts_normalize"
+    },
+    {
+      "fixture": "excession",
+      "language": "rust",
+      "source": "core/src/scip_refactor.rs",
+      "target": "core/src/git.rs",
+      "kind": "RUST_CRATE_USE",
+      "module": "git"
+    }
+  ]
+}

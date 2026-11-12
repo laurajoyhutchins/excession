@@ -1,0 +1,80 @@
+name: Rust native SCIP concepts oracle
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/concepts-rust-scip.yml
+      - benchmarks/experiments/scip_self_oracle.py
+      - benchmarks/experiments/concepts_scip_oracle.py
+      - benchmarks/experiments/scip_source_anchors.py
+      - benchmarks/fixtures/concepts-scip-source-anchors.json
+      - core/src/scip_refactor.rs
+      - core/src/concepts_scip.rs
+      - core/src/concepts_compile.rs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-rust-scip:
+    # Deep indexing only when its own paths change or explicitly dispatched.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Rust toolchain and native SCIP indexer
+        shell: bash
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rust-analyzer
+          rustup run 1.99.1 rust-analyzer --version
+      - name: Restore pinned official SCIP decoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/scip-cli"
+          curl -fLsS --retry 3 \
+            https://github.com/scip-code/scip/releases/download/v0.10.0/scip-linux-amd64.tar.gz \
+            -o "$RUNNER_TEMP/scip-cli/scip.tar.gz"
+          echo "eeb28ebbff443c01609fb1691809958f3f0c7a8651af689a5bc8560061cd8ab0  $RUNNER_TEMP/scip-cli/scip.tar.gz" | sha256sum --check --status
+          tar -xzf "$RUNNER_TEMP/scip-cli/scip.tar.gz" -C "$RUNNER_TEMP/scip-cli" scip
+      - name: Compile Excession against locked dependencies
+        shell: bash
+        run: |
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Generate real Rust SCIP with the language-native indexer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd core
+          # rust-analyzer scip writes index.scip in its cwd; it does not
+          # stream the protobuf to stdout. Preserve upstream diagnostics.
+          rustup run 1.99.1 rust-analyzer scip . \
+            2>"$RUNNER_TEMP/rust-analyzer-scip.log"
+          test -s index.scip
+          mv index.scip "$RUNNER_TEMP/excession.scip"
+          "$RUNNER_TEMP/scip-cli/scip" print --json "$RUNNER_TEMP/excession.scip" > "$RUNNER_TEMP/excession-scip.json"
+          test -s "$RUNNER_TEMP/excession-scip.json"
+      - name: Independently reconstruct Git-bound native references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/experiments/scip_self_oracle.py \
+            --bin core/target/debug/excession \
+            --repo . --source-prefix core \
+            --index "$RUNNER_TEMP/excession-scip.json" \
+            --indexer-diagnostics "$RUNNER_TEMP/rust-analyzer-scip.log" \
+            --out rust-scip-oracle-evidence
+      - name: Preserve actual native index and independent audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-native-scip-and-oracle
+          path: |
+            rust-scip-oracle-evidence/
+            ${{ runner.temp }}/excession-scip.json
+            ${{ runner.temp }}/rust-analyzer-scip.log
+          if-no-files-found: warn

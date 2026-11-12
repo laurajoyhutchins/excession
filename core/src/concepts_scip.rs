@@ -10,7 +10,7 @@ use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const MAX_REFERENCE_BATCH: usize = 10_000;
+const MAX_REFERENCE_BATCH: usize = 20_000;
 const PRODUCER: &str = "excession.scip-references.v1";
 
 fn subject(commit: &str, receipt: &str, source: &Value, line: Option<i64>) -> Result<Value> {
@@ -67,7 +67,7 @@ fn normalize_report(native: &Value) -> Result<Value> {
     let receipt = native.get("report_id")?.str()?;
     let refs = native.get("references")?.array_ref()?;
     if refs.len() > MAX_REFERENCE_BATCH {
-        return refuse("SCIP concept reference batch exceeds 10000 observations");
+        return refuse("SCIP concept reference batch exceeds 20000 observations");
     }
     let mut docs = BTreeMap::new();
     for source in native.get("documents")?.array_ref()? {

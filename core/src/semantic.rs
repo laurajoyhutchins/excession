@@ -5,11 +5,245 @@ use crate::adapter;
 use crate::digest;
 use crate::git::{self, Entry};
 use crate::index::module_name_with_import_base;
-use crate::json::Value;
+use crate::json::{Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+
+
+#[derive(Clone)]
+struct PythonSnapshot {
+    producer: String,
+    catalog: String,
+    rows: String,
+}
+
+/// The compiled Rust semantic policy, exact CPython adapter and interpreter
+/// version are part of the reuse identity. A changed producer forces parsing.
+fn python_producer() -> Result<String> {
+    let result = adapter::python_command()
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("Python version probe failed: {e}"))?;
+    if !result.status.success() {
+        return refuse("Python interpreter version probe failed");
+    }
+    let version = if result.stdout.is_empty() {
+        &result.stderr
+    } else {
+        &result.stdout
+    };
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"excession-python-incremental-v1\\0");
+    bytes.extend_from_slice(include_str!("semantic.rs").as_bytes());
+    bytes.extend_from_slice(include_str!("../adapters/python_ast.py").as_bytes());
+    bytes.extend_from_slice(version);
+    Ok(digest::sha256(&bytes))
+}
+
+fn python_catalog(
+    files: &BTreeMap<String, (String, String)>,
+    roots: &[&str],
+    import_base: Option<&str>,
+) -> String {
+    let modules = files.iter()
+        .filter(|(path, _)| path.ends_with(".py"))
+        .map(|(path, (name, _))| obj(&[
+            ("name", Value::string(name)),
+            ("path", Value::string(path)),
+        ]))
+        .collect::<Vec<_>>();
+    let mut roots = roots.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    roots.sort();
+    roots.dedup();
+    let catalog = obj(&[
+        ("modules", Value::array(modules)),
+        ("roots", Value::array(roots.iter().map(Value::string))),
+        ("import_base", Value::string(import_base.unwrap_or(""))),
+    ]);
+    digest::sha256(catalog.canonical().as_bytes())
+}
+
+/// Hash every persisted semantic row as a closed, canonical table inventory.
+/// An omitted row is detectable; source paths/blobs are authenticated by the
+/// Git tree reconstruction, not by trusting these hashes alone.
+fn python_rows_digest(db: &Db, repo: i64, commit: &str) -> Result<String> {
+    let tables = [
+        ("module", "name,path,blob_oid,is_test", "name,path"),
+        ("dependency", "source_name,target_name,line,syntax",
+         "source_name,target_name,line,syntax"),
+        ("symbol", "module_name,qualname,kind,signature,body_fingerprint,line",
+         "module_name,qualname"),
+        ("api_binding", "module_name,public_name,target,explicitly_exported",
+         "module_name,public_name"),
+        ("hazard", "module_name,line,reason", "module_name,line,reason"),
+    ];
+    let mut inventory = Vec::new();
+    for (table, fields, order) in tables {
+        let sql = format!(
+            "SELECT {fields} FROM {table} WHERE repo_id=? AND commit_oid=? ORDER BY {order}"
+        );
+        let rows = db.query(&sql, &[Param::Integer(repo), Param::Text(commit)])?;
+        let records = rows.into_iter().map(|columns| {
+            Value::array(columns.into_iter().map(|field| match field {
+                Some(value) => Value::string(value),
+                None => Value::Null,
+            }))
+        }).collect::<Vec<_>>();
+        inventory.push(obj(&[
+            ("table", Value::string(table)),
+            ("rows", Value::array(records)),
+        ]));
+    }
+    Ok(digest::sha256(Value::array(inventory).canonical().as_bytes()))
+}
+
+fn snapshot(db: &Db, repo: i64, commit: &str) -> Result<Option<PythonSnapshot>> {
+    let rows = db.query(
+        "SELECT producer_sha256,catalog_sha256,rows_sha256
+         FROM python_index_snapshot WHERE repo_id=? AND commit_oid=?",
+        &[Param::Integer(repo), Param::Text(commit)],
+    )?;
+    if rows.len() > 1 {
+        return refuse("ambiguous Python index snapshot");
+    }
+    let Some(row) = rows.into_iter().next() else {
+        return Ok(None);
+    };
+    Ok(Some(PythonSnapshot {
+        producer: row[0].clone().ok_or("missing index producer")?,
+        catalog: row[1].clone().ok_or("missing index catalog")?,
+        rows: row[2].clone().ok_or("missing index row receipt")?,
+    }))
+}
+
+fn authenticate_snapshot(
+    db: &Db, repo: i64, commit: &str, record: &PythonSnapshot,
+) -> Result<()> {
+    let observed = python_rows_digest(db, repo, commit)?;
+    if record.rows != observed {
+        return refuse("stored Python index rows disagree with completed snapshot");
+    }
+    Ok(())
+}
+
+fn first_parent(root: &Path, commit: &str) -> Result<Option<String>> {
+    let line = git::text(root, &["rev-list", "--parents", "-n", "1", commit])?;
+    let items = line.split_whitespace().collect::<Vec<_>>();
+    if items.len() == 2 && items[0] == commit {
+        return Ok(Some(git::oid(items[1])?));
+    }
+    // Root and merge commits deliberately use the full-index path.
+    Ok(None)
+}
+
+const MATCHED_PYTHON_MODULES: &str = "
+SELECT newer.path
+FROM module AS newer
+JOIN module AS older
+  ON older.repo_id=newer.repo_id AND older.commit_oid=?
+ AND older.name=newer.name AND older.path=newer.path
+ AND older.blob_oid=newer.blob_oid AND older.is_test=newer.is_test
+JOIN tree_entry AS new_entry
+  ON new_entry.repo_id=newer.repo_id
+ AND new_entry.commit_oid=newer.commit_oid AND new_entry.path=newer.path
+JOIN tree_entry AS old_entry
+  ON old_entry.repo_id=older.repo_id
+ AND old_entry.commit_oid=older.commit_oid AND old_entry.path=older.path
+WHERE newer.repo_id=? AND newer.commit_oid=?
+  AND newer.path LIKE '%.py' AND new_entry.mode=old_entry.mode
+ORDER BY newer.path";
+
+fn reusable_python(
+    db: &Db, repo: i64, root: &Path, commit: &str,
+    producer: &str, catalog: &str,
+) -> Result<Option<(String, BTreeSet<String>)>> {
+    let Some(parent) = first_parent(root, commit)? else {
+        return Ok(None);
+    };
+    let Some(prior) = snapshot(db, repo, &parent)? else {
+        return Ok(None);
+    };
+    if prior.producer != producer || prior.catalog != catalog {
+        return Ok(None);
+    }
+    // Authenticate the parent against actual Git, not just internally
+    // self-consistent SQLite rows. Reuse of an untrusted snapshot is refused.
+    let actual = git::rev(root, &format!("{parent}^{{tree}}"))?;
+    if crate::index::reconstruct_tree(db, repo, &parent)? != actual {
+        return refuse("parent Git tree differs from stored index");
+    }
+    authenticate_snapshot(db, repo, &parent, &prior)?;
+    let rows = db.query(
+        MATCHED_PYTHON_MODULES,
+        &[Param::Text(&parent), Param::Integer(repo), Param::Text(commit)],
+    )?;
+    let mut paths = BTreeSet::new();
+    for row in rows {
+        if !paths.insert(row[0].clone().ok_or("null reusable module path")?) {
+            return refuse("duplicate reusable module identity");
+        }
+    }
+    Ok(Some((parent, paths)))
+}
+
+/// Copy original observations into the new revision, preserving all semantic
+/// fields. This does not upgrade a static candidate into verified behavior.
+fn carry_python_rows(db: &Db, repo: i64, parent: &str, commit: &str) -> Result<()> {
+    let specifications = [
+        ("dependency", "source_name",
+         "source_name,target_name,line,syntax"),
+        ("symbol", "module_name",
+         "module_name,qualname,kind,signature,body_fingerprint,line"),
+        ("api_binding", "module_name",
+         "module_name,public_name,target,explicitly_exported"),
+        ("hazard", "module_name",
+         "module_name,line,reason"),
+    ];
+    for (table, module_column, fields) in specifications {
+        let sql = format!(
+            "INSERT INTO {table}(repo_id,commit_oid,{fields})
+             SELECT ?,?,{fields}
+             FROM {table} AS previous
+             WHERE previous.repo_id=? AND previous.commit_oid=?
+             AND previous.{module_column} IN (
+                 SELECT newer.name
+                 FROM module AS newer
+                 JOIN module AS older
+                   ON older.repo_id=newer.repo_id AND older.commit_oid=?
+                  AND older.name=newer.name AND older.path=newer.path
+                  AND older.blob_oid=newer.blob_oid AND older.is_test=newer.is_test
+                 JOIN tree_entry AS new_entry
+                   ON new_entry.repo_id=newer.repo_id
+                  AND new_entry.commit_oid=newer.commit_oid AND new_entry.path=newer.path
+                 JOIN tree_entry AS old_entry
+                   ON old_entry.repo_id=older.repo_id
+                  AND old_entry.commit_oid=older.commit_oid AND old_entry.path=older.path
+                 WHERE newer.repo_id=? AND newer.commit_oid=?
+                   AND newer.path LIKE '%.py' AND new_entry.mode=old_entry.mode
+             )"
+        );
+        db.execute(&sql, &[
+            Param::Integer(repo), Param::Text(commit),
+            Param::Integer(repo), Param::Text(parent),
+            Param::Text(parent), Param::Integer(repo), Param::Text(commit),
+        ])?;
+    }
+    Ok(())
+}
+
+fn clear_derived_rows(db: &Db, repo: i64, commit: &str) -> Result<()> {
+    // Older databases might have been indexed before receipts existed. Rebuild
+    // instead of allowing INSERT OR IGNORE to preserve stale derived rows.
+    for table in ["dependency", "symbol", "api_binding", "hazard"] {
+        db.execute(
+            &format!("DELETE FROM {table} WHERE repo_id=? AND commit_oid=?"),
+            &[Param::Integer(repo), Param::Text(commit)],
+        )?;
+    }
+    Ok(())
+}
 
 fn put_dependency(
     db: &Db,

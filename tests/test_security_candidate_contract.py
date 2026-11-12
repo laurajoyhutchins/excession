@@ -133,7 +133,8 @@ class SecurityDiscoveryContractTests(unittest.TestCase):
         }))
 
     def test_unscanned_source_scope_cannot_claim_applicability(self):
-        self.assert_invalid(lambda x: x["coverages"][0]["target"].update(source_scope="other"))
+        self.assert_invalid(lambda x: (x["coverages"][0]["target"].update(source_scope="other"),
+                                       x["scan"]["scope"].update(include_paths=["starlette"])))
         self.assert_invalid(lambda x: x["scan"]["scope"].update(include_paths=["src"]))
 
 

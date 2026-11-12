@@ -201,47 +201,120 @@ fn cli_appends_and_audits_uncertainty_without_fabricating_verification() {
     };
 
     let created = accept(run(&[
-        "evidence", "unknown-append", "--db", database,
-        "--snapshot", &snapshot, "--question", question,
-        "--expected", "0", "--action", "CREATE", "--support", &support,
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "0",
+        "--action",
+        "CREATE",
+        "--support",
+        &support,
     ]));
     assert!(event_schema().is_valid(&created));
     assert_eq!(created["state"], "OPEN");
     let unknown = created["unknown_id"].as_str().unwrap();
     reject(run(&[
-        "evidence", "unknown-append", "--db", database,
-        "--snapshot", &snapshot, "--question", question,
-        "--expected", "0", "--action", "CREATE", "--support", &support,
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "0",
+        "--action",
+        "CREATE",
+        "--support",
+        &support,
     ]));
     reject(run(&[
-        "evidence", "unknown-append", "--db", database,
-        "--snapshot", &snapshot, "--question", question,
-        "--expected", "1", "--action", "CLOSE_PROVEN_SAFE", "--support", &support,
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "1",
+        "--action",
+        "CLOSE_PROVEN_SAFE",
+        "--support",
+        &support,
     ]));
     let reported = accept(run(&[
-        "evidence", "unknown-append", "--db", database,
-        "--snapshot", &snapshot, "--question", question,
-        "--expected", "1", "--action", "PROPOSE_RESOLUTION",
-        "--support", &support, "--resolution", &support,
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "1",
+        "--action",
+        "PROPOSE_RESOLUTION",
+        "--support",
+        &support,
+        "--resolution",
+        &support,
     ]));
     assert!(event_schema().is_valid(&reported));
     assert_eq!(reported["state"], "RESOLUTION_REPORTED_NOT_VERIFIED");
     assert_eq!(reported["semantic_verification"], "NOT_ESTABLISHED");
     reject(run(&[
-        "evidence", "unknown-append", "--db", database,
-        "--snapshot", &snapshot, "--question", question,
-        "--expected", "2", "--action", "REOPEN", "--support", &support,
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "2",
+        "--action",
+        "REOPEN",
+        "--support",
+        &support,
     ]));
     let reopened = accept(run(&[
-        "evidence", "unknown-append", "--db", database,
-        "--snapshot", &snapshot, "--question", question,
-        "--expected", "2", "--action", "REOPEN",
-        "--support", &support, "--counter", &counter,
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "2",
+        "--action",
+        "REOPEN",
+        "--support",
+        &support,
+        "--counter",
+        &counter,
     ]));
     assert!(event_schema().is_valid(&reopened));
     assert_eq!(reopened["state"], "OPEN");
     let report = accept(run(&[
-        "inspect", "unknown-history", "--db", database, "--id", unknown,
+        "inspect",
+        "unknown-history",
+        "--db",
+        database,
+        "--id",
+        unknown,
     ]));
     assert_eq!(report["schema"], "excession.unknown-history.v1");
     assert_eq!(report["events"].as_array().unwrap().len(), 3);
@@ -251,7 +324,12 @@ fn cli_appends_and_audits_uncertainty_without_fabricating_verification() {
     assert_eq!(report["events"][1]["event_id"], reported["event_id"]);
     assert_eq!(report["events"][2]["event_id"], reopened["event_id"]);
     reject(run(&[
-        "inspect", "unknown-history", "--db", database, "--id", &"f".repeat(64),
+        "inspect",
+        "unknown-history",
+        "--db",
+        database,
+        "--id",
+        &"f".repeat(64),
     ]));
     drop(report);
     std::fs::remove_file(path).unwrap();

@@ -99,25 +99,108 @@ original SARIF/JSON, or Rust SQLite database. Only the existing Rust
 `security ingest` and `security audit` operations establish the
 source-bound replay claim.
 
-## Fast TDD check
+## Projection adapter: implemented
 
-```sh
+[The projection adapter](../tools/project_security_discovery.py) consumes
+the **unchanged raw scanner report**, the **original Rust ingest SQLite file**,
+the Rust ingest receipt, and the independently replayed Rust audit receipt.
+It does not reimplement the scanner parsers or perform source authentication;
+Rust ingest/audit must first run on the exact checked-out Git source.
+
+The adapter additionally consumes:
+
+- A JSON \`--config\` object with
+  \`schema=excession.security.projection-input.v1\`,
+  \`repository\`, \`scanner\`, \`ruleset\`, \`scope\`,
+  \`execution_evidence_refs\`, and \`coverages\`.
+  The scanner/ruleset/scope entries use the same shapes as the scan schema.
+  Each coverage entry supplies \`target\`, \`claim\`, \`rule_ids\` and
+  \`evidence_refs\` in the coverage schema's shapes.
+- Exact \`--ruleset-configuration\` bytes whose SHA-256 equals the
+  \`ruleset.configuration_sha256\` recorded in the config. This binds
+  the supplied configuration *descriptor* to its digest. **It does not
+  independently prove that a scanner executed those bytes.** Scanner
+  execution provenance remains an input assertion and must be checked
+  against the original job's trustworthy logs/artifacts.
+
+Example for a completed **Semgrep** ingest, with corresponding original
+CodeQL report/database/receipts supported by \`--engine\`-specific inputs:
+
+\`\`\`sh
+python3 tools/project_security_discovery.py \
+  --config scan-configuration.json \
+  --ruleset-configuration scanner-selection.json \
+  --report semgrep.json \
+  --database semgrep.sqlite \
+  --ingest-receipt semgrep-ingest.json \
+  --audit-receipt semgrep-audit.json \
+  --output projection.json
+python3 tools/validate_security_discovery_contract.py projection.json
+\`\`\`
+
+The output is exactly \`{scan,coverages,candidates}\`, and passing the
+relational validator is a required part of projection. The adapter checks
+the raw report SHA-256, report length, the Rust NUL-delimited run ID,
+candidate logical keys and evidence IDs, all SQLite row counts and
+foreign keys, the separately replayed audit receipt, and exact raw
+report-result correspondence. Original SARIF code flows remain in
+the original report and SQLite, not a newly interpreted model.
+
+**No scanner alert is dropped for lack of declared rule applicability.**
+An unmatched rule becomes a source-file-scoped
+\`SCANNED_APPLICABILITY_UNPROVEN\` coverage record, with
+\`UNMAPPED_SCANNER_RULE\` family. Framework-specific rules can be recorded
+as \`SCANNED_NOT_APPLICABLE\` only when the caller explicitly supplies
+that claim and its supporting references. Source-bound results remain
+\`UNVERIFIED_STATIC_CANDIDATE\`; none is adjudicated by this adapter.
+
+The first adapter version deliberately handles **completed, single-language
+scans**. It refuses incomplete report/receipt joins, inconsistent source
+scope, ambiguous coverage mappings and duplicated original results.
+Multi-language applicability, rule-pack execution attestation and
+cross-revision semantic identity are future work.
+
+### Actual artifact replay (separate from prospective validation)
+
+A one-time [archived-run replay #43132217257](https://github.com/laurajoyhutchins/excession/actions/runs/43132217257)
+successfully projected the **actual historical aiohttp reports** from
+[held-out source run #43115695557](https://github.com/laurajoyhutchins/excession/actions/runs/43115695557):
+
+- **Semgrep:** 108 audited candidates, including 80 Django-specific
+  findings classified as framework-inapplicable (79 rate-limiting
+  and 1 HTML formatting) and 28 retained as applicability-unproven.
+- **CodeQL:** 1 audited \`py/log-injection\` candidate, retained with
+  unproven applicability to the recorded target.
+- **CWE-22:** neither scanner supplied a candidate for the known
+  parent-traversal behavior. Both receive an explicit
+  \`SCANNED_APPLICABILITY_UNPROVEN\` coverage record, not a safe verdict.
+
+The [replayed JSON output and configuration inputs](https://github.com/laurajoyhutchins/excession/actions/runs/43132217257/artifacts/13905108716)
+are retained as an Actions artifact. They demonstrate compatibility
+with actual scanner output, **not prospective detection accuracy**.
+The replay used metadata from an already completed scan, so it cannot
+be counted as a new held-out detection experiment.
+
+The temporary replay workflow was intentionally removed after success
+to avoid a permanently wired CI dependency on 30-day artifact retention.
+
+## Fast verification
+
+\`\`\`sh
 python3 -m unittest discover -s tests -p test_security_candidate_contract.py -v
+python3 -m unittest discover -s tests -p test_security_projection.py -v
 python3 tools/validate_security_discovery_contract.py tests/fixtures/security-discovery.v1.json
-```
+\`\`\`
 
-All fixtures use **synthetic** identities. No scanner/network execution
-is required and these tests make no assertion about detection accuracy.
+Synthetic tests exercise both report formats and SQLite ingest identities;
+they do not invoke scanners or establish source-level vulnerability behavior.
+The real replay above verifies compatibility on actual archived scanner
+outputs. Ordinary commit CI runs the pure tests only.
 
-## Next implementation boundary
+## Next independent experiment
 
-Build one normalization adapter on the existing scanner ingestion output,
-not a second scanner parser. Its inputs are the immutable report bytes,
-Rust ingest/audit receipts, pinned scanner execution metadata, and
-explicit rule applicability evidence. It produces execution/coverage/
-candidate records as a projection, not as another source of authority.
-
-Then freeze a **new prospective evaluation cohort** before invoking scanners.
-Keep scanner runs out of ordinary commit CI; run fast schema and relational
-tests there. Behavioral reproducibility and weakness-family sensitivity must
-be established separately before computing accuracy estimates.
+Freeze a **new** prospective evaluation cohort before invoking or tuning
+scanners. Preserve the historical Starlette/aiohttp negative result.
+Keep scanner execution and independent behavior checks out of fast commit CI.
+No precision, recall, reachability or CVE-confirmation claim follows
+from either a successful projection or the archived held-out experiment.

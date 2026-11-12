@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/concepts/scip-references.v1.schema.json",
+  "title": "Excession Git-bound SCIP reference facts v1",
+  "description": "Exact cross-file reference subset of official SCIP JSON tied to Git blobs; source-bound native index observations, not a semantic proof or independently executed indexer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "source_commit",
+    "source_tree",
+    "index_sha256",
+    "indexer",
+    "documents",
+    "references",
+    "coverage",
+    "report_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.scip-references.v1"
+    },
+    "status": {
+      "const": "GIT_BOUND_INDEX_NOT_REEXECUTED"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/oid"
+    },
+    "index_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "indexer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "documents": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 1500,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "references": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to",
+          "symbol",
+          "line",
+          "relation"
+        ],
+        "properties": {
+          "from": {
+            "$ref": "#/$defs/source"
+          },
+          "to": {
+            "$ref": "#/$defs/source"
+          },
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "relation": {
+            "const": "SCIP_SYMBOL_REFERENCE"
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "indexed_occurrences",
+        "unresolved_references",
+        "matched_cross_file_references",
+        "line_only_position_documents",
+        "indexed_documents",
+        "languages",
+        "completeness"
+      ],
+      "properties": {
+        "indexed_occurrences": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "unresolved_references": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_cross_file_references": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "line_only_position_documents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "indexed_documents": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1500
+        },
+        "languages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "completeness": {
+          "const": "PARTIAL_INDEX_SCOPE_ONLY"
+        }
+      }
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "blob",
+        "language"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "blob": {
+          "$ref": "#/$defs/oid"
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    }
+  }
+}

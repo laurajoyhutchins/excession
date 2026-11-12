@@ -1,8 +1,8 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
-use excession::analyze;
 use excession::agent;
+use excession::analyze;
 use excession::change_inventory;
 use excession::discovery;
 use excession::doctor;
@@ -484,7 +484,7 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?)),
                 _ => refuse(format!("unknown agent command: {sub}")),
             }
-        },
+        }
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
         [top] if top == "analyze" => {
             let (report, db_path) = analyze::run(

@@ -1,0 +1,59 @@
+name: SQLite statement cache A/B
+
+on:
+  pull_request:
+    paths:
+      - 'core/Cargo.toml'
+      - 'core/src/sqlite.rs'
+      - 'benchmarks/experiments/sqlite_statement_ab.py'
+      - '.github/workflows/sqlite-statement-ab.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+
+      - name: Build original main at exact PR base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CARGO_TARGET_DIR: ${{ runner.temp }}/sqlite-ab-target
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/sqlite-ab-base" "$BASE_SHA"
+          cargo +1.99.1 build --release --locked --manifest-path "$RUNNER_TEMP/sqlite-ab-base/core/Cargo.toml" --bin excession
+          cp "$CARGO_TARGET_DIR/release/excession" "$RUNNER_TEMP/excession-original"
+
+      - name: Build candidate with same toolchain
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/sqlite-ab-target
+        run: |
+          cargo +1.99.1 build --release --locked --manifest-path core/Cargo.toml --bin excession
+          cp "$CARGO_TARGET_DIR/release/excession" "$RUNNER_TEMP/excession-candidate"
+
+      - name: Compare source-bound output and report A/B timings
+        run: |
+          python3 benchmarks/experiments/sqlite_statement_ab.py \
+            --baseline-bin "$RUNNER_TEMP/excession-original" \
+            --candidate-bin "$RUNNER_TEMP/excession-candidate" \
+            --repetitions 5 --out sqlite-statement-ab-results.json
+
+      - name: Publish results, including failure reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-statement-ab-results
+          path: sqlite-statement-ab-results.json
+          if-no-files-found: warn

@@ -211,12 +211,13 @@ mod tests {
             );
             assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
             assert!(db.execute("SELECT * FROM sample", &[]).is_err());
-            assert!(db
-                .execute(
+            assert!(
+                db.execute(
                     "INSERT INTO sample(id,description) VALUES(45,'must refuse') RETURNING id",
                     &[],
                 )
-                .is_err());
+                .is_err()
+            );
             assert_eq!(
                 db.scalar("SELECT COUNT(*) FROM sample", &[]).unwrap(),
                 "2",

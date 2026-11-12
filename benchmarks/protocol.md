@@ -44,7 +44,7 @@ whether the index describes all language-level relations.
 
 ## Experimental status
 
-- **Executable:** `experiments/relationships.py` constructs pinned multi-revision
+- **Executable:** `excession benchmark run-relational` (Rust) constructs pinned multi-revision
   Git histories from a source-written relationship oracle, independently checks
   the indexed edge set and times paired graph/compact-view source queries.
   Size, fanout, revision count and repetition count are configurable. Index

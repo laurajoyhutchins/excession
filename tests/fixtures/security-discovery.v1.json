@@ -1,0 +1,90 @@
+{
+  "scan": {
+    "schema": "excession.security.scan.v1",
+    "scan_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source": {
+      "repository": "example/repo",
+      "commit": "dddddddddddddddddddddddddddddddddddddddd"
+    },
+    "scanner": {
+      "engine": "codeql",
+      "version": "2.27.4",
+      "toolchain_ref": "github/codeql-action@9418214df1f2c4b8128c770156c409013b07d6b9"
+    },
+    "ruleset": {
+      "immutable_ref": "codeql-security-extended@frozen-commit",
+      "configuration_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "selection": [
+        "security-extended"
+      ]
+    },
+    "scope": {
+      "languages": [
+        "python"
+      ],
+      "include_paths": [
+        "."
+      ],
+      "excluded_paths": []
+    },
+    "execution": {
+      "status": "COMPLETE",
+      "exit_code": 0,
+      "errors": [],
+      "evidence_refs": [
+        "ci:run/123/job/456"
+      ]
+    },
+    "report": {
+      "format": "SARIF_2_1_0",
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "bytes": 4096
+    },
+    "ingest": {
+      "run_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "independently_replayed": true
+    }
+  },
+  "coverages": [
+    {
+      "schema": "excession.security.coverage.v1",
+      "coverage_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "scan_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "target": {
+        "language": "python",
+        "framework": "Starlette",
+        "weakness_family": "CWE-22",
+        "source_scope": "."
+      },
+      "claim": "SCANNED_APPLICABLE",
+      "rule_ids": [
+        "py/path-injection"
+      ],
+      "evidence_refs": [
+        "query-pack:metadata/path-injection",
+        "ci:run/123/analyzer"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "schema": "excession.security.candidate.v1",
+      "candidate_id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "logical_key": "1111111111111111111111111111111111111111111111111111111111111111",
+      "scan_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "coverage_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "source": {
+        "path": "starlette/staticfiles.py",
+        "blob": "2222222222222222222222222222222222222222",
+        "start_line": 176,
+        "end_line": 176
+      },
+      "rule_id": "py/path-injection",
+      "raw_result": {
+        "json_pointer": "/runs/0/results/0",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "claim": "UNVERIFIED_STATIC_CANDIDATE"
+    }
+  ]
+}

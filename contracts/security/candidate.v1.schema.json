@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/security/candidate.v1.schema.json",
+  "title": "Unadjudicated source-bound scanner result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "candidate_id",
+    "logical_key",
+    "scan_id",
+    "coverage_id",
+    "source",
+    "rule_id",
+    "raw_result",
+    "claim"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.security.candidate.v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "logical_key": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "scan_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "coverage_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "blob",
+        "start_line"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*://)(?!.*[?#%]).+$"
+        },
+        "blob": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "start_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "rule_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "raw_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "json_pointer",
+        "sha256"
+      ],
+      "properties": {
+        "json_pointer": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "claim": {
+      "const": "UNVERIFIED_STATIC_CANDIDATE"
+    }
+  }
+}

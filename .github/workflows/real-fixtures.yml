@@ -5,6 +5,9 @@ on:
     paths:
       - benchmarks/experiments/real_fixtures.py
       - benchmarks/experiments/impact_heldout.py
+      - benchmarks/experiments/incremental_python.py
+      - benchmarks/experiments/incremental_python_scale.py
+      - tests/test_incremental_python_experiment.py
       - benchmarks/experiments/dependency_oracle.py
       - benchmarks/experiments/js_import_oracle.cjs
       - core/adapters/python_ast.py
@@ -56,6 +59,19 @@ jobs:
             --base ea01274303adbb895e1a359ac856241e70184b44 \
             --head fb40afcdf14f1762e3466a01de99ff114b10d228 \
             --roots h11,tests --out heldout-h11-impact-results.json
+      - name: Measure incremental Python invalidation against full native adapter and independent AST
+        run: |
+          python3 benchmarks/experiments/incremental_python.py \
+            --repo "$RUNNER_TEMP/excession-h11-impact" \
+            --base ea01274303adbb895e1a359ac856241e70184b44 \
+            --head fb40afcdf14f1762e3466a01de99ff114b10d228 \
+            --roots h11,tests --repetitions 7 \
+            --out heldout-h11-incremental-results.json
+      - name: Measure 256-module incremental reuse under independent oracle
+        run: |
+          python3 benchmarks/experiments/incremental_python_scale.py \
+            --modules 256 --repetitions 5 \
+            --out scaled-incremental-results.json
       - name: Verify immutable upstream fixtures and corruption refusals
         run: |
           python3 benchmarks/experiments/real_fixtures.py \
@@ -70,4 +86,6 @@ jobs:
           path: |
             real-fixture-results.json
             heldout-h11-impact-results.json
+            heldout-h11-incremental-results.json
+            scaled-incremental-results.json
           if-no-files-found: warn

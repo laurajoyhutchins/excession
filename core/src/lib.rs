@@ -12,10 +12,10 @@ pub mod contracts;
 pub mod digest;
 
 pub mod discovery;
-pub mod explain;
 pub mod doctor;
 pub mod effects;
 pub mod evidence_query;
+pub mod explain;
 pub mod git;
 pub mod graph;
 pub mod graph_assembly;

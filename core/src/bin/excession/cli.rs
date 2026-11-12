@@ -195,12 +195,20 @@ pub(super) fn command() -> Command {
             leaf(
                 "extract-shared-module",
                 &[
-                    "repo", "rev", "index", "report", "candidate",
-                    "source", "destination", "symbols",
+                    "repo",
+                    "rev",
+                    "index",
+                    "report",
+                    "candidate",
+                    "source",
+                    "destination",
+                    "symbols",
                 ],
                 &["ast-grep", "source-prefix", "output"],
             )
-            .about("Preview or apply a bounded AST-backed Rust extraction to a new detached worktree"),
+            .about(
+                "Preview or apply a bounded AST-backed Rust extraction to a new detached worktree",
+            ),
         ],
     )
     .about("Source-bound refactoring hypotheses and guarded recipes");

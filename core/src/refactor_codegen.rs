@@ -22,10 +22,15 @@ struct Item {
 
 fn identifier(name: &str) -> bool {
     let mut chars = name.chars();
-    chars.next().is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+    chars
+        .next()
+        .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
         && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
         && name.len() <= 100
-        && !matches!(name, "self" | "super" | "crate" | "mod" | "fn" | "use" | "pub")
+        && !matches!(
+            name,
+            "self" | "super" | "crate" | "mod" | "fn" | "use" | "pub"
+        )
 }
 
 fn selection(names: &str) -> Result<BTreeSet<String>> {
@@ -36,7 +41,10 @@ fn selection(names: &str) -> Result<BTreeSet<String>> {
     {
         return refuse("extract-shared-module requires 1..8 plain Rust function names");
     }
-    let unique = selected.iter().map(|name| (*name).to_owned()).collect::<BTreeSet<_>>();
+    let unique = selected
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect::<BTreeSet<_>>();
     if unique.len() != selected.len() {
         return refuse("duplicate extracted function name");
     }
@@ -54,16 +62,29 @@ fn read_blob(repo: &Path, oid: &str) -> Result<String> {
 /// Stdin contains *Git blob bytes*, never an unverified working-tree file.
 fn outline(ast_grep: &Path, source: &str) -> Result<Value> {
     let mut child = Command::new(ast_grep)
-        .args(["outline", "--stdin", "--lang", "Rust", "--items", "all", "--json=compact"])
+        .args([
+            "outline",
+            "--stdin",
+            "--lang",
+            "Rust",
+            "--items",
+            "all",
+            "--json=compact",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("ast-grep launch failed: {e}"))?;
-    child.stdin.take().ok_or("ast-grep stdin unavailable")?
+    child
+        .stdin
+        .take()
+        .ok_or("ast-grep stdin unavailable")?
         .write_all(source.as_bytes())
         .map_err(|e| format!("ast-grep stdin failed: {e}"))?;
-    let output = child.wait_with_output().map_err(|e| format!("ast-grep execution failed: {e}"))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("ast-grep execution failed: {e}"))?;
     if !output.status.success() {
         return refuse(format!(
             "ast-grep outline refused: {}",
@@ -94,7 +115,9 @@ fn extracted_items(source: &str, outlines: &Value, names: &BTreeSet<String>) -> 
         if match_item.get("symbolType")?.str()? != "function"
             || match_item.get("astKind")?.str()? != "function_item"
         {
-            return refuse(format!("selected item {name} is not a top-level Rust function"));
+            return refuse(format!(
+                "selected item {name} is not a top-level Rust function"
+            ));
         }
         let range = match_item.get("range")?.get("byteOffset")?;
         let start = usize::try_from(range.get("start")?.integer()?)
@@ -104,20 +127,28 @@ fn extracted_items(source: &str, outlines: &Value, names: &BTreeSet<String>) -> 
         if start >= end || end > source.len() {
             return refuse("ast-grep range outside pinned Git source");
         }
-        let body = source.get(start..end)
+        let body = source
+            .get(start..end)
             .ok_or("ast-grep range not on Rust UTF-8 character boundary")?;
         if !body.starts_with(&format!("pub fn {name}(")) {
-            return refuse(format!("unsupported extraction signature for {name}: require pub fn"));
+            return refuse(format!(
+                "unsupported extraction signature for {name}: require pub fn"
+            ));
         }
         // This first recipe does not relocate attributes, doc comments, or
         // qualified module-relative references. Do not silently leave docs behind.
         let previous = source[..start].lines().last().unwrap_or("").trim();
-        if previous.starts_with("///") || previous.starts_with("//!")
-            || previous.starts_with("#[") || previous.starts_with("/**")
-            || body.contains("super::") || body.contains("self::")
+        if previous.starts_with("///")
+            || previous.starts_with("//!")
+            || previous.starts_with("#[")
+            || previous.starts_with("/**")
+            || body.contains("super::")
+            || body.contains("self::")
             || body.contains("crate::")
         {
-            return refuse(format!("unsupported attached metadata or module-relative use in {name}"));
+            return refuse(format!(
+                "unsupported attached metadata or module-relative use in {name}"
+            ));
         }
         extracted.push(Item {
             name: name.to_owned(),
@@ -147,7 +178,9 @@ fn edits(
     }
     let declaration = format!("mod {module};");
     if root.lines().any(|line| line.trim() == declaration)
-        || root.lines().any(|line| line.trim() == format!("pub {declaration}"))
+        || root
+            .lines()
+            .any(|line| line.trim() == format!("pub {declaration}"))
     {
         return refuse("destination module is already declared");
     }
@@ -157,10 +190,14 @@ fn edits(
     }
     // The replacement is placed at the first extracted item's original
     // position. Other top-level source references keep their original paths.
-    let names = extracted.iter().map(|item| item.name.as_str()).collect::<Vec<_>>();
+    let names = extracted
+        .iter()
+        .map(|item| item.name.as_str())
+        .collect::<Vec<_>>();
     let export = format!("pub use crate::{module}::{{{}}};", names.join(", "));
     reduced.insert_str(extracted[0].start, &export);
-    let mut destination = extracted.iter()
+    let mut destination = extracted
+        .iter()
         .map(|item| item.body.trim_end())
         .collect::<Vec<_>>()
         .join("\n\n");
@@ -174,9 +211,16 @@ fn assert_candidate(report: &Value, id: &str, source: &str, blob: &str) -> Resul
         return refuse("recipe only supports rust-analyzer SCIP evidence");
     }
     let candidates = report.get("candidates")?.array_ref()?;
-    let matches = candidates.iter().filter(|candidate| {
-        candidate.get("candidate_id").ok().and_then(|v| v.str().ok()) == Some(id)
-    }).collect::<Vec<_>>();
+    let matches = candidates
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .get("candidate_id")
+                .ok()
+                .and_then(|v| v.str().ok())
+                == Some(id)
+        })
+        .collect::<Vec<_>>();
     if matches.len() != 1 {
         return refuse("candidate ID missing or ambiguous in audited SCIP report");
     }
@@ -191,8 +235,12 @@ fn assert_candidate(report: &Value, id: &str, source: &str, blob: &str) -> Resul
     }) {
         return refuse("chosen source file and blob are not bound to the SCIP candidate");
     }
-    if report.get("triage")?.get("likely_structural_module_candidate_ids")?
-        .array_ref()?.iter().any(|v| v.str().ok() == Some(id))
+    if report
+        .get("triage")?
+        .get("likely_structural_module_candidate_ids")?
+        .array_ref()?
+        .iter()
+        .any(|v| v.str().ok() == Some(id))
     {
         return refuse("ordinary structural module relationship is not an extraction target");
     }
@@ -219,7 +267,9 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
     git::validate_path(request.source)?;
     git::validate_path(request.destination)?;
     let names = selection(request.symbols)?;
-    let (directory, filename) = request.source.rsplit_once('/')
+    let (directory, filename) = request
+        .source
+        .rsplit_once('/')
         .ok_or("extraction source must be below src/")?;
     if !(directory == "src" || directory.ends_with("/src"))
         || matches!(filename, "lib.rs" | "main.rs" | "mod.rs")
@@ -227,7 +277,9 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
     {
         return refuse("recipe only supports a non-root src/*.rs module");
     }
-    let module = request.destination.strip_prefix(directory)
+    let module = request
+        .destination
+        .strip_prefix(directory)
         .and_then(|tail| tail.strip_prefix('/'))
         .and_then(|tail| tail.strip_suffix(".rs"))
         .ok_or("destination must be a sibling src/<new_module>.rs file")?;
@@ -246,18 +298,26 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
     }
     // Recompute and compare all candidate evidence from the exact index bytes.
     scip_refactor::audit_with_prefix(
-        repo, &revision, request.index, request.report, request.source_prefix,
+        repo,
+        &revision,
+        request.index,
+        request.report,
+        request.source_prefix,
     )?;
-    let report_bytes = fs::read(request.report)
-        .map_err(|e| format!("SCIP candidate report read: {e}"))?;
+    let report_bytes =
+        fs::read(request.report).map_err(|e| format!("SCIP candidate report read: {e}"))?;
     let report = json::parse(&report_bytes)?;
-    assert_candidate(&report, request.candidate, request.source, &source_entry.oid)?;
+    assert_candidate(
+        &report,
+        request.candidate,
+        request.source,
+        &source_entry.oid,
+    )?;
     let source = read_blob(repo, &source_entry.oid)?;
     let root = read_blob(repo, &root_entry.oid)?;
     let syntax = outline(request.ast_grep, &source)?;
     let extracted = extracted_items(&source, &syntax, &names)?;
-    let (updated_source, created_module, updated_root) =
-        edits(&source, &root, module, &extracted)?;
+    let (updated_source, created_module, updated_root) = edits(&source, &root, module, &extracted)?;
 
     let mut status = "UNVERIFIED_CODEGEN_PREVIEW";
     let mut workspace = None;
@@ -265,10 +325,16 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         if !output.is_absolute() || output.exists() {
             return refuse("output worktree must be a new absolute path");
         }
-        let _parent = output.parent().ok_or("worktree output has no parent")?
-            .canonicalize().map_err(|e| format!("worktree parent: {e}"))?;
+        let _parent = output
+            .parent()
+            .ok_or("worktree output has no parent")?
+            .canonicalize()
+            .map_err(|e| format!("worktree parent: {e}"))?;
         let output_str = output.to_str().ok_or("non-UTF-8 worktree output path")?;
-        git::command(repo, &["worktree", "add", "--detach", output_str, &revision])?;
+        git::command(
+            repo,
+            &["worktree", "add", "--detach", output_str, &revision],
+        )?;
         let write_result = (|| -> Result<()> {
             fs::write(output.join(request.source), &updated_source)
                 .map_err(|e| format!("write extracted source: {e}"))?;
@@ -291,24 +357,49 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         (root_path.as_str(), &root_entry.oid, &updated_root),
     ];
     Ok(obj(&[
-        ("schema", Value::string("excession.refactor-extract-shared-module.v1")),
+        (
+            "schema",
+            Value::string("excession.refactor-extract-shared-module.v1"),
+        ),
         ("status", Value::string(status)),
         ("source_commit", Value::string(revision)),
         ("candidate_id", Value::string(request.candidate)),
         ("scip_report_id", report.get("report_id")?.clone()),
         ("recipe", Value::string("extract-shared-module")),
-        ("worktree", workspace.map(Value::string).unwrap_or(Value::Null)),
-        ("functions", Value::array(extracted.iter().map(|item| Value::string(&item.name)))),
-        ("changes", Value::array(changes.into_iter().map(|(path, before, after)| {
-            obj(&[
-                ("path", Value::string(path)),
-                ("original_blob", if before.is_empty() { Value::Null } else { Value::string(before) }),
-                ("generated_sha256", Value::string(digest::sha256(after.as_bytes()))),
-            ])
-        }))),
-        ("verification", Value::string(
-            "UNRESOLVED: run rustfmt, compiler, API compatibility, full tests and fresh SCIP candidate replay on the isolated revision. No behavioral equivalence has been established."
-        )),
+        (
+            "worktree",
+            workspace.map(Value::string).unwrap_or(Value::Null),
+        ),
+        (
+            "functions",
+            Value::array(extracted.iter().map(|item| Value::string(&item.name))),
+        ),
+        (
+            "changes",
+            Value::array(changes.into_iter().map(|(path, before, after)| {
+                obj(&[
+                    ("path", Value::string(path)),
+                    (
+                        "original_blob",
+                        if before.is_empty() {
+                            Value::Null
+                        } else {
+                            Value::string(before)
+                        },
+                    ),
+                    (
+                        "generated_sha256",
+                        Value::string(digest::sha256(after.as_bytes())),
+                    ),
+                ])
+            })),
+        ),
+        (
+            "verification",
+            Value::string(
+                "UNRESOLVED: run rustfmt, compiler, API compatibility, full tests and fresh SCIP candidate replay on the isolated revision. No behavioral equivalence has been established.",
+            ),
+        ),
     ]))
 }
 
@@ -317,17 +408,31 @@ mod tests {
     use super::*;
 
     fn fake_outline(items: &[(&str, &str, usize, usize)]) -> Value {
-        Value::array([obj(&[
-            ("items", Value::array(items.iter().map(|(name, kind, start, end)| obj(&[
-                ("name", Value::string(*name)),
-                ("symbolType", Value::string("function")),
-                ("astKind", Value::string(*kind)),
-                ("range", obj(&[("byteOffset", obj(&[
-                    ("start", Value::number(*start)),
-                    ("end", Value::number(*end)),
-                ]))])),
-            ])).collect::<Vec<_>>())),
-        ])])
+        Value::array([obj(&[(
+            "items",
+            Value::array(
+                items
+                    .iter()
+                    .map(|(name, kind, start, end)| {
+                        obj(&[
+                            ("name", Value::string(*name)),
+                            ("symbolType", Value::string("function")),
+                            ("astKind", Value::string(*kind)),
+                            (
+                                "range",
+                                obj(&[(
+                                    "byteOffset",
+                                    obj(&[
+                                        ("start", Value::number(*start)),
+                                        ("end", Value::number(*end)),
+                                    ]),
+                                )]),
+                            ),
+                        ])
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+        )])])
     }
 
     #[test]
@@ -342,8 +447,7 @@ mod tests {
         ]);
         let names = selection("two,one").unwrap();
         let found = extracted_items(source, &ast, &names).unwrap();
-        let (reduced, moved, root) =
-            edits(source, "pub mod module;", "shared", &found).unwrap();
+        let (reduced, moved, root) = edits(source, "pub mod module;", "shared", &found).unwrap();
         assert!(reduced.contains("pub use crate::shared::{one, two};"));
         assert!(!reduced.contains("pub fn one"));
         assert!(moved.contains(a) && moved.contains(b));
@@ -367,17 +471,25 @@ mod tests {
         assert!(extracted_items(source, &duplicate, &names).is_err());
         assert!(selection("foo,foo").is_err());
         assert!(selection("../foo").is_err());
-        assert!(extracted_items(
-            "/// documented\npub fn foo() {}\n",
-            &fake_outline(&[("foo", "function_item", 15, 30)]),
-            &names,
-        ).is_err());
+        assert!(
+            extracted_items(
+                "/// documented\npub fn foo() {}\n",
+                &fake_outline(&[("foo", "function_item", 15, 30)]),
+                &names,
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn refuses_existing_destination_declaration() {
         let source = "pub fn foo() {}";
-        let items = [Item { name: "foo".into(), start: 0, end: source.len(), body: source.into() }];
+        let items = [Item {
+            name: "foo".into(),
+            start: 0,
+            end: source.len(),
+            body: source.into(),
+        }];
         assert!(edits(source, "mod shared;\n", "shared", &items).is_err());
     }
 }

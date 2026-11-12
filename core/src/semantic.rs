@@ -60,7 +60,7 @@ fn python_catalog(
         ("modules", Value::array(modules)),
         (
             "roots",
-            Value::array(roots.iter().map(|root| Value::string(root))),
+            Value::array(roots.iter().map(Value::string)),
         ),
         ("import_base", Value::string(import_base.unwrap_or(""))),
     ]);

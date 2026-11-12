@@ -74,6 +74,8 @@ def build_manifest(dist: Path, version: str, source_commit: str) -> dict:
             "sha256": actual,
             "sidecar_sha256": sidecar_sha256(archive),
         })
+    if len({asset["sidecar_sha256"] for asset in assets}) != 1:
+        raise ValueError("release archives contain inconsistent TypeScript parser sidecars")
     return {
         "schema": "excession.release-manifest.v1",
         "version": version,
@@ -88,6 +90,8 @@ def main() -> None:
     parser.add_argument("--dist", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--tag", help="verify exact tag and Cargo version on release jobs")
+    parser.add_argument("--required-target", action="append", default=[],
+                        help="require this exact platform target in the distribution set")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parent.parent
     version = tomllib.loads((repo / "core/Cargo.toml").read_text())["package"]["version"]
@@ -105,6 +109,16 @@ def main() -> None:
         if tagged != checkout:
             raise SystemExit("tag points at a different source commit")
     manifest = build_manifest(args.dist, version, checkout)
+    if args.required_target:
+        expected = set(args.required_target)
+        if len(expected) != len(args.required_target):
+            raise SystemExit("duplicate --required-target argument")
+        observed = {asset["target"] for asset in manifest["assets"]}
+        if observed != expected:
+            raise SystemExit(
+                f"release platform matrix mismatch: missing={sorted(expected - observed)}, "
+                f"unexpected={sorted(observed - expected)}"
+            )
     destination = args.dist / "release-manifest.json"
     destination.write_text(
         json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8"

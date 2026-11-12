@@ -91,16 +91,17 @@ def verify(archive: Path) -> None:
             "-c", "user.email=portable@example.invalid",
             "commit", "-qm", "change utility", cwd=root)
         head = run("git", "-C", str(source), "rev-parse", "HEAD", cwd=root).strip()
+        saved = root / "impact.json"
         impact = json.loads(run(str(binary), "impact", ".", "--base", baseline,
-                                "--head", head, "--db", str(cache), "--json", cwd=source))
+                                "--head", head, "--db", str(cache), "--json",
+                                "--output", str(saved), cwd=source))
+        assert json.loads(saved.read_text(encoding="utf-8")) == impact
         assert impact["schema"] == "excession.impact.v1"
         assert impact["safe_to_skip_unlisted_tests"] is False
         candidate = next(e for e in impact["effects"]
                          if e["entity"]["path"] == "src/consumer.js"
                          and e["assessment"] == "CANDIDATE_PATH")
         claim_id = candidate["claim_id"]
-        saved = root / "impact.json"
-        saved.write_text(json.dumps(impact, sort_keys=True) + "\n", encoding="utf-8")
         explanation = json.loads(run(str(binary), "explain", ".", "--report", str(saved),
                                      "--id", claim_id, "--db", str(cache),
                                      "--json", cwd=source))

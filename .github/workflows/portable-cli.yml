@@ -9,6 +9,8 @@ on:
       - "tests/test_release_manifest.py"
       - "contracts/product/release-manifest.v1.schema.json"
       - "tools/test_portable_archive.py"
+      - "tools/test_release_candidate.py"
+      - "benchmarks/experiments/real_fixtures.py"
       - "docs/PORTABILITY.md"
       - ".github/workflows/portable-cli.yml"
       - "package-lock.json"
@@ -149,9 +151,45 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  acceptance:
+    name: Installed Linux archive vs independent pinned upstream source
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: [portability]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install independent JavaScript import oracle
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: excession-Linux-X64
+          path: dist
+      - name: Compare installed release artifact to pinned h11 and Axios source
+        run: |
+          python tools/test_release_candidate.py --dist dist \
+            --manifest benchmarks/fixtures/real-repositories.json \
+            --out release-acceptance.json
+      - name: Retain independent release acceptance receipt, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-release-independent-acceptance
+          path: release-acceptance.json
+          if-no-files-found: warn
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [portability, musl]
+    needs: [portability, musl, acceptance]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -166,7 +204,13 @@ jobs:
         shell: bash
         run: |
           python tools/release_manifest.py --dist dist \
-            --source-commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+            --source-commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" \
+            --required-target x86_64-unknown-linux-gnu \
+            --required-target aarch64-unknown-linux-gnu \
+            --required-target x86_64-unknown-linux-musl \
+            --required-target aarch64-apple-darwin \
+            --required-target x86_64-apple-darwin \
+            --required-target x86_64-pc-windows-msvc
       - name: Publish immutable archives and their source manifest
         shell: bash
         env:

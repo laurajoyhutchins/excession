@@ -13,6 +13,14 @@ compilers, and scanners rather than replacing them.
 
 ## Get started
 
+**Prebuilt releases:** When a published version is available, download its
+platform archive and adjacent `.sha256` checksum from
+[GitHub Releases](https://github.com/laurajoyhutchins/excession/releases).
+Verify the checksum, extract the entire `excession/` directory, and keep
+the executable next to `lib/typescript.js`. See the
+[install, upgrade, and uninstall instructions](docs/RELEASE.md).
+An unpublished crate version is not itself a release.
+
 Excession is a local Rust CLI. It reads pinned Git source objects, indexes
 observed relationships, and explains *candidate* change impact with source
 evidence. Git is required; Python and Node are needed for their respective

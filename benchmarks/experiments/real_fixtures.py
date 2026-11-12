@@ -393,11 +393,15 @@ def verify_product_workflow(
     head = git(repo, "rev-parse", "HEAD")
     if head == commit:
         raise ValueError("follow-on fixture mutation did not produce a new revision")
+    saved = work / f"{fixture['name']}-impact.json"
     proc, impact_ms = call([
         str(binary), "impact", str(repo), "--base", commit, "--head", head,
         "--roots", fixture["roots"], "--db", str(product_db), "--json",
+        "--output", str(saved),
     ], timeout=240)
     impact = json.loads(proc.stdout)
+    if json.loads(saved.read_text(encoding="utf-8")) != impact:
+        raise ValueError("the CLI saved a different report from its JSON output")
     if (impact["schema"] != "excession.impact.v1"
             or impact["base_commit"] != commit
             or impact["head_commit"] != head
@@ -417,8 +421,6 @@ def verify_product_workflow(
         k: v for k, v in candidate.items() if k != "claim_id"
     }):
         raise ValueError("product impact claim ID is not canonical")
-    saved = work / f"{fixture['name']}-impact.json"
-    saved.write_text(json.dumps(impact, sort_keys=True) + "\n", encoding="utf-8")
     proc, explain_ms = call([
         str(binary), "explain", str(repo), "--report", str(saved),
         "--id", claim_id, "--db", str(product_db),

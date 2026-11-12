@@ -13,8 +13,12 @@ existing [Portable CLI workflow](../.github/workflows/portable-cli.yml).
    the next PR synchronize event must see the label. Verify Linux x86-64,
    Linux ARM64, macOS Apple Silicon, macOS Intel, Windows, and musl/Alpine
    independently. Do not include a target that failed.
-3. Check the dedicated independent upstream source oracle, including the
-   public `analyze → impact → explain → audit` path on pinned h11 and Axios.
+3. Confirm the `acceptance` job in the Portable CLI workflow used the
+   **extracted packaged x86-64 Linux executable**, not the build-tree binary,
+   to run `analyze → impact → explain → audit` against independently
+   enumerated h11 and Axios imports. Its machine-readable receipt is retained
+   even when the gate fails. A missing upstream Git object or unavailable
+   required interpreter blocks release, not a skipped/pass result.
 4. Review the crate version, source commit, portability support, third-party
    notices, and release notes. A draft schema is not an implementation guarantee.
 
@@ -31,8 +35,9 @@ git push origin v0.2.0
 ```
 
 The tag must identify the exact reviewed commit. Tag builds run the full
-platform matrix and musl check; only after all required jobs pass does
-`publish` upload archives, adjacent SHA-256 checksums, and
+platform matrix, musl check, and extracted-artifact upstream acceptance;
+only after all required jobs pass does `publish` upload exactly six
+expected target archives, adjacent SHA-256 checksums, and
 `release-manifest.json`. The manifest binds each artifact to its source
 commit and TypeScript sidecar digest and currently declares
 `attestation_status=NOT_ATTESTED`. Do not describe checksums as

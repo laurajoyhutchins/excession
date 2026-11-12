@@ -6,8 +6,8 @@ use excession::change_inventory;
 use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
-use excession::impact_query;
 use excession::explain;
+use excession::impact_query;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{

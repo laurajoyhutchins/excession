@@ -13,6 +13,7 @@ pub mod concepts_query;
 pub mod concepts_review;
 pub mod concepts_scip;
 pub mod concepts_store;
+pub mod concepts_value;
 pub mod configured_store;
 pub mod contracts;
 pub mod digest;

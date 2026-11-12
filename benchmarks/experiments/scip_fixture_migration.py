@@ -368,6 +368,17 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
                 return json.loads(payload)
             batch = concepts("scip-normalize")
             model = concepts("scip-preview")
+            # One Rust-owned novelty decision, from the same pinned native
+            # SCIP bytes as the unchanged baseline and compiled concepts.
+            native_value = concepts("scip-value")
+            if (native_value["baseline_report_id"] != report["report_id"]
+                    or native_value["model_id"] != model["model_id"]
+                    or native_value["source_commit"] != commit
+                    or native_value["source_tree"] != tree
+                    or native_value["index_sha256"] != digest(decoded)
+                    or native_value["decision"] != "DO_NOT_ENABLE_BY_DEFAULT"
+                    or native_value["independently_adjudicated_architectural_labels"] != 0):
+                raise ValueError("Rust SCIP value gate differs from pinned native evidence")
             store = work / f"{stem}.concepts.sqlite"
             manifest = concepts("scip-compile", "--db", store)
             audit = concepts("scip-audit", "--db", store,
@@ -386,6 +397,7 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             artifacts = {
                 "batch": batch, "model": model, "snapshot": manifest,
                 "audit": audit, "oracle": concept_oracle,
+                "value": native_value,
             }
             for label, contents in artifacts.items():
                 (evidence / f"{stem}.concepts.{label}.json").write_text(
@@ -402,6 +414,7 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             "analysis_configuration": configuration,
             "coverage": finding,
             "concepts": concept_oracle,
+            "rust_value_gate": native_value if args.concepts else None,
             "execution_cost": {
                 "sample_count": 1 if args.measure_cost else 0,
                 "native_index_generation_wall_ms": elapsed_ms,

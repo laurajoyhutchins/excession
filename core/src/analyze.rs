@@ -6,7 +6,8 @@ use crate::sqlite::{Db, Param};
 use crate::{Result, digest, doctor, index, refuse, views};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::{Component, Path, PathBuf};
 
 struct Module {
     path: String,
@@ -56,6 +57,71 @@ fn modules(db: &Db, repo_id: i64, commit: &str) -> Result<BTreeMap<String, Modul
         }
     }
     Ok(modules)
+}
+
+/// Validate the database destination before creating any directory.
+///
+/// A lexical starts_with comparison is insufficient: \`..\` components or
+/// existing symlinks can route a seemingly external cache path back into
+/// the source checkout. Resolve the nearest existing ancestor, then append
+/// only normal missing path components. The read-only source boundary is
+/// enforced before Db::open can create or modify anything.
+fn checked_cache_destination(source_root: &Path, destination: &Path) -> Result<PathBuf> {
+    if !destination.is_absolute()
+        || destination.components().any(|component| {
+            matches!(component, Component::CurDir | Component::ParentDir)
+        })
+    {
+        return refuse("SQLite destination must be an absolute, normalized path outside the source repository");
+    }
+    let canonical_root = source_root
+        .canonicalize()
+        .map_err(|e| format!("resolve source checkout: {e}"))?;
+    let mut ancestor = destination
+        .parent()
+        .ok_or("SQLite destination has no parent")?;
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                missing.push(
+                    ancestor
+                        .file_name()
+                        .ok_or("cannot resolve SQLite destination parent")?
+                        .to_os_string(),
+                );
+                ancestor = ancestor
+                    .parent()
+                    .ok_or("cannot resolve SQLite destination ancestor")?;
+            }
+            Err(error) => return Err(format!("inspect SQLite destination parent: {error}")),
+        }
+    }
+    let mut resolved_parent = ancestor
+        .canonicalize()
+        .map_err(|e| format!("resolve SQLite destination parent: {e}"))?;
+    if !resolved_parent.is_dir() {
+        return refuse("SQLite destination parent is not a directory");
+    }
+    for component in missing.into_iter().rev() {
+        resolved_parent.push(component);
+    }
+    if resolved_parent.starts_with(&canonical_root) {
+        return refuse("SQLite destination resolves inside the source repository");
+    }
+    match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return refuse("SQLite destination cannot be a symbolic link");
+        }
+        Ok(metadata) if !metadata.is_file() => {
+            return refuse("SQLite destination is not a regular file");
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("inspect SQLite destination: {error}")),
+    }
+    Ok(destination.to_path_buf())
 }
 
 pub fn run(
@@ -111,12 +177,11 @@ pub fn run(
         .and_then(|n| n.to_str())
         .unwrap_or("repository");
     let name = format!("{project}-{}", &digest[..12]);
-    let db_path = db_override
+    let destination = db_override
         .map(PathBuf::from)
         .unwrap_or_else(|| discovered.index_path.clone());
-    if !db_path.is_absolute() || db_path.starts_with(&discovered.root) {
-        return refuse("SQLite destination must be an absolute path outside the source repository");
-    }
+    let db_path = checked_cache_destination(&discovered.root, &destination)?;
+    // No directory is created until all path and symlink checks have passed.
     let parent = db_path.parent().ok_or("SQLite destination has no parent")?;
     fs::create_dir_all(parent).map_err(|e| format!("create cache directory: {e}"))?;
     let db = Db::open(&db_path)?;

@@ -87,6 +87,11 @@ impl Db {
         // Mutations must not materialize result rows. Prepared statements are
         // reused by the same SQLite connection, without a second SQL path.
         let mut statement = self.conn.prepare_cached(sql).map_err(|e| e.to_string())?;
+        // SQLite RETURNING can perform mutations before execute() notices
+        // rows. Reject row-producing statements before stepping the VM.
+        if statement.column_count() != 0 {
+            return refuse("SQL mutation returned unexpected rows");
+        }
         statement
             .execute(params_from_iter(args.iter()))
             .map_err(|e| e.to_string())?;

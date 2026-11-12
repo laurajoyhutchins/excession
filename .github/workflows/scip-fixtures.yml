@@ -13,6 +13,7 @@ on:
       - tests/test_concepts_scip_oracle.py
       - core/src/concepts_scip.rs
       - core/src/concepts_compile.rs
+      - core/src/concepts_value.rs
       - tests/test_scip_fixture_migration.py
       - core/src/scip_refactor.rs
       - core/tests/refactor_contracts.rs

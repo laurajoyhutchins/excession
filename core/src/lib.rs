@@ -3,11 +3,16 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod adapter;
+pub mod analyze;
 pub mod benchmark;
+pub mod change_inventory;
 pub mod compiler_clang;
 pub mod configured_store;
 pub mod contracts;
 pub mod digest;
+
+pub mod discovery;
+pub mod explain;
 pub mod doctor;
 pub mod effects;
 pub mod evidence_query;
@@ -18,6 +23,7 @@ pub mod graph_baseline;
 pub mod historical;
 pub mod identity;
 pub mod impact;
+pub mod impact_query;
 pub mod index;
 pub mod integration;
 pub mod json;

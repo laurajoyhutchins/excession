@@ -228,7 +228,37 @@ pub(super) fn command() -> Command {
             &["rev", "compiler", "config", "object-prefix"],
         )
     };
-    let analyze = group("analyze", vec![clang()]).about("Compiler-backed source analysis");
+    let analyze = Command::new("analyze")
+        .about("Index supported source candidates or perform configured Clang analysis")
+        .arg(
+            Arg::new("path")
+                .index(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("rev")
+                .long("rev")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("roots")
+                .long("roots")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("db")
+                .long("db")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .subcommand(clang());
     let kernel = group(
         "kernel",
         vec![
@@ -248,6 +278,93 @@ pub(super) fn command() -> Command {
              findings are unverified candidates. See subcommand --help for exact options.",
         )
         .subcommand_required(true)
+        .subcommand(
+            Command::new("discover")
+                .about("Read-only Git revision and supported source-root discovery")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("rev")
+                        .long("rev")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                ),
+        )
+        .subcommand(
+            Command::new("explain")
+                .about("Recompute and explain a pinned source-bound impact claim")
+                .arg(Arg::new("path").index(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("report").long("report").required(true).num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("id").long("id").required(true).num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("db").long("db").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("roots").long("roots").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("json").long("json").action(clap::ArgAction::SetTrue))
+                .arg(Arg::new("audit").long("audit").action(clap::ArgAction::SetTrue)),
+        )
+        .subcommand(
+            Command::new("impact")
+                .about("Investigate bounded affected-source candidates between two Git revisions")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("base")
+                        .long("base")
+                        .required(true)
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("head")
+                        .long("head")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("roots")
+                        .long("roots")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("db")
+                        .long("db")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("json")
+                        .long("json")
+                        .action(clap::ArgAction::SetTrue),
+                ),
+        )
+        .subcommand(
+            Command::new("changes")
+                .about("List exact tracked Git blob changes between two commits")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("base")
+                        .long("base")
+                        .required(true)
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("head")
+                        .long("head")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                ),
+        )
         .subcommand(
             Command::new("doctor")
                 .about("Report local toolchain and bundled storage capabilities")

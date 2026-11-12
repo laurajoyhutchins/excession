@@ -1,7 +1,13 @@
 //! Excession: the only installable binary, backed by one Rust Git/SQLite authority.
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
+
+use excession::analyze;
+use excession::change_inventory;
+use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
+use excession::impact_query;
+use excession::explain;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
@@ -450,6 +456,19 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown graph command: {sub}")),
         },
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
+        [top] if top == "analyze" => {
+            let (report, db_path) = analyze::run(
+                Path::new(opt.get_or("path", ".")),
+                opt.get_or("rev", "HEAD"),
+                opt.0.get("roots").map(String::as_str),
+                opt.0.get("db").map(String::as_str),
+            )?;
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(report))
+            } else {
+                Ok(Response::Message(analyze::human(&report, &db_path)?))
+            }
+        }
         [top, sub] if top == "kernel" => match sub.as_str() {
             "scan" => {
                 let roots = opt.get("roots").split(',').collect::<Vec<_>>();
@@ -486,6 +505,49 @@ fn execute(args: &[String]) -> Result<Response> {
             "clang" => clang_command(opt),
             _ => refuse(format!("unknown kernel command: {sub}")),
         },
+        [top] if top == "discover" => {
+            let found = discovery::inspect(
+                Path::new(opt.get_or("path", ".")),
+                opt.get_or("rev", "HEAD"),
+            )?;
+            Ok(json(found.report()?))
+        }
+        [top] if top == "explain" => {
+            let repo = Path::new(opt.get_or("path", "."));
+            let report = Path::new(opt.get("report"));
+            let claim = opt.get("id");
+            let roots = opt.0.get("roots").map(String::as_str);
+            let db = opt.0.get("db").map(String::as_str);
+            if opt.get_or("audit", "false") == "true" {
+                Ok(json(explain::audit(repo, report, claim, roots, db)?))
+            } else {
+                let result = explain::explain(repo, report, claim, roots, db)?;
+                if opt.get_or("json", "false") == "true" {
+                    Ok(json(result))
+                } else {
+                    Ok(Response::Message(explain::human(&result)?))
+                }
+            }
+        }
+        [top] if top == "impact" => {
+            let result = impact_query::run(
+                Path::new(opt.get_or("path", ".")),
+                opt.get("base"),
+                opt.get_or("head", "HEAD"),
+                opt.0.get("roots").map(String::as_str),
+                opt.0.get("db").map(String::as_str),
+            )?;
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(result))
+            } else {
+                Ok(Response::Message(impact_query::human(&result)?))
+            }
+        }
+        [top] if top == "changes" => Ok(json(change_inventory::inventory(
+            Path::new(opt.get_or("path", ".")),
+            opt.get("base"),
+            opt.get_or("head", "HEAD"),
+        )?)),
         [top] if top == "doctor" => {
             if opt.get_or("json", "false") == "true" {
                 Ok(json(doctor::report()))

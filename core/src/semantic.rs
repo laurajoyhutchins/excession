@@ -272,7 +272,7 @@ pub(crate) fn index_prepared(
             for imp in item.get("imports")?.array_ref()? {
                 let spec = imp.get("specifier")?.str()?;
                 let line = imp.get("line")?.integer()?;
-                if let Some(target) = resolve_js_target(path, spec, &map_js, &mains) {
+                if let Some(target) = resolve_js_target(path, spec, map_js, mains) {
                     put_dependency(
                         db,
                         id,

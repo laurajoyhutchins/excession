@@ -231,6 +231,22 @@ fn run_bounded(
     crate::json::parse(&stdout)
 }
 
+
+pub fn entry(name: &str, path: &str, content: &str) -> Value {
+    obj(&[
+        ("name", Value::string(name)),
+        ("path", Value::string(path)),
+        ("content", Value::string(content)),
+    ])
+}
+
+pub fn js_entry(path: &str, content: &str) -> Value {
+    obj(&[
+        ("path", Value::string(path)),
+        ("content", Value::string(content)),
+    ])
+}
+
 #[cfg(test)]
 mod limits_tests {
     use super::*;
@@ -295,19 +311,4 @@ mod limits_tests {
         .unwrap_err();
         assert!(error.contains("input exceeds"), "{error}");
     }
-}
-
-pub fn entry(name: &str, path: &str, content: &str) -> Value {
-    obj(&[
-        ("name", Value::string(name)),
-        ("path", Value::string(path)),
-        ("content", Value::string(content)),
-    ])
-}
-
-pub fn js_entry(path: &str, content: &str) -> Value {
-    obj(&[
-        ("path", Value::string(path)),
-        ("content", Value::string(content)),
-    ])
 }

@@ -1,0 +1,60 @@
+{
+  "schema": "excession.security.heldout.v1",
+  "purpose": "Pre-registered public repository source-revision experiment; not selected or tuned using scanner output",
+  "benchmark_family": "CWE-22 path containment",
+  "selection": "Two documented upstream security fixes; the first parent of each fix is the vulnerable reference, the fixing commit is the patched reference",
+  "cases": [
+    {
+      "id": "starlette-staticfiles",
+      "repository": "Kludex/starlette",
+      "advisory": "GHSA-v5gw-mw7f-84px",
+      "cve": "CVE-2023-29159",
+      "file": "starlette/staticfiles.py",
+      "oracle": "starlette.lookup_path",
+      "qualification": "File outside static root shares the root's textual prefix",
+      "vulnerable": {
+        "commit": "24c1fac62a80bb153c6548145334fc643991e35a",
+        "blob": "4d075b3ed2f52f91c486be26b6b957e317991a08"
+      },
+      "patched": {
+        "commit": "1797de464124b090f10cf570441e8292936d63e3",
+        "blob": "4c856063c2945d93f1b79505f9d8de7919b947aa"
+      }
+    },
+    {
+      "id": "aiohttp-follow-symlinks",
+      "repository": "aio-libs/aiohttp",
+      "advisory": "GHSA-5h86-8mv2-jq9f",
+      "cve": "CVE-2024-23334",
+      "file": "aiohttp/web_urldispatcher.py",
+      "oracle": "aiohttp.StaticResource._handle",
+      "qualification": "follow_symlinks=True and parent-component escape; not a claim of universal symlink containment",
+      "vulnerable": {
+        "commit": "33ccdfb0a12690af5bb49bda2319ec0907fa7827",
+        "blob": "fee4f61a1aa6ec66ae6f5a9fa0acd5b898db1967"
+      },
+      "patched": {
+        "commit": "1c335944d6a8b1298baf179b7c0b3069f10c514b",
+        "blob": "a05ac6cc3de4964a8ac6f23e8d02bf70d995af9e"
+      }
+    }
+  ],
+  "scanners": {
+    "semgrep": {
+      "version": "1.145.0",
+      "pydantic": "2.11.10",
+      "rules_repository": "semgrep/semgrep-rules",
+      "rules_commit": "311ca4e9ba59d700624539bf658e3d29b134ee77",
+      "config_subtree": "python"
+    },
+    "codeql": {
+      "action_commit": "9418214df1f2c4b8128c770156c409013b07d6b9",
+      "action_version": "3.39.3",
+      "tool_version": "2.27.4",
+      "language": "python",
+      "build_mode": "none",
+      "query_suite": "security-extended"
+    }
+  },
+  "claim_boundary": "Only two preregistered upstream patch pairs; no general accuracy estimate, no deployment reachability or exploitability claim. Native oracle executes upstream method body in a restricted fixture, not an entire service."
+}

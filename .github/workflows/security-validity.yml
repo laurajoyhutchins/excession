@@ -1,0 +1,134 @@
+name: Security finding validity experiment
+
+on:
+  push:
+    branches: [security/source-bound-validity-oracle]
+    paths:
+      - '.github/workflows/security-validity.yml'
+      - 'benchmarks/security-validity/**'
+      - 'tools/assess_security_findings.py'
+      - 'core/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+      - name: Install scanner and build Excession
+        run: |
+          python3 -m venv "$RUNNER_TEMP/semgrep-venv"
+          "$RUNNER_TEMP/semgrep-venv/bin/python" -m pip install 'semgrep==1.145.0' 'pydantic==2.11.10'
+          echo "$RUNNER_TEMP/semgrep-venv/bin" >> "$GITHUB_PATH"
+          cargo build --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Execute real Semgrep scan
+        run: |
+          mkdir -p "$RUNNER_TEMP/validity"
+          semgrep --version | tee "$RUNNER_TEMP/validity/semgrep-version.txt"
+          semgrep scan --metrics off --config benchmarks/security-validity/semgrep.yml --json --output "$RUNNER_TEMP/validity/semgrep.json" benchmarks/security-validity
+          test -s "$RUNNER_TEMP/validity/semgrep.json"
+      - name: Import, audit and assess
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/validity"
+          EX="$PWD/core/target/debug/excession"
+          "$EX" security ingest --repo "$PWD" --report "$OUT/semgrep.json" --db "$OUT/findings.sqlite" --engine semgrep > "$OUT/ingest.json"
+          "$EX" security audit --repo "$PWD" --report "$OUT/semgrep.json" --db "$OUT/findings.sqlite" --engine semgrep > "$OUT/audit.json"
+          RUN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$OUT/ingest.json")
+          python3 tools/assess_security_findings.py --repo "$PWD" --db "$OUT/findings.sqlite" --run-id "$RUN_ID" --report "$OUT/semgrep.json" --ground-truth "$PWD/benchmarks/security-validity/ground-truth.json" --excession "$EX" --trusted-local true > "$OUT/validity.json"
+          python3 -m json.tool "$OUT/validity.json"
+          python3 - "$OUT/validity.json" <<'PY'
+          import json, sys
+          summary = json.load(open(sys.argv[1], encoding="utf-8"))["summary"]
+          assert summary == {
+              "reproduced_boundaries": 1,
+              "safe_control_hits": 1,
+              "unjudged_candidates": 0,
+              "known_positive_cases_without_hit": 0,
+          }, f"Semgrep benchmark detection contract failed: {summary}"
+          PY
+          git rev-parse HEAD > "$OUT/commit.txt"
+          cargo --version > "$OUT/cargo-version.txt"
+      - name: Retain original reports and adjudication
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-validity-evidence
+          path: ${{ runner.temp }}/validity/
+          if-no-files-found: warn
+          retention-days: 30
+
+  codeql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+      - name: Initialize CodeQL Go database
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-extended
+          build-mode: manual
+      - name: Build benchmark Go module for CodeQL extraction
+        working-directory: benchmarks/security-validity
+        run: |
+          go clean -cache
+          go build ./...
+          go test -count=1 ./...
+      - name: Analyze with CodeQL and retain SARIF locally
+        uses: github/codeql-action/analyze@v3
+        with:
+          upload: false
+          output: ${{ runner.temp }}/codeql-results
+      - name: Build Excession and assess original CodeQL SARIF
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/codeql-validity"
+          mkdir -p "$OUT"
+          find "$RUNNER_TEMP/codeql-results" -type f -name '*.sarif' -print
+          SARIF=$(find "$RUNNER_TEMP/codeql-results" -type f -name '*.sarif' | head -n 1)
+          test -n "$SARIF"
+          cp "$SARIF" "$OUT/codeql.sarif"
+          cargo build --locked --manifest-path core/Cargo.toml --bin excession
+          EX="$PWD/core/target/debug/excession"
+          "$EX" security ingest --repo "$PWD" --report "$OUT/codeql.sarif" --db "$OUT/findings.sqlite" --engine codeql > "$OUT/ingest.json"
+          "$EX" security audit --repo "$PWD" --report "$OUT/codeql.sarif" --db "$OUT/findings.sqlite" --engine codeql > "$OUT/audit.json"
+          RUN_ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$OUT/ingest.json")
+          python3 tools/assess_security_findings.py --repo "$PWD" --db "$OUT/findings.sqlite" --run-id "$RUN_ID" --report "$OUT/codeql.sarif" --ground-truth "$PWD/benchmarks/security-validity/ground-truth.json" --excession "$EX" --trusted-local true > "$OUT/validity.json"
+          python3 -m json.tool "$OUT/validity.json"
+          python3 - "$OUT/validity.json" <<'PY'
+          import json, sys
+          summary = json.load(open(sys.argv[1], encoding="utf-8"))["summary"]
+          assert summary == {
+              "reproduced_boundaries": 1,
+              "safe_control_hits": 1,
+              "unjudged_candidates": 0,
+              "known_positive_cases_without_hit": 0,
+          }, f"CodeQL benchmark detection contract failed: {summary}"
+          PY
+          git rev-parse HEAD > "$OUT/commit.txt"
+      - name: Retain CodeQL reports and adjudication
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-validity-evidence
+          path: ${{ runner.temp }}/codeql-validity/
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,207 @@
+name: External historical security validity
+
+on:
+  push:
+    branches: [security/source-bound-validity-oracle]
+    paths:
+      - '.github/workflows/security-heldout.yml'
+      - 'benchmarks/security-heldout/**'
+      - 'tools/heldout_native_oracle.py'
+      - 'tools/compare_heldout_security.py'
+      - 'tests/test_heldout_security.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: read
+
+concurrency:
+  group: heldout-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: ${{ matrix.case }} ${{ matrix.phase }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - case: starlette-staticfiles
+            phase: vulnerable
+            repository: Kludex/starlette
+            commit: 24c1fac62a80bb153c6548145334fc643991e35a
+          - case: starlette-staticfiles
+            phase: patched
+            repository: Kludex/starlette
+            commit: 1797de464124b090f10cf570441e8292936d63e3
+          - case: aiohttp-follow-symlinks
+            phase: vulnerable
+            repository: aio-libs/aiohttp
+            commit: 33ccdfb0a12690af5bb49bda2319ec0907fa7827
+          - case: aiohttp-follow-symlinks
+            phase: patched
+            repository: aio-libs/aiohttp
+            commit: 1c335944d6a8b1298baf179b7c0b3069f10c514b
+    env:
+      CASE_ID: ${{ matrix.case }}
+      PHASE: ${{ matrix.phase }}
+      SOURCE_REPO: ${{ matrix.repository }}
+      SOURCE_COMMIT: ${{ matrix.commit }}
+      SEMGREP_RULES_SHA: 311ca4e9ba59d700624539bf658e3d29b134ee77
+    steps:
+      - name: Checkout exact upstream source revision
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.commit }}
+          persist-credentials: false
+      - name: Initialize temporary evidence directory
+        run: |
+          echo "OUT=$RUNNER_TEMP/heldout" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/heldout"
+      - name: Restore exact Excession harness commit outside upstream checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q "$RUNNER_TEMP/excession"
+          git -C "$RUNNER_TEMP/excession" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git -C "$RUNNER_TEMP/excession" fetch -q --depth 1 origin "$GITHUB_SHA"
+          git -C "$RUNNER_TEMP/excession" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/excession" rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p "$OUT"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+      - name: Verify pinned sources and reproduce controlled native behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/excession/tools/heldout_native_oracle.py" \
+            --repo "$GITHUB_WORKSPACE" \
+            --manifest "$RUNNER_TEMP/excession/benchmarks/security-heldout/manifest.json" \
+            --case "$CASE_ID" --phase "$PHASE" --output "$OUT/native-oracle.json"
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          case = os.environ["CASE_ID"]
+          phase = os.environ["PHASE"]
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          manifest = json.loads((temp / "excession/benchmarks/security-heldout/manifest.json").read_text())
+          selected = next(x for x in manifest["cases"] if x["id"] == case)
+          assert selected["repository"] == os.environ["SOURCE_REPO"]
+          assert selected[phase]["commit"] == os.environ["SOURCE_COMMIT"]
+          sha = subprocess.check_output(["git", "hash-object", selected["file"]], text=True).strip()
+          assert sha == selected[phase]["blob"]
+          metadata = {
+              "case": case, "phase": phase, "source_commit": os.environ["SOURCE_COMMIT"],
+              "source_blob": sha, "source_repo": os.environ["SOURCE_REPO"],
+              "harness_commit": os.environ["GITHUB_SHA"], "manifest_schema": manifest["schema"],
+              "semgrep_rules_commit": manifest["scanners"]["semgrep"]["rules_commit"],
+              "codeql_action_commit": manifest["scanners"]["codeql"]["action_commit"],
+              "codeql_cli_version": manifest["scanners"]["codeql"]["tool_version"],
+          }
+          (temp / "heldout/metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PY
+      - name: Fetch frozen public Semgrep rules and isolated scanner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/semgrep-venv"
+          "$RUNNER_TEMP/semgrep-venv/bin/python" -m pip -q install 'semgrep==1.145.0' 'pydantic==2.11.10'
+          git init -q "$RUNNER_TEMP/semgrep-rules"
+          git -C "$RUNNER_TEMP/semgrep-rules" remote add origin https://github.com/semgrep/semgrep-rules.git
+          git -C "$RUNNER_TEMP/semgrep-rules" sparse-checkout init --cone
+          git -C "$RUNNER_TEMP/semgrep-rules" sparse-checkout set python
+          git -C "$RUNNER_TEMP/semgrep-rules" fetch -q --depth 1 --filter=blob:none origin "$SEMGREP_RULES_SHA"
+          git -C "$RUNNER_TEMP/semgrep-rules" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/semgrep-rules" rev-parse HEAD)" = "$SEMGREP_RULES_SHA"
+          "$RUNNER_TEMP/semgrep-venv/bin/semgrep" --version > "$OUT/semgrep-version.txt"
+      - name: Run real Semgrep over pinned upstream source
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/semgrep-venv/bin/semgrep" scan \
+            --metrics off \
+            --config "$RUNNER_TEMP/semgrep-rules/python" \
+            --json --output "$OUT/semgrep.json" .
+          test -s "$OUT/semgrep.json"
+      - name: Initialize frozen CodeQL Python analyzer
+        uses: github/codeql-action/init@9418214df1f2c4b8128c770156c409013b07d6b9
+        with:
+          languages: python
+          queries: security-extended
+          build-mode: none
+      - name: Analyze pinned upstream source with CodeQL
+        uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9
+        with:
+          upload: false
+          output: ${{ runner.temp }}/heldout-codeql
+      - name: Preserve and independently audit both scanner reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t SARIFS < <(find "$RUNNER_TEMP/heldout-codeql" -type f -name '*.sarif')
+          test "${#SARIFS[@]}" -eq 1
+          cp "${SARIFS[0]}" "$OUT/codeql.sarif"
+          cargo build --locked --manifest-path "$RUNNER_TEMP/excession/core/Cargo.toml" --bin excession
+          EX="$RUNNER_TEMP/excession/core/target/debug/excession"
+          for ENGINE in semgrep codeql; do
+            REPORT="$OUT/semgrep.json"
+            if [ "$ENGINE" = codeql ]; then REPORT="$OUT/codeql.sarif"; fi
+            "$EX" security ingest --repo "$GITHUB_WORKSPACE" \
+              --report "$REPORT" --db "$OUT/$ENGINE.sqlite" \
+              --engine "$ENGINE" > "$OUT/$ENGINE-ingest.json"
+            "$EX" security audit --repo "$GITHUB_WORKSPACE" \
+              --report "$REPORT" --db "$OUT/$ENGINE.sqlite" \
+              --engine "$ENGINE" > "$OUT/$ENGINE-audit.json"
+          done
+          git rev-parse HEAD > "$OUT/source-commit.txt"
+      - name: Retain reports and source-bound receipts, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heldout-${{ matrix.case }}-${{ matrix.phase }}
+          path: ${{ runner.temp }}/heldout/
+          if-no-files-found: warn
+          retention-days: 30
+
+  compare:
+    name: Aggregate source-bound held-out evidence
+    needs: scan
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test independent comparison contracts
+        run: python3 -m unittest discover -s tests -p test_heldout_security.py -v
+      - name: Restore per-revision evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: heldout-*
+          path: ${{ runner.temp }}/heldout-evidence
+          merge-multiple: false
+      - name: Compare without claiming generalized precision or recall
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/compare_heldout_security.py \
+            --manifest benchmarks/security-heldout/manifest.json \
+            --evidence "$RUNNER_TEMP/heldout-evidence" \
+            --output "$RUNNER_TEMP/heldout-comparison.json" \
+            --markdown "$RUNNER_TEMP/heldout-comparison.md"
+          cat "$RUNNER_TEMP/heldout-comparison.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain overall comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heldout-comparison
+          path: |
+            ${{ runner.temp }}/heldout-comparison.json
+            ${{ runner.temp }}/heldout-comparison.md
+          if-no-files-found: warn
+          retention-days: 30

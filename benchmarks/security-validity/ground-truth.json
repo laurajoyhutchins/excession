@@ -1,0 +1,49 @@
+{
+  "schema": "excession.security.ground-truth.v1",
+  "family": "path-traversal-parent-components",
+  "oracle_kind": "go-test",
+  "oracle_directory": "benchmarks/security-validity",
+  "cases": [
+    {
+      "id": "outside-root-read",
+      "path": "benchmarks/security-validity/path.go",
+      "start_line": 14,
+      "end_line": 14,
+      "source_blob": "fd3e83720c580cb4628079ce700400a238ead13c",
+      "expected": "vulnerable-behavior",
+      "oracle_test": "TestTraversalIsObservable"
+    },
+    {
+      "id": "guarded-parent-escape",
+      "path": "benchmarks/security-validity/path.go",
+      "start_line": 20,
+      "end_line": 25,
+      "source_blob": "fd3e83720c580cb4628079ce700400a238ead13c",
+      "expected": "safe-control",
+      "oracle_test": "TestGuardRefusesTraversal"
+    },
+    {
+      "id": "constant-path",
+      "path": "benchmarks/security-validity/path.go",
+      "start_line": 30,
+      "end_line": 30,
+      "source_blob": "fd3e83720c580cb4628079ce700400a238ead13c",
+      "expected": "safe-control",
+      "oracle_test": "TestConstantReadIsBenign"
+    }
+  ],
+  "additional_required_tests": [
+    "TestGuardPreservesBenignAccess",
+    "TestHTTPTraversalIsObservable",
+    "TestHTTPGuardRefusesTraversal",
+    "TestHTTPGuardPreservesBenignAccess"
+  ],
+  "rule_ids": {
+    "semgrep": [
+      "benchmarks.security-validity.excession.go.joined-read"
+    ],
+    "codeql": [
+      "go/path-injection"
+    ]
+  }
+}

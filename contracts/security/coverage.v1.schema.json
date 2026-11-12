@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/security/coverage.v1.schema.json",
+  "title": "Security scan coverage and rule applicability",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "coverage_id",
+    "scan_id",
+    "target",
+    "claim",
+    "rule_ids",
+    "evidence_refs"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.security.coverage.v1"
+    },
+    "coverage_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "scan_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "framework",
+        "weakness_family",
+        "source_scope"
+      ],
+      "properties": {
+        "language": {
+          "type": "string",
+          "minLength": 1
+        },
+        "framework": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "weakness_family": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_scope": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?:\\.|(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)(?!.*://)(?!.*[?#%]).+)$"
+        }
+      }
+    },
+    "claim": {
+      "enum": [
+        "NOT_SCANNED",
+        "INCOMPLETE",
+        "SCANNED_APPLICABLE",
+        "SCANNED_NOT_APPLICABLE",
+        "SCANNED_APPLICABILITY_UNPROVEN"
+      ]
+    },
+    "rule_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "claim": {
+            "const": "SCANNED_APPLICABLE"
+          }
+        },
+        "required": [
+          "claim"
+        ]
+      },
+      "then": {
+        "properties": {
+          "rule_ids": {
+            "minItems": 1
+          },
+          "evidence_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "claim": {
+            "const": "SCANNED_NOT_APPLICABLE"
+          }
+        },
+        "required": [
+          "claim"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "claim": {
+            "const": "SCANNED_APPLICABILITY_UNPROVEN"
+          }
+        },
+        "required": [
+          "claim"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "claim": {
+            "const": "INCOMPLETE"
+          }
+        },
+        "required": [
+          "claim"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_refs": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,280 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "subject",
+    "receipt",
+    "source_identity_assessment"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.identity-receipt.v1"
+    },
+    "subject": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/subject_0"
+        },
+        {
+          "$ref": "#/$defs/subject_1"
+        },
+        {
+          "$ref": "#/$defs/subject_2"
+        },
+        {
+          "$ref": "#/$defs/subject_3"
+        },
+        {
+          "$ref": "#/$defs/subject_4"
+        }
+      ]
+    },
+    "receipt": {
+      "$ref": "#/$defs/receipt"
+    },
+    "source_identity_assessment": {
+      "const": "SOURCE_BINDING_REQUIRES_INDEPENDENT_GIT_REPLAY"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/identity-receipt.v1.schema.json",
+  "title": "Excession typed subject and producer receipt identity v1",
+  "description": "Git-bound source files and SCIP symbols have distinct schemas from independent artifact, execution, and configuration subjects. Structural validity is not source or producer authentication.",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "tree",
+        "path",
+        "blob",
+        "mode"
+      ],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "tree": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*//)[^\\u0000]+$"
+        },
+        "blob": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "mode": {
+          "enum": [
+            "100644",
+            "100755"
+          ]
+        }
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_line",
+        "last_line",
+        "encoding"
+      ],
+      "properties": {
+        "first_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "last_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "encoding": {
+          "enum": [
+            "UTF8",
+            "UTF16",
+            "UTF32",
+            "LINE_ONLY"
+          ]
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payload_sha256",
+        "producer",
+        "version",
+        "provenance",
+        "input_sha256"
+      ],
+      "properties": {
+        "payload_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "provenance": {
+          "enum": [
+            "SELF_HASHED_UNATTESTED",
+            "SOURCE_REPLAYED",
+            "EXTERNAL_ATTESTATION_CLAIM"
+          ]
+        },
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "attestation_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provenance": {
+                "const": "EXTERNAL_ATTESTATION_CLAIM"
+              }
+            },
+            "required": [
+              "provenance"
+            ]
+          },
+          "then": {
+            "required": [
+              "attestation_sha256"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "attestation_sha256"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "subject_0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source"
+      ],
+      "properties": {
+        "kind": {
+          "const": "SOURCE_FILE"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "subject_1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "scip_symbol"
+      ],
+      "properties": {
+        "kind": {
+          "const": "SYMBOL"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "scip_symbol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "span": {
+          "$ref": "#/$defs/span"
+        }
+      }
+    },
+    "subject_2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sha256",
+        "size_bytes"
+      ],
+      "properties": {
+        "kind": {
+          "const": "ARTIFACT"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "subject_3": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "artifact_sha256",
+        "execution_receipt_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "const": "EXECUTION"
+        },
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "execution_receipt_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "subject_4": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sha256"
+      ],
+      "properties": {
+        "kind": {
+          "const": "CONFIGURATION"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

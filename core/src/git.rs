@@ -225,6 +225,49 @@ pub fn validate_path(path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Read exactly one tracked tree entry without traversing the full repository.
+pub fn entry_at(root: &Path, commit: &str, path: &str) -> Result<Entry> {
+    oid(commit)?;
+    validate_path(path)?;
+    verify_repo(root)?;
+    let literal = format!(":(literal){path}");
+    let out = command(
+        root,
+        &["ls-tree", "-z", "--full-tree", commit, "--", &literal],
+    )?;
+    let record = out
+        .strip_suffix(&[0])
+        .ok_or("missing or unterminated Git entry")?;
+    if record.contains(&0) {
+        return refuse("ambiguous Git tree entry for exact path");
+    }
+    let tab = record
+        .iter()
+        .position(|byte| *byte == b'\t')
+        .ok_or("invalid Git tree entry")?;
+    let name = std::str::from_utf8(&record[tab + 1..]).map_err(|_| "invalid Git path UTF-8")?;
+    if name != path {
+        return refuse("Git tree path differs from requested exact path");
+    }
+    let header = std::str::from_utf8(&record[..tab]).map_err(|_| "invalid Git tree header")?;
+    let parts = header.split_ascii_whitespace().collect::<Vec<_>>();
+    if parts.len() != 3 {
+        return refuse("invalid Git tree entry metadata");
+    }
+    if !matches!(
+        (parts[0], parts[1]),
+        ("100644" | "100755" | "120000", "blob")
+    ) {
+        return refuse("unsupported exact Git source entry type");
+    }
+    Ok(Entry {
+        path: name.to_owned(),
+        mode: parts[0].to_owned(),
+        kind: parts[1].to_owned(),
+        oid: oid(parts[2])?,
+    })
+}
+
 pub fn entries(root: &Path, commit: &str) -> Result<Vec<Entry>> {
     oid(commit)?;
     verify_repo(root)?;

@@ -65,6 +65,7 @@ jobs:
             ${{ runner.temp }}/excession-codegen-test/assist-actions.json
             ${{ runner.temp }}/excession-codegen-test/assist-preview.json
             ${{ runner.temp }}/excession-codegen-test/assist-applied.json
+            ${{ runner.temp }}/excession-codegen-test/assist-build.log
             ${{ runner.temp }}/excession-codegen-test/build.log
             ${{ runner.temp }}/excession-codegen-test/test.log
           if-no-files-found: warn

@@ -122,8 +122,17 @@ jq -e --slurpfile preview "$TMP/assist-preview.json" '
 test "$(git -C "$OLD" rev-parse HEAD)" = "$OLD_REV"
 test -z "$(git -C "$OLD" status --porcelain --untracked-files=all)"
 cargo +1.99.1 fmt --manifest-path "$ASSIST_OUT/core/Cargo.toml"
-cargo +1.99.1 check --locked --offline --manifest-path "$ASSIST_OUT/core/Cargo.toml"
-cargo +1.99.1 test --locked --offline --manifest-path "$ASSIST_OUT/core/Cargo.toml" --lib \
-  semantic::module_name_tests::semantic_module_names_preserve_import_root_and_test_flags
+# This native "Extract Module" assist does NOT preserve both original
+# public paths or resolve the extracted function's parent-relative helper.
+# It must remain UNVERIFIED, and compiler rejection is the expected oracle.
+if cargo +1.99.1 check --locked --offline \
+  --manifest-path "$ASSIST_OUT/core/Cargo.toml" > "$TMP/assist-build.log" 2>&1; then
+  echo "Unexpected successful compilation: update the acceptance oracle" >&2
+  exit 1
+fi
+grep -Fq 'unresolved import' "$TMP/assist-build.log"
+grep -Fq 'cannot find function' "$TMP/assist-build.log"
+jq -e '.status == "APPLIED_UNVERIFIED" and
+  (.verification | startswith("UNRESOLVED:"))' "$TMP/assist-applied.json"
 git -C "$ASSIST_OUT" diff --check
-echo 'PASS: rust-analyzer semantic code action replayed in isolated pinned worktree'
+echo 'PASS: real rust-analyzer workspace edit replayed exactly; compiler independently rejected broken public API and helper references'

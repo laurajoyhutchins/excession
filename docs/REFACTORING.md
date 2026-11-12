@@ -281,5 +281,15 @@ optimizer or a soundness proof. rust-analyzer decides what edit to make only
 for the explicitly selected native action. All generated changes remain
 `APPLIED_UNVERIFIED` until independently compiled, tested, audited for API
 breakage and re-indexed. The rust-analyzer executable and the clean checkout
-are trusted local toolchain inputs. Proc-macro/build-script evaluation in
-rust-analyzer environments must be managed by the calling sandbox policy.
+are trusted local toolchain inputs. The provider requests that rust-analyzer
+disable proc macros and build-script evaluation; callers must still treat the
+repository and its local toolchain configuration as trusted inputs.
+
+**Recorded negative case:** on pre-#161 Excession, native `Extract Module`
+produces a syntactically valid inline module that loses the original public
+function path and cannot resolve a parent helper. The real compiler rejects
+the result with unresolved-import and missing-function diagnostics. The
+historical replay asserts this failure as an **unresolved verification
+obligation**, alongside the original ast-grep extraction's successful
+compile/test/reindex path. Excession will not promote either native action or
+compiler evidence into a guarantee of behavioral equivalence.

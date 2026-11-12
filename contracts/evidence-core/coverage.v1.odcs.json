@@ -1,0 +1,159 @@
+{
+  "version": "0.1.0",
+  "apiVersion": "v3.2.0",
+  "kind": "DataContract",
+  "id": "excession_evidence_core_d_coverage_v1",
+  "name": "contracts: define facet-scoped coverage, gaps and negative-evidence rules",
+  "status": "active",
+  "domain": "source-analysis",
+  "description": {
+    "purpose": "Represent producer-owned facet-specific inventory accounting without implying semantic completeness or negative relationship proof.",
+    "limitations": "A finite source inventory can be fully accounted for without establishing complete SCIP, configured build or runtime semantics. Negative relationship conclusions require an independent, facet-specific oracle."
+  },
+  "schema": [
+    {
+      "name": "d_coverage",
+      "logicalType": "object",
+      "physicalType": "application/json",
+      "description": "A bounded scope assessment derived from producer-specific accounting",
+      "properties": [
+        {
+          "name": "schema",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "report_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "producer_receipt_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "source_commit",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "facet",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "scope",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "status",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "examined",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "unsupported",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "unresolved",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "excluded",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "truncated",
+          "logicalType": "boolean",
+          "required": true
+        },
+        {
+          "name": "limitations",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "negative_claim_scope",
+          "logicalType": "string",
+          "required": true
+        }
+      ],
+      "quality": [
+        {
+          "name": "bounded_facet",
+          "type": "text",
+          "dimension": "conformity",
+          "severity": "error",
+          "description": "Validate report fields against the precise versioned coverage schema and finite/unbounded universe constraints."
+        },
+        {
+          "name": "count_conservation",
+          "type": "text",
+          "dimension": "consistency",
+          "severity": "error",
+          "description": "Rust must reject counts exceeding declared total and incomplete counts marked complete."
+        },
+        {
+          "name": "no_negative_promotion",
+          "type": "text",
+          "dimension": "accuracy",
+          "severity": "error",
+          "description": "No absent relation is proven merely by an empty index or complete declared inventory; require independent facet authority."
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "jsonSchemaPath",
+      "value": "contracts/evidence-core/coverage.v1.schema.json"
+    },
+    {
+      "property": "implementationStatus",
+      "value": "RUST_ACCOUNTING_IMPLEMENTED_NATIVE_ORACLE_PENDING"
+    },
+    {
+      "property": "sourceObjectFormat",
+      "value": "git-sha1-current"
+    }
+  ],
+  "team": {
+    "id": "excession_maintainers",
+    "name": "Excession maintainers",
+    "description": "Versioned contract maintenance"
+  },
+  "context": {
+    "instructions": "Never infer missing relationships as absence or convert self-hashed receipts into execution attestations. Feature acceptance needs independent Rust/native tests.",
+    "verifiedStatements": [
+      {
+        "id": "coverage_not_closure",
+        "question": "Can COMPLETE_DECLARED_SCOPE establish absence of calls?",
+        "answer": "No. It means reported inventory accounting was complete for a selected finite scope. Negative call/behavior conclusions need separate evidence."
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no_semantic_promotion",
+        "constraint": "Do not convert a candidate, generic graph edge or review event into a stronger claim than the producer supplied."
+      },
+      {
+        "id": "no_absence_inference",
+        "constraint": "Missing observations with incomplete coverage do not prove that relations are absent."
+      },
+      {
+        "id": "no_self_hash_attestation",
+        "constraint": "A self-consistent digest does not attest an independent tool execution or security impact."
+      }
+    ]
+  }
+}

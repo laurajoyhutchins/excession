@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/coverage.v1.schema.json",
+  "title": "Excession producer facet-scoped coverage report v1",
+  "description": "Inventory accounting is distinct from semantic completeness or a legitimate negative conclusion. Rust computes status from exact counts and facets; JSON Schema alone cannot authenticate a producer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "report_id",
+    "producer_receipt_id",
+    "source_commit",
+    "facet",
+    "scope",
+    "status",
+    "examined",
+    "unsupported",
+    "unresolved",
+    "excluded",
+    "truncated",
+    "limitations",
+    "negative_claim_scope"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.evidence-coverage.v1"
+    },
+    "report_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "producer_receipt_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "facet": {
+      "enum": [
+        "GIT_SOURCES",
+        "IMPORTS",
+        "SCIP_REFERENCES",
+        "BUILD_INPUTS",
+        "CALLS",
+        "ARTIFACT_FUNCTIONS",
+        "RUNTIME_WITNESSES"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selection",
+        "configuration",
+        "configuration_resolved",
+        "universe",
+        "declared_total"
+      ],
+      "properties": {
+        "selection": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "configuration_resolved": {
+          "type": "boolean"
+        },
+        "universe": {
+          "enum": [
+            "FINITE_DECLARED",
+            "UNBOUNDED_OR_UNKNOWN"
+          ]
+        },
+        "declared_total": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "universe": {
+                "const": "FINITE_DECLARED"
+              }
+            },
+            "required": [
+              "universe"
+            ]
+          },
+          "then": {
+            "properties": {
+              "declared_total": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "declared_total": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "COMPLETE_DECLARED_SCOPE",
+        "PARTIAL",
+        "UNKNOWN",
+        "UNSUPPORTED"
+      ]
+    },
+    "examined": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unsupported": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unresolved": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "excluded": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "negative_claim_scope": {
+      "const": "INDEPENDENT_ORACLE_REQUIRED"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "COMPLETE_DECLARED_SCOPE"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "properties": {
+              "configuration_resolved": {
+                "const": true
+              },
+              "universe": {
+                "const": "FINITE_DECLARED"
+              }
+            }
+          },
+          "unsupported": {
+            "const": 0
+          },
+          "unresolved": {
+            "const": 0
+          },
+          "excluded": {
+            "const": 0
+          },
+          "truncated": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

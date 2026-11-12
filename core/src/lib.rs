@@ -16,6 +16,7 @@ pub mod doctor;
 pub mod effects;
 pub mod evidence;
 pub mod evidence_query;
+pub mod evidence_store;
 pub mod explain;
 pub mod git;
 pub mod graph;

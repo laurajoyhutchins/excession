@@ -145,9 +145,7 @@ fn extracted_items(source: &str, outlines: &Value, names: &BTreeSet<String>) -> 
         }
         while item_start > 0 {
             let previous_end = item_start - 1;
-            let previous_start = source[..previous_end]
-                .rfind('\n')
-                .map_or(0, |pos| pos + 1);
+            let previous_start = source[..previous_end].rfind('\n').map_or(0, |pos| pos + 1);
             let previous = source[previous_start..previous_end].trim();
             if previous.starts_with("//") && !previous.starts_with("//!") {
                 item_start = previous_start;
@@ -164,7 +162,9 @@ fn extracted_items(source: &str, outlines: &Value, names: &BTreeSet<String>) -> 
             }
         }
         if body.contains("super::") || body.contains("self::") || body.contains("crate::") {
-            return refuse(format!("module-relative reference in extracted function {name}"));
+            return refuse(format!(
+                "module-relative reference in extracted function {name}"
+            ));
         }
         extracted.push(Item {
             name: name.to_owned(),
@@ -275,9 +275,7 @@ fn assert_candidate(
     let mut linked = BTreeSet::new();
     for reference in found.get("references")?.array_ref()? {
         let destination = reference.get("to")?;
-        if destination.get("path")?.str()? != source
-            || destination.get("blob")?.str()? != blob
-        {
+        if destination.get("path")?.str()? != source || destination.get("blob")?.str()? != blob {
             continue;
         }
         let symbol = reference.get("symbol")?.str()?;
@@ -303,7 +301,10 @@ fn edit_operation(
 ) -> Value {
     obj(&[
         ("path", Value::string(path)),
-        ("original_blob", before.map(Value::string).unwrap_or(Value::Null)),
+        (
+            "original_blob",
+            before.map(Value::string).unwrap_or(Value::Null),
+        ),
         ("start_byte", Value::number(start)),
         ("end_byte", Value::number(end)),
         ("replacement", Value::string(replacement)),
@@ -321,8 +322,10 @@ fn replay_edits(original: &str, operations: &Value, path: &str) -> Result<String
             .map_err(|_| "negative generated edit offset")?;
         let end = usize::try_from(edit.get("end_byte")?.integer()?)
             .map_err(|_| "negative generated edit offset")?;
-        if start > end || end > original.len()
-            || !original.is_char_boundary(start) || !original.is_char_boundary(end)
+        if start > end
+            || end > original.len()
+            || !original.is_char_boundary(start)
+            || !original.is_char_boundary(end)
         {
             return refuse("generated edit crosses a source boundary");
         }
@@ -415,7 +418,11 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
     // independently replayable, and stable across preview/apply invocations.
     let export = format!(
         "pub use crate::{module}::{{{}}};",
-        extracted.iter().map(|item| item.name.as_str()).collect::<Vec<_>>().join(", ")
+        extracted
+            .iter()
+            .map(|item| item.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     let mut operations = Vec::new();
     for (position, item) in extracted.iter().enumerate() {
@@ -469,7 +476,8 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
             .ok_or("worktree output has no parent")?
             .canonicalize()
             .map_err(|e| format!("worktree parent: {e}"))?;
-        let repository = repo.canonicalize()
+        let repository = repo
+            .canonicalize()
             .map_err(|e| format!("source checkout: {e}"))?;
         if parent.starts_with(&repository) {
             return refuse("generated worktree cannot be inside the original checkout");
@@ -477,7 +485,15 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         let output_str = output.to_str().ok_or("non-UTF-8 worktree output path")?;
         git::command(
             repo,
-            &["-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", output_str, &revision],
+            &[
+                "-c",
+                "core.hooksPath=/dev/null",
+                "worktree",
+                "add",
+                "--detach",
+                output_str,
+                &revision,
+            ],
         )?;
         let write_result = (|| -> Result<()> {
             fs::write(output.join(request.source), &updated_source)
@@ -491,7 +507,14 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         if let Err(error) = write_result {
             let _ = git::command(
                 repo,
-                &["-c", "core.hooksPath=/dev/null", "worktree", "remove", "--force", output_str],
+                &[
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "worktree",
+                    "remove",
+                    "--force",
+                    output_str,
+                ],
             );
             return Err(error);
         }
@@ -515,7 +538,10 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         ("recipe", Value::string("extract-shared-module")),
         ("plan_id", Value::string(plan_id)),
         ("edits", operation_values),
-        ("linked_functions", Value::array(linked.iter().map(Value::string))),
+        (
+            "linked_functions",
+            Value::array(linked.iter().map(Value::string)),
+        ),
         (
             "additional_helper_functions",
             Value::array(names.difference(&linked).map(Value::string)),
@@ -633,16 +659,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(captured[0].body, "/// documented\npub fn foo() {}");
-        assert!(extracted_items(
-            "#[cfg(test)]\npub fn foo() {}\n",
-            &fake_outline(&[("foo", "function_item", 13, 28)]),
-            &names,
-        ).is_err());
-        assert!(extracted_items(
-            "/* attached */\npub fn foo() {}\n",
-            &fake_outline(&[("foo", "function_item", 15, 30)]),
-            &names,
-        ).is_err());
+        assert!(
+            extracted_items(
+                "#[cfg(test)]\npub fn foo() {}\n",
+                &fake_outline(&[("foo", "function_item", 13, 28)]),
+                &names,
+            )
+            .is_err()
+        );
+        assert!(
+            extracted_items(
+                "/* attached */\npub fn foo() {}\n",
+                &fake_outline(&[("foo", "function_item", 15, 30)]),
+                &names,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -660,25 +692,38 @@ mod tests {
     fn evidence_report(target: &str, symbol: &str) -> Value {
         obj(&[
             ("indexer", obj(&[("name", Value::string("rust-analyzer"))])),
-            ("triage", obj(&[
-                ("likely_structural_module_candidate_ids", Value::array([])),
-            ])),
-            ("candidates", Value::array([obj(&[
-                ("candidate_id", Value::string("candidate")),
-                ("kind", Value::string("reciprocal_symbol_references")),
-                ("sources", Value::array([obj(&[
-                    ("path", Value::string("core/src/semantic.rs")),
-                    ("blob", Value::string("a".repeat(40))),
-                    ("language", Value::string("rust")),
-                ])])),
-                ("references", Value::array([obj(&[
-                    ("to", obj(&[
-                        ("path", Value::string(target)),
-                        ("blob", Value::string("a".repeat(40))),
-                    ])),
-                    ("symbol", Value::string(symbol)),
-                ])])),
-            ])])),
+            (
+                "triage",
+                obj(&[("likely_structural_module_candidate_ids", Value::array([]))]),
+            ),
+            (
+                "candidates",
+                Value::array([obj(&[
+                    ("candidate_id", Value::string("candidate")),
+                    ("kind", Value::string("reciprocal_symbol_references")),
+                    (
+                        "sources",
+                        Value::array([obj(&[
+                            ("path", Value::string("core/src/semantic.rs")),
+                            ("blob", Value::string("a".repeat(40))),
+                            ("language", Value::string("rust")),
+                        ])]),
+                    ),
+                    (
+                        "references",
+                        Value::array([obj(&[
+                            (
+                                "to",
+                                obj(&[
+                                    ("path", Value::string(target)),
+                                    ("blob", Value::string("a".repeat(40))),
+                                ]),
+                            ),
+                            ("symbol", Value::string(symbol)),
+                        ])]),
+                    ),
+                ])]),
+            ),
         ])
     }
 
@@ -704,18 +749,30 @@ mod tests {
             BTreeSet::from(["module_name_with_import_base".to_owned()])
         );
         let irrelevant = BTreeSet::from(["module_name".to_owned()]);
-        assert!(assert_candidate(
-            &report, "candidate", "core/src/semantic.rs", &"a".repeat(40),
-            &irrelevant,
-        ).is_err());
+        assert!(
+            assert_candidate(
+                &report,
+                "candidate",
+                "core/src/semantic.rs",
+                &"a".repeat(40),
+                &irrelevant,
+            )
+            .is_err()
+        );
         let wrong_destination = evidence_report(
             "core/src/index.rs",
             "rust-analyzer cargo excession 0.2.0 semantic/module_name_with_import_base().",
         );
-        assert!(assert_candidate(
-            &wrong_destination, "candidate", "core/src/semantic.rs",
-            &"a".repeat(40), &selections,
-        ).is_err());
+        assert!(
+            assert_candidate(
+                &wrong_destination,
+                "candidate",
+                "core/src/semantic.rs",
+                &"a".repeat(40),
+                &selections,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -727,7 +784,12 @@ mod tests {
             original,
             &fake_outline(&[
                 ("one", "function_item", 0, first.len()),
-                ("two", "function_item", second_start, second_start + first.len()),
+                (
+                    "two",
+                    "function_item",
+                    second_start,
+                    second_start + first.len(),
+                ),
             ]),
             &selection("two,one").unwrap(),
         )
@@ -735,17 +797,42 @@ mod tests {
         let root = "pub mod existing;\n  \n";
         let (source_after, _, root_after) = edits(original, root, "shared", &selected).unwrap();
         let replacements = Value::array(vec![
-            edit_operation("src/original.rs", Some("a"), selected[0].start,
-                selected[0].end, "pub use crate::shared::{one, two};"),
-            edit_operation("src/original.rs", Some("a"), selected[1].start,
-                selected[1].end, ""),
-            edit_operation("src/lib.rs", Some("b"), root.len(), root.len(),
-                "mod shared;\n"),
+            edit_operation(
+                "src/original.rs",
+                Some("a"),
+                selected[0].start,
+                selected[0].end,
+                "pub use crate::shared::{one, two};",
+            ),
+            edit_operation(
+                "src/original.rs",
+                Some("a"),
+                selected[1].start,
+                selected[1].end,
+                "",
+            ),
+            edit_operation(
+                "src/lib.rs",
+                Some("b"),
+                root.len(),
+                root.len(),
+                "mod shared;\n",
+            ),
         ]);
-        assert_eq!(replay_edits(original, &replacements, "src/original.rs").unwrap(), source_after);
-        assert_eq!(replay_edits(root, &replacements, "src/lib.rs").unwrap(), root_after);
+        assert_eq!(
+            replay_edits(original, &replacements, "src/original.rs").unwrap(),
+            source_after
+        );
+        assert_eq!(
+            replay_edits(root, &replacements, "src/lib.rs").unwrap(),
+            root_after
+        );
         let invalid = Value::array([edit_operation(
-            "src/original.rs", Some("a"), original.len() + 1, original.len() + 1, "bad"
+            "src/original.rs",
+            Some("a"),
+            original.len() + 1,
+            original.len() + 1,
+            "bad",
         )]);
         assert!(replay_edits(original, &invalid, "src/original.rs").is_err());
         let overlap = Value::array([

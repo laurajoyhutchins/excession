@@ -10,8 +10,8 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -250,14 +250,14 @@ fn observe(command: &mut Command) -> Result<Observation> {
     let output_exceeded = Arc::new(AtomicBool::new(false));
     let stdout_exceeded = Arc::clone(&output_exceeded);
     let stderr_exceeded = Arc::clone(&output_exceeded);
-    let reader_out = thread::spawn(move || read_bounded(stdout, MAX_STDOUT_BYTES, &stdout_exceeded));
-    let reader_err = thread::spawn(move || read_bounded(stderr, MAX_STDERR_BYTES, &stderr_exceeded));
+    let reader_out =
+        thread::spawn(move || read_bounded(stdout, MAX_STDOUT_BYTES, &stdout_exceeded));
+    let reader_err =
+        thread::spawn(move || read_bounded(stderr, MAX_STDERR_BYTES, &stderr_exceeded));
     let (status, timed_out) = loop {
         match child.try_wait().map_err(|e| format!("wait: {e}"))? {
             Some(status) => break (status, false),
-            None
-                if output_exceeded.load(Ordering::Acquire) || started.elapsed() >= TIMEOUT =>
-            {
+            None if output_exceeded.load(Ordering::Acquire) || started.elapsed() >= TIMEOUT => {
                 let timed_out = started.elapsed() >= TIMEOUT;
                 let _ = child.kill();
                 break (
@@ -275,7 +275,11 @@ fn observe(command: &mut Command) -> Result<Observation> {
     Ok(Observation {
         stdout: out,
         stderr: err,
-        exit_code: if timed_out { 124 } else { status.code().unwrap_or(1) },
+        exit_code: if timed_out {
+            124
+        } else {
+            status.code().unwrap_or(1)
+        },
         wall_ms: round3(started.elapsed().as_secs_f64() * 1000.0),
         child_cpu_ms: round3((children_cpu_ms()? - before).max(0.0)),
         timeout: timed_out,

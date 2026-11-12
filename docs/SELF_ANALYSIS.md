@@ -35,7 +35,7 @@ Evidence artifacts (uploaded even on failure):
 | --- | --- |
 | `index.scip` | Upstream rust-analyzer protobuf index |
 | `index.scip.json` | Official decoded SCIP JSON, unmodified |
-| `scip-report.json` | Git-bound symbol/reference and advisory refactor hypotheses |
+| `scip-report.json` | Git-bound symbol/reference hypotheses and advisory triage; all candidates and original IDs retained |
 | `scip-audit.json` | Reconstructed SCIP report replay receipt |
 | `syntax.json`, `syntax-audit.json` | General source-bound syntax and parser availability |
 | `dependencies.json`, `dependencies-audit.json` | Non-Rust conservative path candidates and unknowns |
@@ -77,3 +77,8 @@ uses its observations to skip tests, approve changes, or claim complete
 dependency or behavioral closure. The SCIP output and syntax candidates have
 different semantics and must not be combined into an invented "recall"
 fraction without an independently defined denominator.
+
+The Markdown summary also distinguishes likely crate-root module-declaration
+links from other candidates using the SCIP report's advisory triage partition.
+Neither class is proof of a defect or of safety. The report's original
+reference evidence is not removed or weakened by the classification.

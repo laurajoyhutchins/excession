@@ -280,6 +280,18 @@ def scip_evidence(
         if "reference" in candidate:
             check_source(candidate["reference"]["from"])
             check_source(candidate["reference"]["to"])
+    triage = report["triage"]
+    require(triage["basis"] == "ADVISORY_RUST_ANALYZER_TOP_LEVEL_MODULE_SYMBOL",
+            "unsupported SCIP triage basis")
+    identifiers = [candidate["candidate_id"] for candidate in report["candidates"]]
+    require(len(identifiers) == len(set(identifiers)), "duplicate SCIP candidate identity")
+    structural = triage["likely_structural_module_candidate_ids"]
+    review = triage["review_candidate_ids"]
+    require(len(structural) == len(set(structural))
+            and len(review) == len(set(review))
+            and set(structural).isdisjoint(review)
+            and set(structural) | set(review) == set(identifiers),
+            "SCIP triage does not partition candidate identities")
     return {
         "source": "rust-analyzer/SCIP",
         "indexer_version": report["indexer"]["version"],
@@ -290,6 +302,8 @@ def scip_evidence(
         "matched_cross_file_references": coverage["matched_cross_file_references"],
         "unresolved_references": coverage["unresolved_references"],
         "refactor_hypotheses": len(report["candidates"]),
+        "likely_structural_module_links": len(structural),
+        "other_review_candidates": len(review),
         "audit": receipt["status"],
         "indexer_independently_executed": False,
         "provenance": "INDEXER_OUTPUT_GIT_BOUND_NOT_ATTESTED",
@@ -325,6 +339,9 @@ def report_markdown(summary: dict[str, Any]) -> str:
             f"{summary['scip']['matched_cross_file_references']} cross-file references; "
             f"{summary['scip']['unresolved_references']} unresolved; "
             f"{summary['scip']['refactor_hypotheses']} advisory hypotheses).",
+            f"- SCIP candidate triage: {summary['scip']['other_review_candidates']} "
+            f"other candidates; {summary['scip']['likely_structural_module_links']} "
+            "likely crate-root/module structure links (retained, not discarded).",
             f"- SCIP/Git replay: {summary['scip']['audit']}.",
         ] if "scip" in summary else []),
         f"- Changed paths: {len(impact['changed_paths'])}; "

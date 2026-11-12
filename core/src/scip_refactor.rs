@@ -177,6 +177,55 @@ fn reference(v: &Reference, documents: &BTreeMap<String, Document>) -> Value {
     ])
 }
 
+/// Recognize one narrowly defined low-signal SCIP shape, without parsing Rust
+/// or treating a path layout as evidence of behavior. This is only advisory
+/// triage: all native references and source identities remain in the report.
+fn crate_root_sibling_module(root: &str, child: &str) -> Option<&str> {
+    let (directory, filename) = root.rsplit_once('/')?;
+    if !(directory == "src" || directory.ends_with("/src"))
+        || !matches!(filename, "lib.rs" | "main.rs")
+    {
+        return None;
+    }
+    let sibling = child.strip_prefix(directory)?.strip_prefix('/')?;
+    if sibling.contains('/') {
+        return None;
+    }
+    let module = sibling.strip_suffix(".rs")?;
+    if module.is_empty() || matches!(module, "lib" | "main" | "mod") {
+        return None;
+    }
+    Some(module)
+}
+
+fn likely_rust_module_structure(
+    indexer: &str,
+    left: &Document,
+    right: &Document,
+    forward: &[Reference],
+    backward: &[Reference],
+) -> bool {
+    if indexer != "rust-analyzer" || left.language != "rust" || right.language != "rust" {
+        return false;
+    }
+    let (module, root_to_child) =
+        if let Some(module) = crate_root_sibling_module(&left.path, &right.path) {
+            (module, forward)
+        } else if let Some(module) = crate_root_sibling_module(&right.path, &left.path) {
+            (module, backward)
+        } else {
+            return false;
+        };
+    // The native symbol must be exactly the sibling module's symbol.
+    // If the crate root also refers to a function/type inside that module,
+    // retain the pair among the review candidates. Unindexed links are unknown.
+    root_to_child.len() == 1
+        && root_to_child[0].symbol.starts_with("rust-analyzer cargo ")
+        && root_to_child[0]
+            .symbol
+            .ends_with(&format!(" {module}/"))
+}
+
 /// Accept JSON decoded by the official SCIP CLI. No SCIP indexer is invoked:
 /// builds and index generation remain explicit, isolated preparatory work.
 pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
@@ -389,6 +438,8 @@ fn analyze_bytes(
     }
 
     let mut candidates = Vec::new();
+    let mut structural_candidate_ids = BTreeSet::new();
+    let mut review_candidate_ids = BTreeSet::new();
     // A reciprocal *symbol reference* is not necessarily a compiler import
     // cycle; keep this distinct from the legacy dependency_cycle hypothesis.
     for ((left, right), forward) in &by_pair {
@@ -402,14 +453,28 @@ fn analyze_bytes(
                 .take(MAX_REFERENCES_PER_CANDIDATE)
                 .map(|x| reference(x, &documents))
                 .collect::<Vec<_>>();
-            candidates.push(candidate(obj(&[
+            let likely_structure = likely_rust_module_structure(
+                name,
+                &documents[left],
+                &documents[right],
+                forward,
+                backward,
+            );
+            let item = candidate(obj(&[
                 ("kind", Value::string("reciprocal_symbol_references")),
                 ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESIS")),
                 ("sources", Value::array([source(&documents[left]), source(&documents[right])])),
                 ("references", Value::array(evidence)),
                 ("action", Value::string("Review reciprocal symbol use for a possible boundary or responsibility split; this is not proven to be an import cycle.")),
                 ("verification", Value::string("Check language-specific compilation, generated code, runtime linkage and tests before modifying either file.")),
-            ]))?);
+            ]))?;
+            let id = item.get("candidate_id")?.str()?.to_owned();
+            if likely_structure {
+                structural_candidate_ids.insert(id);
+            } else {
+                review_candidate_ids.insert(id);
+            }
+            candidates.push(item);
         }
     }
 
@@ -420,19 +485,26 @@ fn analyze_bytes(
             && to.language != "unspecified"
             && from.language != to.language
         {
-            candidates.push(candidate(obj(&[
+            let item = candidate(obj(&[
                 ("kind", Value::string("cross_language_symbol_boundary")),
                 ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESIS")),
                 ("reference", reference(edge, &documents)),
                 ("action", Value::string("Inspect the explicitly indexed cross-language symbol boundary and its ownership; do not infer FFI or API equivalence.")),
                 ("verification", Value::string("Independently verify the language-specific bridge, build configurations and integration tests.")),
-            ]))?);
+            ]))?;
+            review_candidate_ids.insert(item.get("candidate_id")?.str()?.to_owned());
+            candidates.push(item);
         }
     }
     if candidates.len() > MAX_CANDIDATES {
         return refuse("SCIP refactor candidate limit exceeded, narrow the index");
     }
-    candidates.sort_by_key(Value::canonical);
+    // Present review candidates first, but neither suppress nor alter the
+    // original content-addressed candidate identities or their references.
+    candidates.sort_by_key(|item| {
+        let id = item.get("candidate_id").and_then(Value::str).unwrap_or("");
+        (structural_candidate_ids.contains(id), item.canonical())
+    });
     let mut report = obj(&[
         ("schema", Value::string("excession.scip-refactor.v1")),
         ("status", Value::string("UNVERIFIED_SCIP_RELATIONS")),
@@ -474,6 +546,11 @@ fn analyze_bytes(
             ]),
         ),
         ("candidates", Value::array(candidates)),
+        ("triage", obj(&[
+            ("basis", Value::string("ADVISORY_RUST_ANALYZER_TOP_LEVEL_MODULE_SYMBOL")),
+            ("review_candidate_ids", Value::array(review_candidate_ids.into_iter().map(Value::string))),
+            ("likely_structural_module_candidate_ids", Value::array(structural_candidate_ids.into_iter().map(Value::string))),
+        ])),
     ]);
     if include_references {
         // Preserve the exact native SCIP reference predicate. Neither this
@@ -559,4 +636,83 @@ mod tests {
         )]);
         assert!(range_line(&bad, &lines, 1).is_err());
     }
+ 
+    #[test]
+    fn crate_root_module_triangulation_is_conservative() {
+        let root = Document {
+            path: "core/src/lib.rs".into(),
+            language: "rust".into(),
+            blob: "a".repeat(40),
+        };
+        let module = Document {
+            path: "core/src/semantic.rs".into(),
+            language: "rust".into(),
+            blob: "b".repeat(40),
+        };
+        let declaration = Reference {
+            from: root.path.clone(),
+            to: module.path.clone(),
+            symbol: "rust-analyzer cargo excession 0.2.0 semantic/".into(),
+            line: 1,
+        };
+        let shared_type = Reference {
+            from: module.path.clone(),
+            to: root.path.clone(),
+            symbol: "rust-analyzer cargo excession 0.2.0 Result#".into(),
+            line: 5,
+        };
+        assert!(likely_rust_module_structure(
+            "rust-analyzer",
+            &root,
+            &module,
+            &[declaration.clone()],
+            &[shared_type.clone()]
+        ));
+        // A real API use from the crate root is not just module layout.
+        let mut api_use = declaration.clone();
+        api_use.symbol = "rust-analyzer cargo excession 0.2.0 semantic/prepare_sources().".into();
+        assert!(!likely_rust_module_structure(
+            "rust-analyzer",
+            &root,
+            &module,
+            &[declaration.clone(), api_use],
+            &[shared_type.clone()]
+        ));
+        assert!(!likely_rust_module_structure(
+            "rust-analyzer",
+            &root,
+            &module,
+            &[shared_type.clone()],
+            &[declaration.clone()]
+        ));
+        assert!(!likely_rust_module_structure(
+            "other-indexer",
+            &root,
+            &module,
+            &[declaration.clone()],
+            &[shared_type.clone()]
+        ));
+        let mut nested = module.clone();
+        nested.path = "core/src/semantic/worker.rs".into();
+        assert!(!likely_rust_module_structure(
+            "rust-analyzer",
+            &root,
+            &nested,
+            &[declaration],
+            &[shared_type]
+        ));
+    }
+
+    #[test]
+    fn candidate_id_is_source_payload_identity_not_triage() {
+        let payload = obj(&[
+            ("kind", Value::string("reciprocal_symbol_references")),
+            ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESIS")),
+        ]);
+        let expected = payload.sha256();
+        let item = candidate(payload).unwrap();
+        assert_eq!(item.get("candidate_id").unwrap().str().unwrap(), expected);
+        assert!(item.get("triage").is_err());
+    }
+
 }

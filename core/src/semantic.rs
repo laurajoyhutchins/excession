@@ -73,7 +73,6 @@ pub fn module_name_with_import_base(
     Some((name.strip_prefix(&prefix)?.to_owned(), is_test))
 }
 
-
 fn put_dependency(
     db: &Db,
     id: i64,

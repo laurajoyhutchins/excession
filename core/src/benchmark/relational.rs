@@ -130,8 +130,12 @@ fn oracle(graph: &Graph, seed: &str, kind: &str) -> Result<Vec<String>> {
     }
     let selected: BTreeSet<String> = match kind {
         "focus" => [seed.to_owned()].into_iter().collect(),
-        "tests" => reachable(graph, seed, false).keys().chain(reachable(graph, seed, true).keys())
-            .filter(|name| name.starts_with("tests.") && name.as_str() != seed).cloned().collect(),
+        "tests" => {
+            let forward = reachable(graph, seed, false);
+            let backward = reachable(graph, seed, true);
+            forward.keys().chain(backward.keys())
+                .filter(|name| name.starts_with("tests.") && name.as_str() != seed).cloned().collect()
+        },
         "dependencies_direct" | "dependents_direct" => reachable(graph, seed, kind == "dependents_direct")
             .into_iter().filter(|(_, depth)| *depth == 1).map(|(name, _)| name).collect(),
         _ => unreachable!(),
@@ -343,6 +347,7 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
     config.validate()?;
     if !binary.is_file() { return refuse("benchmark binary is missing"); }
     fs::create_dir(&config.out).map_err(|e| format!("create benchmark output: {e}"))?;
+    let output = config.out.canonicalize().map_err(|e| format!("resolve output directory: {e}"))?;
     let scratch = Scratch::new()?;
     let mut observations: Vec<Value> = Vec::new();
     let mut workloads = Vec::new();
@@ -353,7 +358,7 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
             let db = scratch.0.join(format!("{name}.sqlite"));
             let history = fixture(&source, n, fanout, config.revisions)?;
             let bundle_name = format!("{name}.bundle");
-            let bundle = config.out.join(&bundle_name);
+            let bundle = output.join(&bundle_name);
             checked(Command::new("git").arg("-C").arg(&source).args(["bundle", "create"]).arg(&bundle).arg("--all"))?;
             let bundle_sha = digest::sha256(&fs::read(&bundle).map_err(|e| e.to_string())?);
             let mut item = json!({"name":name,"size":n,"fanout":fanout,"source_bundle":bundle_name,"bundle_sha256":bundle_sha,"revisions":[]});
@@ -375,7 +380,7 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
                     "independently_specified_edges_equal":exact,"missing_edges":missing,"unexpected_edges":unexpected
                 }));
                 if !exact {
-                    write_json(&config.out.join("coverage_failure.json"), &item)?;
+                    write_json(&output.join("coverage_failure.json"), &item)?;
                     return refuse(format!("indexed edges contradict independent fixture: {name} revision {}", snapshot.ordinal));
                 }
             }
@@ -408,7 +413,7 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
             }
         }
     }
-    let mut lines = File::create(config.out.join("trials.jsonl")).map_err(|e| e.to_string())?;
+    let mut lines = File::create(output.join("trials.jsonl")).map_err(|e| e.to_string())?;
     for trial in &observations {
         serde_json::to_writer(&mut lines, trial).map_err(|e| e.to_string())?;
         lines.write_all(b"\n").map_err(|e| e.to_string())?;
@@ -424,9 +429,11 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
             states.insert(state.into(), json!(samples.iter().filter(|trial| trial["status"] == state).count()));
         }
         counts.insert(arm.into(), Value::Object(states));
-        med_wall.insert(arm.into(), json!(median(samples.iter().map(|x| x["wall_ms"].as_f64().unwrap_or(0.0)).collect())?));
-        med_size.insert(arm.into(), json!(median(samples.iter().map(|x| x["stdout_bytes"].as_f64().unwrap_or(0.0)).collect())?));
-        totals.insert(arm.into(), json!(round3(samples.iter().map(|x| x["wall_ms"].as_f64().unwrap_or(0.0)).sum())));
+        let wall: Vec<f64> = samples.iter().map(|x| x["wall_ms"].as_f64().ok_or("missing wall_ms sample".to_owned())).collect::<Result<_>>()?;
+        let bytes: Vec<f64> = samples.iter().map(|x| x["stdout_bytes"].as_f64().ok_or("missing stdout_bytes sample".to_owned())).collect::<Result<_>>()?;
+        med_wall.insert(arm.into(), json!(median(wall.clone())?));
+        med_size.insert(arm.into(), json!(median(bytes)?));
+        totals.insert(arm.into(), json!(round3(wall.iter().sum())));
     }
     let summary = json!({
         "schema":"excession.relational-retrieval.v1",
@@ -438,8 +445,8 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
         "total_query_wall_ms":totals,
         "limitations":"Specified synthetic Python import graphs only; no task-completion metric. Both arms execute one native Rust CLI call per identical query. Per-query costs exclude indexing, which is recorded for every revision; the graph arm verifies the Git tree but does not authenticate a derived view."
     });
-    write_json(&config.out.join("summary.json"), &summary)?;
-    let report = super::build_relational(&config.out)?;
+    write_json(&output.join("summary.json"), &summary)?;
+    let report = super::build_relational(&output)?;
     if observations.iter().any(|trial| trial["status"] != "ok") {
         return refuse(format!("relational benchmark contains failed observations; see {}", report.display()));
     }

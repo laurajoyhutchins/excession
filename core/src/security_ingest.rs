@@ -382,7 +382,7 @@ mod tests {
     }
     #[test]
     fn scanners_are_separate() {
-        assert!(rows_from_report(Path::new("/tmp"), "osv", &Value::Null).is_err());
+        assert!(rows_from_report(Path::new("/tmp"), "0000000000000000000000000000000000000000", "osv", &Value::Null).is_err());
     }
     #[test]
     fn line_range_checks() {

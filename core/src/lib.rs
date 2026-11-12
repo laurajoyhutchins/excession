@@ -40,6 +40,7 @@ pub mod kernel_links;
 mod module_identity;
 pub mod native_boundary;
 pub mod native_discovery;
+pub mod native_syntax;
 pub mod optimizer;
 pub mod overlap;
 pub mod preflight;

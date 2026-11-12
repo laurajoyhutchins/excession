@@ -1,4 +1,0 @@
-# Optional offline syntax bridge. Prefetched grammar binaries are not vendored.
-# Pin both the parser front-end and its runtime, not just the top-level package.
-tree-sitter==0.26.1
-tree-sitter-language-pack==1.25.0

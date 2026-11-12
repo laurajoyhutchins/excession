@@ -210,16 +210,44 @@ pub fn run(
 }
 
 pub fn human(report: &Value) -> Result<String> {
-    Ok(format!(
-        "Excession change impact: {} candidate dependent paths.\n\
-         Base: {}\nHead: {}\nUnknown/unsupported: {} observations.\n\
-         Coverage: PARTIAL. Unlisted tests cannot be assumed safe to skip.\n\
-         Use --json for exact evidence paths.",
-        report.get("effects")?.array_ref()?.len(),
-        report.get("base_commit")?.str()?,
-        report.get("head_commit")?.str()?,
-        report.get("unknown")?.array_ref()?.len(),
-    ))
+    const PREVIEW_LIMIT: usize = 10;
+    let effects = report.get("effects")?.array_ref()?;
+    let gaps = report.get("unknown")?.array_ref()?.len();
+    let mut lines = vec![
+        format!(
+            "Excession change impact: {} candidate dependent paths.",
+            effects.len()
+        ),
+        format!("Base: {}", report.get("base_commit")?.str()?),
+        format!("Head: {}", report.get("head_commit")?.str()?),
+    ];
+    if effects.is_empty() {
+        lines.push("No candidate dependents found in the analyzed scope.".to_owned());
+    } else {
+        lines.push("Candidate paths (source -> changed dependency):".to_owned());
+        for effect in effects.iter().take(PREVIEW_LIMIT) {
+            let hops = effect.get("hops")?.array_ref()?;
+            let last = hops.last().ok_or("impact candidate has no evidence path")?;
+            lines.push(format!(
+                "  {:?} -> {:?} ({} hop{})",
+                effect.get("entity")?.get("path")?.str()?,
+                last.get("target")?.get("path")?.str()?,
+                hops.len(),
+                if hops.len() == 1 { "" } else { "s" }
+            ));
+            lines.push(format!("    claim {}", effect.get("claim_id")?.str()?));
+        }
+        if effects.len() > PREVIEW_LIMIT {
+            lines.push(format!(
+                "  ... {} additional candidate paths (use --json to inspect all)",
+                effects.len() - PREVIEW_LIMIT
+            ));
+        }
+    }
+    lines.push(format!("Unknown/unsupported: {gaps} observations."));
+    lines.push("Coverage: PARTIAL. Unlisted tests cannot be assumed safe to skip.".to_owned());
+    lines.push("Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence.".to_owned());
+    Ok(lines.join("\n"))
 }
 
 #[cfg(test)]

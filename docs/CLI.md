@@ -49,12 +49,17 @@ cd /path/to/repository
 excession discover .
 excession analyze .
 excession changes . --base HEAD~1
-excession impact . --base HEAD~1 --json > /tmp/impact.json
+excession impact . --base HEAD~1 --output /tmp/impact.json
 ```
 
-A report may contain no affected paths, and that does not prove absence of
-runtime effects. When `effects` contains a candidate, select a `claim_id` from
-the actual JSON and request a source-replayed explanation:
+The default human report shows up to ten candidate paths and their full
+`claim_id` values. `--output` saves the complete versioned JSON at a new,
+absolute path outside the source checkout, refusing to overwrite an existing
+file. It does not create parent directories. `--json` can also print the full
+machine-readable report to stdout, and may be combined with `--output`.
+A report with no affected paths does not prove absence of runtime effects.
+When there is a candidate, copy its displayed ID and request a source-replayed
+explanation:
 
 ```sh
 excession explain . --report /tmp/impact.json --id CLAIM_ID

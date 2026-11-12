@@ -29,11 +29,14 @@ From a supported Python or JavaScript repository:
 cd /path/to/repository
 excession discover .
 excession analyze .
-excession impact . --base HEAD~1 --json > /tmp/excession-impact.json
+excession impact . --base HEAD~1 --output /tmp/excession-impact.json
 ```
 
-The impact report's `effects` entries include deterministic `claim_id` values.
-If the report contains a candidate effect, inspect its evidence:
+The default impact output lists candidate dependent paths and their full
+`claim_id` values. `--output` saves the exact replayable JSON without
+overwriting an existing file or writing into the source repository. Use an
+absolute path in an existing external directory. If a candidate is listed,
+copy its claim ID to inspect its evidence:
 
 ```sh
 excession explain . --report /tmp/excession-impact.json \

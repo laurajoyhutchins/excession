@@ -142,6 +142,64 @@ fn reports_importer_as_candidate_without_authorizing_test_skips() {
                     .all(|e| e.get("assessment").unwrap().str().unwrap() == "CANDIDATE")
             })
     }));
+    // The human output must expose paths and full claim IDs. The saved
+    // report is exactly the machine-readable version used by explain.
+    let saved_path = root.join("impact.json");
+    let human = cmd(
+        bin,
+        &[
+            "impact",
+            ".",
+            "--base",
+            &base,
+            "--head",
+            &head,
+            "--db",
+            database.to_str().unwrap(),
+            "--output",
+            saved_path.to_str().unwrap(),
+        ],
+    );
+    assert!(human.contains("pkg/first.py"));
+    assert!(human.contains("Saved replayable report:"));
+    let first_id = effects[0].get("claim_id").unwrap().str().unwrap();
+    assert!(human.contains(first_id));
+    assert_eq!(fs::read_to_string(&saved_path).unwrap().trim(), output);
+
+    // Do not clobber existing evidence or create artifacts in the checkout.
+    let repeat = Command::new(bin)
+        .current_dir(&repo)
+        .args([
+            "impact",
+            ".",
+            "--base",
+            &base,
+            "--db",
+            database.to_str().unwrap(),
+            "--output",
+            saved_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!repeat.status.success());
+    assert_eq!(fs::read_to_string(&saved_path).unwrap().trim(), output);
+    let source_path = repo.join("impact.json");
+    let inside = Command::new(bin)
+        .current_dir(&repo)
+        .args([
+            "impact",
+            ".",
+            "--base",
+            &base,
+            "--db",
+            database.to_str().unwrap(),
+            "--output",
+            source_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!inside.status.success());
+    assert!(!source_path.exists());
     fs::remove_dir_all(root).unwrap();
 }
 

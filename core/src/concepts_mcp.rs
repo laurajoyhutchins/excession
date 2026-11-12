@@ -27,7 +27,7 @@ pub struct Config {
     pub allow_publish: bool,
 }
 
-fn native<T: serde::Serialize>(v: &T) -> Result<Value> {
+fn native(v: &serde_json::Value) -> Result<Value> {
     let bytes = serde_json::to_vec(v).map_err(|e| format!("serialize MCP tool schema: {e}"))?;
     json::parse(&bytes)
 }
@@ -85,7 +85,7 @@ fn specs(allow_publish: bool) -> Result<Value> {
                 "required":["proposal"],"properties":{"proposal":{"type":"object"}}}
         }));
     }
-    native(&tools)
+    native(&serde_json::Value::Array(tools))
 }
 
 fn tool_result(value: Value) -> Value {

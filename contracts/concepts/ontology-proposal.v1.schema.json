@@ -103,10 +103,9 @@
           "predicate": {
             "enum": [
               "POSSIBLY_SAME_RESPONSIBILITY",
-              "SHARES_INTERFACE",
-              "ALIAS_OF",
-              "CONTRADICTS"
-            ]
+              "SHARES_INTERFACE"
+            ],
+            "description": "Only provisional associations supported by observed native references; stronger alias/equivalence/contradiction assertions need independent evidence producers."
           },
           "paths": {
             "type": "array",

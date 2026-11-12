@@ -87,7 +87,10 @@ pub fn context(
     if focus.is_empty() || focus.len() > MAX_FOCUS || focus.iter().any(|p| p.is_empty()) {
         return refuse("agent context requires 1..=16 nonempty --focus Git paths");
     }
-    let focus = focus.into_iter().map(str::to_owned).collect::<BTreeSet<_>>();
+    let focus = focus
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
     for path in &focus {
         git::validate_path(path)?;
     }
@@ -96,9 +99,7 @@ pub fn context(
     let entries = git::entries(&discovered.root, &discovered.commit)?;
     let blobs = entries
         .iter()
-        .filter(|entry| {
-            entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755")
-        })
+        .filter(|entry| entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755"))
         .map(|entry| (entry.path.as_str(), entry))
         .collect::<BTreeMap<_, _>>();
 
@@ -114,12 +115,7 @@ pub fn context(
     let mut relations = Vec::new();
     let mut total_relations = 0usize;
     let mut truncated = false;
-    match analyze::run_if_supported(
-        &discovered.root,
-        &discovered.commit,
-        roots,
-        database,
-    )? {
+    match analyze::run_if_supported(&discovered.root, &discovered.commit, roots, database)? {
         Some((analysis, _)) => {
             for relationship in analysis.get("relationships")?.array_ref()? {
                 let from = relationship.get("source")?.get("path")?.str()?;
@@ -157,7 +153,10 @@ pub fn context(
         total_tests += 1;
         if test_candidates.len() < limit {
             test_candidates.push(obj(&[
-                ("source", source(&discovered.commit, &discovered.tree, entry)),
+                (
+                    "source",
+                    source(&discovered.commit, &discovered.tree, entry),
+                ),
                 ("reason", Value::string("PATH_NAME_HEURISTIC")),
                 ("selection_verified", Value::Bool(false)),
             ]));
@@ -180,17 +179,22 @@ pub fn context(
         ("relationship_count", Value::number(total_relations)),
         ("test_candidates", Value::array(test_candidates)),
         ("test_candidate_count", Value::number(total_tests)),
-        ("coverage", obj(&[
-            ("status", Value::string("PARTIAL")),
-            ("gaps", Value::array(gaps)),
-            ("truncated", Value::Bool(truncated)),
-        ])),
+        (
+            "coverage",
+            obj(&[
+                ("status", Value::string("PARTIAL")),
+                ("gaps", Value::array(gaps)),
+                ("truncated", Value::Bool(truncated)),
+            ]),
+        ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]))
 }
 
 fn lower_sha256(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Import external execution observations as *unattested reports*. The
@@ -215,13 +219,23 @@ fn receipts(path: &Path, commit: &str, tree: &str) -> Result<Vec<Value>> {
         return refuse("agent receipts exceed 32 records");
     }
     let expected = BTreeSet::from([
-        "kind", "status", "source_commit", "source_tree", "producer",
-        "command", "exit_code", "log_sha256",
+        "kind",
+        "status",
+        "source_commit",
+        "source_tree",
+        "producer",
+        "command",
+        "exit_code",
+        "log_sha256",
     ]);
     let mut imported = Vec::new();
     let mut unique = BTreeSet::new();
     for row in rows {
-        let actual = row.entries()?.keys().map(String::as_str).collect::<BTreeSet<_>>();
+        let actual = row
+            .entries()?
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
         if actual != expected {
             return refuse("execution receipt has missing or unsupported fields");
         }
@@ -230,15 +244,12 @@ fn receipts(path: &Path, commit: &str, tree: &str) -> Result<Vec<Value>> {
         if !matches!(kind, "TEST" | "BUILD") || !matches!(status, "PASS" | "FAIL" | "SKIPPED") {
             return refuse("unsupported execution receipt kind or status");
         }
-        if row.get("source_commit")?.str()? != commit
-            || row.get("source_tree")?.str()? != tree
-        {
+        if row.get("source_commit")?.str()? != commit || row.get("source_tree")?.str()? != tree {
             return refuse("execution receipt does not bind to candidate commit/tree");
         }
         let producer = row.get("producer")?.str()?;
         let command = row.get("command")?.str()?;
-        if producer.is_empty() || producer.len() > 128
-            || command.is_empty() || command.len() > 2048
+        if producer.is_empty() || producer.len() > 128 || command.is_empty() || command.len() > 2048
         {
             return refuse("execution receipt producer/command length invalid");
         }
@@ -246,10 +257,7 @@ fn receipts(path: &Path, commit: &str, tree: &str) -> Result<Vec<Value>> {
             return refuse("execution receipt requires lowercase log SHA-256");
         }
         let code = row.get("exit_code")?.integer()?;
-        if code < 0
-            || (status == "PASS" && code != 0)
-            || (status == "FAIL" && code == 0)
-        {
+        if code < 0 || (status == "PASS" && code != 0) || (status == "FAIL" && code == 0) {
             return refuse("execution receipt exit code contradicts reported status");
         }
         let id = row.sha256();
@@ -345,21 +353,43 @@ pub fn verify(
         ("impact_report_id", impact.get("report_id")?.clone()),
         ("changes", Value::array(take_bounded(all_changes, limit))),
         ("change_count", Value::number(all_changes.len())),
-        ("candidate_impacts", Value::array(take_bounded(effects, limit))),
+        (
+            "candidate_impacts",
+            Value::array(take_bounded(effects, limit)),
+        ),
         ("candidate_impact_count", Value::number(effects.len())),
         ("unknown", Value::array(take_bounded(unknown, limit))),
         ("receipts", Value::array(imported)),
-        ("replay", obj(&[
-            ("source", Value::string("RECOMPUTED_FROM_PINNED_GIT")),
-            ("supported_evidence", Value::string("RECOMPUTED_NOT_INDEPENDENTLY_CERTIFIED")),
-            ("semantic_correctness", Value::string("NOT_EVALUATED")),
-        ])),
-        ("coverage", obj(&[
-            ("status", Value::string("PARTIAL")),
-            ("truncated", Value::Bool(truncated)),
-        ])),
-        ("obligations", Value::array(obligations.into_iter().map(Value::string))),
-        ("status", Value::string(if failure { "REPORTED_FAILURE" } else { "OPEN_OBLIGATIONS" })),
+        (
+            "replay",
+            obj(&[
+                ("source", Value::string("RECOMPUTED_FROM_PINNED_GIT")),
+                (
+                    "supported_evidence",
+                    Value::string("RECOMPUTED_NOT_INDEPENDENTLY_CERTIFIED"),
+                ),
+                ("semantic_correctness", Value::string("NOT_EVALUATED")),
+            ]),
+        ),
+        (
+            "coverage",
+            obj(&[
+                ("status", Value::string("PARTIAL")),
+                ("truncated", Value::Bool(truncated)),
+            ]),
+        ),
+        (
+            "obligations",
+            Value::array(obligations.into_iter().map(Value::string)),
+        ),
+        (
+            "status",
+            Value::string(if failure {
+                "REPORTED_FAILURE"
+            } else {
+                "OPEN_OBLIGATIONS"
+            }),
+        ),
         ("ready_to_merge", Value::Bool(false)),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]))
@@ -418,20 +448,36 @@ mod tests {
         };
         command(&["init", "-q"]);
         fs::write(root.join("src/service.rs"), "fn service() {}\n").unwrap();
-        fs::write(root.join("tests/test_service.rs"), "#[test] fn service() {}\n").unwrap();
+        fs::write(
+            root.join("tests/test_service.rs"),
+            "#[test] fn service() {}\n",
+        )
+        .unwrap();
         command(&["add", "."]);
         command(&[
-            "-c", "user.name=Excession Test",
-            "-c", "user.email=excession@example.invalid",
-            "commit", "-qm", "base",
+            "-c",
+            "user.name=Excession Test",
+            "-c",
+            "user.email=excession@example.invalid",
+            "commit",
+            "-qm",
+            "base",
         ]);
         let base = git::rev(&root, "HEAD").unwrap();
-        fs::write(root.join("src/service.rs"), "fn service() { println!(\"test\"); }\n").unwrap();
+        fs::write(
+            root.join("src/service.rs"),
+            "fn service() { println!(\"test\"); }\n",
+        )
+        .unwrap();
         command(&["add", "."]);
         command(&[
-            "-c", "user.name=Excession Test",
-            "-c", "user.email=excession@example.invalid",
-            "commit", "-qm", "candidate",
+            "-c",
+            "user.name=Excession Test",
+            "-c",
+            "user.email=excession@example.invalid",
+            "commit",
+            "-qm",
+            "candidate",
         ]);
         let candidate = git::rev(&root, "HEAD").unwrap();
         (root, base, candidate)
@@ -441,13 +487,34 @@ mod tests {
     fn pinned_context_and_verify_keep_unsupported_work_explicit() {
         let (root, base, candidate) = git_fixture();
         let ctx = context(
-            &root, &base, "src/service.rs",
-            Some("change service"), 4, None, None,
-        ).unwrap();
+            &root,
+            &base,
+            "src/service.rs",
+            Some("change service"),
+            4,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(ctx.get("source_commit").unwrap().str().unwrap(), base);
-        assert_eq!(ctx.get("relationships").unwrap().array_ref().unwrap().len(), 0);
-        assert_eq!(ctx.get("test_candidates").unwrap().array_ref().unwrap().len(), 1);
-        assert!(!ctx.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+        assert_eq!(
+            ctx.get("relationships").unwrap().array_ref().unwrap().len(),
+            0
+        );
+        assert_eq!(
+            ctx.get("test_candidates")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            !ctx.get("safe_to_skip_unlisted_tests")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
         assert!(context(&root, &base, "../outside", None, 4, None, None).is_err());
         assert!(context(&root, &base, "missing.rs", None, 4, None, None).is_err());
 
@@ -459,12 +526,16 @@ mod tests {
         assert_eq!(verified.get("change_count").unwrap().integer().unwrap(), 1);
         assert!(!verified.get("ready_to_merge").unwrap().bool().unwrap());
         let obligations = verified.get("obligations").unwrap().array_ref().unwrap();
-        assert!(obligations.iter().any(|x| {
-            x.str().unwrap() == "INDEPENDENT_TEST_RECEIPT_MISSING"
-        }));
-        assert!(obligations.iter().any(|x| {
-            x.str().unwrap() == "INCOMPLETE_DEPENDENCY_COVERAGE"
-        }));
+        assert!(
+            obligations
+                .iter()
+                .any(|x| { x.str().unwrap() == "INDEPENDENT_TEST_RECEIPT_MISSING" })
+        );
+        assert!(
+            obligations
+                .iter()
+                .any(|x| { x.str().unwrap() == "INCOMPLETE_DEPENDENCY_COVERAGE" })
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -482,31 +553,32 @@ mod tests {
             ("exit_code", Value::number(0)),
             ("log_sha256", Value::string("a".repeat(64))),
         ]);
-        let document = |row: Value| obj(&[
-            ("schema", Value::string("excession.execution-receipts.v1")),
-            ("receipts", Value::array(vec![row])),
-        ]);
+        let document = |row: Value| {
+            obj(&[
+                ("schema", Value::string("excession.execution-receipts.v1")),
+                ("receipts", Value::array(vec![row])),
+            ])
+        };
         let receipt_path = std::env::temp_dir().join(format!(
             "excession-agent-receipts-{}.json",
             &candidate[..16],
         ));
         fs::write(&receipt_path, document(one.clone()).canonical()).unwrap();
-        let report = verify(
-            &root, &base, &candidate, 8, None, None, Some(&receipt_path),
-        ).unwrap();
+        let report = verify(&root, &base, &candidate, 8, None, None, Some(&receipt_path)).unwrap();
         let obligations = report.get("obligations").unwrap().array_ref().unwrap();
-        assert!(obligations.iter().any(|x| {
-            x.str().unwrap() == "RECEIPT_AUTHENTICITY_UNVERIFIED"
-        }));
+        assert!(
+            obligations
+                .iter()
+                .any(|x| { x.str().unwrap() == "RECEIPT_AUTHENTICITY_UNVERIFIED" })
+        );
         assert!(!report.get("ready_to_merge").unwrap().bool().unwrap());
         let mut wrong = one;
-        wrong.entries_mut().unwrap().insert(
-            "source_tree".into(), Value::string("f".repeat(40))
-        );
+        wrong
+            .entries_mut()
+            .unwrap()
+            .insert("source_tree".into(), Value::string("f".repeat(40)));
         fs::write(&receipt_path, document(wrong).canonical()).unwrap();
-        assert!(verify(
-            &root, &base, &candidate, 8, None, None, Some(&receipt_path),
-        ).is_err());
+        assert!(verify(&root, &base, &candidate, 8, None, None, Some(&receipt_path),).is_err());
         fs::remove_file(receipt_path).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
@@ -527,7 +599,10 @@ mod tests {
             ("log_sha256", Value::string("e".repeat(64))),
         ]);
         let mut mismatched = row.clone();
-        mismatched.entries_mut().unwrap().insert("source_tree".into(), Value::string("f".repeat(40)));
+        mismatched
+            .entries_mut()
+            .unwrap()
+            .insert("source_tree".into(), Value::string("f".repeat(40)));
         assert_ne!(mismatched.sha256(), row.sha256());
     }
 }

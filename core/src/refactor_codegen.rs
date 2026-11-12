@@ -625,14 +625,24 @@ mod tests {
         assert!(extracted_items(source, &duplicate, &names).is_err());
         assert!(selection("foo,foo").is_err());
         assert!(selection("../foo").is_err());
-        assert!(
-            extracted_items(
-                "/// documented\npub fn foo() {}\n",
-                &fake_outline(&[("foo", "function_item", 15, 30)]),
-                &names,
-            )
-            .is_err()
-        );
+        let docs = "/// documented\npub fn foo() {}\n";
+        let captured = extracted_items(
+            docs,
+            &fake_outline(&[("foo", "function_item", 15, 30)]),
+            &names,
+        )
+        .unwrap();
+        assert_eq!(captured[0].body, "/// documented\npub fn foo() {}");
+        assert!(extracted_items(
+            "#[cfg(test)]\npub fn foo() {}\n",
+            &fake_outline(&[("foo", "function_item", 13, 28)]),
+            &names,
+        ).is_err());
+        assert!(extracted_items(
+            "/* attached */\npub fn foo() {}\n",
+            &fake_outline(&[("foo", "function_item", 15, 30)]),
+            &names,
+        ).is_err());
     }
 
     #[test]
@@ -645,5 +655,103 @@ mod tests {
             body: source.into(),
         }];
         assert!(edits(source, "mod shared;\n", "shared", &items).is_err());
+    }
+
+    fn evidence_report(target: &str, symbol: &str) -> Value {
+        obj(&[
+            ("indexer", obj(&[("name", Value::string("rust-analyzer"))])),
+            ("triage", obj(&[
+                ("likely_structural_module_candidate_ids", Value::array([])),
+            ])),
+            ("candidates", Value::array([obj(&[
+                ("candidate_id", Value::string("candidate")),
+                ("kind", Value::string("reciprocal_symbol_references")),
+                ("sources", Value::array([obj(&[
+                    ("path", Value::string("core/src/semantic.rs")),
+                    ("blob", Value::string("a".repeat(40))),
+                    ("language", Value::string("rust")),
+                ])])),
+                ("references", Value::array([obj(&[
+                    ("to", obj(&[
+                        ("path", Value::string(target)),
+                        ("blob", Value::string("a".repeat(40))),
+                    ])),
+                    ("symbol", Value::string(symbol)),
+                ])])),
+            ])])),
+        ])
+    }
+
+    #[test]
+    fn requires_a_selected_function_actually_linked_by_native_scip() {
+        let report = evidence_report(
+            "core/src/semantic.rs",
+            "rust-analyzer cargo excession 0.2.0 semantic/module_name_with_import_base().",
+        );
+        let selections = BTreeSet::from([
+            "module_name".to_owned(),
+            "module_name_with_import_base".to_owned(),
+        ]);
+        assert_eq!(
+            assert_candidate(
+                &report,
+                "candidate",
+                "core/src/semantic.rs",
+                &"a".repeat(40),
+                &selections,
+            )
+            .unwrap(),
+            BTreeSet::from(["module_name_with_import_base".to_owned()])
+        );
+        let irrelevant = BTreeSet::from(["module_name".to_owned()]);
+        assert!(assert_candidate(
+            &report, "candidate", "core/src/semantic.rs", &"a".repeat(40),
+            &irrelevant,
+        ).is_err());
+        let wrong_destination = evidence_report(
+            "core/src/index.rs",
+            "rust-analyzer cargo excession 0.2.0 semantic/module_name_with_import_base().",
+        );
+        assert!(assert_candidate(
+            &wrong_destination, "candidate", "core/src/semantic.rs",
+            &"a".repeat(40), &selections,
+        ).is_err());
+    }
+
+    #[test]
+    fn preview_edits_are_replayable_and_refuse_bad_offsets() {
+        let original = "pub fn one() {}\n\npub fn two() {}\n";
+        let first = "pub fn one() {}";
+        let second_start = original.find("pub fn two").unwrap();
+        let selected = extracted_items(
+            original,
+            &fake_outline(&[
+                ("one", "function_item", 0, first.len()),
+                ("two", "function_item", second_start, second_start + first.len()),
+            ]),
+            &selection("two,one").unwrap(),
+        )
+        .unwrap();
+        let root = "pub mod existing;\n  \n";
+        let (source_after, _, root_after) = edits(original, root, "shared", &selected).unwrap();
+        let replacements = Value::array(vec![
+            edit_operation("src/original.rs", Some("a"), selected[0].start,
+                selected[0].end, "pub use crate::shared::{one, two};"),
+            edit_operation("src/original.rs", Some("a"), selected[1].start,
+                selected[1].end, ""),
+            edit_operation("src/lib.rs", Some("b"), root.len(), root.len(),
+                "mod shared;\n"),
+        ]);
+        assert_eq!(replay_edits(original, &replacements, "src/original.rs").unwrap(), source_after);
+        assert_eq!(replay_edits(root, &replacements, "src/lib.rs").unwrap(), root_after);
+        let invalid = Value::array([edit_operation(
+            "src/original.rs", Some("a"), original.len() + 1, original.len() + 1, "bad"
+        )]);
+        assert!(replay_edits(original, &invalid, "src/original.rs").is_err());
+        let overlap = Value::array([
+            edit_operation("src/original.rs", Some("a"), 0, 6, "a"),
+            edit_operation("src/original.rs", Some("a"), 5, 8, "b"),
+        ]);
+        assert!(replay_edits(original, &overlap, "src/original.rs").is_err());
     }
 }

@@ -20,7 +20,7 @@ fn parser_installed() -> bool {
         "javascript",
     ]
     .iter()
-    .all(|language| tree_sitter_language_pack::has_parser(language))
+    .all(|language| excession::native_syntax::has_parser(language))
 }
 fn run(program: &str, args: &[&str]) -> Output {
     Command::new(program).args(args).output().expect("spawn")

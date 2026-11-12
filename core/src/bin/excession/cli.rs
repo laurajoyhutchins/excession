@@ -294,6 +294,51 @@ pub(super) fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("explain")
+                .about("Recompute and explain a pinned source-bound impact claim")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("report")
+                        .long("report")
+                        .required(true)
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("id")
+                        .long("id")
+                        .required(true)
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("db")
+                        .long("db")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("roots")
+                        .long("roots")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("json")
+                        .long("json")
+                        .action(clap::ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("audit")
+                        .long("audit")
+                        .action(clap::ArgAction::SetTrue),
+                ),
+        )
+        .subcommand(
             Command::new("impact")
                 .about("Investigate bounded affected-source candidates between two Git revisions")
                 .arg(

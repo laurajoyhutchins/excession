@@ -183,7 +183,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: excession-release-independent-acceptance
+          name: release-independent-acceptance
           path: release-acceptance.json
           if-no-files-found: warn
 

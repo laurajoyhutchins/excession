@@ -5,6 +5,8 @@ on:
     paths:
       - benchmarks/experiments/scip_fixture_migration.py
       - benchmarks/experiments/concepts_scip_oracle.py
+      - benchmarks/experiments/concepts_baseline_value.py
+      - tests/test_concepts_baseline_value.py
       - benchmarks/experiments/scip_source_anchors.py
       - benchmarks/fixtures/concepts-scip-source-anchors.json
       - tests/test_scip_source_anchors.py
@@ -77,6 +79,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_scip_fixture_migration.py -v
           python3 -m unittest discover -s tests -p test_concepts_scip_oracle.py -v
           python3 -m unittest discover -s tests -p test_scip_source_anchors.py -v
+          python3 -m unittest discover -s tests -p test_concepts_baseline_value.py -v
       - name: Run real native SCIP on pinned fixtures
         shell: bash
         env:
@@ -111,12 +114,25 @@ jobs:
             --python-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-python" \
             --typescript-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-typescript" \
             --trusted-local --concepts
+      - name: Evaluate incremental novelty and prepare unlabeled reviewer packets
+        shell: bash
+        run: |
+          set -euo pipefail
+          dirs=(--evidence-dir scip-fixture-evidence)
+          if [[ -d scip-historical-evidence ]]; then
+            dirs+=(--evidence-dir scip-historical-evidence)
+          fi
+          python3 benchmarks/experiments/concepts_baseline_value.py \
+            "${dirs[@]}" --out scip-concepts-value.json \
+            --review-packets scip-concepts-unjudged-review.json
       - name: Preserve actual indexes, audits and coverage gaps
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: scip-source-and-concept-evidence
           path: |
+            scip-concepts-value.json
+            scip-concepts-unjudged-review.json
             scip-fixture-results.json
             scip-fixture-evidence/
             scip-historical-results.json

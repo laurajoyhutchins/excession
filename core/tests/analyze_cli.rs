@@ -176,8 +176,15 @@ fn explicit_roots_only_require_their_own_language_adapter() {
     cmd(
         &repo,
         "git",
-        &["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-          "commit", "-qm", "mixed-language fixture"],
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "mixed-language fixture",
+        ],
     );
 
     let binary = env!("CARGO_BIN_EXE_excession");
@@ -191,20 +198,39 @@ fn explicit_roots_only_require_their_own_language_adapter() {
         .arg("--json")
         .output()
         .unwrap();
-    assert!(selected.status.success(), "{}", String::from_utf8_lossy(&selected.stderr));
+    assert!(
+        selected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&selected.stderr)
+    );
     let report = json::parse(&selected.stdout).unwrap();
     let relationships = report.get("relationships").unwrap().array_ref().unwrap();
     assert!(relationships.iter().any(|edge| {
-        edge.get("source").unwrap().get("path").unwrap().str().unwrap() == "pkg/a.py"
+        edge.get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap()
+            == "pkg/a.py"
     }));
-    assert_eq!(report.get("coverage").unwrap().get("analyzed_sources")
-        .unwrap().integer().unwrap(), 3);
+    assert_eq!(
+        report
+            .get("coverage")
+            .unwrap()
+            .get("analyzed_sources")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        3
+    );
 
     // Selecting JavaScript, or auto-discovering both languages, must still
     // reject a genuinely missing Node adapter instead of silently skipping it.
     for roots in [Some("web"), None] {
         let mut command = Command::new(binary);
-        command.current_dir(&repo)
+        command
+            .current_dir(&repo)
             .env("EXCESSION_NODE", &missing_node)
             .args(["analyze", ".", "--db"])
             .arg(root.join("unavailable.sqlite"));

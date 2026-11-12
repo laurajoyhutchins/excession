@@ -14,7 +14,8 @@ use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
     kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refactor_codegen,
-    refuse, scip_evidence, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    refactor_rust_analyzer, refuse, scip_evidence, scip_refactor, security_ingest, syntax,
+    syntax_resolution, views,
 };
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -678,6 +679,33 @@ fn execute(args: &[String]) -> Result<Response> {
                 output: opt.0.get("output").map(Path::new),
             })?,
         )),
+        [top, sub] if top == "refactor" && sub == "rust-assist" => {
+            let coordinate = |key: &str| -> Result<usize> {
+                opt.get(key)
+                    .parse::<usize>()
+                    .map_err(|_| format!("invalid LSP {key} coordinate"))
+            };
+            Ok(json(refactor_rust_analyzer::execute(
+                &refactor_rust_analyzer::Request {
+                    repo: opt.path("repo"),
+                    revision: opt.get("rev"),
+                    index: opt.path("index"),
+                    report: opt.path("report"),
+                    candidate: opt.get("candidate"),
+                    source: opt.get("source"),
+                    source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                    selection: [
+                        coordinate("start-line")?,
+                        coordinate("start-character")?,
+                        coordinate("end-line")?,
+                        coordinate("end-character")?,
+                    ],
+                    analyzer: Path::new(opt.get_or("rust-analyzer", "rust-analyzer")),
+                    title: opt.0.get("action").map(String::as_str),
+                    output: opt.0.get("output").map(Path::new),
+                },
+            )?))
+        }
         [top, sub] if top == "refactor" && sub == "scip-ingest" => {
             let db = Db::open(opt.path("db"))?;
             Ok(json(scip_evidence::import(

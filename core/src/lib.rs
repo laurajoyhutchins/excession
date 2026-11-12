@@ -47,6 +47,7 @@ pub mod preflight;
 pub mod projection;
 pub mod refactor;
 pub mod refactor_codegen;
+pub mod refactor_rust_analyzer;
 pub mod scip_evidence;
 pub mod scip_refactor;
 pub mod scoped;

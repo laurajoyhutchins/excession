@@ -292,7 +292,7 @@ fn assert_candidate(
 }
 
 /// One edit over the original Git blob; ranges never depend on prior edits.
-fn edit_operation(
+pub(crate) fn edit_operation(
     path: &str,
     before: Option<&str>,
     start: usize,
@@ -312,7 +312,7 @@ fn edit_operation(
 }
 
 /// Independent, bounded replay of the byte ranges that will be written.
-fn replay_edits(original: &str, operations: &Value, path: &str) -> Result<String> {
+pub(crate) fn replay_edits(original: &str, operations: &Value, path: &str) -> Result<String> {
     let mut edits = Vec::new();
     for edit in operations.array_ref()? {
         if edit.get("path")?.str()? != path {

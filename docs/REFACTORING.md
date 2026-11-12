@@ -238,3 +238,58 @@ sandbox for hostile local Git configurations.
 The recipe still cannot determine general symbol closures or guarantee that
 an unverified source edit compiles. It does **not** automatically execute
 untrusted generated code. Compilation and tests remain external receipts.
+
+## Native Rust-aware code actions
+
+The `refactor rust-assist` command uses a real
+[rust-analyzer LSP server](https://rust-analyzer.github.io/) rather than
+implementing Rust item moves and import resolution in Excession.
+
+- Input: an **exact Git commit**, a clean checkout at that commit, a fully
+  audited rust-analyzer SCIP report, a non-structural candidate ID, and one
+  source file whose Git blob is in that candidate.
+- Selection: an explicit LSP range using **zero-based lines and UTF-16
+  characters**.
+- Without `--action`, list the server's supported refactoring actions and
+  import quick fixes. Discovery is read-only.
+- With `--action "<exact title>"`, return a deterministic, Git-blob-bound
+  `plan_id`, source-byte `edits` and generated SHA-256 results.
+- With an additional `--output /absolute/new/worktree`, materialize the edits
+  in a separate detached checkout at that exact revision, never modifying
+  the original checkout.
+
+Example (the selected range is intentionally explicit):
+
+```sh
+excession refactor rust-assist \
+  --repo /clean/source/checkout --rev <exact-commit> \
+  --index /tmp/index.scip.json --report /tmp/scip-report.json \
+  --candidate <id> --source core/src/semantic.rs --source-prefix core \
+  --start-line 15 --start-character 0 --end-line 74 --end-character 0
+```
+
+Supported code actions have `refactor*` kinds or native `Import ...` quick
+fixes. The provider may return edits to multiple Rust source files, including
+new Rust modules. Excession converts the native `WorkspaceEdit` into exact
+byte ranges over the original Git blobs and rejects edits outside the
+tracked checkout, non-Rust edits, overlapping ranges, rename/delete
+operations, stale versions, unsupported URI paths and ambiguous actions.
+No compiler/builder is invoked by Excession when applying a patch.
+
+This is a guarded **source transformation**, not an autonomous architecture
+optimizer or a soundness proof. rust-analyzer decides what edit to make only
+for the explicitly selected native action. All generated changes remain
+`APPLIED_UNVERIFIED` until independently compiled, tested, audited for API
+breakage and re-indexed. The rust-analyzer executable and the clean checkout
+are trusted local toolchain inputs. The provider requests that rust-analyzer
+disable proc macros and build-script evaluation; callers must still treat the
+repository and its local toolchain configuration as trusted inputs.
+
+**Recorded negative case:** on pre-#161 Excession, native `Extract Module`
+produces a syntactically valid inline module that loses the original public
+function path and cannot resolve a parent helper. The real compiler rejects
+the result with unresolved-import and missing-function diagnostics. The
+historical replay asserts this failure as an **unresolved verification
+obligation**, alongside the original ast-grep extraction's successful
+compile/test/reindex path. Excession will not promote either native action or
+compiler evidence into a guarantee of behavioral equivalence.

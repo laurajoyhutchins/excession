@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/comparison.v1.schema.json",
+  "title": "Excession independently authenticated source-byte comparison",
+  "description": "An actual Git source-byte comparison, with producer-scoped coverage included as context. It never establishes program behavioral equivalence or missing relationships.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "left",
+    "right",
+    "facet",
+    "left_coverage",
+    "right_coverage",
+    "left_coverage_status",
+    "right_coverage_status",
+    "coverage_scope_comparable",
+    "left_byte_count",
+    "right_byte_count",
+    "left_sha256",
+    "right_sha256",
+    "content_relation",
+    "mode_equal",
+    "relationship_absence_proven",
+    "behavioral_equivalence",
+    "verification",
+    "report_id"
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "source_tree",
+        "path",
+        "blob",
+        "mode"
+      ],
+      "properties": {
+        "source_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "source_tree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blob": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "mode": {
+          "enum": [
+            "100644",
+            "100755"
+          ]
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "excession.source-comparison.v1"
+    },
+    "left": {
+      "$ref": "#/$defs/source"
+    },
+    "right": {
+      "$ref": "#/$defs/source"
+    },
+    "facet": {
+      "enum": [
+        "GIT_SOURCES",
+        "IMPORTS",
+        "SCIP_REFERENCES",
+        "BUILD_INPUTS",
+        "CALLS",
+        "ARTIFACT_FUNCTIONS",
+        "RUNTIME_WITNESSES"
+      ]
+    },
+    "left_coverage": {
+      "type": "object"
+    },
+    "right_coverage": {
+      "type": "object"
+    },
+    "left_coverage_status": {
+      "enum": [
+        "COMPLETE_DECLARED_SCOPE",
+        "PARTIAL",
+        "UNKNOWN",
+        "UNSUPPORTED"
+      ]
+    },
+    "right_coverage_status": {
+      "enum": [
+        "COMPLETE_DECLARED_SCOPE",
+        "PARTIAL",
+        "UNKNOWN",
+        "UNSUPPORTED"
+      ]
+    },
+    "coverage_scope_comparable": {
+      "type": "boolean"
+    },
+    "left_byte_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2097152
+    },
+    "right_byte_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2097152
+    },
+    "left_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "right_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "content_relation": {
+      "enum": [
+        "IDENTICAL_BYTES",
+        "DIFFERENT_BYTES"
+      ]
+    },
+    "mode_equal": {
+      "type": "boolean"
+    },
+    "relationship_absence_proven": {
+      "const": false
+    },
+    "behavioral_equivalence": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "verification": {
+      "const": "INDEPENDENT_GIT_BYTES_ONLY"
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  }
+}

@@ -221,6 +221,11 @@ fn run_bounded(
 
     let stdout = receive(stdout_rx, deadline, "adapter stdout")?;
     let stderr = receive(stderr_rx, deadline, "adapter stderr")?;
+    // The producer can exit before the reader observes the cap. Never turn
+    // an oversized response into a misleading JSON parse failure.
+    if exceeded.load(Ordering::Relaxed) {
+        return refuse(format!("{binary} adapter output exceeds byte limit"));
+    }
     if !status.success() {
         return refuse(format!(
             "{binary} adapter failed: {}",

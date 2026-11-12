@@ -301,6 +301,177 @@ def dependency_mutation_checks(
     return {"removed_edge_detected": True, "invented_edge_detected": True}
 
 
+
+def verify_product_workflow(
+    binary: Path, repo: Path, work: Path, fixture: dict, commit: str,
+    tree: str, objects: dict[str, tuple[str, str]],
+) -> dict:
+    """Held-out Git-source oracle for the public CLI on a pinned upstream repo.
+
+    The expected static relationships are reconstructed from Git blobs by the
+    existing independent AST/TypeScript oracle, not from Excession SQL rows.
+    A local follow-on commit changes a true imported source and tests the
+    explanation against the original upstream revision.
+    """
+    from dependency_oracle import (
+        javascript_edges, module_name, python_edges,
+    )
+
+    prefixes = tuple(root.strip("/") + "/" for root in fixture["roots"].split(","))
+    paths = sorted(
+        path for path, (mode, _) in objects.items()
+        if mode in ("100644", "100755")
+        and path.startswith(prefixes)
+        and path.endswith((".py", ".js", ".mjs", ".cjs", ".ts"))
+        and not any(part in ("node_modules", ".venv") for part in path.split("/"))
+    )
+    path_by_module = {module_name(path): path for path in paths}
+    if len(path_by_module) != len(paths):
+        raise ValueError("independent source inventory has duplicate module names")
+    sources = {
+        path: output(["git", "-C", str(repo), "show", f"{commit}:{path}"]).decode("utf-8")
+        for path in paths
+    }
+    py, py_unresolved = python_edges(sources, path_by_module)
+    js, js_unresolved = javascript_edges(sources, path_by_module)
+    expected = py | js
+    expected_paths = {
+        (path_by_module[a], path_by_module[b])
+        for a, b, _line, _syntax in expected
+    }
+    if not expected:
+        raise ValueError("product acceptance requires independent source dependencies")
+    product_db = work / f"{fixture['name']}-product.sqlite"
+    args = [
+        str(binary), "analyze", str(repo),
+        "--rev", commit, "--roots", fixture["roots"],
+        "--db", str(product_db), "--json",
+    ]
+    proc, analyze_ms = call(args, timeout=240)
+    report = json.loads(proc.stdout)
+    if (report["schema"] != "excession.analysis.v1"
+            or report["source_commit"] != commit
+            or report["source_tree"] != tree
+            or report["coverage"]["status"] != "PARTIAL"):
+        raise ValueError("product analyze revision or coverage mismatch")
+    observed_paths = set()
+    for relation in report["relationships"]:
+        left, right = relation["source"], relation["target"]
+        for node in (left, right):
+            if (node["source_commit"] != commit
+                    or node["source_tree"] != tree
+                    or objects.get(node["path"]) != (node["mode"], node["blob"])):
+                raise ValueError("public analysis relation does not match independent Git objects")
+        if (relation["kind"] != "STATIC_IMPORT"
+                or not relation["evidence"]
+                or any(e["assessment"] != "CANDIDATE" for e in relation["evidence"])):
+            raise ValueError("candidate source relation was promoted to proof")
+        observed_paths.add((left["path"], right["path"]))
+    if observed_paths != expected_paths:
+        missing = sorted(expected_paths - observed_paths)
+        extra = sorted(observed_paths - expected_paths)
+        raise ValueError(
+            f"independent product import oracle mismatch: missing={missing[:5]}, extra={extra[:5]}"
+        )
+
+    # Choose an independently observed edge, not an Excession-selected impact.
+    source_module, target_module, _line, _kind = sorted(expected)[0]
+    source_path = path_by_module[source_module]
+    target_path = path_by_module[target_module]
+    comment = "# Excession pinned fixture change\n" if target_path.endswith(".py") \
+        else "// Excession pinned fixture change\n"
+    target = repo / target_path
+    with target.open("a", encoding="utf-8") as stream:
+        stream.write("\n" + comment)
+    call(["git", "-C", str(repo), "add", "--", target_path])
+    call([
+        "git", "-C", str(repo),
+        "-c", "user.name=Excession acceptance",
+        "-c", "user.email=acceptance@example.invalid",
+        "commit", "-qm", "Independent imported-source change",
+    ])
+    head = git(repo, "rev-parse", "HEAD")
+    if head == commit:
+        raise ValueError("follow-on fixture mutation did not produce a new revision")
+    proc, impact_ms = call([
+        str(binary), "impact", str(repo), "--base", commit, "--head", head,
+        "--roots", fixture["roots"], "--db", str(product_db), "--json",
+    ], timeout=240)
+    impact = json.loads(proc.stdout)
+    if (impact["schema"] != "excession.impact.v1"
+            or impact["base_commit"] != commit
+            or impact["head_commit"] != head
+            or impact["safe_to_skip_unlisted_tests"] is not False
+            or impact["coverage"]["status"] != "PARTIAL"):
+        raise ValueError("impact identity or coverage contract mismatch")
+    candidate = next((
+        effect for effect in impact["effects"]
+        if effect["entity"]["path"] == source_path
+        and effect["assessment"] == "CANDIDATE_PATH"
+        and any(hop["target"]["path"] == target_path for hop in effect["hops"])
+    ), None)
+    if candidate is None:
+        raise ValueError("independent imported-source change had no candidate dependent")
+    claim_id = candidate["claim_id"]
+    if claim_id != canonical_sha256({
+        k: v for k, v in candidate.items() if k != "claim_id"
+    }):
+        raise ValueError("product impact claim ID is not canonical")
+    saved = work / f"{fixture['name']}-impact.json"
+    saved.write_text(json.dumps(impact, sort_keys=True) + "\n", encoding="utf-8")
+    proc, explain_ms = call([
+        str(binary), "explain", str(repo), "--report", str(saved),
+        "--id", claim_id, "--db", str(product_db),
+        "--roots", fixture["roots"], "--json",
+    ], timeout=240)
+    explanation = json.loads(proc.stdout)
+    if (explanation["schema"] != "excession.explanation.v1"
+            or explanation["claim_id"] != claim_id
+            or explanation["source_commit"] not in (commit, head)
+            or not explanation["steps"]):
+        raise ValueError("source-bound impact explanation is missing its path")
+    proc, audit_ms = call([
+        str(binary), "explain", str(repo), "--report", str(saved),
+        "--id", claim_id, "--db", str(product_db),
+        "--roots", fixture["roots"], "--audit",
+    ], timeout=240)
+    audit = json.loads(proc.stdout)
+    if (audit["git_authentication"] != "PASS"
+            or audit["replay"] != "PASS"
+            or audit["semantic_correctness"] != "NOT_EVALUATED"):
+        raise ValueError("replay audit promoted evidence to semantic correctness")
+    # Re-serialized JSON with a forged relation must fail the *native* replay.
+    mutated = json.loads(json.dumps(impact))
+    mutated["effects"][0]["assessment"] = "OBSERVED_RELATIONSHIP_PATH"
+    saved.write_text(json.dumps(mutated, sort_keys=True) + "\n", encoding="utf-8")
+    failed, _ = call([
+        str(binary), "explain", str(repo), "--report", str(saved),
+        "--id", claim_id, "--db", str(product_db),
+        "--roots", fixture["roots"], "--json",
+    ], timeout=240, check=False)
+    if failed.returncode == 0:
+        raise ValueError("mutated source impact report was accepted")
+    return {
+        "upstream_commit": commit, "local_mutation_commit": head,
+        "source_count": len(paths),
+        "expected_pair_count": len(expected_paths),
+        "observed_pair_count": len(observed_paths),
+        "not_proven_import_sites": len(py_unresolved) + len(js_unresolved),
+        "changed_source": target_path,
+        "independent_dependent": source_path,
+        "effect_count": len(impact["effects"]),
+        "claim_id": claim_id,
+        "reported_coverage": impact["coverage"]["status"],
+        "semantic_correctness": audit["semantic_correctness"],
+        "forged_report_refused": True,
+        "analyze_wall_ms": analyze_ms,
+        "impact_wall_ms": impact_ms,
+        "explain_wall_ms": explain_ms,
+        "audit_wall_ms": audit_ms,
+        "sqlite_bytes": product_db.stat().st_size,
+    }
+
+
 def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -> dict:
     name = fixture["name"]
     repo = work / name
@@ -328,6 +499,12 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -
     from dependency_oracle import verify_dependencies
     dependency_audit = verify_dependencies(db, repo, commit, source)
     dependency_mutations = dependency_mutation_checks(db, repo, commit, source, work, name)
+    # The product workflow is tested on a pinned Python and a pinned JS repo.
+    # Keep expensive end-to-end oracle work out of the ordinary commit gate.
+    product = (
+        verify_product_workflow(binary, repo, work, fixture, commit, tree, source)
+        if name in ("h11", "axios") else None
+    )
     for result in results:
         del result["source_paths"]
     return {
@@ -339,6 +516,7 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -
         "git_blob_count": len(source), "seeds": results,
         "tamper_refusals": refusals, "dependency_audit": dependency_audit,
         "dependency_mutation_checks": dependency_mutations,
+        "product_workflow": product,
     }
 
 
@@ -364,6 +542,8 @@ def main() -> None:
         "fixtures": [],
         "limitations": (
             "Source OIDs, compact/full parity, and tamper refusal are checked. "
+            "Pinned h11 and Axios also exercise exact-revision public analyze-impact-"
+            "explain replay against an independent source-import oracle. "
             "Graph retrieval and view selection both consume the same semantic SQLite index; "
             "agreement alone does not validate dependency completeness. A separate Git-source "
             "AST/TypeScript import inventory checks statically resolvable indexed edges, but "

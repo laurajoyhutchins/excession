@@ -53,7 +53,9 @@ def line_from_occurrence(occ: dict) -> int:
     return value + 1
 
 
-def native_references(decoded: dict) -> tuple[set[tuple[str, str, str, int]], dict[str, dict], dict]:
+def native_references(
+    decoded: dict, source_prefix: str | None = None,
+) -> tuple[set[tuple[str, str, str, int]], dict[str, dict], dict]:
     """Reference oracle from raw native occurrences and **one** definition occurrence.
 
     Path-to-path relations here are *file association* only, never a call edge.
@@ -64,8 +66,11 @@ def native_references(decoded: dict) -> tuple[set[tuple[str, str, str, int]], di
     docs: dict[str, dict] = {}
     occurrence_count = 0
     for doc in decoded.get("documents", []):
-        path = field(doc, "relative_path", "relativePath")
-        if not isinstance(path, str) or not path or path in docs:
+        relative = field(doc, "relative_path", "relativePath")
+        if not isinstance(relative, str) or not relative:
+            raise ValueError("invalid native SCIP source path")
+        path = f"{source_prefix}/{relative}" if source_prefix else relative
+        if path in docs:
             raise ValueError("duplicate/invalid SCIP document identity")
         language = doc.get("language") or "unspecified"
         docs[path] = {"path": path, "language": language}
@@ -119,6 +124,7 @@ def git_blobs(repo: Path, commit: str) -> dict[str, str]:
 def reconcile(
     decoded: dict, batch: dict, model: dict, manifest: dict, audit: dict,
     repo: Path, commit: str, tree: str,
+    source_prefix: str | None = None,
 ) -> dict:
     """Fail closed on disagreement between independent native and semantic views."""
     for item, key in [(batch, "batch_id"), (model, "model_id"),
@@ -140,9 +146,13 @@ def reconcile(
             [batch["inputs"][0]["receipt_id"]] or
             batch["inputs"][0]["kind"] != "SCIP"):
         raise ValueError("upstream native references incorrectly promoted to complete coverage")
-    edges, docs, native_coverage = native_references(decoded)
+    edges, docs, native_coverage = native_references(decoded, source_prefix)
     blobs = git_blobs(repo, commit)
-    docs_expected = {field(x, "relative_path", "relativePath") for x in decoded["documents"]}
+    docs_expected = {
+        f"{source_prefix}/{field(x, 'relative_path', 'relativePath')}"
+        if source_prefix else field(x, "relative_path", "relativePath")
+        for x in decoded["documents"]
+    }
     if set(docs) != docs_expected:
         raise ValueError("SCIP document inventory changed during independent replay")
     for path in docs:
@@ -183,11 +193,11 @@ def reconcile(
         invented = sorted(actual_edges - edges)[:5]
         raise ValueError(f"SCIP projection disagrees with native occurrences: missing={missing}; invented={invented}")
 
+    oriented = {(source, destination) for source, destination, _, _ in edges}
     pairs = {
-        tuple(sorted((source, dest)))
-        for source, dest, _, _ in edges
-        if any(back_src == dest and back_dst == source
-               for back_src, back_dst, _, _ in edges)
+        tuple(sorted((source, destination)))
+        for source, destination in oriented
+        if (destination, source) in oriented
     }
     concept_pairs = set()
     claims_by_id = {claim["claim_id"]: claim for claim in model["claims"]}

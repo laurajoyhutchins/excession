@@ -156,7 +156,6 @@ pub(super) fn command() -> Command {
                 &["db", "snapshot"],
                 &["focus", "after", "repo", "rev", "source-prefix"],
             ),
-
         ],
     )
     .about("Query indexed Git relationships");
@@ -193,7 +192,6 @@ pub(super) fn command() -> Command {
                 &["repo", "rev", "db", "snapshot"],
                 &["source-prefix"],
             ),
-
         ],
     )
     .about("Source-bound refactoring hypotheses");

@@ -446,6 +446,48 @@ pub fn audit(
     ]))
 }
 
+/// Discover indexed source files without forcing an LLM to know path names
+/// up front. Strictly bounded, deterministic pages; search is path-only and
+/// does not claim semantic classification or index completeness.
+pub fn list_sources(
+    repo: &Path,
+    revision: &str,
+    index: &Path,
+    prefix: Option<&str>,
+    search: &str,
+    offset: usize,
+) -> Result<Value> {
+    if search.len() > 128 || offset > 1_000_000 {
+        return refuse("ontology source search or offset exceeds bounded limits");
+    }
+    let batch = concepts_scip::normalize_index(repo, revision, index, prefix)?;
+    let known = files(&batch)?;
+    let term = search.to_ascii_lowercase();
+    let entries = known
+        .iter()
+        .filter(|(path, _)| path.to_ascii_lowercase().contains(&term))
+        .collect::<Vec<_>>();
+    let total = entries.len();
+    let selected = entries
+        .into_iter()
+        .skip(offset)
+        .take(64)
+        .map(|(_, subject)| subject.clone())
+        .collect::<Vec<_>>();
+    let next = offset.saturating_add(selected.len());
+    Ok(obj(&[
+        ("schema", Value::string("excession.concepts-indexed-sources.v1")),
+        ("source_commit", batch.get("source_commit")?.clone()),
+        ("source_tree", batch.get("source_tree")?.clone()),
+        ("batch_id", batch.get("batch_id")?.clone()),
+        ("sources", Value::array(selected)),
+        ("total_matched", Value::number(total)),
+        ("offset", Value::number(offset)),
+        ("next_offset", if next < total { Value::number(next) } else { Value::Null }),
+        ("coverage", Value::string("PARTIAL_NATIVE_INDEX_ONLY")),
+    ]))
+}
+
 /// Give an LLM a bounded page of real source context and exact native
 /// observation IDs for its proposed memberships. Never imply exhaustive scope.
 pub fn context(

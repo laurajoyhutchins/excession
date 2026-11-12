@@ -392,6 +392,125 @@ mod tests {
         assert_ne!(a.get("report_id").unwrap(), b.get("report_id").unwrap());
     }
 
+    fn git_fixture() -> (std::path::PathBuf, String, String) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-agent-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("tests")).unwrap();
+        let command = |args: &[&str]| {
+            let result = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "git {:?}: {}",
+                args,
+                String::from_utf8_lossy(&result.stderr)
+            );
+        };
+        command(&["init", "-q"]);
+        fs::write(root.join("src/service.rs"), "fn service() {}\n").unwrap();
+        fs::write(root.join("tests/test_service.rs"), "#[test] fn service() {}\n").unwrap();
+        command(&["add", "."]);
+        command(&[
+            "-c", "user.name=Excession Test",
+            "-c", "user.email=excession@example.invalid",
+            "commit", "-qm", "base",
+        ]);
+        let base = git::rev(&root, "HEAD").unwrap();
+        fs::write(root.join("src/service.rs"), "fn service() { println!(\"test\"); }\n").unwrap();
+        command(&["add", "."]);
+        command(&[
+            "-c", "user.name=Excession Test",
+            "-c", "user.email=excession@example.invalid",
+            "commit", "-qm", "candidate",
+        ]);
+        let candidate = git::rev(&root, "HEAD").unwrap();
+        (root, base, candidate)
+    }
+
+    #[test]
+    fn pinned_context_and_verify_keep_unsupported_work_explicit() {
+        let (root, base, candidate) = git_fixture();
+        let context = context(
+            &root, &base, "src/service.rs",
+            Some("change service"), 4, None, None,
+        ).unwrap();
+        assert_eq!(context.get("source_commit").unwrap().str().unwrap(), base);
+        assert_eq!(context.get("relationships").unwrap().array_ref().unwrap().len(), 0);
+        assert_eq!(context.get("test_candidates").unwrap().array_ref().unwrap().len(), 1);
+        assert!(!context.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+        assert!(context(&root, &base, "../outside", None, 4, None, None).is_err());
+        assert!(context(&root, &base, "missing.rs", None, 4, None, None).is_err());
+
+        let verified = verify(&root, &base, &candidate, 4, None, None, None).unwrap();
+        assert_eq!(
+            verified.get("status").unwrap().str().unwrap(),
+            "OPEN_OBLIGATIONS"
+        );
+        assert_eq!(verified.get("change_count").unwrap().integer().unwrap(), 1);
+        assert!(!verified.get("ready_to_merge").unwrap().bool().unwrap());
+        let obligations = verified.get("obligations").unwrap().array_ref().unwrap();
+        assert!(obligations.iter().any(|x| {
+            x.str().unwrap() == "INDEPENDENT_TEST_RECEIPT_MISSING"
+        }));
+        assert!(obligations.iter().any(|x| {
+            x.str().unwrap() == "INCOMPLETE_DEPENDENCY_COVERAGE"
+        }));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn source_pinned_external_receipts_remain_unattested_and_refuse_stale_tree() {
+        let (root, base, candidate) = git_fixture();
+        let tree = git::rev(&root, &format!("{candidate}^{{tree}}")).unwrap();
+        let one = obj(&[
+            ("kind", Value::string("TEST")),
+            ("status", Value::string("PASS")),
+            ("source_commit", Value::string(&candidate)),
+            ("source_tree", Value::string(&tree)),
+            ("producer", Value::string("isolated-ci")),
+            ("command", Value::string("cargo test --locked")),
+            ("exit_code", Value::number(0)),
+            ("log_sha256", Value::string("a".repeat(64))),
+        ]);
+        let document = |row: Value| obj(&[
+            ("schema", Value::string("excession.execution-receipts.v1")),
+            ("receipts", Value::array(vec![row])),
+        ]);
+        let receipt_path = std::env::temp_dir().join(format!(
+            "excession-agent-receipts-{}.json",
+            &candidate[..16],
+        ));
+        fs::write(&receipt_path, document(one.clone()).canonical()).unwrap();
+        let report = verify(
+            &root, &base, &candidate, 8, None, None, Some(&receipt_path),
+        ).unwrap();
+        let obligations = report.get("obligations").unwrap().array_ref().unwrap();
+        assert!(obligations.iter().any(|x| {
+            x.str().unwrap() == "RECEIPT_AUTHENTICITY_UNVERIFIED"
+        }));
+        assert!(!report.get("ready_to_merge").unwrap().bool().unwrap());
+        let mut wrong = one;
+        wrong.entries_mut().unwrap().insert(
+            "source_tree".into(), Value::string("f".repeat(40))
+        );
+        fs::write(&receipt_path, document(wrong).canonical()).unwrap();
+        assert!(verify(
+            &root, &base, &candidate, 8, None, None, Some(&receipt_path),
+        ).is_err());
+        fs::remove_file(receipt_path).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn receipts_do_not_promote_unattested_pass_to_proof() {
         assert!(lower_sha256(&"a".repeat(64)));

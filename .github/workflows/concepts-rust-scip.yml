@@ -11,6 +11,10 @@ on:
       - core/src/scip_refactor.rs
       - core/src/concepts_scip.rs
       - core/src/concepts_compile.rs
+      - core/src/concepts_author.rs
+      - core/src/concepts_mcp.rs
+      - core/tests/concepts_scip.rs
+      - contracts/concepts/ontology-proposal.v1.schema.json
   workflow_dispatch:
 
 permissions:
@@ -68,6 +72,62 @@ jobs:
             --index "$RUNNER_TEMP/excession-scip.json" \
             --indexer-diagnostics "$RUNNER_TEMP/rust-analyzer-scip.log" \
             --out rust-scip-oracle-evidence
+      - name: Author and audit one real Rust ontology using indexed evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=core/target/debug/excession
+          INDEX="$RUNNER_TEMP/excession-scip.json"
+          OUT=rust-scip-oracle-evidence/agent-authored-ontology
+          mkdir -p "$OUT"
+          "$BIN" concepts ontology-list --repo . --rev HEAD \
+            --index "$INDEX" --source-prefix core --search concepts > "$OUT/sources.json"
+          "$BIN" concepts ontology-context --repo . --rev HEAD \
+            --index "$INDEX" --source-prefix core \
+            --path core/src/concepts_scip.rs > "$OUT/scip-normalization-context.json"
+          "$BIN" concepts ontology-context --repo . --rev HEAD \
+            --index "$INDEX" --source-prefix core \
+            --path core/src/scip_refactor.rs > "$OUT/scip-scanner-context.json"
+          COMMIT=$(jq -er '.source_commit' "$OUT/scip-normalization-context.json")
+          TREE=$(jq -er '.source_tree' "$OUT/scip-normalization-context.json")
+          BATCH=$(jq -er '.batch_id' "$OUT/scip-normalization-context.json")
+          FIRST=$(jq -er '.observations[0].observation_id' "$OUT/scip-normalization-context.json")
+          SECOND=$(jq -er '.observations[0].observation_id' "$OUT/scip-scanner-context.json")
+          jq -n --arg commit "$COMMIT" --arg tree "$TREE" --arg batch "$BATCH" \
+            --arg first "$FIRST" --arg second "$SECOND" \
+            '{
+              schema:"excession.concepts-ontology-proposal.v1",
+              source_commit:$commit, source_tree:$tree, batch_id:$batch,
+              author_label:"unverified-agent-authored-smoke",
+              concepts:[{
+                key:"scip-evidence-pipeline",
+                name:"SCIP evidence ingestion and normalization",
+                definition:"The native SCIP validation and normalized source-evidence modules form a candidate code-intelligence subsystem.",
+                rationale:"Source snippets and native references were inspected. The grouping is an authored architectural interpretation, not a verified boundary.",
+                members:[
+                  {path:"core/src/scip_refactor.rs",observations:[$second]},
+                  {path:"core/src/concepts_scip.rs",observations:[$first]}
+                ]
+              }]
+            }' > "$OUT/proposal.json"
+          "$BIN" concepts ontology-preview --repo . --rev HEAD \
+            --index "$INDEX" --source-prefix core \
+            --draft "$OUT/proposal.json" > "$OUT/preview.json"
+          jq -e '.status=="UNREVIEWED_LLM_PROPOSAL" and
+            (.model.concepts|length)==1 and
+            .model.concepts[0].review_status=="UNREVIEWED" and
+            (.model.claims|all(.assessment=="PROPOSED" and .behavioral_verification=="UNTESTED"))' \
+            "$OUT/preview.json"
+          "$BIN" concepts ontology-publish --repo . --rev HEAD \
+            --index "$INDEX" --source-prefix core \
+            --draft "$OUT/proposal.json" --db "$RUNNER_TEMP/ontology.sqlite" > "$OUT/published.json"
+          SNAPSHOT=$(jq -er '.snapshot_id' "$OUT/published.json")
+          "$BIN" concepts ontology-audit --repo . --rev HEAD \
+            --index "$INDEX" --source-prefix core \
+            --draft "$OUT/proposal.json" --db "$RUNNER_TEMP/ontology.sqlite" \
+            --snapshot "$SNAPSHOT" > "$OUT/audit.json"
+          jq -e '.status=="LLM_PROPOSAL_REPLAYED_UNREVIEWED" and
+            (.behavioral_verification_inferred|not)' "$OUT/audit.json"
       - name: Preserve actual native index and independent audit evidence
         if: always()
         uses: actions/upload-artifact@v4

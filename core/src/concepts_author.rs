@@ -10,7 +10,6 @@ use crate::concepts_store;
 use crate::digest;
 use crate::git;
 use crate::json::{self, Value, obj};
-use crate::scip_refactor;
 use crate::sqlite::Db;
 use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet};

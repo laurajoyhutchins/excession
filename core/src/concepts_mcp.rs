@@ -12,7 +12,7 @@ use crate::json::{self, Value, obj};
 use crate::sqlite::Db;
 use crate::{Result, refuse};
 use std::io::{self, BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const MAX_FRAME_BYTES: usize = 512 * 1024;
 const DRAFT_SCHEMA: &str =
@@ -137,7 +137,7 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
                 .map(Value::integer)
                 .transpose()?
                 .unwrap_or(1);
-            if line < 1 || line > 1_000_000 {
+            if !(1..=1_000_000).contains(&line) {
                 return refuse("first_line must be 1..1000000");
             }
             concepts_author::context(
@@ -424,14 +424,13 @@ mod tests {
             ]),
             &config(),
         );
-        assert_eq!(
+        assert!(
             call.get("result")
                 .unwrap()
                 .get("isError")
                 .unwrap()
                 .bool()
-                .unwrap(),
-            true
+                .unwrap()
         );
     }
 }

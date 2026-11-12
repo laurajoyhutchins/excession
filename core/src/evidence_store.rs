@@ -171,6 +171,11 @@ fn prepare(batch: &Batch) -> Result<Prepared> {
     })
 }
 
+/// Compute the exact snapshot identity without mutating the database.
+pub fn manifest(batch: &Batch) -> Result<Value> {
+    Ok(prepare(batch)?.manifest)
+}
+
 /// Additive tables, leaving existing repository and configured graph schema alone.
 pub fn init(db: &Db) -> Result<()> {
     db.exec("CREATE TABLE IF NOT EXISTS evidence_snapshot_v1(

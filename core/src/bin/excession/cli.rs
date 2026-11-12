@@ -151,6 +151,12 @@ pub(super) fn command() -> Command {
                 &["repo", "focus", "syntax-report", "resolution-report"],
                 &["rev", "declaration", "runtime-report"],
             ),
+            leaf(
+                "scip-evidence",
+                &["db", "snapshot"],
+                &["focus", "after", "repo", "rev", "source-prefix"],
+            ),
+
         ],
     )
     .about("Query indexed Git relationships");
@@ -177,6 +183,17 @@ pub(super) fn command() -> Command {
                 &["repo", "rev", "index", "report"],
                 &["source-prefix"],
             ),
+            leaf(
+                "scip-ingest",
+                &["repo", "rev", "index", "db"],
+                &["source-prefix"],
+            ),
+            leaf(
+                "scip-store-audit",
+                &["repo", "rev", "db", "snapshot"],
+                &["source-prefix"],
+            ),
+
         ],
     )
     .about("Source-bound refactoring hypotheses");

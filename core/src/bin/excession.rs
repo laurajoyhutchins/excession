@@ -13,7 +13,7 @@ use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
     kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refuse,
-    scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    scip_evidence, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -601,6 +601,26 @@ fn execute(args: &[String]) -> Result<Response> {
                 sub == "audit",
             )?))
         }
+        [top, sub] if top == "refactor" && sub == "scip-ingest" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(scip_evidence::import(
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.path("index"),
+                opt.0.get("source-prefix").map(String::as_str),
+                &db,
+            )?))
+        }
+        [top, sub] if top == "refactor" && sub == "scip-store-audit" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(scip_evidence::audit_source(
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.0.get("source-prefix").map(String::as_str),
+                &db,
+                opt.get("snapshot"),
+            )?))
+        }
         [top, sub]
             if top == "refactor" && matches!(sub.as_str(), "scip-suggest" | "scip-audit") =>
         {
@@ -658,6 +678,30 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "inspect" && sub == "scip-evidence" => {
+            let db = Db::open(opt.path("db"))?;
+            let focus = opt.0.get("focus").map(String::as_str);
+            let after = opt.0.get("after").map(String::as_str);
+            let source_prefix = opt.0.get("source-prefix").map(String::as_str);
+            let source = match (opt.0.get("repo"), opt.0.get("rev")) {
+                (None, None) if source_prefix.is_none() => None,
+                (Some(repo), Some(rev)) => Some((repo.as_str(), rev.as_str())),
+                _ => return refuse("SCIP source authentication requires both --repo and --rev"),
+            };
+            let result = match source {
+                Some((repo, rev)) => scip_evidence::explain_authenticated(
+                    &db,
+                    Path::new(repo),
+                    rev,
+                    source_prefix,
+                    opt.get("snapshot"),
+                    focus,
+                    after,
+                )?,
+                None => scip_evidence::explain_page(&db, opt.get("snapshot"), focus, after)?,
+            };
+            Ok(json(result))
+        }
         [top, sub] if top == "inspect" && sub == "evidence" => Ok(json(evidence_query::query(
             opt.path("repo"),
             opt.get_or("rev", "HEAD"),

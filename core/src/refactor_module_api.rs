@@ -94,8 +94,8 @@ fn line_byte(text: &str, line: usize, column: usize) -> Result<usize> {
 }
 
 fn missing_function(message: &str) -> Option<&str> {
-    message.strip_prefix("cannot find function \`")?
-        .strip_suffix("\` in this scope")
+    message.strip_prefix("cannot find function `")?
+        .strip_suffix("` in this scope")
         .filter(|name| identifier(name))
 }
 
@@ -254,7 +254,7 @@ mod tests {
         let line=candidate.lines().position(|l| l.contains("        helper()")).unwrap();
         let error=Missing{
             path:"src/semantic.rs",line,column:8,code:"E0425",
-            message:"cannot find function \`helper\` in this scope",
+            message:"cannot find function `helper` in this scope",
         };
         let patch=preserve_bytes(
             "src/semantic.rs","old",&before,&candidate,&edits,&[error]
@@ -276,7 +276,7 @@ mod tests {
         let e=Missing{path:"src/semantic.rs",line,column:8,code:"E0433",message:"bad"};
         assert!(preserve_bytes("src/semantic.rs","old",&before,&candidate,&edits,&[e]).is_err());
         let e=Missing{path:"src/semantic.rs",line,column:8,code:"E0425",
-            message:"cannot find function \`unknown\` in this scope"};
+            message:"cannot find function `unknown` in this scope"};
         assert!(preserve_bytes("src/semantic.rs","old",&before,&candidate,&edits,&[e]).is_err());
     }
 }

@@ -340,6 +340,12 @@ fn execute(args: &[String]) -> Result<Response> {
     let opt = &parsed.options;
     match parsed.path.as_slice() {
         [top, sub] if top == "concepts" => {
+            if sub == "scip-value" {
+                return Ok(json(excession::concepts_value::compare_index(
+                    opt.path("repo"), opt.get("rev"), opt.path("index"),
+                    opt.0.get("source-prefix").map(String::as_str),
+                )?));
+            }
             if sub.starts_with("scip-") {
                 let batch = excession::concepts_scip::normalize_index(
                     opt.path("repo"),

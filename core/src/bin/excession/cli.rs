@@ -157,6 +157,11 @@ pub(super) fn command() -> Command {
                 &["repo", "rev", "index", "db", "snapshot"],
                 &["source-prefix"],
             ),
+            leaf(
+                "scip-value",
+                &["repo", "rev", "index"],
+                &["source-prefix"],
+            ),
         ],
     )
     .about("Bounded, source-bound concept hypotheses and exact snapshot replay");

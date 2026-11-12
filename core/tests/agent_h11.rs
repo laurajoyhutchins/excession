@@ -57,11 +57,20 @@ fn h11_agent_verification_is_source_pinned_and_never_auto_approves() {
     fs::create_dir_all(&root.0).unwrap();
     let repo = root.0.join("h11");
     let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/h11-crossrepo.bundle");
-    checked(Command::new("git").arg("clone").arg("-q").arg(&bundle).arg(&repo));
+    checked(
+        Command::new("git")
+            .arg("clone")
+            .arg("-q")
+            .arg(&bundle)
+            .arg(&repo),
+    );
 
     let base = git(&repo, &["rev-parse", "HEAD"]);
     let source = repo.join("h11/_connection.py");
-    assert!(source.is_file(), "pinned h11 fixture must contain connection source");
+    assert!(
+        source.is_file(),
+        "pinned h11 fixture must contain connection source"
+    );
     let binary = env!("CARGO_BIN_EXE_excession");
     let db = root.0.join("agent.sqlite");
     let db_str = db.to_str().unwrap();
@@ -93,22 +102,21 @@ fn h11_agent_verification_is_source_pinned_and_never_auto_approves() {
     assert_eq!(context["safe_to_skip_unlisted_tests"], false);
 
     let original = fs::read_to_string(&source).unwrap();
-    fs::write(&source, format!("{original}\n# independently reviewed h11 test edit\n")).unwrap();
+    fs::write(
+        &source,
+        format!("{original}\n# independently reviewed h11 test edit\n"),
+    )
+    .unwrap();
     git(&repo, &["add", "h11/_connection.py"]);
-    checked(
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args([
-                "-c",
-                "user.name=Excession h11 Acceptance",
-                "-c",
-                "user.email=excession@example.invalid",
-                "commit",
-                "-qm",
-                "Pinned connection module change",
-            ]),
-    );
+    checked(Command::new("git").arg("-C").arg(&repo).args([
+        "-c",
+        "user.name=Excession h11 Acceptance",
+        "-c",
+        "user.email=excession@example.invalid",
+        "commit",
+        "-qm",
+        "Pinned connection module change",
+    ]));
     let candidate = git(&repo, &["rev-parse", "HEAD"]);
     let tree = git(&repo, &["rev-parse", "HEAD^{tree}"]);
     assert_ne!(candidate, base);
@@ -221,5 +229,8 @@ fn h11_agent_verification_is_source_pinned_and_never_auto_approves() {
         .output()
         .unwrap();
     assert!(!rejected.status.success());
-    assert!(rejected.stdout.is_empty(), "refusal must not emit a success report");
+    assert!(
+        rejected.stdout.is_empty(),
+        "refusal must not emit a success report"
+    );
 }

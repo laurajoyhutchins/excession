@@ -28,10 +28,15 @@ pub(crate) struct Proposal {
 
 fn identifier(value: &str) -> bool {
     let mut chars = value.chars();
-    chars.next().is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+    chars
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
         && value.len() <= 100
-        && !matches!(value, "self" | "super" | "crate" | "mod" | "fn" | "pub" | "use")
+        && !matches!(
+            value,
+            "self" | "super" | "crate" | "mod" | "fn" | "pub" | "use"
+        )
 }
 
 /// Restrict the recipe to this exactly verified rust-analyzer move:
@@ -44,10 +49,15 @@ fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, S
     let Some((header, body)) = replacement.split_once('\n') else {
         return Ok(None);
     };
-    let Some(name) = header.strip_prefix("mod ").and_then(|h| h.strip_suffix(" {")) else {
+    let Some(name) = header
+        .strip_prefix("mod ")
+        .and_then(|h| h.strip_suffix(" {"))
+    else {
         return Ok(None);
     };
-    if !identifier(name) { return Ok(None); }
+    if !identifier(name) {
+        return Ok(None);
+    }
     let Some(body) = body.strip_suffix("\n}") else {
         return Ok(None);
     };
@@ -61,27 +71,42 @@ fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, S
     if deindented.join("\n") != original {
         return refuse("native extraction changed Rust function source bytes");
     }
-    let exported = original.lines().filter_map(|line| {
-        line.strip_prefix("pub fn ").and_then(|s| s.split_once('(')).map(|v| v.0)
-    }).collect::<Vec<_>>();
+    let exported = original
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("pub fn ")
+                .and_then(|s| s.split_once('('))
+                .map(|v| v.0)
+        })
+        .collect::<Vec<_>>();
     if exported.len() != 1 || !identifier(exported[0]) {
         return Ok(None);
     }
     // These are not self-contained function moves: the syntax and
     // visibility would need different, separately audited rules.
-    if original.lines().any(|line| line.trim_start().starts_with("#["))
-        || original.contains("super::") || original.contains("self::")
+    if original
+        .lines()
+        .any(|line| line.trim_start().starts_with("#["))
+        || original.contains("super::")
+        || original.contains("self::")
         || original.contains("crate::")
     {
         return Ok(None);
     }
-    Ok(Some((name.to_owned(), exported[0].to_owned(), header.len() + 1)))
+    Ok(Some((
+        name.to_owned(),
+        exported[0].to_owned(),
+        header.len() + 1,
+    )))
 }
 
 fn line_byte(text: &str, line: usize, column: usize) -> Result<usize> {
     let mut start = 0;
     for _ in 0..line {
-        start += text[start..].find('\n').ok_or("compiler line outside source")? + 1;
+        start += text[start..]
+            .find('\n')
+            .ok_or("compiler line outside source")?
+            + 1;
     }
     let end = text[start..].find('\n').map_or(text.len(), |n| start + n);
     if !text[start..end].is_ascii() {
@@ -94,7 +119,8 @@ fn line_byte(text: &str, line: usize, column: usize) -> Result<usize> {
 }
 
 fn missing_function(message: &str) -> Option<&str> {
-    message.strip_prefix("cannot find function `")?
+    message
+        .strip_prefix("cannot find function `")?
         .strip_suffix("` in this scope")
         .filter(|name| identifier(name))
 }
@@ -109,9 +135,13 @@ fn preserve_bytes(
     errors: &[Missing<'_>],
 ) -> Result<Option<Proposal>> {
     let edits = prior_edits.array_ref()?;
-    if edits.len() != 1 { return Ok(None); }
+    if edits.len() != 1 {
+        return Ok(None);
+    }
     let change = &edits[0];
-    if change.get("path")?.str()? != path { return Ok(None); }
+    if change.get("path")?.str()? != path {
+        return Ok(None);
+    }
     if change.get("original_blob")?.str()? != oid {
         return refuse("native extraction edit is not bound to original Git source blob");
     }
@@ -119,15 +149,19 @@ fn preserve_bytes(
         .map_err(|_| "invalid native extraction start")?;
     let end = usize::try_from(change.get("end_byte")?.integer()?)
         .map_err(|_| "invalid native extraction end")?;
-    if start >= end || end > old_source.len()
-        || !old_source.is_char_boundary(start) || !old_source.is_char_boundary(end)
+    if start >= end
+        || end > old_source.len()
+        || !old_source.is_char_boundary(start)
+        || !old_source.is_char_boundary(end)
     {
         return refuse("native extracted range is not a valid UTF-8 source range");
     }
     let replacement = change.get("replacement")?.str()?;
     let Some((module, function, header_bytes)) =
         unchanged_move(&old_source[start..end], replacement)?
-    else { return Ok(None); };
+    else {
+        return Ok(None);
+    };
     let mut expected = old_source.to_owned();
     expected.replace_range(start..end, replacement);
     if expected != current_source {
@@ -137,11 +171,17 @@ fn preserve_bytes(
     let module_end = start + replacement.len();
     let mut helpers = BTreeSet::new();
     for error in errors {
-        if error.path != path { continue; }
+        if error.path != path {
+            continue;
+        }
         let pos = line_byte(current_source, error.line, error.column)?;
-        if pos < module_begin || pos >= module_end { continue; }
+        if pos < module_begin || pos >= module_end {
+            continue;
+        }
         if error.code != "E0425" {
-            return refuse("native extraction has unsupported unresolved names in the moved module");
+            return refuse(
+                "native extraction has unsupported unresolved names in the moved module",
+            );
         }
         let Some(helper) = missing_function(error.message) else {
             return refuse("unrecognized native extracted-module compiler diagnostic");
@@ -149,8 +189,10 @@ fn preserve_bytes(
         if helper == function
             || !current_source[pos..].starts_with(helper)
             || !current_source[pos + helper.len()..].starts_with('(')
-            || !old_source.lines().any(|line| line.starts_with(&format!("fn {helper}("))
-                || line.starts_with(&format!("pub fn {helper}(")))
+            || !old_source.lines().any(|line| {
+                line.starts_with(&format!("fn {helper}("))
+                    || line.starts_with(&format!("pub fn {helper}("))
+            })
         {
             return refuse("compiler error is not a verified parent-module function dependency");
         }
@@ -161,7 +203,9 @@ fn preserve_bytes(
     }
     // Two inserts over *one committed Git blob*. The native function body
     // remains unchanged; the old parent-level public path is restored.
-    let imports = helpers.iter().map(|h| format!("    use super::{h};\n"))
+    let imports = helpers
+        .iter()
+        .map(|h| format!("    use super::{h};\n"))
         .collect::<String>();
     let export = format!("\npub use self::{module}::{function};");
     let changes = Value::array([
@@ -195,10 +239,14 @@ pub(crate) fn propose(
         return Ok(None);
     }
     let changes = parent.get("changes")?.array_ref()?;
-    if changes.len() != 1 { return Ok(None); }
+    if changes.len() != 1 {
+        return Ok(None);
+    }
     let path = changes[0].get("path")?.str()?;
     git::validate_path(path)?;
-    if !path.ends_with(".rs") { return Ok(None); }
+    if !path.ends_with(".rs") {
+        return Ok(None);
+    }
     let original = git::entry_at(repo, base, path)?;
     if original.kind != "blob" || original.mode != "100644" {
         return refuse("native source must be a regular non-executable Git blob");
@@ -214,23 +262,42 @@ pub(crate) fn propose(
     let mut reader = git::BlobReader::open(repo)?;
     let bytes = reader.read_capped(&current_entry.oid, MAX_FILE)?;
     reader.finish()?;
-    let current_source = String::from_utf8(bytes).map_err(|_| "candidate Rust source is not UTF-8")?;
+    let current_source =
+        String::from_utf8(bytes).map_err(|_| "candidate Rust source is not UTF-8")?;
     preserve_bytes(
-        path, &original.oid, &original_source, &current_source,
-        parent.get("edits")?, errors,
-    ).map(|proposal| proposal.map(|mut result| {
-        // Translate original-blob anchors to the *committed candidate*
-        // revision, because that is the exact input to the second edit.
-        let edits = result.edits.array_ref().expect("constructed local edits");
-        result.edits = Value::array(edits.iter().map(|item| obj(&[
-            ("path", item.get("path").expect("local path").clone()),
-            ("original_blob", Value::string(&current_entry.oid)),
-            ("start_byte", item.get("start_byte").expect("local range").clone()),
-            ("end_byte", item.get("end_byte").expect("local range").clone()),
-            ("replacement", item.get("replacement").expect("local text").clone()),
-        ])));
-        result
-    }))
+        path,
+        &original.oid,
+        &original_source,
+        &current_source,
+        parent.get("edits")?,
+        errors,
+    )
+    .map(|proposal| {
+        proposal.map(|mut result| {
+            // Translate original-blob anchors to the *committed candidate*
+            // revision, because that is the exact input to the second edit.
+            let edits = result.edits.array_ref().expect("constructed local edits");
+            result.edits = Value::array(edits.iter().map(|item| {
+                obj(&[
+                    ("path", item.get("path").expect("local path").clone()),
+                    ("original_blob", Value::string(&current_entry.oid)),
+                    (
+                        "start_byte",
+                        item.get("start_byte").expect("local range").clone(),
+                    ),
+                    (
+                        "end_byte",
+                        item.get("end_byte").expect("local range").clone(),
+                    ),
+                    (
+                        "replacement",
+                        item.get("replacement").expect("local text").clone(),
+                    ),
+                ])
+            }));
+            result
+        })
+    })
 }
 
 #[cfg(test)]
@@ -242,41 +309,79 @@ mod tests {
         let replacement = "mod extracted {\n    /// documented\n    pub fn public() -> usize {\n        helper()\n    }\n}";
         let start = source.find(moved).unwrap();
         let edit = refactor_codegen::edit_operation(
-            "src/semantic.rs", Some("old"), start, start+moved.len(), replacement
+            "src/semantic.rs",
+            Some("old"),
+            start,
+            start + moved.len(),
+            replacement,
         );
         let mut candidate = source.to_owned();
-        candidate.replace_range(start..start+moved.len(), replacement);
+        candidate.replace_range(start..start + moved.len(), replacement);
         (source.to_owned(), candidate, Value::array([edit]))
     }
     #[test]
     fn preserves_exact_function_body_and_parent_public_path() {
-        let (before, candidate, edits)=fixture();
-        let line=candidate.lines().position(|l| l.contains("        helper()")).unwrap();
-        let error=Missing{
-            path:"src/semantic.rs",line,column:8,code:"E0425",
-            message:"cannot find function `helper` in this scope",
+        let (before, candidate, edits) = fixture();
+        let line = candidate
+            .lines()
+            .position(|l| l.contains("        helper()"))
+            .unwrap();
+        let error = Missing {
+            path: "src/semantic.rs",
+            line,
+            column: 8,
+            code: "E0425",
+            message: "cannot find function `helper` in this scope",
         };
-        let patch=preserve_bytes(
-            "src/semantic.rs","old",&before,&candidate,&edits,&[error]
-        ).unwrap().unwrap();
-        let after=&patch.outputs["src/semantic.rs"];
+        let patch = preserve_bytes(
+            "src/semantic.rs",
+            "old",
+            &before,
+            &candidate,
+            &edits,
+            &[error],
+        )
+        .unwrap()
+        .unwrap();
+        let after = &patch.outputs["src/semantic.rs"];
         assert!(after.contains("    use super::helper;\n"));
         assert!(after.contains("pub use self::extracted::public;"));
         assert!(after.contains("pub fn public() -> usize {\n        helper()\n    }"));
-        assert_eq!(patch.moved_function,"public");
-        assert_eq!(patch.helpers,vec!["helper"]);
-        assert_eq!(refactor_codegen::replay_edits(&candidate,&patch.edits,"src/semantic.rs").unwrap(),*after);
+        assert_eq!(patch.moved_function, "public");
+        assert_eq!(patch.helpers, vec!["helper"]);
+        assert_eq!(
+            refactor_codegen::replay_edits(&candidate, &patch.edits, "src/semantic.rs").unwrap(),
+            *after
+        );
     }
     #[test]
     fn refuses_mutated_function_or_unsupported_diagnostic() {
-        let (before,candidate,edits)=fixture();
-        let corrupt=candidate.replace("        helper()", "        999");
-        assert!(preserve_bytes("src/semantic.rs","old",&before,&corrupt,&edits,&[]).is_err());
-        let line=candidate.lines().position(|l| l.contains("        helper()")).unwrap();
-        let e=Missing{path:"src/semantic.rs",line,column:8,code:"E0433",message:"bad"};
-        assert!(preserve_bytes("src/semantic.rs","old",&before,&candidate,&edits,&[e]).is_err());
-        let e=Missing{path:"src/semantic.rs",line,column:8,code:"E0425",
-            message:"cannot find function `unknown` in this scope"};
-        assert!(preserve_bytes("src/semantic.rs","old",&before,&candidate,&edits,&[e]).is_err());
+        let (before, candidate, edits) = fixture();
+        let corrupt = candidate.replace("        helper()", "        999");
+        assert!(preserve_bytes("src/semantic.rs", "old", &before, &corrupt, &edits, &[]).is_err());
+        let line = candidate
+            .lines()
+            .position(|l| l.contains("        helper()"))
+            .unwrap();
+        let e = Missing {
+            path: "src/semantic.rs",
+            line,
+            column: 8,
+            code: "E0433",
+            message: "bad",
+        };
+        assert!(
+            preserve_bytes("src/semantic.rs", "old", &before, &candidate, &edits, &[e]).is_err()
+        );
+        let e = Missing {
+            path: "src/semantic.rs",
+            line,
+            column: 8,
+            code: "E0425",
+            message: "cannot find function `unknown` in this scope",
+        };
+        assert!(
+            preserve_bytes("src/semantic.rs", "old", &before, &candidate, &edits, &[e]).is_err()
+        );
     }
 }

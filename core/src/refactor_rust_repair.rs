@@ -2,7 +2,10 @@
 //! Neither compiler errors nor an import quick fix establishes semantic
 //! correctness. Repairs remain explicitly unverified until independent gates.
 use crate::json::{self, Value, obj};
-use crate::{Result, digest, git, refactor_codegen, refactor_module_api, refactor_rust_analyzer, refuse, scip_refactor};
+use crate::{
+    Result, digest, git, refactor_codegen, refactor_module_api, refactor_rust_analyzer, refuse,
+    scip_refactor,
+};
 use serde_json::{Value as Json, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -389,9 +392,10 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
             ("source_commit", Value::string(revision)),
             ("parent_plan_id", Value::string(parent_id)),
             ("supported_action_count", Value::number(candidate_count)),
-            ("verification", Value::string(
-                "OPEN_OBLIGATIONS: multiple native actions; no edit was performed."
-            )),
+            (
+                "verification",
+                Value::string("OPEN_OBLIGATIONS: multiple native actions; no edit was performed."),
+            ),
         ]));
     }
     let (file, title, edits, outputs, repair_kind, helpers) = if candidate_count == 1 {
@@ -402,15 +406,25 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
         if !outputs.contains_key(&file) {
             return refuse("native quickfix does not edit the diagnostic source file");
         }
-        (file, title, edits, outputs, "native-import-quickfix", Vec::new())
+        (
+            file,
+            title,
+            edits,
+            outputs,
+            "native-import-quickfix",
+            Vec::new(),
+        )
     } else {
-        let missing = errors.iter().map(|error| refactor_module_api::Missing {
-            path: &error.path,
-            line: error.line,
-            column: error.column,
-            code: &error.code,
-            message: &error.message,
-        }).collect::<Vec<_>>();
+        let missing = errors
+            .iter()
+            .map(|error| refactor_module_api::Missing {
+                path: &error.path,
+                line: error.line,
+                column: error.column,
+                code: &error.code,
+                message: &error.message,
+            })
+            .collect::<Vec<_>>();
         let Some(proposal) = refactor_module_api::propose(repo, &base, &plan, &missing)? else {
             return Ok(obj(&[
                 ("schema", Value::string("excession.rust-repair.v1")),
@@ -418,9 +432,12 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
                 ("source_commit", Value::string(revision)),
                 ("parent_plan_id", Value::string(parent_id)),
                 ("supported_action_count", Value::number(0)),
-                ("verification", Value::string(
-                    "OPEN_OBLIGATIONS: no supported native fix or exact-body API preservation recipe."
-                )),
+                (
+                    "verification",
+                    Value::string(
+                        "OPEN_OBLIGATIONS: no supported native fix or exact-body API preservation recipe.",
+                    ),
+                ),
             ]));
         };
         (
@@ -528,7 +545,10 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
         ("action_title", Value::string(title)),
         ("action_source", Value::string(file)),
         ("repair_kind", Value::string(repair_kind)),
-        ("parent_helpers", Value::array(helpers.iter().map(Value::string))),
+        (
+            "parent_helpers",
+            Value::array(helpers.iter().map(Value::string)),
+        ),
         ("plan_id", Value::string(plan_identity.sha256())),
         ("edits", edits),
         (

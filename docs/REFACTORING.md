@@ -210,3 +210,31 @@ equivalent behavior, and a disappearing reciprocal edge is not proof of safety.
 arbitrary imports, infer where functions belong, repair references, or resolve
 the richer `Plan`/reuse-selection transformation from PR #161. Those cases
 return unsupported until they have a separate mechanically checked recipe.
+
+### Candidate alignment and replayable previews
+
+The executor now refuses extraction when none of the selected functions is the
+**target of a native SCIP reference in the chosen candidate**. Additional
+explicitly selected helpers may travel with it, and are reported separately
+as `additional_helper_functions`. A reciprocal *file* relationship by itself
+is not an extraction authorization.
+
+The preview emits a `plan_id` and `edits` array. Each edit is anchored to an
+`original_blob` (or null for a new file), exact original `start_byte` /
+`end_byte` offsets, and replacement text. Excession independently replays
+the edits to every generated output before writing anything. A preview and
+subsequent apply over the same pinned source/report return the same
+`plan_id`, allowing external tools to compare their candidate patches.
+
+Adjacent `//` and `///` documentation moves with the selected function.
+Unsupported attached attributes, module/block comments, and module-relative
+references fail closed. Source-root whitespace is preserved byte-for-byte
+apart from the new module declaration. Output worktrees inside the original
+checkout are refused, and Git checkout hooks are disabled for the
+`worktree add` operation. A configured Git checkout filter can still run
+during a trusted checkout, so do not treat output worktree creation as a
+sandbox for hostile local Git configurations.
+
+The recipe still cannot determine general symbol closures or guarantee that
+an unverified source edit compiles. It does **not** automatically execute
+untrusted generated code. Compilation and tests remain external receipts.

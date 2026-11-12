@@ -68,6 +68,16 @@ For advanced reproducible queries, the existing `index`, `inspect`,
 available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md), [release procedure](docs/RELEASE.md),
 and [development setup](docs/DEVELOPMENT.md).
 
+## Coding-agent interface
+
+`excession agent context` returns bounded Git source identities, candidate
+relationships, coverage gaps and heuristic test suggestions for exact focus
+paths. `excession agent verify` compares an isolated candidate commit with
+its base, recomputes supported impact evidence and incorporates externally
+supplied test/build observations without treating them as verified attestations.
+Both emit versioned JSON and unresolved obligations. See
+[agent-facing CLI](docs/AGENT_CLI.md) for commands and contracts.
+
 ## What you can investigate
 
 | Question | Excession commands | Evidence |

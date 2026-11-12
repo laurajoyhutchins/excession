@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/agent/agent-verification.v1.schema.json",
+  "title": "Bounded candidate verification obligations v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "base_commit",
+    "base_tree",
+    "candidate_commit",
+    "candidate_tree",
+    "change_inventory_id",
+    "impact_report_id",
+    "changes",
+    "change_count",
+    "candidate_impacts",
+    "candidate_impact_count",
+    "unknown",
+    "receipts",
+    "replay",
+    "coverage",
+    "obligations",
+    "status",
+    "ready_to_merge",
+    "safe_to_skip_unlisted_tests",
+    "report_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.agent-verification.v1"
+    },
+    "base_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "base_tree": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "candidate_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "candidate_tree": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "change_inventory_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "impact_report_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "changes": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      }
+    },
+    "change_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "candidate_impacts": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      }
+    },
+    "candidate_impact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unknown": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      }
+    },
+    "receipts": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": [
+          "receipt_id",
+          "observation",
+          "trust"
+        ],
+        "properties": {
+          "receipt_id": {
+            "$ref": "#/$defs/sha256"
+          },
+          "observation": {
+            "type": "object"
+          },
+          "trust": {
+            "const": "CALLER_SUPPLIED_UNATTESTED"
+          }
+        }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "required": [
+        "source",
+        "supported_evidence",
+        "semantic_correctness"
+      ],
+      "properties": {
+        "source": {
+          "const": "RECOMPUTED_FROM_PINNED_GIT"
+        },
+        "supported_evidence": {
+          "const": "RECOMPUTED_NOT_INDEPENDENTLY_CERTIFIED"
+        },
+        "semantic_correctness": {
+          "const": "NOT_EVALUATED"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "status",
+        "truncated"
+      ],
+      "properties": {
+        "status": {
+          "const": "PARTIAL"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "obligations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "enum": [
+        "OPEN_OBLIGATIONS",
+        "REPORTED_FAILURE"
+      ]
+    },
+    "ready_to_merge": {
+      "const": false
+    },
+    "safe_to_skip_unlisted_tests": {
+      "const": false
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

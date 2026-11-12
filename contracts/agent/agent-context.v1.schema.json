@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/agent/agent-context.v1.schema.json",
+  "title": "Bounded Git source context v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_commit",
+    "source_tree",
+    "task",
+    "sources",
+    "relationships",
+    "relationship_count",
+    "test_candidates",
+    "test_candidate_count",
+    "coverage",
+    "safe_to_skip_unlisted_tests",
+    "report_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.agent-context.v1"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "task": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4096
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      }
+    },
+    "relationship_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "test_candidates": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": [
+          "source",
+          "reason",
+          "selection_verified"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/source"
+          },
+          "reason": {
+            "const": "PATH_NAME_HEURISTIC"
+          },
+          "selection_verified": {
+            "const": false
+          }
+        }
+      }
+    },
+    "test_candidate_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "status",
+        "gaps",
+        "truncated"
+      ],
+      "properties": {
+        "status": {
+          "const": "PARTIAL"
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "safe_to_skip_unlisted_tests": {
+      "const": false
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "source_tree",
+        "path",
+        "blob",
+        "mode"
+      ],
+      "properties": {
+        "source_commit": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "source_tree": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blob": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "mode": {
+          "enum": [
+            "100644",
+            "100755"
+          ]
+        }
+      }
+    }
+  }
+}

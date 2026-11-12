@@ -176,6 +176,19 @@ excession view replay security --db "$OUT/security.sqlite" --repo "$REPO" \
 
 The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL and Semgrep remain optional external programs. An imported report records **unverified static candidates**, not confirmed CVEs. Before trusting a security view, independently audit the underlying scanner ingestion as shown above.
 
+## Agent-facing commands
+
+`excession agent context --repo REPO --rev COMMIT --focus PATH[,PATH...] [--task TEXT] [--limit 32]`
+returns versioned JSON with exact source identities, existing candidate
+relationships, coverage gaps, and explicitly heuristic test suggestions.
+
+`excession agent verify --repo REPO --base COMMIT --candidate COMMIT
+[--receipts FILE] [--limit 32]` recomputes supported Git-bound impact evidence
+and reports outstanding obligations. It does not execute supplied commands,
+trust unsigned execution receipts, or claim safety to merge. Both optionally
+accept `--roots` and `--db` for the underlying analyzer. See
+[the agent CLI contract](AGENT_CLI.md).
+
 ## Complete command families
 
 - `excession discover|analyze|changes|impact|explain`: discover supported roots, index static candidates, compare exact Git revisions, traverse bounded candidate paths, and authenticate explanations. `explain --audit` does not independently prove semantic correctness.

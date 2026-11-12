@@ -100,7 +100,7 @@ jobs:
             --scip "$RUNNER_TEMP/scip-cli/scip" \
             --python-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-python" \
             --typescript-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-typescript" \
-            --trusted-local --concepts --require-positive-concepts --require-positive-source-anchors "${args[@]}"
+            --trusted-local --concepts --measure-cost --require-positive-concepts --require-positive-source-anchors "${args[@]}"
       - name: Validate a pinned historical PostCSS bundle revision
         shell: bash
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.historical }}
@@ -113,7 +113,7 @@ jobs:
             --scip "$RUNNER_TEMP/scip-cli/scip" \
             --python-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-python" \
             --typescript-indexer "$RUNNER_TEMP/scip-indexers/node_modules/.bin/scip-typescript" \
-            --trusted-local --concepts
+            --trusted-local --concepts --measure-cost
       - name: Evaluate incremental novelty and prepare unlabeled reviewer packets
         shell: bash
         run: |
@@ -122,8 +122,12 @@ jobs:
           if [[ -d scip-historical-evidence ]]; then
             dirs+=(--evidence-dir scip-historical-evidence)
           fi
+          summaries=(--run-summary scip-fixture-results.json)
+          if [[ -f scip-historical-results.json ]]; then
+            summaries+=(--run-summary scip-historical-results.json)
+          fi
           python3 benchmarks/experiments/concepts_baseline_value.py \
-            "${dirs[@]}" --out scip-concepts-value.json \
+            "${dirs[@]}" "${summaries[@]}" --out scip-concepts-value.json \
             --review-packets scip-concepts-unjudged-review.json
       - name: Preserve actual indexes, audits and coverage gaps
         if: always()

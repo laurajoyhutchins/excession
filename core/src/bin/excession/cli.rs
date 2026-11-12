@@ -158,7 +158,15 @@ pub(super) fn command() -> Command {
             ),
             leaf(
                 "verify-observation",
-                &["db", "repo", "rev", "snapshot", "observation", "source", "predicate"],
+                &[
+                    "db",
+                    "repo",
+                    "rev",
+                    "snapshot",
+                    "observation",
+                    "source",
+                    "predicate",
+                ],
                 &[],
             ),
         ],

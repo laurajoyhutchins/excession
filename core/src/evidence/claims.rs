@@ -125,7 +125,10 @@ pub fn verify_scip_reference(
             ("to", source_record(&to)),
             ("line", Value::number(line)),
             ("source_identity", Value::string("INDEPENDENT_GIT_MATCH")),
-            ("producer_payload_integrity", Value::string("IMMUTABLE_SQLITE_REPLAY_MATCH")),
+            (
+                "producer_payload_integrity",
+                Value::string("IMMUTABLE_SQLITE_REPLAY_MATCH"),
+            ),
             ("producer_execution", Value::string("UNATTESTED")),
             ("semantic_correctness", Value::string("NOT_ESTABLISHED")),
             ("coverage_completeness", Value::string("NOT_ESTABLISHED")),
@@ -141,7 +144,9 @@ pub fn verify_scip_reference(
             ),
         ]);
         let id = report.sha256();
-        report.entries_mut()?.insert("report_id".into(), Value::string(id));
+        report
+            .entries_mut()?
+            .insert("report_id".into(), Value::string(id));
         Ok(report)
     })
 }

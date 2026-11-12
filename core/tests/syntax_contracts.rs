@@ -10,9 +10,17 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 fn parser_installed() -> bool {
     // The real parser runs in Rust, not through a Python interpreter.
     // Only exercise full syntax fixtures when every required grammar is installed.
-    ["rust", "go", "java", "c", "python", "typescript", "javascript"]
-        .iter()
-        .all(|language| tree_sitter_language_pack::has_parser(language))
+    [
+        "rust",
+        "go",
+        "java",
+        "c",
+        "python",
+        "typescript",
+        "javascript",
+    ]
+    .iter()
+    .all(|language| tree_sitter_language_pack::has_parser(language))
 }
 fn run(program: &str, args: &[&str]) -> Output {
     Command::new(program).args(args).output().expect("spawn")

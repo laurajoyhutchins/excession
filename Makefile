@@ -1,4 +1,4 @@
-.PHONY: check build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli benchmark-schema-check
+.PHONY: check check-full build rust-check python-check node-check go-check rust-junit python-junit junit cli install-cli benchmark-schema-check
 
 build:
 	cargo build --offline --locked --manifest-path core/Cargo.toml
@@ -18,7 +18,10 @@ node-check:
 go-check:
 	GO111MODULE=off go test ./core/adapters
 
-check: rust-check python-check node-check
+check: rust-check node-check
+
+# Opt-in Python-specific integration and independent-oracle checks.
+check-full: check python-check
 
 # Optional JUnit reports; requires cargo-nextest and pytest.
 rust-junit:

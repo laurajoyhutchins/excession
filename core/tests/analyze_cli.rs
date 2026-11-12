@@ -38,6 +38,7 @@ fn analyze_one_command_reports_git_bound_candidates_and_honest_limits() {
     fs::write(pkg.join("__init__.py"), "").unwrap();
     fs::write(pkg.join("first.py"), "import pkg.second\n").unwrap();
     fs::write(pkg.join("second.py"), "VALUE = 1\n").unwrap();
+    fs::write(repo.join("entrypoint.py"), "import pkg.second\n").unwrap();
     cmd(&repo, "git", &["add", "."]);
     cmd(
         &repo,
@@ -84,6 +85,18 @@ fn analyze_one_command_reports_git_bound_candidates_and_honest_limits() {
     assert!(
         !rels.is_empty(),
         "expected the real import to yield a candidate"
+    );
+    assert!(
+        rels.iter().any(|edge| {
+            edge.get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap()
+                == "entrypoint.py"
+        }),
+        "root-level source must participate in default analysis"
     );
     assert!(rels.iter().all(|edge| {
         edge.get("evidence")

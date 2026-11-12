@@ -12,6 +12,7 @@ The command families correspond to different evidence layers:
 
 | Work | Commands | Output |
 | --- | --- | --- |
+| Everyday source change impact | `discover`, `analyze`, `changes`, `impact`, `explain` | Git-pinned static candidate paths, evidence and explicit unknowns |
 | Static repository relationships | `index`, `inspect dependencies`, `view deps` | Source-linked module relations and navigable views |
 | Syntax and native inputs | `syntax`, `semantic`, `inspect evidence` | Source-bound candidates and separately typed native observations |
 | Refactoring investigation | `refactor suggest`, `refactor scip-suggest`, audit variants | Git-bound hypotheses, not source edits |
@@ -37,9 +38,43 @@ excession --help
 
 For development, `make cli` produces `core/target/debug/excession`. `make check` runs the existing source/evidence tests and the dedicated CLI tests.
 
+## Ordinary repository analysis
+
+Use a checkout containing a supported Python or JavaScript/TypeScript source
+layout. Git reads are pinned to committed objects. The source checkout can be
+dirty for these read-only operations; uncommitted edits are **not included**.
+
+```sh
+cd /path/to/repository
+excession discover .
+excession analyze .
+excession changes . --base HEAD~1
+excession impact . --base HEAD~1 --json > /tmp/impact.json
+```
+
+A report may contain no affected paths, and that does not prove absence of
+runtime effects. When `effects` contains a candidate, select a `claim_id` from
+the actual JSON and request a source-replayed explanation:
+
+```sh
+excession explain . --report /tmp/impact.json --id CLAIM_ID
+excession explain . --report /tmp/impact.json --id CLAIM_ID --audit
+```
+
+The explanation command re-runs its source-bound impact query against pinned Git
+objects and refuses mutated or stale reports. The audit reports Git
+authentication and replay separately from semantic correctness, which remains
+`NOT_EVALUATED`. The CLI uses no ontology inference to manufacture
+dependency observations. The experimental concept stack may later provide
+separately typed annotations.
+
+`analyze` auto-discovers supported source roots and creates its SQLite cache
+outside the repository. Use `--roots` or `--db` when a project requires explicit
+selection. `analyze clang` remains a distinct configured compiler workflow.
+
 ## One repository, many layouts
 
-The following example uses an **existing clean** h11 checkout and writes SQLite and manifests outside the repository. The indexer currently resolves static Python/JavaScript dependencies within configured roots. Use the actual root directories for your project.
+The following example uses an existing pinned h11 checkout and writes SQLite and manifests outside the repository. The indexer currently resolves static Python/JavaScript dependencies within configured roots. Use the actual root directories for your project.
 
 ```sh
 REPO=/path/to/h11
@@ -138,6 +173,7 @@ The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL
 
 ## Complete command families
 
+- `excession discover|analyze|changes|impact|explain`: discover supported roots, index static candidates, compare exact Git revisions, traverse bounded candidate paths, and authenticate explanations. `explain --audit` does not independently prove semantic correctness.
 - `excession index`: index an exact Git revision and configured dependency roots.
 - `excession refactor suggest|audit`: emit or replay bounded source-bound refactoring hypotheses.
 - `excession inspect dependencies|manifest|impact|review`: query indexed relations. Revision flags accept Git refs such as `HEAD`, resolved to commit IDs.

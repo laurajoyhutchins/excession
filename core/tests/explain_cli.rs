@@ -55,11 +55,10 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
         "--id", &id, "--db", db.to_str().unwrap(), "--audit"]);
     let audited = json::parse(audit.as_bytes()).unwrap();
     assert_eq!(audited.get("semantic_correctness").unwrap().str().unwrap(), "NOT_EVALUATED");
-    let changed = &mut report.entries_mut().unwrap().get_mut("effects")
-        .unwrap().array_ref().unwrap().to_vec();
+    let mut changed = report.get("effects").unwrap().array_ref().unwrap().to_vec();
     let effect = changed.get_mut(0).unwrap();
     effect.entries_mut().unwrap().insert("assessment".into(), json::Value::string("OBSERVED_RELATIONSHIP_PATH"));
-    report.entries_mut().unwrap().insert("effects".into(), json::Value::array(changed.clone()));
+    report.entries_mut().unwrap().insert("effects".into(), json::Value::array(changed));
     fs::write(&path, report.canonical()).unwrap();
     let rejected = cmd(bin, &["explain", ".", "--report", path.to_str().unwrap(),
         "--id", &id, "--db", db.to_str().unwrap(), "--json"]);

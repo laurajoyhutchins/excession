@@ -1,7 +1,7 @@
 //! Git-backed SCIP semantic bridge acceptance. The SCIP JSON is a synthetic
 //! official-decoder-shaped fixture; producer execution is not attested.
 use excession::json::{self, Value, obj};
-use excession::{concepts, concepts_compile, concepts_scip, scip_refactor};
+use excession::{concepts_compile, concepts_scip, scip_refactor};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -87,7 +87,7 @@ impl Fixture {
     }
 
     fn write_index(&self, reciprocal: bool, ambiguous: bool) {
-        let mut rust = vec![
+        let rust = vec![
             occurrence(RUST_SYMBOL, 1, 0),
             occurrence(PYTHON_SYMBOL, 0, 0),
             occurrence(EXTERNAL_SYMBOL, 0, 0),
@@ -97,7 +97,7 @@ impl Fixture {
         // Keep this synthetic input intentionally minimal but strictly shaped
         // like the official SCIP CLI JSON.
         let mut documents = vec![
-            document("alpha.rs", "rust", std::mem::take(&mut rust)),
+            document("alpha.rs", "rust", rust),
             document("beta.py", "python", python),
         ];
         if ambiguous {
@@ -213,8 +213,16 @@ fn stale_or_untracked_git_sources_fail_closed() {
     f.write_index(true, false);
     let mut raw = json::parse(&fs::read(&f.index).unwrap()).unwrap();
     let docs = raw.entries_mut().unwrap().get_mut("documents").unwrap();
-    let occ = docs.array_mut().unwrap()[0].entries_mut().unwrap().get_mut("occurrences").unwrap();
-    occ.array_mut().unwrap()[0].entries_mut().unwrap().insert(
+    let first = match docs {
+        Value::Array(items) => &mut items[0],
+        _ => panic!("expected SCIP documents"),
+    };
+    let occurrences = first.entries_mut().unwrap().get_mut("occurrences").unwrap();
+    let occurrence = match occurrences {
+        Value::Array(items) => &mut items[0],
+        _ => panic!("expected SCIP occurrences"),
+    };
+    occurrence.entries_mut().unwrap().insert(
         "range".into(),
         Value::array([Value::number(0), Value::number(500), Value::number(502)]),
     );

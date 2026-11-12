@@ -156,6 +156,19 @@ pub(super) fn command() -> Command {
                 &["db", "snapshot"],
                 &["focus", "after", "repo", "rev", "source-prefix"],
             ),
+            leaf(
+                "verify-observation",
+                &[
+                    "db",
+                    "repo",
+                    "rev",
+                    "snapshot",
+                    "observation",
+                    "source",
+                    "predicate",
+                ],
+                &[],
+            ),
         ],
     )
     .about("Query indexed Git relationships");

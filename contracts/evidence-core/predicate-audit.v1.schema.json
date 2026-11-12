@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/predicate-audit.v1.schema.json",
+  "title": "Excession SCIP predicate source/receipt audit",
+  "description": "Authenticates recorded native SCIP endpoints and original receipt integrity without promoting a reference to a call, dependency or vulnerability.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "snapshot_id",
+    "observation_id",
+    "receipt_id",
+    "predicate",
+    "from",
+    "to",
+    "line",
+    "source_identity",
+    "producer_payload_integrity",
+    "producer_execution",
+    "semantic_correctness",
+    "coverage_completeness",
+    "verified_call_or_dependency",
+    "verified_security_finding",
+    "status",
+    "obligations",
+    "report_id"
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "source_tree",
+        "path",
+        "blob",
+        "mode"
+      ],
+      "properties": {
+        "source_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "source_tree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blob": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "mode": {
+          "enum": [
+            "100644",
+            "100755"
+          ]
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "excession.predicate-audit.v1"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "observation_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "receipt_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "predicate": {
+      "const": "SCIP_SYMBOL_REFERENCE"
+    },
+    "from": {
+      "$ref": "#/$defs/source"
+    },
+    "to": {
+      "$ref": "#/$defs/source"
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source_identity": {
+      "const": "INDEPENDENT_GIT_MATCH"
+    },
+    "producer_payload_integrity": {
+      "const": "IMMUTABLE_SQLITE_REPLAY_MATCH"
+    },
+    "producer_execution": {
+      "const": "UNATTESTED"
+    },
+    "semantic_correctness": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "coverage_completeness": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "verified_call_or_dependency": {
+      "const": false
+    },
+    "verified_security_finding": {
+      "const": false
+    },
+    "status": {
+      "const": "SOURCE_BOUND_NATIVE_CANDIDATE"
+    },
+    "obligations": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "INDEPENDENT_NATIVE_INDEXER_ORACLE_REQUIRED",
+          "CONFIGURATION_COVERAGE_NOT_ESTABLISHED"
+        ]
+      }
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  }
+}

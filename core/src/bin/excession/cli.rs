@@ -164,6 +164,7 @@ pub(super) fn command() -> Command {
         vec![
             leaf("validate", &["report"], &[]),
             leaf("report", &["kind", "directory"], &["input"]),
+            leaf("run-relational", &["out"], &["sizes", "fanouts", "revisions", "repetitions"]),
         ],
     )
     .about("Validate and generate benchmark reports");

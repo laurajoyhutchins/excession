@@ -50,6 +50,19 @@ pub fn javascript(entries: &[Value]) -> Result<Value> {
     run("node", code, entries)
 }
 
+/// Resolve imports with TypeScript against only pinned source and config blobs.
+pub fn javascript_with_config(entries: &[Value], configs: &[Value]) -> Result<Value> {
+    run_payload(
+        "node",
+        include_str!("../adapters/js_adapter.cjs"),
+        obj(&[
+            ("entries", Value::array(entries.iter().cloned())),
+            ("configs", Value::array(configs.iter().cloned())),
+        ]),
+        AdapterLimits::default(),
+    )
+}
+
 pub fn tree_sitter(entries: &[Value]) -> Result<Value> {
     let code = include_str!("../adapters/tree_sitter.py");
     run("python3", code, entries)

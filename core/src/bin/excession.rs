@@ -711,6 +711,8 @@ fn execute(args: &[String]) -> Result<Response> {
                 repo: opt.path("repo"),
                 base: opt.get("base"),
                 plan: opt.path("plan"),
+                index: opt.path("index"),
+                report: opt.path("report"),
                 diagnostics: opt.path("diagnostics"),
                 source_prefix: opt.0.get("source-prefix").map(String::as_str),
                 analyzer: Path::new(opt.get_or("rust-analyzer", "rust-analyzer")),

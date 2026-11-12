@@ -2,7 +2,7 @@
 //! Neither compiler errors nor an import quick fix establishes semantic
 //! correctness. Repairs remain explicitly unverified until independent gates.
 use crate::json::{self, Value, obj};
-use crate::{Result, digest, git, refactor_rust_analyzer, refuse};
+use crate::{Result, digest, git, refactor_codegen, refactor_rust_analyzer, refuse, scip_refactor};
 use serde_json::{Value as Json, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -122,6 +122,16 @@ fn validate_chain(repo: &Path, revision: &str, plan: &Value, base: &str) -> Resu
     if plan_id.len() != 64 || !plan_id.bytes().all(|b| b.is_ascii_hexdigit()) {
         return refuse("invalid parent code-action plan identity");
     }
+    let canonical = obj(&[
+        ("source_commit", Value::string(base)),
+        ("candidate_id", plan.get("candidate_id")?.clone()),
+        ("scip_report_id", plan.get("scip_report_id")?.clone()),
+        ("action_title", plan.get("action_title")?.clone()),
+        ("edits", plan.get("edits")?.clone()),
+    ]);
+    if canonical.sha256() != plan_id {
+        return refuse("parent code-action plan ID is not its canonical content digest");
+    }
     let entries = git::entries(repo, base)?
         .into_iter()
         .map(|entry| (entry.path, entry.oid))
@@ -160,6 +170,18 @@ fn validate_chain(repo: &Path, revision: &str, plan: &Value, base: &str) -> Resu
             || digest::sha256(&body) != row.get("generated_sha256")?.str()?
         {
             return refuse("candidate source bytes differ from the parent refactor plan");
+        }
+        let original = if let Some(oid) = entries.get(path) {
+            let mut reader = git::BlobReader::open(repo)?;
+            let bytes = reader.read_capped(oid, MAX_SOURCE_BYTES)?;
+            reader.finish()?;
+            String::from_utf8(bytes).map_err(|_| "original source is not UTF-8")?
+        } else {
+            String::new()
+        };
+        let replay = refactor_codegen::replay_edits(&original, plan.get("edits")?, path)?;
+        if replay.as_bytes() != body {
+            return refuse("original Git blobs and parent byte edits do not replay to the candidate");
         }
     }
     if actual != expected {
@@ -275,6 +297,8 @@ pub struct Request<'a> {
     pub repo: &'a Path,
     pub base: &'a str,
     pub plan: &'a Path,
+    pub index: &'a Path,
+    pub report: &'a Path,
     pub diagnostics: &'a Path,
     pub source_prefix: Option<&'a str>,
     pub analyzer: &'a Path,
@@ -303,8 +327,16 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
         return refuse("parent plan exceeds 2 MiB");
     }
     let plan = json::parse(&plan_bytes)?;
-    let parent_id = validate_chain(repo, &revision, &plan, &base)?;
     let prefix = request.source_prefix.unwrap_or("");
+    scip_refactor::audit_with_prefix(
+        repo, &base, request.index, request.report, request.source_prefix,
+    )?;
+    let report_bytes = fs::read(request.report).map_err(|e| format!("SCIP report: {e}"))?;
+    let report = json::parse(&report_bytes)?;
+    if plan.get("scip_report_id")?.str()? != report.get("report_id")?.str()? {
+        return refuse("parent plan does not bind to independently replayed SCIP report");
+    }
+    let parent_id = validate_chain(repo, &revision, &plan, &base)?;
     if !prefix.is_empty() {
         git::validate_path(prefix)?;
     }

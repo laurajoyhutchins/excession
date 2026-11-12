@@ -144,6 +144,7 @@ jq -e '.status == "APPLIED_UNVERIFIED"
 run_repair() {
   "$BIN" refactor rust-repair --repo "$ASSIST_OUT" --base "$OLD_REV" \
     --plan "$TMP/assist-applied.json" \
+    --index "$TMP/index.scip.json" --report "$TMP/scip-report.json" \
     --diagnostics "$TMP/assist-compiler.jsonl" \
     --source-prefix core \
     --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" "$@"

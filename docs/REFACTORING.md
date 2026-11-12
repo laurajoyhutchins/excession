@@ -299,12 +299,16 @@ compiler evidence into a guarantee of behavioral equivalence.
 `excession refactor rust-repair` accepts a **clean, detached linked
 worktree** containing an exact committed candidate produced by
 `rust-assist`. The caller supplies the previous `APPLIED_UNVERIFIED`
-JSON plan, original Git base revision, and independently captured
+JSON plan, original Git base revision, independently re-audited original
+rust-analyzer SCIP index/report, and independently captured
 `cargo check --locked --offline --message-format=json` diagnostics.
 
 The command verifies that the candidate changes match the **exact generated
 SHA-256 of every file in the parent plan**, including the original Git blob
-identities and the complete base-to-candidate changed-file inventory. It
+identities and the complete base-to-candidate changed-file inventory.
+It recomputes the parent plan ID, replays the exact byte edits against
+the original Git blobs, and re-audits the SCIP report before selecting
+any repair. It
 accepts only compiler unresolved-name/import errors (E0432, E0425, E0433)
 with supported Rust source paths and unambiguous coordinates.
 
@@ -330,6 +334,7 @@ cargo check --locked --offline --message-format=json \
 excession refactor rust-repair \
   --repo /candidate --base <original-git-sha> \
   --plan /tmp/rust-assist-applied.json \
+  --index /tmp/original.scip.json --report /tmp/original-report.json \
   --diagnostics /tmp/compiler.jsonl \
   --source-prefix core
 ```

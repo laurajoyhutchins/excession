@@ -144,7 +144,7 @@ pub fn report() -> Value {
                 ),
                 (
                     "syntax_bridge",
-                    Value::string("RUST_NATIVE_GRAMMARS_NOT_CHECKED")}),
+                    Value::string("RUST_NATIVE_GRAMMARS_NOT_CHECKED"),
                 ),
                 (
                     "native_toolchains",

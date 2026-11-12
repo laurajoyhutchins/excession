@@ -16,7 +16,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from project_security_discovery import project  # noqa: E402
+from project_security_discovery import project, _load, _report_results  # noqa: E402
 
 
 def sha(data: bytes) -> str:
@@ -211,13 +211,12 @@ class SecurityProjectionAdapterTests(unittest.TestCase):
         bad = json.loads(self.report)
         bad["errors"] = [{"message": "fatal parse failure"}]
         with self.assertRaisesRegex(ValueError, "Semgrep has scan errors"):
-            project(self.config, json.dumps(bad).encode(), self.db,
-                    self.ingest, self.audit, self.ruleset)
+            _report_results(bad, "semgrep")
 
     def test_duplicate_json_keys_are_not_silently_accepted(self):
         bad = b'{"results":[],"results":[],"errors":[]}'
         with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
-            project(self.config, bad, self.db, self.ingest, self.audit, self.ruleset)
+            _load(bad)
 
     def test_out_of_scope_claim_fails_closed(self):
         self.config["scope"]["excluded_paths"] = ["src"]

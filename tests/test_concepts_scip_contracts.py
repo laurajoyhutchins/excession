@@ -57,3 +57,9 @@ def test_scip_requires_explicit_index_and_git_identity():
         value = copy.deepcopy(SAMPLE)
         value.pop(key)
         assert list(VALIDATOR.iter_errors(value))
+
+
+def test_observation_batch_limit_is_measured_and_bounded():
+    batch = json.loads((ROOT / "contracts/concepts/observation-batch.v1.schema.json").read_text())
+    assert batch["properties"]["observations"]["maxItems"] == 20000
+    assert batch["properties"]["subjects"]["maxItems"] == 20000

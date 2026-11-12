@@ -103,6 +103,55 @@ fn analyze_one_command_reports_git_bound_candidates_and_honest_limits() {
         "PARTIAL"
     );
     assert!(!repo.join("excession.sqlite").exists());
+
+    // Out-of-checkout policy must reject lexical traversal before any write.
+    let traversal = out.join("..").join("repo").join("forbidden.sqlite");
+    let refused = Command::new(bin)
+        .current_dir(&repo)
+        .args(["analyze", ".", "--db"])
+        .arg(&traversal)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+    assert!(!repo.join("forbidden.sqlite").exists());
+
+    // A symlinked parent can also route a nominally external path into Git.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let alias = temp.join("cache-alias");
+        symlink(&repo, &alias).unwrap();
+        let linked_path = alias.join("forbidden.sqlite");
+        let refused = Command::new(bin)
+            .current_dir(&repo)
+            .args(["analyze", ".", "--db"])
+            .arg(linked_path)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(!refused.status.success());
+        assert!(!repo.join("forbidden.sqlite").exists());
+
+        // A symlinked file target is unsafe even if its parent is external.
+        let sentinel = repo.join("sentinel.sqlite");
+        fs::write(&sentinel, b"leave this checkout file untouched").unwrap();
+        let file_alias = temp.join("cache-file-alias.sqlite");
+        symlink(&sentinel, &file_alias).unwrap();
+        let refused = Command::new(bin)
+            .current_dir(&repo)
+            .args(["analyze", ".", "--db"])
+            .arg(file_alias)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(!refused.status.success());
+        assert_eq!(
+            fs::read(sentinel).unwrap(),
+            b"leave this checkout file untouched"
+        );
+    }
+
     let help = cmd(&repo, bin, &["analyze", "clang", "--help"]);
     assert!(String::from_utf8_lossy(&help).contains("compile-db"));
     fs::remove_dir_all(temp).unwrap();

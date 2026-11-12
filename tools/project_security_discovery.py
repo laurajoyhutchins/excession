@@ -149,6 +149,9 @@ def project(
     _require(config["execution_evidence_refs"],
              "completed scan requires execution evidence references")
     report_hash = _sha(report_bytes)
+    _require(report_hash == audit_receipt.get("report_sha256") ==
+             ingest_receipt.get("report_sha256"),
+             "raw scanner report digest differs from the audited receipts")
     _require(len(report_bytes) > 0 and len(report_bytes) <= 16 * 1024 * 1024,
              "report size outside Rust ingest limits")
     report = _load(report_bytes)

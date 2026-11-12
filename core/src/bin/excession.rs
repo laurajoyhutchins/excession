@@ -12,7 +12,7 @@ use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
-    kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refuse,
+    kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refactor_codegen, refuse,
     scip_evidence, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::env;
@@ -631,6 +631,23 @@ fn execute(args: &[String]) -> Result<Response> {
                 &db,
                 opt.get("engine"),
                 sub == "audit",
+            )?))
+        }
+        [top, sub] if top == "refactor" && sub == "extract-shared-module" => {
+            Ok(json(refactor_codegen::extract_shared_module(
+                &refactor_codegen::Request {
+                    repo: opt.path("repo"),
+                    revision: opt.get("rev"),
+                    index: opt.path("index"),
+                    report: opt.path("report"),
+                    candidate: opt.get("candidate"),
+                    source: opt.get("source"),
+                    destination: opt.get("destination"),
+                    symbols: opt.get("symbols"),
+                    ast_grep: Path::new(opt.get_or("ast-grep", "ast-grep")),
+                    source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                    output: opt.0.get("output").map(Path::new),
+                },
             )?))
         }
         [top, sub] if top == "refactor" && sub == "scip-ingest" => {

@@ -144,11 +144,7 @@ pub fn report() -> Value {
                 ),
                 (
                     "syntax_bridge",
-                    Value::string(if python_ready {
-                        "PYTHON_FOUND_GRAMMARS_NOT_CHECKED"
-                    } else {
-                        "PYTHON_UNAVAILABLE"
-                    }),
+                    Value::string("RUST_NATIVE_GRAMMARS_NOT_CHECKED")}),
                 ),
                 (
                     "native_toolchains",

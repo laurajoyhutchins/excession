@@ -40,6 +40,14 @@ fn specs(allow_publish: bool) -> Result<Value> {
     });
     let tools = vec![
         serde_json::json!({
+            "name":"search_code_sources",
+            "description":"Discover tracked source paths present in this SCIP index before inspecting them. Path substring search and deterministic pages; missing paths do not prove missing code.",
+            "inputSchema":{"type":"object","additionalProperties":false,"properties":{
+                "search":{"type":"string","maxLength":128},
+                "offset":{"type":"integer","minimum":0,"maximum":1000000}
+            }}
+        }),
+        serde_json::json!({
             "name":"inspect_code_evidence",
             "description":"Read bounded pinned Git source text and exact SCIP observation IDs for a single indexed path. Use before proposing memberships. Unknown native coverage stays explicit.",
             "inputSchema":{"type":"object","additionalProperties":false,
@@ -124,6 +132,20 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
     let prefix = config.source_prefix.as_deref();
     let fields = args.entries()?;
     match name {
+        "search_code_sources" => {
+            if fields.keys().any(|key| !matches!(key.as_str(), "search" | "offset")) {
+                return refuse("unexpected source search parameter");
+            }
+            let search = args.get("search").ok().map(Value::str).transpose()?.unwrap_or("");
+            let offset = args.get("offset").ok().map(Value::integer).transpose()?.unwrap_or(0);
+            if !(0..=1_000_000).contains(&offset) {
+                return refuse("source search offset must be 0..1000000");
+            }
+            concepts_author::list_sources(
+                repo, revision, index, prefix, search,
+                usize::try_from(offset).map_err(|e| e.to_string())?,
+            )
+        }
         "inspect_code_evidence" => {
             if fields
                 .keys()
@@ -363,10 +385,10 @@ mod tests {
     #[test]
     fn tools_are_curated_and_publish_requires_explicit_host_grant() {
         let list = specs(false).unwrap();
-        assert_eq!(list.array_ref().unwrap().len(), 6);
+        assert_eq!(list.array_ref().unwrap().len(), 7);
         assert!(!list.canonical().contains("\"publish_ontology\""));
         let allowed = specs(true).unwrap();
-        assert_eq!(allowed.array_ref().unwrap().len(), 7);
+        assert_eq!(allowed.array_ref().unwrap().len(), 8);
         assert!(allowed.canonical().contains("\"publish_ontology\""));
     }
     #[test]
@@ -404,7 +426,7 @@ mod tests {
                 .array_ref()
                 .unwrap()
                 .len(),
-            6
+            7
         );
     }
     #[test]

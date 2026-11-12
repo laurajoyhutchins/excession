@@ -12,7 +12,7 @@ There is no local or hosted LLM API dependency. The CLI and a minimal
 
 ## Agent's normal workflow
 
-1. Inspect source and exact indexed evidence by path with
+1. Find relevant source paths with `search_code_sources` (or `concepts ontology-list`). Then inspect source and exact indexed evidence by path with
    `inspect_code_evidence` (or `concepts ontology-context`). Use the
    returned **normalized** `observation_id` values when composing your draft.
    The excerpt is capped at 40 lines, observations at 40 per path; request
@@ -39,6 +39,10 @@ There is no local or hosted LLM API dependency. The CLI and a minimal
 ### Example CLI calls
 
 ```bash
+excession concepts ontology-list \
+  --repo "$REPO" --rev "$COMMIT" --index "$INDEX_JSON" \
+  --search concepts > paths.json
+
 excession concepts ontology-context \
   --repo "$REPO" --rev "$COMMIT" --index "$INDEX_JSON" \
   --path core/src/concepts_scip.rs --first-line 1 > context.json

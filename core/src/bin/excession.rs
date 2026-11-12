@@ -361,6 +361,17 @@ fn execute(args: &[String]) -> Result<Response> {
                 let rev = opt.get("rev");
                 let index = opt.path("index");
                 let prefix = opt.0.get("source-prefix").map(String::as_str);
+                if sub == "ontology-list" {
+                    let offset = opt.0.get("offset")
+                        .map(|x| x.parse::<usize>())
+                        .transpose()
+                        .map_err(|_| "ontology offset must be a nonnegative integer")?
+                        .unwrap_or(0);
+                    return Ok(json(excession::concepts_author::list_sources(
+                        repo, rev, index, prefix,
+                        opt.get_or("search", ""), offset
+                    )?));
+                }
                 if sub == "ontology-context" {
                     let line = opt
                         .0

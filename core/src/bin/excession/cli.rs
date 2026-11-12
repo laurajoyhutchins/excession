@@ -138,6 +138,11 @@ pub(super) fn command() -> Command {
             leaf("reviews", &["db", "snapshot", "concept"], &[]),
             leaf("annotate-refactor", &["db", "name", "rev", "snapshot"], &[]),
             leaf(
+                "ontology-list",
+                &["repo", "rev", "index"],
+                &["source-prefix", "search", "offset"],
+            ),
+            leaf(
                 "ontology-context",
                 &["repo", "rev", "index", "path"],
                 &["source-prefix", "first-line"],

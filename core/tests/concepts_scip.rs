@@ -852,7 +852,7 @@ fn local_mcp_agent_lists_bounded_tools_and_can_preview_without_write_permission(
             .array_ref()
             .unwrap()
             .len(),
-        6
+        7
     );
     assert_eq!(
         lines[2].get("result").unwrap().get("isError").unwrap(),
@@ -878,4 +878,22 @@ fn local_mcp_agent_lists_bounded_tools_and_can_preview_without_write_permission(
         lines[4].get("result").unwrap().get("isError").unwrap(),
         &Value::Bool(true)
     );
+}
+
+#[test]
+fn ontology_source_search_is_deterministic_and_explicitly_partial() {
+    let f = Fixture::new();
+    let results = concepts_author::list_sources(
+        &f.repo, &f.commit, &f.index, None, ".rs", 0,
+    ).unwrap();
+    assert_eq!(results.get("total_matched").unwrap().integer().unwrap(), 1);
+    assert_eq!(results.get("sources").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(results.get("next_offset").unwrap(), &Value::Null);
+    assert_eq!(results.get("coverage").unwrap().str().unwrap(), "PARTIAL_NATIVE_INDEX_ONLY");
+    assert_eq!(results, concepts_author::list_sources(
+        &f.repo, &f.commit, &f.index, None, ".rs", 0,
+    ).unwrap());
+    assert!(concepts_author::list_sources(
+        &f.repo, &f.commit, &f.index, None, "", 1_000_001,
+    ).is_err());
 }

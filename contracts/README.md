@@ -1,24 +1,31 @@
-# Contracts
+# Contract boundaries
 
-Excession uses JSON Schema for source-level JSON record contracts and
-ODCS for producer/consumer dataset metadata. Do not conflate an ODCS
-quality declaration with an executed test or a JSON digest with an
-authenticated source revision.
+Contracts are for durable **cross-process or externally consumed JSON**.
+Rust types and SQLite constraints implement internal invariants; they do not
+require another serialized contract for every pipeline stage.
 
-The [semantic observation envelope](semantic/semantic-observations.v1.schema.json)
-has an [ODCS dataset contract](semantic/semantic-observations.odcs.json).
-See [usage and evidence boundaries](../docs/SEMANTIC_CONTRACTS.md).
+Retained boundaries:
+- Git-bound source identity, producer provenance and scoped coverage.
+  [Evidence identity](evidence-core/identity-receipt.v1.schema.json),
+  [coverage](evidence-core/coverage.v1.schema.json), and exported
+  [snapshot manifests](evidence-core/persistence.v1.schema.json) have
+  distinct trust limitations.
+- [Semantic observations](semantic/semantic-observations.v1.schema.json)
+  and [evidence queries](evidence/evidence-query.v1.schema.json) keep
+  static candidates, compiler inputs and runtime witnesses separate.
+- [Scanner runs, coverage and candidates](security/) represent the
+  scanner's own vocabulary, not verified vulnerabilities.
+- [Public command reports](product/) use shared source/evidence/coverage
+  references. [Release manifests](product/release-manifest.v1.schema.json)
+  describe shipped artifact digests, not signed publisher attestations.
 
-The typed [evidence-query JSON Schema](evidence/evidence-query.v1.schema.json)
-and [ODCS 3.2 dataset entry](evidence/evidence-query.odcs.json) describe
-the read-only `excession inspect evidence` result. They preserve static
-semantic v1 observation meaning rather than reusing `CANDIDATE`
-for compiler inputs or runtime witnesses.
+**Not contracts:** acceptance-case manifests, installed-smoke transcripts,
+contributor onboarding examples and generic CLI-summary scaffolds. They were
+test-only proposed JSON shapes, not consumed public wire formats. Their
+behavioral tests were skipped; executable Git/native acceptance, portable
+archive tests and documentation now own those responsibilities.
 
-Security discovery has **three distinct v1 records**:
-[scanner execution](security/scan.v1.schema.json),
-[coverage and rule applicability](security/coverage.v1.schema.json), and
-[raw source-bound candidates](security/candidate.v1.schema.json).
-See the [security contracts and provenance boundaries](../docs/SECURITY_CANDIDATE_DISCOVERY.md).
-These are internal JSON exchange records; an ODCS catalog is unnecessary
-until a dataset is published across repository boundaries.
+A JSON Schema validates shape, not the authenticity of Git objects, correctness
+of producer interpretation or test results. ODCS is dataset metadata, not an
+executed quality check; do not add it to internal Rust/SQLite records by default.
+Existing v1 evidence formats and native scanner payloads remain unchanged.

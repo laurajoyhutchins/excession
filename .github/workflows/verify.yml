@@ -22,6 +22,8 @@ jobs:
       MISE_ENABLE_TOOLS: rust,node
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: jdx/mise-action@v5
       - name: Confirm Rust toolchain
         run: rustup show active-toolchain
@@ -52,6 +54,62 @@ jobs:
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --doc
       - name: Build CLI for mandatory impact acceptance
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Dogfood source-bound agent contracts on Excession itself
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="$(git rev-parse 'HEAD^1')"
+          HEAD="$(git rev-parse HEAD)"
+          OUT="$RUNNER_TEMP/excession-contract-dogfood"
+          mkdir -p "$OUT"
+          core/target/debug/excession agent context --repo . --rev "$HEAD" \
+            --focus core/src/agent.rs,contracts/README.md --roots core/src \
+            --task "Review the contract refactoring" --limit 64 > "$OUT/context.json"
+          core/target/debug/excession agent verify --repo . --base "$BASE" \
+            --candidate "$HEAD" --roots core/src --limit 64 > "$OUT/verification.json"
+          python3 - "$OUT" "$BASE" "$HEAD" <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          out, base, head = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+          context = json.loads((out / "context.json").read_text())
+          verification = json.loads((out / "verification.json").read_text())
+          def git(*args):
+              return subprocess.check_output(("git", *args)).decode().strip()
+
+          assert context["schema"] == "excession.agent-context.v1"
+          assert context["source_commit"] == head
+          assert context["source_tree"] == git("rev-parse", head + "^{tree}")
+          assert context["coverage"]["status"] == "PARTIAL"
+          assert context["safe_to_skip_unlisted_tests"] is False
+          for source in context["sources"]:
+              assert source["source_commit"] == head
+              assert source["blob"] == git("rev-parse", head + ":" + source["path"])
+          assert verification["schema"] == "excession.agent-verification.v1"
+          assert verification["base_commit"] == base
+          assert verification["candidate_commit"] == head
+          assert verification["candidate_tree"] == context["source_tree"]
+          assert verification["status"] == "OPEN_OBLIGATIONS"
+          assert verification["ready_to_merge"] is False
+          assert verification["safe_to_skip_unlisted_tests"] is False
+          assert verification["replay"]["semantic_correctness"] == "NOT_EVALUATED"
+          assert verification["coverage"]["status"] == "PARTIAL"
+          assert "SEMANTIC_CORRECTNESS_NOT_EVALUATED" in verification["obligations"]
+          expected = set(filter(None, subprocess.check_output(
+              ("git", "diff", "--name-only", "-z", base, head)
+          ).decode().split("\0")))
+          assert verification["change_count"] == len(expected)
+          if not verification["coverage"]["truncated"]:
+              observed = {
+                  (item["after"] or item["before"])["path"]
+                  for item in verification["changes"]
+              }
+              assert observed == expected, (observed ^ expected)
+          print("Excession self-verification: Git identities match; "
+                f"{len(expected)} paths accounted for; safety obligations remain open.")
+          PY
       - name: JavaScript adapter tests
         run: npm run check && npm test
       - name: Python-specific tooling and independent oracle tests (JUnit XML)

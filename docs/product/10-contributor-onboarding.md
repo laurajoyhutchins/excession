@@ -8,4 +8,4 @@ The first public binary release is a separate acceptance gate, tracked by #83 an
 
 Auto-ontology #88–#95 stays optional: concepts can annotate explanations via #94, but cannot establish an import, runtime behavior or safety to skip tests.
 
-The existing tests validate onboarding schema shape, while #113 exercises the real extracted CLI end-to-end. These two kinds of tests must not be confused.
+Contributor onboarding is verified through documented commands and installed CLI smoke, not a separately versioned example JSON schema.

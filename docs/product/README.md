@@ -1,56 +1,43 @@
-# Excession productization contract scaffold
+# Product contracts and executable acceptance
 
-**Status:** 11 open draft PRs containing specifications, JSON Schema and initial test-first fixtures. The new public commands and release are not yet implemented.
+Excession already implements Git-pinned discovery, analysis, revision changes,
+impact, explanation, agent context/verification and evidence audit through one
+Rust CLI. The source-of-truth remains Git objects plus the SQLite observation
+catalog. Language-native outputs such as SCIP and SARIF remain producer inputs,
+not new Excession authorities.
 
-This work sits alongside, but does not merge with, semantic auto-ontology PRs #88–#95. The latter propose immutable concept/claim snapshots, review, query, annotation and evaluation. In particular:
-- #88 sets up concept/model identities and semantics.
-- #94 proposes an `analysis-link.v1` that can annotate an existing impact/refactor candidate.
-- #95 specifies independent concept-enrichment evaluation.
+## What remains versioned
 
-**Contract boundary:** Existing `semantic-observations.v1`, `evidence-query.v1`, SCIP, Git/SQLite, configured graph, refactor and scanner evidence retain their original meaning and authority. A concept link is `ANNOTATION_ONLY`. A concept membership or reviewed alias does not become an import, compiler input, runtime reachability, scanner validity or proven safe edit. Reuse ontology snapshot/link IDs; do not create another ontology store.
+The retained `contracts/product/` JSON Schemas cover command results that are
+emitted or intended as real interchange formats, plus shared evidence/coverage
+references and release artifact digests. A schema does not establish behavioral
+correctness, semantic completeness or producer authenticity. Do not promote a
+draft schema to public API without comparing it against the real CLI output.
 
-## PR dependency graph
+The prior `cli-result`, `acceptance-case`, `installed-smoke` and
+`onboarding-example` schemas are removed: these were proposed test-only
+representations rather than independent consumers of runtime JSON. The
+associated Python tests verified only fabricated fixture shapes and left their
+behavioral tests skipped.
 
-```text
-#101 public CLI + source/evidence/coverage primitives (main)
-  ├── #106 repository discovery ── #107 one-command analyze
-  ├── #108 committed analysis with dirty worktrees
-  ├── #109 Git change inventory ── #110 evidence-aware impact ── #111 explanation/audit
-  ├── #112 independent acceptance
-  ├── #113 installed archive acceptance
-  ├── #114 contributor/security onboarding
-  └── #115 release provenance
-```
+## Verification instead of schema proliferation
 
-All ten downstream branches are **siblings based on #101**, not a deep stacked chain. They must be retargeted to `main` after #101 merges. The arrow above is a **functional implementation order**, not their current Git parent ancestry.
+- Unit and Rust integration tests establish implementation behavior.
+- Independent Git and language-native oracles test actual source relationships.
+- `tools/test_portable_archive.py` exercises installed CLI artifacts.
+- `excession agent context` and `agent verify` run against this repository
+  in `.github/workflows/verify.yml`; their partial coverage and unresolved
+  obligations must remain visible.
+- The advisory `self-analysis.yml` workflow performs deeper Excession-on-Excession
+  rust-analyzer SCIP ingestion and audit on a pinned Git revision.
 
-## Test strategy
+Never infer a safe edit, verified dependency, safe test selection or confirmed
+vulnerability merely from a model annotation, source-bound reference or
+successful replay.
 
-Each PR adds:
-1. A Draft 2020-12 JSON Schema contract in `contracts/product/`.
-2. Design/acceptance documentation in `docs/product/`.
-3. Active positive and invalid wire-shape tests under `tests/test_product_*.py`.
-4. A **deliberately skipped** native/real-Git behavior placeholder.
+## Remaining release gate
 
-Run:
-
-```sh
-python3 -m pip install -r requirements/research.txt
-python3 -m unittest discover -s tests -p 'test_product_*.py' -v
-```
-
-A green schema test proves the fixture shape only. Skips do not prove runtime behavior, Git replay, source coverage, semantic accuracy, practical usefulness or platform portability. The existing independent oracle fixtures and real Git suites must provide those proofs when implementation lands.
-
-## Contracts
-
-- `common.v1`: Git SHA-1 source references, producer-scoped evidence refs, coverage and optional ontology annotation refs.
-- `cli-result.v1`: basic user-facing command outcome.
-- `discovery.v1`, `analysis.v1`, `working-tree.v1`: initial user experience.
-- `change-inventory.v1`, `impact.v1`, `explanation.v1`, `audit-result.v1`: actionable, auditable change analysis.
-- `acceptance-case.v1`, `installed-smoke.v1`, `onboarding-example.v1`, `release-manifest.v1`: independent release discipline.
-
-**Do not** publish these draft schemas as supported public API until exact-head acceptance and compatibility review. Existing stored receipts must not be silently reinterpreted.
-
-## Gate before product release
-
-Run installed archive → inspect a genuinely unfamiliar pinned repository → produce source-grounded change impacts → explain one path → independently audit input/source and reported semantics → measure time/memory and report unsupported cases. CI must preserve the distinction between schema conformance, evidence replay, semantic truth and declared coverage.
+Run the installed binary on an independently selected, unfamiliar Git repository.
+Establish the relevant positive and negative evidence using an independent
+oracle, replay it, reject tampering, and measure time, peak RSS and artifacts.
+Keep synthetic fixture acceptance distinct from held-out results.

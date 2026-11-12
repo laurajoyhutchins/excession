@@ -121,9 +121,9 @@ fn index_revision_inner(
     db.init_schema()?;
     let python_plan = match semantics {
         SemanticMode::GitOnly => None,
-        SemanticMode::Parse { import_base } => crate::incremental_python::plan(
-            db, root, name, &commit, &entries, roots, import_base,
-        )?,
+        SemanticMode::Parse { import_base } => {
+            crate::incremental_python::plan(db, root, name, &commit, &entries, roots, import_base)?
+        }
     };
     let prepared = match semantics {
         SemanticMode::GitOnly => None,

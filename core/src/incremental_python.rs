@@ -61,7 +61,10 @@ fn catalog(
             obj(&[("name", Value::string(name)), ("path", Value::string(path))])
         })
         .collect::<Vec<_>>();
-    let mut roots = roots.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
+    let mut roots = roots
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
     roots.sort();
     roots.dedup();
     let document = obj(&[
@@ -90,7 +93,11 @@ fn row_digest(db: &Db, repo: i64, commit: &str) -> Result<String> {
             "module_name,public_name,target,explicitly_exported",
             "module_name,public_name",
         ),
-        ("hazard", "module_name,line,reason", "module_name,line,reason"),
+        (
+            "hazard",
+            "module_name,line,reason",
+            "module_name,line,reason",
+        ),
     ];
     let mut inventory = Vec::new();
     for (table, columns, order) in tables {
@@ -112,7 +119,9 @@ fn row_digest(db: &Db, repo: i64, commit: &str) -> Result<String> {
             ("rows", Value::array(values)),
         ]));
     }
-    Ok(digest::sha256(Value::array(inventory).canonical().as_bytes()))
+    Ok(digest::sha256(
+        Value::array(inventory).canonical().as_bytes(),
+    ))
 }
 
 fn snapshot(db: &Db, repo: i64, commit: &str) -> Result<Option<Snapshot>> {
@@ -173,8 +182,7 @@ pub(crate) fn plan(
         if entry.kind != "blob" || !matches!(entry.mode.as_str(), "100644" | "100755") {
             continue;
         }
-        let Some((module, _)) =
-            module_name_with_import_base(&entry.path, roots, import_base)
+        let Some((module, _)) = module_name_with_import_base(&entry.path, roots, import_base)
         else {
             continue;
         };
@@ -280,13 +288,7 @@ ORDER BY newer.path";
 /// Call inside the same write transaction as target-index publication.
 /// Revalidate the parent so a concurrent change between planning and commit
 /// cannot silently promote corrupt SQLite rows.
-pub(crate) fn carry(
-    db: &Db,
-    root: &Path,
-    repo: i64,
-    commit: &str,
-    planned: &Plan,
-) -> Result<()> {
+pub(crate) fn carry(db: &Db, root: &Path, repo: i64, commit: &str, planned: &Plan) -> Result<()> {
     let Some(parent) = &planned.parent else {
         return Ok(());
     };
@@ -298,17 +300,29 @@ pub(crate) fn carry(
     authenticate(db, root, repo, parent, &prior)?;
     let matches = db.query(
         MATCHED,
-        &[Param::Text(parent), Param::Integer(repo), Param::Text(commit)],
+        &[
+            Param::Text(parent),
+            Param::Integer(repo),
+            Param::Text(commit),
+        ],
     )?;
     let paths = matches
         .into_iter()
-        .map(|row| row[0].clone().ok_or_else(|| "null reusable path".to_owned()))
+        .map(|row| {
+            row[0]
+                .clone()
+                .ok_or_else(|| "null reusable path".to_owned())
+        })
         .collect::<Result<BTreeSet<_>>>()?;
     if paths != planned.reused {
         return refuse("source identities changed between incremental planning and publication");
     }
     let specs = [
-        ("dependency", "source_name", "source_name,target_name,line,syntax"),
+        (
+            "dependency",
+            "source_name",
+            "source_name,target_name,line,syntax",
+        ),
         (
             "symbol",
             "module_name",
@@ -360,7 +374,10 @@ pub(crate) fn carry(
 
 pub(crate) fn finish(db: &Db, repo: i64, commit: &str, planned: &Plan) -> Result<()> {
     let reused = planned.reused.len();
-    let parsed = planned.total.checked_sub(reused).ok_or("invalid reuse count")?;
+    let parsed = planned
+        .total
+        .checked_sub(reused)
+        .ok_or("invalid reuse count")?;
     let rows = row_digest(db, repo, commit)?;
     db.execute(
         "INSERT INTO python_index_snapshot

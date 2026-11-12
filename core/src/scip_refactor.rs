@@ -376,7 +376,6 @@ fn scan_with_prefix(
         }
     }
 
-
     Ok(Scan {
         commit,
         tree,
@@ -404,7 +403,10 @@ pub fn references_with_prefix(
 ) -> Result<Value> {
     let scan = scan_with_prefix(repo, revision, input, source_prefix)?;
     let documents = scan.documents.values().map(source).collect::<Vec<_>>();
-    let references = scan.matched.iter().map(|edge| reference(edge, &scan.documents))
+    let references = scan
+        .matched
+        .iter()
+        .map(|edge| reference(edge, &scan.documents))
         .collect::<Vec<_>>();
     let mut result = obj(&[
         ("schema", Value::string("excession.scip-references.v1")),
@@ -412,24 +414,41 @@ pub fn references_with_prefix(
         ("source_commit", Value::string(scan.commit)),
         ("source_tree", Value::string(scan.tree)),
         ("index_sha256", Value::string(scan.index_sha256)),
-        ("indexer", obj(&[
-            ("name", Value::string(scan.name)),
-            ("version", Value::string(scan.version)),
-        ])),
+        (
+            "indexer",
+            obj(&[
+                ("name", Value::string(scan.name)),
+                ("version", Value::string(scan.version)),
+            ]),
+        ),
         ("documents", Value::array(documents)),
         ("references", Value::array(references)),
-        ("coverage", obj(&[
-            ("indexed_occurrences", Value::number(scan.count)),
-            ("unresolved_references", Value::number(scan.unresolved)),
-            ("matched_cross_file_references", Value::number(scan.matched.len())),
-            ("line_only_position_documents", Value::number(scan.lines_only)),
-            ("indexed_documents", Value::number(scan.documents.len())),
-            ("languages", Value::array(scan.languages.into_iter().map(Value::string))),
-            ("completeness", Value::string("PARTIAL_INDEX_SCOPE_ONLY")),
-        ])),
+        (
+            "coverage",
+            obj(&[
+                ("indexed_occurrences", Value::number(scan.count)),
+                ("unresolved_references", Value::number(scan.unresolved)),
+                (
+                    "matched_cross_file_references",
+                    Value::number(scan.matched.len()),
+                ),
+                (
+                    "line_only_position_documents",
+                    Value::number(scan.lines_only),
+                ),
+                ("indexed_documents", Value::number(scan.documents.len())),
+                (
+                    "languages",
+                    Value::array(scan.languages.into_iter().map(Value::string)),
+                ),
+                ("completeness", Value::string("PARTIAL_INDEX_SCOPE_ONLY")),
+            ]),
+        ),
     ]);
     let id = result.sha256();
-    result.entries_mut()?.insert("report_id".into(), Value::string(id));
+    result
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(id));
     if result.canonical().len() > MAX_INDEX_BYTES {
         return refuse("source-bound SCIP reference report exceeds 16 MiB");
     }

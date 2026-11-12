@@ -364,12 +364,20 @@ fn execute(args: &[String]) -> Result<Response> {
                         let id = opt.get("snapshot");
                         let (saved, stored) = excession::concepts_store::audit(&db, id)?;
                         if stored != manifest || saved != model {
-                            return refuse("stored SCIP concept snapshot differs from current Git-bound SCIP inputs");
+                            return refuse(
+                                "stored SCIP concept snapshot differs from current Git-bound SCIP inputs",
+                            );
                         }
                         Ok(json(excession::json::obj(&[
                             ("snapshot_id", excession::json::Value::string(id)),
-                            ("status", excession::json::Value::string("SOURCE_BOUND_SCIP_INDEX_REPLAYED")),
-                            ("indexer_independently_executed", excession::json::Value::Bool(false)),
+                            (
+                                "status",
+                                excession::json::Value::string("SOURCE_BOUND_SCIP_INDEX_REPLAYED"),
+                            ),
+                            (
+                                "indexer_independently_executed",
+                                excession::json::Value::Bool(false),
+                            ),
                         ])))
                     }
                     _ => refuse(format!("unknown SCIP concept command {sub}")),

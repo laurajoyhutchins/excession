@@ -97,7 +97,9 @@ pub fn normalize_report(native: &Value) -> Result<Value> {
         }
         for side in [from, to] {
             let name = side.get("path")?.str()?;
-            let stored = docs.get(name).ok_or("reference lacks indexed source document")?;
+            let stored = docs
+                .get(name)
+                .ok_or("reference lacks indexed source document")?;
             if side != stored {
                 return refuse("SCIP reference source binding differs from indexed document");
             }
@@ -117,19 +119,25 @@ pub fn normalize_report(native: &Value) -> Result<Value> {
         if !source_refs.insert(source_observation_id.clone()) {
             return refuse("duplicate native SCIP reference");
         }
-        let record = concepts::seal(obj(&[
-            ("receipt_id", Value::string(receipt)),
-            ("source_observation_id", Value::string(source_observation_id)),
-            ("native_relation", Value::string("SCIP_SYMBOL_REFERENCE")),
-            ("kind", Value::string("SCIP_REFERENCE")),
-            ("status", Value::string("OBSERVED")),
-            ("source_subject_id", Value::string(origin_id)),
-            ("target_subject_id", Value::string(destination_id)),
-            ("language", from.get("language")?.clone()),
-            ("specifier", Value::string(specifier)),
-            ("condition_evaluation", Value::string("NOT_EVALUATED")),
-            ("rule", Value::string("SCIP_UNIQUE_INDEXED_DEFINITION")),
-        ]), "observation_id")?;
+        let record = concepts::seal(
+            obj(&[
+                ("receipt_id", Value::string(receipt)),
+                (
+                    "source_observation_id",
+                    Value::string(source_observation_id),
+                ),
+                ("native_relation", Value::string("SCIP_SYMBOL_REFERENCE")),
+                ("kind", Value::string("SCIP_REFERENCE")),
+                ("status", Value::string("OBSERVED")),
+                ("source_subject_id", Value::string(origin_id)),
+                ("target_subject_id", Value::string(destination_id)),
+                ("language", from.get("language")?.clone()),
+                ("specifier", Value::string(specifier)),
+                ("condition_evaluation", Value::string("NOT_EVALUATED")),
+                ("rule", Value::string("SCIP_UNIQUE_INDEXED_DEFINITION")),
+            ]),
+            "observation_id",
+        )?;
         observations.push(record);
     }
     observations.sort_by_key(Value::canonical);
@@ -139,31 +147,43 @@ pub fn normalize_report(native: &Value) -> Result<Value> {
     if unresolved > 0 {
         gaps.push(obj(&[
             ("reason", Value::string("UNRESOLVED_SYMBOL")),
-            ("native_reason", Value::string(format!(
-                "SCIP references without unique indexed definition: {unresolved}"
-            ))),
+            (
+                "native_reason",
+                Value::string(format!(
+                    "SCIP references without unique indexed definition: {unresolved}"
+                )),
+            ),
         ]));
     }
     // Definition completeness, native indexer execution and dynamic bindings
     // are not established by this data, even when all indexed references match.
     gaps.push(obj(&[
         ("reason", Value::string("PARTIAL_CONFIGURATION")),
-        ("native_reason", Value::string("SCIP_INDEX_SCOPE_NOT_PROVEN_COMPLETE")),
+        (
+            "native_reason",
+            Value::string("SCIP_INDEX_SCOPE_NOT_PROVEN_COMPLETE"),
+        ),
     ]));
     let mut batch = obj(&[
-        ("schema", Value::string("excession.concepts-observation-batch.v1")),
+        (
+            "schema",
+            Value::string("excession.concepts-observation-batch.v1"),
+        ),
         ("source_commit", Value::string(commit)),
         ("source_tree", Value::string(tree)),
         ("completeness", Value::string("PARTIAL_CANDIDATES_ONLY")),
         ("subjects", Value::array(subjects.into_values())),
-        ("inputs", Value::array(vec![obj(&[
-            ("receipt_id", Value::string(receipt)),
-            ("producer", native.get("indexer")?.get("name")?.clone()),
-            ("version", native.get("indexer")?.get("version")?.clone()),
-            ("kind", Value::string("SCIP")),
-            ("configuration_id", native.get("index_sha256")?.clone()),
-            ("scope", Value::array(scopes.into_iter().map(Value::string))),
-        ])])),
+        (
+            "inputs",
+            Value::array(vec![obj(&[
+                ("receipt_id", Value::string(receipt)),
+                ("producer", native.get("indexer")?.get("name")?.clone()),
+                ("version", native.get("indexer")?.get("version")?.clone()),
+                ("kind", Value::string("SCIP")),
+                ("configuration_id", native.get("index_sha256")?.clone()),
+                ("scope", Value::array(scopes.into_iter().map(Value::string))),
+            ])]),
+        ),
         ("observations", Value::array(observations)),
         ("gaps", Value::array(gaps)),
     ]);

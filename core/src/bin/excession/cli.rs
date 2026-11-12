@@ -137,10 +137,26 @@ pub(super) fn command() -> Command {
             leaf("review", &["db", "event", "trusted-local"], &[]),
             leaf("reviews", &["db", "snapshot", "concept"], &[]),
             leaf("annotate-refactor", &["db", "name", "rev", "snapshot"], &[]),
-            leaf("scip-normalize", &["repo", "rev", "index"], &["source-prefix"]),
-            leaf("scip-preview", &["repo", "rev", "index"], &["source-prefix"]),
-            leaf("scip-compile", &["repo", "rev", "index", "db"], &["source-prefix"]),
-            leaf("scip-audit", &["repo", "rev", "index", "db", "snapshot"], &["source-prefix"]),
+            leaf(
+                "scip-normalize",
+                &["repo", "rev", "index"],
+                &["source-prefix"],
+            ),
+            leaf(
+                "scip-preview",
+                &["repo", "rev", "index"],
+                &["source-prefix"],
+            ),
+            leaf(
+                "scip-compile",
+                &["repo", "rev", "index", "db"],
+                &["source-prefix"],
+            ),
+            leaf(
+                "scip-audit",
+                &["repo", "rev", "index", "db", "snapshot"],
+                &["source-prefix"],
+            ),
         ],
     )
     .about("Bounded, source-bound concept hypotheses and exact snapshot replay");

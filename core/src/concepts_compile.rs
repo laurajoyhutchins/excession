@@ -151,13 +151,11 @@ pub fn compile(batch: &Value) -> Result<Value> {
                 ),
                 (
                     "definition",
-                    Value::string(
-                        if kind == "SCIP_REFERENCE" {
-                            "Proposed architectural responsibility from reciprocal SCIP symbol references; not a compiler import cycle, call graph, FFI bridge, or behavioral equivalence."
-                        } else {
-                            "Proposed architectural responsibility from reciprocal static import candidates; not a verified import cycle, interface implementation, or behavioral equivalence."
-                        },
-                    ),
+                    Value::string(if kind == "SCIP_REFERENCE" {
+                        "Proposed architectural responsibility from reciprocal SCIP symbol references; not a compiler import cycle, call graph, FFI bridge, or behavioral equivalence."
+                    } else {
+                        "Proposed architectural responsibility from reciprocal static import candidates; not a verified import cycle, interface implementation, or behavioral equivalence."
+                    }),
                 ),
                 ("membership_claims", Value::array(vec![member_a, member_b])),
                 ("review_status", Value::string("UNREVIEWED")),

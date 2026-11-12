@@ -5,6 +5,9 @@ on:
     paths:
       - "core/**"
       - "tools/package_release.py"
+      - "tools/release_manifest.py"
+      - "tests/test_release_manifest.py"
+      - "contracts/product/release-manifest.v1.schema.json"
       - "tools/test_portable_archive.py"
       - "docs/PORTABILITY.md"
       - ".github/workflows/portable-cli.yml"
@@ -70,6 +73,11 @@ jobs:
         run: python tools/package_release.py --binary core/target/release/${{ matrix.executable }} --output dist
       - name: Test extracted archive without repository-side dependencies
         run: python tools/test_portable_archive.py dist
+      - name: Validate archive provenance manifest
+        shell: bash
+        run: |
+          python -m unittest tests.test_release_manifest -v
+          python tools/release_manifest.py --dist dist --source-commit "$(git rev-parse HEAD)"
       - uses: actions/upload-artifact@v4
         if: github.event_name != 'pull_request'
         with:
@@ -138,19 +146,26 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: excession-*
           merge-multiple: true
           path: dist
-      - name: Publish archives and their SHA-256 checksums
+      - name: Verify source tag and all downloaded archive digests
+        shell: bash
+        run: |
+          python tools/release_manifest.py --dist dist \
+            --source-commit "$GITHUB_SHA" --tag "$GITHUB_REF_NAME"
+      - name: Publish immutable archives and their source manifest
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+            echo "Release already published; refusing to overwrite immutable artifacts" >&2
+            exit 1
           else
             gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag --repo "$GITHUB_REPOSITORY"
           fi

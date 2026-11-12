@@ -3,7 +3,7 @@
 //! correctness. Repairs remain explicitly unverified until independent gates.
 use crate::json::{self, Value, obj};
 use crate::{Result, digest, git, refactor_rust_analyzer, refuse};
-use serde_json::Value as Json;
+use serde_json::{Value as Json, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -18,6 +18,7 @@ struct ErrorLocation {
     line: usize,
     column: usize,
     code: String,
+    message: String,
 }
 
 fn field<'a>(value: &'a Json, name: &str) -> Result<&'a Json> {
@@ -45,6 +46,8 @@ fn cargo_errors(bytes: &[u8], prefix: &str) -> Result<Vec<ErrorLocation>> {
             .pointer("/code/code")
             .and_then(Json::as_str)
             .unwrap_or("");
+        let reason = message.get("message").and_then(Json::as_str).unwrap_or("");
+        if reason.len() > 1024 { return refuse("compiler diagnostic message exceeds bound"); }
         if !matches!(code, "E0432" | "E0425" | "E0433") {
             continue;
         }
@@ -90,6 +93,7 @@ fn cargo_errors(bytes: &[u8], prefix: &str) -> Result<Vec<ErrorLocation>> {
                 line: line - 1,
                 column: column - 1,
                 code: code.to_owned(),
+                message: reason.to_owned(),
             });
             if errors.len() > MAX_COMPILER_ERRORS {
                 return refuse("too many compiler errors for bounded native repair");
@@ -231,6 +235,17 @@ fn candidates(
         let relative = file
             .strip_prefix(&workspace)
             .map_err(|_| "diagnostic outside Rust workspace")?;
+        // Supply the independent rustc diagnostic verbatim as CodeActionContext.
+        let diagnostic = json!({
+            "range": {
+                "start":{"line":error.line,"character":error.column},
+                "end":{"line":error.line,"character":error.column+1},
+            },
+            "severity":1,
+            "code":error.code,
+            "source":"rustc",
+            "message":error.message,
+        });
         let offered = refactor_rust_analyzer::request_actions(
             analyzer,
             &workspace,
@@ -238,6 +253,7 @@ fn candidates(
             &source,
             [error.line, error.column, error.line, error.column],
             None,
+            &[diagnostic],
         )?;
         for action in offered {
             let title = action.get("title").and_then(Json::as_str).unwrap_or("");
@@ -453,7 +469,6 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     fn sample(code: &str, file: &str, line: usize, column: usize) -> Vec<u8> {
         serde_json::to_vec(&json!({
             "reason":"compiler-message",

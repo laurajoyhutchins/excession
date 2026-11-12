@@ -239,6 +239,7 @@ pub(crate) fn request_actions(
     source: &str,
     selection: [usize; 4],
     title: Option<&str>,
+    diagnostics: &[Json],
 ) -> Result<Vec<Json>> {
     let canonical = workspace.canonicalize().map_err(|e| e.to_string())?;
     let file = canonical.join(relative);
@@ -283,7 +284,7 @@ pub(crate) fn request_actions(
     let result = server.request(
         "textDocument/codeAction",
         json!({
-            "textDocument":{"uri":file_uri},"range":range,"context":{"diagnostics":[]}
+            "textDocument":{"uri":file_uri},"range":range,"context":{"diagnostics":diagnostics}
         }),
     )?;
     let values = if result.is_null() {
@@ -661,6 +662,7 @@ pub fn execute(request: &Request<'_>) -> Result<Value> {
         &source,
         request.selection,
         request.title,
+        &[],
     )?;
     if request.title.is_none() {
         if request.output.is_some() {

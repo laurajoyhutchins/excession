@@ -551,13 +551,18 @@ fn execute(args: &[String]) -> Result<Response> {
                     .write(true)
                     .create_new(true)
                     .open(&destination)
-                    .map_err(|e| format!("create new impact report {}: {e}", destination.display()))?;
-                let write_result = writeln!(file, "{}", result.canonical())
-                    .and_then(|_| file.sync_all());
+                    .map_err(|e| {
+                        format!("create new impact report {}: {e}", destination.display())
+                    })?;
+                let write_result =
+                    writeln!(file, "{}", result.canonical()).and_then(|_| file.sync_all());
                 drop(file);
                 if let Err(error) = write_result {
                     let _ = std::fs::remove_file(&destination);
-                    return refuse(format!("write impact report {}: {error}", destination.display()));
+                    return refuse(format!(
+                        "write impact report {}: {error}",
+                        destination.display()
+                    ));
                 }
             }
             if opt.get_or("json", "false") == "true" {

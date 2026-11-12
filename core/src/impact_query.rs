@@ -246,7 +246,10 @@ pub fn human(report: &Value) -> Result<String> {
     }
     lines.push(format!("Unknown/unsupported: {gaps} observations."));
     lines.push("Coverage: PARTIAL. Unlisted tests cannot be assumed safe to skip.".to_owned());
-    lines.push("Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence.".to_owned());
+    lines.push(
+        "Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence."
+            .to_owned(),
+    );
     Ok(lines.join("\n"))
 }
 

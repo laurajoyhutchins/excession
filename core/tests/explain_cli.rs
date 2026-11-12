@@ -94,7 +94,10 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
         .str()
         .unwrap()
         .to_owned();
-    assert_eq!(fs::read_to_string(&path).unwrap().trim(), report.canonical());
+    assert_eq!(
+        fs::read_to_string(&path).unwrap().trim(),
+        report.canonical()
+    );
     let explain = ok(
         bin,
         &[

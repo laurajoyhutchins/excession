@@ -207,8 +207,7 @@ fn records(db: &Db, id: &str) -> Result<Vec<Value>> {
             return refuse("unknown history predecessor mismatch");
         }
         let action = Action::from_name(record.get("action")?.str()?)?;
-        if (revision == 1 && action != Action::Create)
-            || (revision > 1 && action == Action::Create)
+        if (revision == 1 && action != Action::Create) || (revision > 1 && action == Action::Create)
         {
             return refuse("invalid initial or repeated unknown creation");
         }
@@ -235,20 +234,24 @@ fn records(db: &Db, id: &str) -> Result<Vec<Value>> {
             Action::Create if resolution.is_some() => {
                 return refuse("unknown creation cannot report resolution");
             }
-            Action::AddEvidence if prior_action == Some(Action::ProposeResolution)
-                || (!extra_support && !extra_counter)
-                || resolution.is_some() =>
+            Action::AddEvidence
+                if prior_action == Some(Action::ProposeResolution)
+                    || (!extra_support && !extra_counter)
+                    || resolution.is_some() =>
             {
                 return refuse("invalid or empty unknown evidence update");
             }
-            Action::ProposeResolution if revision == 1
-                || prior_action == Some(Action::ProposeResolution)
-                || !resolution.is_some_and(|id| new_support.contains(id)) =>
+            Action::ProposeResolution
+                if revision == 1
+                    || prior_action == Some(Action::ProposeResolution)
+                    || !resolution.is_some_and(|id| new_support.contains(id)) =>
             {
                 return refuse("resolution proposal requires supporting snapshot receipt");
             }
-            Action::Reopen if prior_action != Some(Action::ProposeResolution)
-                || !extra_counter || resolution.is_some() =>
+            Action::Reopen
+                if prior_action != Some(Action::ProposeResolution)
+                    || !extra_counter
+                    || resolution.is_some() =>
             {
                 return refuse("reopening a proposed resolution requires new counterevidence");
             }
@@ -258,7 +261,8 @@ fn records(db: &Db, id: &str) -> Result<Vec<Value>> {
         sha256_id(claimed)?;
         let mut body = record.clone();
         body.entries_mut()?.remove("event_id");
-        if field(1)? != claimed || event_digest(&body) != claimed || field(4)? != record.canonical() {
+        if field(1)? != claimed || event_digest(&body) != claimed || field(4)? != record.canonical()
+        {
             return refuse("unknown history event digest or canonical bytes differ");
         }
         previous = Some(claimed.to_owned());
@@ -276,7 +280,9 @@ pub fn audit(db: &Db, id: &str) -> Result<Value> {
     sha256_id(id)?;
     db.read_transaction(|db| {
         let events = records(db, id)?;
-        let last = events.last().ok_or("unknown history missing latest event")?;
+        let last = events
+            .last()
+            .ok_or("unknown history missing latest event")?;
         let mut report = obj(&[
             ("schema", Value::string("excession.unknown-history.v1")),
             ("unknown_id", Value::string(id)),
@@ -287,7 +293,9 @@ pub fn audit(db: &Db, id: &str) -> Result<Value> {
             ("semantic_verification", Value::string("NOT_ESTABLISHED")),
         ]);
         let digest = report.sha256();
-        report.entries_mut()?.insert("report_id".into(), Value::string(digest));
+        report
+            .entries_mut()?
+            .insert("report_id".into(), Value::string(digest));
         Ok(report)
     })
 }
@@ -350,7 +358,9 @@ pub fn append(db: &Db, event: &Event<'_>) -> Result<Value> {
         ]);
         let mut record = body.clone();
         let hash = event_digest(&body);
-        record.entries_mut()?.insert("event_id".into(), Value::string(&hash));
+        record
+            .entries_mut()?
+            .insert("event_id".into(), Value::string(&hash));
         // Verify the complete transition, not just the new event in isolation.
         db.execute(
             "INSERT INTO evidence_unknown_event_v1
@@ -373,7 +383,7 @@ pub fn append(db: &Db, event: &Event<'_>) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evidence_store::{Batch, Receipt, Observation};
+    use crate::evidence_store::{Batch, Observation, Receipt};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -393,35 +403,60 @@ mod tests {
             ));
             let db = Db::open(&path).unwrap();
             let mut receipt_ids = Vec::new();
-            let receipts = (0..3).map(|n| {
-                let receipt = Receipt {
-                    producer: "independent-native".into(),
-                    version: "1".into(),
-                    native_id: format!("observation-{n}"),
-                    raw_json: format!("{{\"observation\":{n}}}"),
-                };
-                receipt_ids.push(
-                    receipt.document().unwrap().get("receipt_id").unwrap().str().unwrap().to_owned(),
-                );
-                receipt
-            }).collect();
+            let receipts = (0..3)
+                .map(|n| {
+                    let receipt = Receipt {
+                        producer: "independent-native".into(),
+                        version: "1".into(),
+                        native_id: format!("observation-{n}"),
+                        raw_json: format!("{{\"observation\":{n}}}"),
+                    };
+                    receipt_ids.push(
+                        receipt
+                            .document()
+                            .unwrap()
+                            .get("receipt_id")
+                            .unwrap()
+                            .str()
+                            .unwrap()
+                            .to_owned(),
+                    );
+                    receipt
+                })
+                .collect();
             let batch = Batch {
                 source_commit: "a".repeat(40),
                 receipts,
                 observations: Vec::<Observation>::new(),
             };
             let snapshot = evidence_store::persist(&db, &batch).unwrap();
-            Self { db, path, snapshot, receipts: receipt_ids }
+            Self {
+                db,
+                path,
+                snapshot,
+                receipts: receipt_ids,
+            }
         }
-        fn write(&self, rev: usize, action: Action, support: &[&str], counter: &[&str], resolution: Option<&str>) -> Result<Value> {
-            append(&self.db, &Event {
-                snapshot_id: &self.snapshot,
-                question: "What is the indirect call target?",
-                expected_revision: rev,
-                action, support_receipts: support,
-                counterevidence_receipts: counter,
-                resolution_receipt: resolution,
-            })
+        fn write(
+            &self,
+            rev: usize,
+            action: Action,
+            support: &[&str],
+            counter: &[&str],
+            resolution: Option<&str>,
+        ) -> Result<Value> {
+            append(
+                &self.db,
+                &Event {
+                    snapshot_id: &self.snapshot,
+                    question: "What is the indirect call target?",
+                    expected_revision: rev,
+                    action,
+                    support_receipts: support,
+                    counterevidence_receipts: counter,
+                    resolution_receipt: resolution,
+                },
+            )
         }
         fn id(&self) -> String {
             unknown_id(&self.snapshot, "What is the indirect call target?").unwrap()
@@ -443,11 +478,25 @@ mod tests {
         assert_eq!(first.get("revision").unwrap().integer().unwrap(), 1);
         assert!(f.write(0, Action::Create, &[a], &[], None).is_err());
         f.write(1, Action::AddEvidence, &[a, b], &[], None).unwrap();
-        f.write(2, Action::ProposeResolution, &[a, b], &[], Some(b)).unwrap();
+        f.write(2, Action::ProposeResolution, &[a, b], &[], Some(b))
+            .unwrap();
         let proposal = audit(&f.db, &f.id()).unwrap();
-        assert_eq!(proposal.get("state").unwrap().str().unwrap(), "RESOLUTION_REPORTED_NOT_VERIFIED");
-        assert_eq!(proposal.get("semantic_verification").unwrap().str().unwrap(), "NOT_ESTABLISHED");
-        assert!(f.write(3, Action::AddEvidence, &[a, b], &[c], None).is_err());
+        assert_eq!(
+            proposal.get("state").unwrap().str().unwrap(),
+            "RESOLUTION_REPORTED_NOT_VERIFIED"
+        );
+        assert_eq!(
+            proposal
+                .get("semantic_verification")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "NOT_ESTABLISHED"
+        );
+        assert!(
+            f.write(3, Action::AddEvidence, &[a, b], &[c], None)
+                .is_err()
+        );
         f.write(3, Action::Reopen, &[a, b], &[c], None).unwrap();
         let report = audit(&f.db, &f.id()).unwrap();
         assert_eq!(report.get("events").unwrap().array_ref().unwrap().len(), 4);
@@ -459,18 +508,40 @@ mod tests {
         let f = Fixture::new();
         let a = &f.receipts[0];
         let b = &f.receipts[1];
-        assert!(f.write(0, Action::Create, &[&"f".repeat(64)], &[], None).is_err());
+        assert!(
+            f.write(0, Action::Create, &[&"f".repeat(64)], &[], None)
+                .is_err()
+        );
         assert!(f.write(0, Action::Create, &[a, a], &[], None).is_err());
-        assert!(f.write(0, Action::ProposeResolution, &[a], &[], Some(a)).is_err());
+        assert!(
+            f.write(0, Action::ProposeResolution, &[a], &[], Some(a))
+                .is_err()
+        );
         f.write(0, Action::Create, &[a], &[], None).unwrap();
         assert!(f.write(1, Action::AddEvidence, &[a], &[], None).is_err());
         assert!(f.write(1, Action::AddEvidence, &[], &[b], None).is_err());
-        assert!(f.write(1, Action::ProposeResolution, &[a], &[], Some(b)).is_err());
+        assert!(
+            f.write(1, Action::ProposeResolution, &[a], &[], Some(b))
+                .is_err()
+        );
         f.write(1, Action::AddEvidence, &[a, b], &[], None).unwrap();
-        f.write(2, Action::ProposeResolution, &[a, b], &[], Some(b)).unwrap();
+        f.write(2, Action::ProposeResolution, &[a, b], &[], Some(b))
+            .unwrap();
         assert!(f.write(3, Action::Reopen, &[a, b], &[], None).is_err());
-        assert!(f.write(3, Action::ProposeResolution, &[a, b], &[], Some(b)).is_err());
-        assert_eq!(audit(&f.db, &f.id()).unwrap().get("events").unwrap().array_ref().unwrap().len(), 3);
+        assert!(
+            f.write(3, Action::ProposeResolution, &[a, b], &[], Some(b))
+                .is_err()
+        );
+        assert_eq!(
+            audit(&f.db, &f.id())
+                .unwrap()
+                .get("events")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -479,11 +550,19 @@ mod tests {
         let a = &f.receipts[0];
         f.write(0, Action::Create, &[a], &[], None).unwrap();
         assert!(f.db.exec("DELETE FROM evidence_unknown_event_v1").is_err());
-        assert!(f.db.exec("UPDATE evidence_unknown_event_v1 SET revision=12").is_err());
-        f.db.exec("DROP TRIGGER evidence_unknown_no_update_v1").unwrap();
-        f.db.exec("UPDATE evidence_unknown_event_v1 SET document='{}'").unwrap();
+        assert!(
+            f.db.exec("UPDATE evidence_unknown_event_v1 SET revision=12")
+                .is_err()
+        );
+        f.db.exec("DROP TRIGGER evidence_unknown_no_update_v1")
+            .unwrap();
+        f.db.exec("UPDATE evidence_unknown_event_v1 SET document='{}'")
+            .unwrap();
         assert!(audit(&f.db, &f.id()).is_err());
-        assert!(f.write(1, Action::AddEvidence, &[a, &f.receipts[1]], &[], None).is_err());
+        assert!(
+            f.write(1, Action::AddEvidence, &[a, &f.receipts[1]], &[], None)
+                .is_err()
+        );
     }
 
     #[test]
@@ -491,11 +570,23 @@ mod tests {
         let f = Fixture::new();
         let a = &f.receipts[0];
         f.write(0, Action::Create, &[a], &[], None).unwrap();
-        f.write(1, Action::AddEvidence, &[a, &f.receipts[1]], &[], None).unwrap();
-        f.db.exec("DROP TRIGGER evidence_unknown_no_delete_v1").unwrap();
-        f.db.exec("DELETE FROM evidence_unknown_event_v1 WHERE revision=1").unwrap();
+        f.write(1, Action::AddEvidence, &[a, &f.receipts[1]], &[], None)
+            .unwrap();
+        f.db.exec("DROP TRIGGER evidence_unknown_no_delete_v1")
+            .unwrap();
+        f.db.exec("DELETE FROM evidence_unknown_event_v1 WHERE revision=1")
+            .unwrap();
         assert!(audit(&f.db, &f.id()).is_err());
-        assert!(f.write(2, Action::ProposeResolution, &[a, &f.receipts[1]], &[], Some(a)).is_err());
+        assert!(
+            f.write(
+                2,
+                Action::ProposeResolution,
+                &[a, &f.receipts[1]],
+                &[],
+                Some(a)
+            )
+            .is_err()
+        );
     }
 
     #[test]

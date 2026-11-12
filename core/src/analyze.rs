@@ -126,6 +126,40 @@ fn checked_cache_destination(source_root: &Path, destination: &Path) -> Result<P
     Ok(destination.to_path_buf())
 }
 
+/// Capability preflight must follow the selected roots, not every language
+/// found elsewhere in the repository. Only explicit overrides require a
+/// second Git tree listing; the auto-discovered case reuses its inventory.
+fn scoped_languages(
+    discovered: &Discovery,
+    roots: &[String],
+    explicit: bool,
+) -> Result<BTreeSet<&'static str>> {
+    if !explicit {
+        return Ok(discovered.language_counts.keys().copied().collect());
+    }
+    let roots: Vec<&str> = roots.iter().map(String::as_str).collect();
+    Ok(crate::git::entries(&discovered.root, &discovered.commit)?
+        .into_iter()
+        .filter(|entry| {
+            entry.kind == "blob"
+                && matches!(entry.mode.as_str(), "100644" | "100755")
+                && index::module_name(&entry.path, &roots).is_some()
+        })
+        .filter_map(|entry| {
+            if entry.path.ends_with(".py") {
+                Some("python")
+            } else if [".js", ".cjs", ".mjs", ".ts"]
+                .iter()
+                .any(|extension| entry.path.ends_with(extension))
+            {
+                Some("javascript")
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
 /// User-facing analysis requires at least one discovered supported source root.
 pub fn run(
     path: &Path,
@@ -166,23 +200,28 @@ pub fn run_if_supported(
     if roots.is_empty() {
         return Ok(None);
     }
+    // Revisions indexed with different module roots must never silently share
+    // a module catalog. The roots digest is part of the logical index name.
+    let mut normalized_roots = roots;
+    normalized_roots.sort();
+    normalized_roots.dedup();
+    let languages = scoped_languages(
+        &discovered,
+        &normalized_roots,
+        explicit_roots.is_some(),
+    )?;
     let capabilities = doctor::report();
     let cap = capabilities.get("capabilities")?;
     for (lang, key) in [
         ("python", "python_index"),
         ("javascript", "javascript_index"),
     ] {
-        if discovered.language_counts.contains_key(lang) && !cap.get(key)?.bool()? {
+        if languages.contains(lang) && !cap.get(key)?.bool()? {
             return refuse(format!(
                 "required {lang} analyzer unavailable; run excession doctor --json"
             ));
         }
     }
-    // Revisions indexed with different module roots must never silently share
-    // a module catalog. The roots digest is part of the logical index name.
-    let mut normalized_roots = roots;
-    normalized_roots.sort();
-    normalized_roots.dedup();
     let root_spec = normalized_roots.join(",");
     let digest = digest::sha256(root_spec.as_bytes());
     let project = discovered

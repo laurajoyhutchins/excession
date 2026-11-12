@@ -299,7 +299,11 @@ fn scanner_anchors_reject_empty_and_terminal_newline_phantom_lines() {
 #[test]
 fn scanner_accepts_git_tracked_hyphen_prefixed_source_names() {
     let f = Fixture::new();
-    fs::write(f.repo.join("--help.go"), "package app\n\nfunc Handle() {}\n").unwrap();
+    fs::write(
+        f.repo.join("--help.go"),
+        "package app\n\nfunc Handle() {}\n",
+    )
+    .unwrap();
     f.commit();
     let mut report = semgrep();
     let item = item_mut(field_mut(&mut report, "results"));

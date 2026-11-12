@@ -31,9 +31,11 @@ Rust build and test commands use `--offline --locked`.
 
 Optional Go tests: `mise run go-check`. Install the default syntax grammars
 with `mise run syntax-setup`, or every language covered by Excession's
-recognized source extensions with `mise run syntax-setup-all`. The pinned
-parser packages remain in `requirements/syntax.txt`. Grammars are
-prefetched in a trusted setup step; scans and audits never download them.
+recognized source extensions with `mise run syntax-setup-all`. These tasks
+install upstream `ts-pack-cli` 1.25.0 and explicitly prefetch grammar libraries
+using its Rust CLI. The Excession Rust binary links the same version of the
+upstream Rust language-pack core with its download feature disabled. Scans and
+audits never download grammars or require a Python interpreter.
 
 ## Other supported languages
 

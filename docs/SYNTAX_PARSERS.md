@@ -1,10 +1,11 @@
 # Multi-language syntax observations
 
 Excession delegates syntax parsing to an existing parser distribution instead of
-creating another set of handwritten grammars. The optional adapter uses
-[tree-sitter-language-pack](https://github.com/xberg-io/tree-sitter-language-pack),
-which exposes precompiled Tree-sitter grammars and conservative language-aware
-extraction. The core Rust crate still has **no third-party Cargo dependencies**.
+creating another set of handwritten grammars. The parser uses the
+[tree-sitter-language-pack](https://github.com/xberg-io/tree-sitter-language-pack)
+Rust core, pinned to version 1.25.0, with dynamic grammar loading and no
+runtime download feature. It preserves the source-bound syntax report
+contract, rather than implementing another language grammar.
 
 This is separate from the existing CPython AST / TypeScript module-dependency
 index, and from the Linux C/Kbuild/Kconfig experiment. No language-specific
@@ -13,22 +14,25 @@ is inferred from this generic syntax scan. Missing facts are not negative eviden
 
 ## Install parsers explicitly
 
-The parser package is optional and must be installed into the Python environment
-used by the Excession executable:
+The Excession executable needs no Python runtime for generic Tree-sitter syntax.
+Grammar binaries must be prefetched into a trusted local cache:
 
 ```sh
 mise run syntax-setup       # fast default: Rust, Go, C, Java, Python, JS/TS
 mise run syntax-setup-all   # opt-in: also C++, Kotlin, C#, Ruby, PHP,
                             # Swift, Scala, shell, Elixir, JSON/YAML/TOML/SQL
-# Without mise, install requirements/syntax.txt and prefetch grammars with
-# the tree-sitter-language-pack Python API in a trusted setup step.
+# Without mise: cargo install --locked --version 1.25.0 --no-default-features ts-pack-cli
+# Then: ts-pack download rust go c java python javascript typescript
 ```
 
 Prefetch happens in a **trusted setup step**, before analysis. Scans never
 download grammars. For a configured but uncached grammar, Excession records
 `GRAMMAR_NOT_INSTALLED` rather than attempting network access or claiming a
-successful parse. The report includes the installed package version; a later
-audit requires the same parser version and availability to regenerate it.
+successful parse. The report records the pinned upstream Rust parser version; a later audit
+requires the same parser version and locally available grammars to regenerate it.
+Use `TREE_SITTER_LANGUAGE_PACK_CACHE_DIR` to select a trusted cache base,
+or `TREE_SITTER_LANGUAGE_PACK_LIBS_DIR` to supply an explicit compiled-grammar
+directory. Only the setup command downloads; normal scans fail closed.
 
 ## Scan and replay
 
@@ -102,8 +106,8 @@ reports **before** replay begins.
 Local parser-boundary unit tests can run without grammars:
 
 ```sh
-python3 -m unittest discover -s tests -p test_tree_sitter_bridge.py -v
-cargo test --offline --manifest-path core/Cargo.toml preflight::tests
+cargo test --offline --locked --manifest-path core/Cargo.toml --lib native_syntax::tests
+cargo test --offline --locked --manifest-path core/Cargo.toml preflight::tests
 ```
 
 `core/tests/preflight_contracts.rs` exercises the command surface without

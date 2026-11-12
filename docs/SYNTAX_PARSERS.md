@@ -264,7 +264,7 @@ do not mistake a successful parse for evidence completeness.
 Run unit tests without optional grammars:
 
 ```sh
-python3 -m unittest tests.test_tree_sitter_bridge -v
+cargo test --offline --locked --manifest-path core/Cargo.toml --lib native_syntax::tests
 ```
 
 The integration smoke test uses an intentionally small clean Git fixture and

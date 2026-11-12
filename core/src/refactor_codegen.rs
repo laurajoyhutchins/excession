@@ -6,7 +6,7 @@ use crate::{Result, digest, git, refuse, scip_refactor};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 const MAX_SOURCE_BYTES: usize = 512 * 1024;
@@ -352,9 +352,9 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         workspace = Some(output_str.to_owned());
     }
     let changes = [
-        (request.source, &source_entry.oid, &updated_source),
+        (request.source, source_entry.oid.as_str(), &updated_source),
         (request.destination, "", &created_module),
-        (root_path.as_str(), &root_entry.oid, &updated_root),
+        (root_path.as_str(), root_entry.oid.as_str(), &updated_root),
     ];
     Ok(obj(&[
         (

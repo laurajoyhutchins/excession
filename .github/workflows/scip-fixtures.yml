@@ -76,6 +76,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p test_scip_fixture_migration.py -v
           python3 -m unittest discover -s tests -p test_concepts_scip_oracle.py -v
+          python3 -m unittest discover -s tests -p test_scip_source_anchors.py -v
       - name: Run real native SCIP on pinned fixtures
         shell: bash
         env:

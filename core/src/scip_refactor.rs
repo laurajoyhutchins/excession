@@ -194,7 +194,7 @@ struct Scan {
     name: String,
     version: String,
     documents: BTreeMap<String, Document>,
-    definitions: BTreeMap<String, BTreeSet<String>>,
+    definitions: BTreeMap<String, Vec<String>>,
     matched: BTreeSet<Reference>,
     unresolved: usize,
     count: usize,
@@ -257,7 +257,7 @@ fn scan_with_prefix(
         .collect::<BTreeMap<_, _>>();
     let mut reader = git::BlobReader::open(repo)?;
     let mut documents = BTreeMap::new();
-    let mut definitions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut definitions: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut references = Vec::new();
     let mut total_bytes = 0_usize;
     let mut count = 0_usize;
@@ -347,7 +347,7 @@ fn scan_with_prefix(
                 definitions
                     .entry(symbol.into())
                     .or_default()
-                    .insert(path.into());
+                    .push(path.into());
             } else if role & 64 == 0 {
                 references.push((path.to_owned(), symbol.to_owned(), line));
             }

@@ -46,9 +46,9 @@ class LiteralImportCoverage(unittest.TestCase):
     def test_js_oracle_does_not_invent_implicit_index_cjs(self):
         entries = [
             {"path": "lib/main.js", "content":
-             "const a = require('./alt');\\n"
-             "const b = require('./alt/index.cjs');\\n"},
-            {"path": "lib/alt/index.cjs", "content": "module.exports = 1;\\n"},
+             "const a = require('./alt');\n"
+             "const b = require('./alt/index.cjs');\n"},
+            {"path": "lib/alt/index.cjs", "content": "module.exports = 1;\n"},
         ]
         proc = subprocess.run(
             ["node", str(ROOT / "benchmarks/experiments/js_import_oracle.cjs")],

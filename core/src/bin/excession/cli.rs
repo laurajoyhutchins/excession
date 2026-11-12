@@ -285,6 +285,22 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Bounded, Git-bound Linux source observations and coverage");
+    let agent = group(
+        "agent",
+        vec![
+            leaf(
+                "context",
+                &["repo", "rev", "focus"],
+                &["task", "limit", "roots", "db"],
+            ),
+            leaf(
+                "verify",
+                &["repo", "base", "candidate"],
+                &["limit", "roots", "db", "receipts"],
+            ),
+        ],
+    )
+    .about("Bounded, machine-readable context and verification for coding agents");
     Command::new("excession")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Excession | Git-authenticated repository exploration and security evidence")
@@ -444,6 +460,7 @@ pub(super) fn command() -> Command {
         .subcommand(configured_graph)
         .subcommand(analyze)
         .subcommand(kernel)
+        .subcommand(agent)
         .subcommand(
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
                 .about("Read-only virtual source browser"),
@@ -541,6 +558,20 @@ mod tests {
             panic!("help expected");
         };
         assert!(syntax.contains("native-audit"));
+    }
+
+    #[test]
+    fn agent_grammar_requires_pinned_focus_or_candidate() {
+        assert!(parse(&strings(&["agent", "context", "--repo", "x", "--rev", "HEAD"])).is_err());
+        assert!(parse(&strings(&["agent", "verify", "--repo", "x", "--base", "HEAD~1"])).is_err());
+        assert!(parse(&strings(&[
+            "agent", "context", "--repo", "x", "--rev", "HEAD",
+            "--focus", "src/main.rs", "--limit", "8",
+        ])).is_ok());
+        assert!(parse(&strings(&[
+            "agent", "verify", "--repo", "x", "--base", "HEAD~1",
+            "--candidate", "HEAD", "--receipts", "/tmp/receipts.json",
+        ])).is_ok());
     }
 
     #[test]

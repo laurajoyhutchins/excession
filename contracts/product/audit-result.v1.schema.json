@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/product/audit-result.v1.schema.json",
+  "title": "Excession proposed audit-result.v1.schema.json",
+  "description": "Draft public product wire, not proof of correctness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "report_id",
+    "schema_validation",
+    "git_authentication",
+    "replay",
+    "semantic_correctness"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.audit-result.v1"
+    },
+    "report_id": {
+      "$ref": "common.v1.schema.json#/$defs/sha256"
+    },
+    "schema_validation": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_RUN"
+      ]
+    },
+    "git_authentication": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_RUN"
+      ]
+    },
+    "replay": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NOT_RUN"
+      ]
+    },
+    "semantic_correctness": {
+      "enum": [
+        "NOT_EVALUATED",
+        "INDEPENDENTLY_TESTED",
+        "FAILED",
+        "UNSUPPORTED"
+      ]
+    },
+    "oracle_receipt_id": {
+      "$ref": "common.v1.schema.json#/$defs/sha256"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "semantic_correctness": {
+            "const": "INDEPENDENTLY_TESTED"
+          }
+        },
+        "required": [
+          "semantic_correctness"
+        ]
+      },
+      "then": {
+        "required": [
+          "oracle_receipt_id"
+        ]
+      }
+    }
+  ]
+}

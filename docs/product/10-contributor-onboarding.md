@@ -1,15 +1,11 @@
-# PR 10: Contributor and user onboarding
+# Maintainer and contributor experience
 
-**Status:** draft policy/documentation and pending executable examples. Installing `excession analyze .` from a public binary is **not yet working**; do not present it as shipped.
+The root README now starts with \`discover\`, \`analyze\`, \`impact\` and replayable \`explain\` rather than an internal manually configured pipeline. The user must select a real Git base revision and a \`claim_id\` actually emitted by impact, never an invented result. \`--audit\` is explicit about what source replay does and does not verify.
 
-- Add root `CONTRIBUTING.md` describing quick vs deep tests, Rust/Git/SQLite authority, pinned fixtures, small PRs and independent oracles.
-- Add `SECURITY.md` describing responsible nonpublic reporting without inventing a contact address or pretending scanner findings are verified vulnerabilities.
-- Proposed getting-started path: release archive → doctor → analyze → impact → explain → audit. Until commands ship, a machine-readable example contract says `PROPOSED_NOT_SHIPPED`.
-- Current users can still use the README's supported `index`, `inspect`, `graph`, and `view` interfaces.
-- Later add docs-example smoke which must run against the **actual CLI**, not a textual mock; old `excession research` stays retired.
+\`CONTRIBUTING.md\` documents focused and independent tests, Git/SQLite authority and no duplicate language-native implementations. \`SECURITY.md\` provides an initial private-disclosure route without fabricating contact details or promises.
 
-Auto-ontology #88–#95 is an optional analysis and concept context. Do not instruct new users to download or run it for basic module impact, nor imply its unmerged contracts are implemented.
+The first public binary release is a separate acceptance gate, tracked by #83 and #113. Until a release exists and passes the full matrix, these are installed-from-source instructions and do not claim that binaries have been published.
 
-**TDD:** schema fixture tests now; executable user quickstart test deliberately skipped until release behavior exists.
+Auto-ontology #88–#95 stays optional: concepts can annotate explanations via #94, but cannot establish an import, runtime behavior or safety to skip tests.
 
-Tracks #86, #82, #83, #101.
+The existing tests validate onboarding schema shape, while #113 exercises the real extracted CLI end-to-end. These two kinds of tests must not be confused.

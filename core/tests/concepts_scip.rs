@@ -359,3 +359,39 @@ fn nested_source_prefix_requires_exact_scip_project_root() {
     assert!(!refused.status.success());
     assert!(refused.stdout.is_empty());
 }
+
+#[test]
+fn duplicate_symbol_definitions_in_one_file_are_not_a_unique_reference_target() {
+    let f = Fixture::new();
+    let mut index = json::parse(&fs::read(&f.index).unwrap()).unwrap();
+    let documents = index.entries_mut().unwrap().get_mut("documents").unwrap();
+    let python = match documents {
+        Value::Array(items) => &mut items[1],
+        _ => panic!("expected SCIP documents"),
+    };
+    let occurrences = python.entries_mut().unwrap().get_mut("occurrences").unwrap();
+    match occurrences {
+        Value::Array(items) => items.push(occurrence(PYTHON_SYMBOL, 1, 0)),
+        _ => panic!("expected SCIP occurrences"),
+    }
+    fs::write(&f.index, index.canonical()).unwrap();
+
+    let native = scip_refactor::references(&f.repo, &f.commit, &f.index).unwrap();
+    assert_eq!(
+        native.get("references").unwrap().array_ref().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        native
+            .get("coverage")
+            .unwrap()
+            .get("unresolved_references")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        2
+    );
+    let model = f.cli("scip-preview", &[]);
+    assert!(model.get("concepts").unwrap().array_ref().unwrap().is_empty());
+    assert!(model.get("claims").unwrap().array_ref().unwrap().is_empty());
+}

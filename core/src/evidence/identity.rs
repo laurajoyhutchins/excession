@@ -31,12 +31,22 @@ pub struct SourceRef {
 }
 
 impl SourceRef {
+    // A tree object and an annotated tag are not valid source commit identities.
+    // Resolve through Git, then require the supplied OID itself to be a commit.
+    fn verify_commit(repo: &Path, commit: &str) -> Result<()> {
+        git::oid(commit)?;
+        if git::rev(repo, &format!("{commit}^{{commit}}"))? != commit {
+            return refuse("source identity must name a Git commit, not a tag");
+        }
+        Ok(())
+    }
+
     /// Construct one canonical source identity exclusively from a pinned Git
     /// revision. No working-tree paths or caller-provided blobs are trusted.
     /// This authenticates file identity, not the producer's interpretation.
     pub fn from_git(repo: &Path, commit: &str, path: &str) -> Result<Self> {
         git::verify_repo(repo)?;
-        git::oid(commit)?;
+        Self::verify_commit(repo, commit)?;
         git::validate_path(path)?;
         let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
         let entry = git::entry_at(repo, commit, path)?;
@@ -50,7 +60,10 @@ impl SourceRef {
             blob: entry.oid,
             mode: entry.mode,
         };
-        source.verify_git(repo)?;
+        // These are the exact values just read from Git. Calling verify_git
+        // here would query the same commit, tree, and entry a second time.
+        // The separate verify_git method remains for untrusted supplied refs.
+        source.validate()?;
         Ok(source)
     }
 
@@ -70,6 +83,7 @@ impl SourceRef {
     pub fn verify_git(&self, repo: &Path) -> Result<()> {
         self.validate()?;
         git::verify_repo(repo)?;
+        Self::verify_commit(repo, &self.commit)?;
         let actual_tree = git::rev(repo, &format!("{}^{{tree}}", self.commit))?;
         if actual_tree != self.tree {
             return refuse("evidence source commit/tree identity mismatch");
@@ -419,6 +433,11 @@ mod tests {
             "a Git-derived source must retain the original canonical identity"
         );
         assert!(SourceRef::from_git(&root, &src.commit, "../outside").is_err());
+        let tree_oid = run(&["rev-parse", "HEAD^{tree}"]);
+        assert!(SourceRef::from_git(&root, &tree_oid, "src/lib.rs").is_err());
+        let mut bad = src.clone();
+        bad.commit = tree_oid;
+        assert!(bad.verify_git(&root).is_err());
         let mut bad = src.clone();
         bad.blob = "d".repeat(40);
         assert!(bad.verify_git(&root).is_err());

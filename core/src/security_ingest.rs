@@ -67,16 +67,18 @@ fn source_anchor(
     let path = normalize_path(path)?;
     if !cache.contains_key(&path) {
         let source = SourceRef::from_git(repo, commit, &path)?;
-        // Scanner reports require the clean checked-out bytes to match the
-        // pinned Git identity, in addition to the shared source validation.
-        if git::text(repo, &["hash-object", &path])? != source.blob {
+        // Authenticate the exact bytes used to validate scanner line numbers.
+        // Hashing the filename in a separate subprocess before fs::read would
+        // allow a concurrent worktree change between verification and use.
+        let bytes = fs::read(repo.join(&path)).map_err(|e| e.to_string())?;
+        if digest::git_blob(&bytes) != source.blob {
             return refuse("source blob mismatched checkout");
         }
-        let bytes = fs::read(repo.join(&path)).map_err(|e| e.to_string())?;
-        cache.insert(
-            path.clone(),
-            (source.blob, bytes.split(|b| *b == b'\n').count()),
-        );
+        // A terminal newline ends the final line; it does not add another
+        // source line. Empty tracked files have zero addressable lines.
+        let lines = bytes.iter().filter(|&&b| b == b'\n').count()
+            + usize::from(!bytes.is_empty() && bytes.last() != Some(&b'\n'));
+        cache.insert(path.clone(), (source.blob, lines));
     }
     let (blob, nlines) = cache.get(&path).ok_or("missing cached source")?;
     if line < 1 || line as usize > *nlines {

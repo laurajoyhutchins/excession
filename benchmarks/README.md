@@ -13,7 +13,7 @@ queries and Git revisions, while preserving a stated verification guarantee?**
 | Area | Status | Purpose |
 | --- | --- | --- |
 | [Observable protocol](protocol.md) | Defined | Equal information contracts, independent oracle and four cost axes |
-| [Relational experiments](experiments/README.md) | Executable | Source-written oracle, multi-revision retrieval, size/fanout/revision variation |
+| [Relational experiments](experiments/README.md) | Rust CLI | Source-written oracle, multi-revision retrieval, size/fanout/revision variation |
 | [Checked-tree A/B](experiments/checked_tree_ab.py) | Existing | Reusable source-binding checks with adversarial refusal parity |
 | [Real repository fixtures](experiments/real_fixtures.py) | Existing | Pinned Git objects and independent bounded import-edge oracle; dynamic imports unsupported |
 | [Single-query microbenchmarks](micro/README.md) | Existing, preserved | Git, ripgrep, clangd, graph-only and view phase diagnostics |
@@ -41,8 +41,7 @@ path-scoped workflows because they validate actively maintained protocols.
 After compiling `core/target/debug/excession`:
 
 ```sh
-python3 benchmarks/experiments/relationships.py \
-  --bin core/target/debug/excession \
+core/target/debug/excession benchmark run-relational \
   --out /tmp/excession-relational-v1 \
   --sizes 8,24 --fanouts 1,3 --revisions 3 --repetitions 2
 ```

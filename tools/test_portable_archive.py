@@ -42,6 +42,10 @@ def verify(archive: Path) -> None:
         (source / "src/tool.js").write_text(
             "export function answer() { return 42; }\n", encoding="utf-8"
         )
+        (source / "src/consumer.js").write_text(
+            'import { answer } from "./tool.js";\nexport const result = answer();\n',
+            encoding="utf-8",
+        )
         run("git", "init", "-q", str(source), cwd=root)
         run("git", "-C", str(source), "add", "--all", cwd=root)
         run(
@@ -65,6 +69,59 @@ def verify(archive: Path) -> None:
             "--rev", "HEAD", "--roots", "src", cwd=source,
         )
         assert "GIT_TREE_INDEXED" in output
+        # A real imported dependency, changed in the second pinned Git revision.
+        baseline = run("git", "-C", str(source), "rev-parse", "HEAD", cwd=root).strip()
+        cache = root / "product-index.sqlite"
+        analysis = json.loads(run(str(binary), "analyze", ".", "--db", str(cache),
+                                  "--json", cwd=source))
+        assert analysis["schema"] == "excession.analysis.v1"
+        assert analysis["source_commit"] == baseline
+        assert analysis["status"] == "PARTIAL"
+        assert any(
+            e["source"]["path"] == "src/consumer.js"
+            and e["target"]["path"] == "src/tool.js"
+            and all(o["assessment"] == "CANDIDATE" for o in e["evidence"])
+            for e in analysis["relationships"]
+        )
+        (source / "src/tool.js").write_text(
+            "export function answer() { return 43; }\n", encoding="utf-8"
+        )
+        run("git", "-C", str(source), "add", "--all", cwd=root)
+        run("git", "-C", str(source), "-c", "user.name=Excession Portable Test",
+            "-c", "user.email=portable@example.invalid",
+            "commit", "-qm", "change utility", cwd=root)
+        head = run("git", "-C", str(source), "rev-parse", "HEAD", cwd=root).strip()
+        impact = json.loads(run(str(binary), "impact", ".", "--base", baseline,
+                                "--head", head, "--db", str(cache), "--json", cwd=source))
+        assert impact["schema"] == "excession.impact.v1"
+        assert impact["safe_to_skip_unlisted_tests"] is False
+        candidate = next(e for e in impact["effects"]
+                         if e["entity"]["path"] == "src/consumer.js"
+                         and e["assessment"] == "CANDIDATE_PATH")
+        claim_id = candidate["claim_id"]
+        saved = root / "impact.json"
+        saved.write_text(json.dumps(impact, sort_keys=True) + "\n", encoding="utf-8")
+        explanation = json.loads(run(str(binary), "explain", ".", "--report", str(saved),
+                                     "--id", claim_id, "--db", str(cache),
+                                     "--json", cwd=source))
+        assert explanation["schema"] == "excession.explanation.v1"
+        assert explanation["claim_id"] == claim_id
+        assert explanation["steps"]
+        audit = json.loads(run(str(binary), "explain", ".", "--report", str(saved),
+                               "--id", claim_id, "--db", str(cache),
+                               "--audit", cwd=source))
+        assert audit["git_authentication"] == "PASS"
+        assert audit["replay"] == "PASS"
+        assert audit["semantic_correctness"] == "NOT_EVALUATED"
+        impact["effects"][0]["assessment"] = "OBSERVED_RELATIONSHIP_PATH"
+        saved.write_text(json.dumps(impact, sort_keys=True) + "\n", encoding="utf-8")
+        tampered = subprocess.run(
+            [str(binary), "explain", ".", "--report", str(saved), "--id", claim_id,
+             "--db", str(cache), "--json"],
+            cwd=source, capture_output=True, text=True, encoding="utf-8"
+        )
+        assert tampered.returncode != 0, "tampered claim was accepted"
+
 
 
 def main() -> None:

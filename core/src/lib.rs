@@ -22,6 +22,7 @@ pub mod graph_baseline;
 pub mod historical;
 pub mod identity;
 pub mod impact;
+pub mod impact_query;
 pub mod index;
 pub mod integration;
 pub mod json;

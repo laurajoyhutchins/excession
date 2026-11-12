@@ -294,6 +294,45 @@ pub(super) fn command() -> Command {
                 ),
         )
         .subcommand(
+            Command::new("impact")
+                .about("Investigate bounded affected-source candidates between two Git revisions")
+                .arg(
+                    Arg::new("path")
+                        .index(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("base")
+                        .long("base")
+                        .required(true)
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("head")
+                        .long("head")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("roots")
+                        .long("roots")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("db")
+                        .long("db")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("json")
+                        .long("json")
+                        .action(clap::ArgAction::SetTrue),
+                ),
+        )
+        .subcommand(
             Command::new("changes")
                 .about("List exact tracked Git blob changes between two commits")
                 .arg(

@@ -1,12 +1,15 @@
 """Adversarial tests for the independent Git-bound self-analysis summary."""
 from __future__ import annotations
 
+import copy
 import subprocess
 import tempfile
 from pathlib import Path
 import unittest
 
-from tools.self_analysis import AnalysisError, independently_verify, report_markdown
+from tools.self_analysis import (
+    AnalysisError, independently_verify, report_markdown, validate_scip_triage,
+)
 
 
 def git(repo: Path, *args: str) -> str:
@@ -168,6 +171,45 @@ class SelfAnalysisTests(unittest.TestCase):
                 self.repo, self.base, self.roots, self.syntax, self.resolved,
                 self.syntax_receipt, self.resolution_receipt,
             )
+
+
+    def test_scip_triage_partitions_candidate_ids_without_suppressing_them(self) -> None:
+        a, b = "a" * 64, "b" * 64
+        report = {
+            "candidates": [{"candidate_id": a}, {"candidate_id": b}],
+            "triage": {
+                "basis": "ADVISORY_RUST_ANALYZER_TOP_LEVEL_MODULE_SYMBOL",
+                "review_candidate_ids": [a],
+                "likely_structural_module_candidate_ids": [b],
+            },
+        }
+        self.assertEqual(validate_scip_triage(report), {
+            "other_review_candidates": 1,
+            "likely_structural_module_links": 1,
+        })
+        for mutate in (
+            lambda r: r["triage"]["review_candidate_ids"].append(b),
+            lambda r: r["triage"]["likely_structural_module_candidate_ids"].clear(),
+            lambda r: r["triage"]["review_candidate_ids"].append(a),
+            lambda r: r["candidates"].reverse(),
+        ):
+            corrupted = copy.deepcopy(report)
+            mutate(corrupted)
+            with self.subTest(corrupted=corrupted):
+                with self.assertRaises(AnalysisError):
+                    validate_scip_triage(corrupted)
+
+    def test_scip_triage_fails_closed_on_unknown_basis(self) -> None:
+        report = {
+            "candidates": [],
+            "triage": {
+                "basis": "BEHAVIORALLY_PROVEN",
+                "review_candidate_ids": [],
+                "likely_structural_module_candidate_ids": [],
+            },
+        }
+        with self.assertRaisesRegex(AnalysisError, "unsupported SCIP triage"):
+            validate_scip_triage(report)
 
 
 if __name__ == "__main__":

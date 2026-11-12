@@ -4,10 +4,10 @@
 use crate::json::{Value, obj};
 use crate::{Result, digest, git, refactor_codegen, refuse, scip_refactor};
 use serde_json::{Value as Json, json};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 const MAX_FRAME: usize = 8 * 1024 * 1024;

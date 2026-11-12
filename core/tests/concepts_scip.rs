@@ -369,7 +369,11 @@ fn duplicate_symbol_definitions_in_one_file_are_not_a_unique_reference_target() 
         Value::Array(items) => &mut items[1],
         _ => panic!("expected SCIP documents"),
     };
-    let occurrences = python.entries_mut().unwrap().get_mut("occurrences").unwrap();
+    let occurrences = python
+        .entries_mut()
+        .unwrap()
+        .get_mut("occurrences")
+        .unwrap();
     match occurrences {
         Value::Array(items) => items.push(occurrence(PYTHON_SYMBOL, 1, 0)),
         _ => panic!("expected SCIP occurrences"),
@@ -392,6 +396,13 @@ fn duplicate_symbol_definitions_in_one_file_are_not_a_unique_reference_target() 
         2
     );
     let model = f.cli("scip-preview", &[]);
-    assert!(model.get("concepts").unwrap().array_ref().unwrap().is_empty());
+    assert!(
+        model
+            .get("concepts")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
     assert!(model.get("claims").unwrap().array_ref().unwrap().is_empty());
 }

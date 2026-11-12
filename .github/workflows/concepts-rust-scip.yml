@@ -48,9 +48,12 @@ jobs:
         run: |
           set -euo pipefail
           cd core
-          # Write the binary index outside the source tree.
-          rustup run 1.99.1 rust-analyzer scip . > "$RUNNER_TEMP/excession.scip"
-          test -s "$RUNNER_TEMP/excession.scip"
+          # rust-analyzer scip writes index.scip in its cwd; it does not
+          # stream the protobuf to stdout. Preserve upstream diagnostics.
+          rustup run 1.99.1 rust-analyzer scip . \
+            2>"$RUNNER_TEMP/rust-analyzer-scip.log"
+          test -s index.scip
+          mv index.scip "$RUNNER_TEMP/excession.scip"
           "$RUNNER_TEMP/scip-cli/scip" print --json "$RUNNER_TEMP/excession.scip" > "$RUNNER_TEMP/excession-scip.json"
           test -s "$RUNNER_TEMP/excession-scip.json"
       - name: Independently reconstruct Git-bound native references
@@ -61,6 +64,7 @@ jobs:
             --bin core/target/debug/excession \
             --repo . --source-prefix core \
             --index "$RUNNER_TEMP/excession-scip.json" \
+            --indexer-diagnostics "$RUNNER_TEMP/rust-analyzer-scip.log" \
             --out rust-scip-oracle-evidence
       - name: Preserve actual native index and independent audit evidence
         if: always()
@@ -70,4 +74,5 @@ jobs:
           path: |
             rust-scip-oracle-evidence/
             ${{ runner.temp }}/excession-scip.json
+            ${{ runner.temp }}/rust-analyzer-scip.log
           if-no-files-found: warn

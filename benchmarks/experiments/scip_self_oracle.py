@@ -36,6 +36,7 @@ def main() -> None:
                         help="official scip print --json output of rust-analyzer scip")
     parser.add_argument("--source-prefix", default="core")
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--indexer-diagnostics", type=Path)
     args = parser.parse_args()
 
     repo = args.repo.resolve()
@@ -69,8 +70,10 @@ def main() -> None:
             source_prefix=args.source_prefix,
         )
 
+    diagnostics = args.indexer_diagnostics.read_text(errors="replace") if args.indexer_diagnostics else ""
     report = {
         "schema": "excession.concepts-rust-native-evidence.v1",
+        "indexer_duplicate_symbol_warning": "Duplicate symbols encountered" in diagnostics,
         "indexer": "rust-analyzer scip",
         "decoder": "scip print --json",
         "source_commit": commit,

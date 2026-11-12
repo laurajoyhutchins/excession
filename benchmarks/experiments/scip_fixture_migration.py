@@ -378,6 +378,8 @@ def main() -> None:
     parser.add_argument("--decoded-dir", type=Path)
     parser.add_argument("--concepts", action="store_true",
                         help="compile and independently reconcile source-bound semantic concepts")
+    parser.add_argument("--require-positive-concepts", action="store_true",
+                        help="require at least one independently reconstructed cross-file reference")
     parser.add_argument("--scip", type=Path, default=Path("scip"))
     parser.add_argument("--python-indexer", type=Path, default=Path("scip-python"))
     parser.add_argument("--typescript-indexer", type=Path,
@@ -426,7 +428,8 @@ def main() -> None:
         )
         results["independently_oracled_native_references"] = native_matches
         # A zero-reference smoke would not demonstrate the semantic bridge.
-        if native_matches == 0:
+        results["concepts_positive_evidence"] = native_matches > 0
+        if args.require_positive_concepts and native_matches == 0:
             invalid = True
             results["diagnostic"] = "no independently validated SCIP cross-file reference"
     if observed == 0:

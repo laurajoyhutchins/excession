@@ -97,6 +97,11 @@ those artifacts on failure.
 
 ## Benchmark reports
 
+`excession benchmark run-relational --out RESULTS --sizes 8,24 --fanouts 1,3 --revisions 3 --repetitions 2`
+generates pinned Git fixtures, independently checks their indexed edges, runs alternating
+paired CLI queries, and emits raw measurements and a validated Rust report.
+The runner uses Unix child-process CPU accounting and refuses unsupported platforms.
+
 `excession benchmark report --kind relational --directory RESULTS` builds a
 schema-validated Rust report from existing relational receipts and source
 bundles. `excession benchmark report --kind native --directory . --input
@@ -112,6 +117,6 @@ This verification checks benchmark evidence, not the installed environment.
 
 Cargo integration suites in `core/tests/` cover CLI, Git/SQLite, repository
 views, security evidence, parser preflight, dependency resolution, refactor
-hypotheses, SCIP, and native compiler/declaration comparisons. Python tests
-remain for Python-specific adapters, tooling, benchmarks, and independent
-oracles; they are not a second copy of the Rust CLI contract suite.
+hypotheses, SCIP, and native compiler/declaration comparisons. Python tests remain only for Python-specific adapters, source-language oracles,
+and historical experiments not yet migrated. The relational runner, its
+independent fixture oracle, and benchmark report validation are Rust-owned.

@@ -25,12 +25,11 @@ jobs:
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Verify Rust benchmark schema and negative cases
         run: cargo test --offline --locked --manifest-path core/Cargo.toml benchmark::tests
-      - name: Independent oracle and Git fixture tests
-        run: python3 -m unittest discover -s tests -p test_benchmark_experiments.py -v
+      - name: Independent Rust oracle and Git fixture tests
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml benchmark::relational::tests
       - name: Measure cross-revision relation queries
         run: |
-          python3 benchmarks/experiments/relationships.py \
-            --bin ./core/target/debug/excession \
+          core/target/debug/excession benchmark run-relational \
             --out "$RUNNER_TEMP/relational" \
             --sizes 8 --fanouts 1,2 --revisions 2 --repetitions 1
           cat "$RUNNER_TEMP/relational/summary.json"

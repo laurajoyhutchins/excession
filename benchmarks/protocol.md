@@ -44,17 +44,17 @@ whether the index describes all language-level relations.
 
 ## Experimental status
 
-- **Executable:** `experiments/relationships.py` constructs pinned multi-revision
+- **Executable:** `excession benchmark run-relational` (Rust) constructs pinned multi-revision
   Git histories from a source-written relationship oracle, independently checks
   the indexed edge set and times paired graph/compact-view source queries.
   Size, fanout, revision count and repetition count are configurable. Index
   setup is measured per revision. Both query arms run in the same Rust CLI.
 - **Existing microbenchmarks:** `micro/` preserves exact-file lookup, LSP
-  definition navigation, native source-set parity and authenticated projection
-  phases. Their results are calibration, not acceptance evidence.
-- **Partial evidence controls already present:** `experiments/checked_tree_ab.py`
-  compares authenticated before/after outputs and selected tamper refusals;
-  `experiments/real_fixtures.py` independently checks Git source bindings.
+  definition navigation and native source-set parity. Their results are
+  calibration, not acceptance evidence.
+- **Partial evidence controls already present:** `experiments/real_fixtures.py`
+  independently checks Git source bindings; independent replay/tamper cases
+  are covered by `experiments/independent_audit.py`.
 - **Independent full indexed-query replay implemented:**
   `experiments/independent_audit.py` compares a separate Git/SQLite verifier
   against native replay for intact and corrupted h11 evidence.

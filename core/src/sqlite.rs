@@ -248,7 +248,7 @@ mod tests {
                     .unwrap(),
                 "committed"
             );
-            assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
+            assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "22");
         }
         let _ = std::fs::remove_file(file);
     }

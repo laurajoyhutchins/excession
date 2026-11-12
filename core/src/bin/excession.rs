@@ -340,6 +340,43 @@ fn execute(args: &[String]) -> Result<Response> {
     let opt = &parsed.options;
     match parsed.path.as_slice() {
         [top, sub] if top == "concepts" => {
+            if sub.starts_with("ontology-") {
+                let repo = opt.path("repo");
+                let rev = opt.get("rev");
+                let index = opt.path("index");
+                let prefix = opt.0.get("source-prefix").map(String::as_str);
+                if sub == "ontology-context" {
+                    let line = opt.0.get("first-line")
+                        .map(|x| x.parse::<usize>())
+                        .transpose()
+                        .map_err(|_| "ontology first-line must be a positive integer")?
+                        .unwrap_or(1);
+                    return Ok(json(excession::concepts_author::context(
+                        repo, rev, index, prefix, opt.get("path"), line
+                    )?));
+                }
+                let draft = excession::concepts_author::read_draft(opt.path("draft"))?;
+                return match sub.as_str() {
+                    "ontology-preview" => Ok(json(excession::concepts_author::preview(
+                        repo, rev, index, prefix, &draft
+                    )?)),
+                    "ontology-publish" => {
+                        let db = Db::open(opt.path("db"))?;
+                        Ok(json(excession::concepts_author::publish(
+                            &db, repo, rev, index, prefix, &draft
+                        )?))
+                    }
+                    "ontology-audit" => {
+                        let db = Db::open(opt.path("db"))?;
+                        Ok(json(excession::concepts_author::audit(
+                            &db, repo, rev, index, prefix, &draft,
+                            opt.get("snapshot")
+                        )?))
+                    }
+                    _ => refuse(format!("unsupported ontology command {sub}")),
+                };
+            }
+
             if sub == "scip-value" {
                 return Ok(json(excession::concepts_value::compare_index(
                     opt.path("repo"),

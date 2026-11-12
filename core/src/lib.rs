@@ -7,6 +7,7 @@ pub mod benchmark;
 pub mod compiler_clang;
 pub mod concepts;
 pub mod concepts_analysis;
+pub mod concepts_author;
 pub mod concepts_compile;
 pub mod concepts_normalize;
 pub mod concepts_query;

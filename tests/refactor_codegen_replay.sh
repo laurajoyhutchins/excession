@@ -22,16 +22,33 @@ run_recipe() {
   "$BIN" refactor extract-shared-module --repo "$OLD" --rev "$OLD_REV" \
     --index "$TMP/index.scip.json" --report "$TMP/scip-report.json" \
     --source-prefix core --candidate "$ID" --source core/src/semantic.rs \
-    --destination core/src/generated_module_name.rs --symbols module_name \
+    --destination core/src/generated_module_name.rs \
+    --symbols module_name,module_name_with_import_base \
     --ast-grep "$AST_GREP" "$@"
 }
 run_recipe > "$TMP/preview.json"
-jq -e '.status == "UNVERIFIED_CODEGEN_PREVIEW" and .worktree == null' "$TMP/preview.json"
+jq -e '.status == "UNVERIFIED_CODEGEN_PREVIEW" and .worktree == null
+  and (.linked_functions == ["module_name_with_import_base"])
+  and (.additional_helper_functions == ["module_name"])
+  and (.edits | length) == 4
+  and (.plan_id | length) == 64' "$TMP/preview.json"
 test ! -e "$OUT"
+# A new worktree must never be nested in the historical checkout.
+if run_recipe --output "$OLD/core/unsafe-nested-worktree" > "$TMP/rejected.json" 2>&1; then
+  echo "Refactor should refuse a nested output worktree" >&2
+  exit 1
+fi
+test ! -e "$OLD/core/unsafe-nested-worktree"
 run_recipe --output "$OUT" > "$TMP/applied.json"
-jq -e '.status == "APPLIED_UNVERIFIED" and .functions == ["module_name"]' "$TMP/applied.json"
+jq -e '.status == "APPLIED_UNVERIFIED"
+  and .functions == ["module_name", "module_name_with_import_base"]' "$TMP/applied.json"
+jq -e --slurpfile preview "$TMP/preview.json" '
+  .plan_id == $preview[0].plan_id and .edits == $preview[0].edits
+' "$TMP/applied.json"
 grep -Fq 'pub fn module_name(' "$OUT/core/src/generated_module_name.rs"
-grep -Fq 'pub use crate::generated_module_name::{module_name};' "$OUT/core/src/semantic.rs"
+grep -Fq 'pub fn module_name_with_import_base(' "$OUT/core/src/generated_module_name.rs"
+grep -Fq '/// Convert a Git-rooted module identity' "$OUT/core/src/generated_module_name.rs"
+grep -Fq 'pub use crate::generated_module_name::{module_name, module_name_with_import_base};' "$OUT/core/src/semantic.rs"
 grep -Fq 'mod generated_module_name;' "$OUT/core/src/lib.rs"
 test "$(git -C "$OLD" rev-parse HEAD)" = "$OLD_REV"
 test -z "$(git -C "$OLD" status --porcelain --untracked-files=all)"
@@ -75,4 +92,4 @@ jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" --arg tree "$TREE" \
    and .status == "OPEN_OBLIGATIONS" and .ready_to_merge == false
    and .safe_to_skip_unlisted_tests == false' \
   "$TMP/agent-verification.json"
-echo 'PASS: native refactor -> committed revision -> Rust agent context/verify -> bounded receipts with unresolved obligations'
+echo 'PASS: current evidence-bound native refactor -> committed candidate -> agent context/verify with receipts and unresolved obligations'

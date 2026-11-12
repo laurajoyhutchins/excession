@@ -39,10 +39,8 @@ fn find_claim<'a>(report: &'a Value, id: &str) -> Result<&'a Value> {
         if unsigned.sha256() != actual {
             return refuse("impact claim identifier disagrees with its content");
         }
-        if actual == id {
-            if found.replace(effect).is_some() {
-                return refuse("ambiguous impact claim identifier");
-            }
+        if actual == id && found.replace(effect).is_some() {
+            return refuse("ambiguous impact claim identifier");
         }
     }
     found.ok_or_else(|| format!("unknown impact claim: {id}"))

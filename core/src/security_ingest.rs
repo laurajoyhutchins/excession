@@ -1,6 +1,7 @@
 //! Git-authenticated static-analysis candidate ingestion and independent SQL replay.
 //! SARIF/JSON from scanners is untrusted *candidate evidence*, never a proof of a CVE.
 use crate::digest;
+use crate::evidence::identity::SourceRef;
 use crate::git;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
@@ -58,22 +59,21 @@ struct FlowStep {
 // spawn thousands of Git processes to re-validate the same source file.
 fn source_anchor(
     repo: &Path,
+    commit: &str,
     cache: &mut BTreeMap<String, (String, usize)>,
     path: &str,
     line: i64,
 ) -> Result<(String, String)> {
     let path = normalize_path(path)?;
     if !cache.contains_key(&path) {
-        let blob = git::blob(repo, "HEAD", &path)?;
-        let mode = git::text(repo, &["ls-tree", "HEAD", "--", &path])?;
-        if !mode.starts_with("100644 ") && !mode.starts_with("100755 ") {
-            return refuse("source path is not a regular tracked file");
-        }
-        if git::text(repo, &["hash-object", &path])? != blob {
+        let source = SourceRef::from_git(repo, commit, &path)?;
+        // Scanner reports require the clean checked-out bytes to match the
+        // pinned Git identity, in addition to the shared source validation.
+        if git::text(repo, &["hash-object", &path])? != source.blob {
             return refuse("source blob mismatched checkout");
         }
         let bytes = fs::read(repo.join(&path)).map_err(|e| e.to_string())?;
-        cache.insert(path.clone(), (blob, bytes.split(|b| *b == b'\n').count()));
+        cache.insert(path.clone(), (source.blob, bytes.split(|b| *b == b'\n').count()));
     }
     let (blob, nlines) = cache.get(&path).ok_or("missing cached source")?;
     if line < 1 || line as usize > *nlines {
@@ -105,6 +105,7 @@ fn line(value: &Value) -> Result<i64> {
 }
 fn rows_from_report(
     repo: &Path,
+    commit: &str,
     engine: &str,
     report: &Value,
 ) -> Result<(Vec<Candidate>, Vec<FlowStep>)> {
@@ -145,7 +146,7 @@ fn rows_from_report(
                 let phys = location.get("physicalLocation")?;
                 let path = phys.get("artifactLocation")?.get("uri")?.str()?;
                 let lineno = line(phys.get("region")?.get("startLine")?)?;
-                let (path, blob) = source_anchor(repo, &mut cache, path, lineno)?;
+                let (path, blob) = source_anchor(repo, commit, &mut cache, path, lineno)?;
                 if rule.is_empty() || rule.len() > 300 {
                     return refuse("invalid rule id");
                 }
@@ -187,7 +188,7 @@ fn rows_from_report(
                                     location.get("artifactLocation")?.get("uri")?.str()?;
                                 let step_line = line(location.get("region")?.get("startLine")?)?;
                                 let (path, blob) =
-                                    source_anchor(repo, &mut cache, step_path, step_line)?;
+                                    source_anchor(repo, commit, &mut cache, step_path, step_line)?;
                                 flows.push(FlowStep {
                                     candidate_id: id.clone(),
                                     flow_index: flow_i as i64,
@@ -213,7 +214,7 @@ fn rows_from_report(
                 let rule = result.get("check_id")?.str()?;
                 let path = result.get("path")?.str()?;
                 let lineno = line(result.get("start")?.get("line")?)?;
-                let (path, blob) = source_anchor(repo, &mut cache, path, lineno)?;
+                let (path, blob) = source_anchor(repo, commit, &mut cache, path, lineno)?;
                 if rule.is_empty() || rule.len() > 300 {
                     return refuse("invalid rule id");
                 }
@@ -263,7 +264,7 @@ fn read_expected(repo: &Path, report_path: &Path, engine: &str) -> Result<Expect
     }
     let hash = digest::sha256(&contents);
     let val = json::parse(&contents)?;
-    let (rows, flows) = rows_from_report(repo, engine, &val)?;
+    let (rows, flows) = rows_from_report(repo, &commit, engine, &val)?;
     let run = digest::sha256(format!("relgit-security-v1\0{commit}\0{hash}\0{engine}").as_bytes());
     Ok((run, commit, hash, rows, flows))
 }

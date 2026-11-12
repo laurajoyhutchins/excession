@@ -1,5 +1,6 @@
 //! End-to-end security ingestion and independently replayed audit contracts.
 //! These tests use real Git revisions and the native SQLite binding.
+use excession::evidence::identity::SourceRef;
 use excession::json::{self, Value};
 use excession::sqlite::Db;
 use std::fs;
@@ -170,6 +171,21 @@ fn codeql_replay_only_confirms_unverified_candidates() {
         .query("SELECT candidate_id FROM security_ingest_candidate", &[])
         .unwrap();
     assert_eq!(found.len(), 1);
+}
+#[test]
+fn scanner_source_identity_agrees_with_shared_git_subject() {
+    let f = Fixture::new();
+    f.report(&semgrep());
+    parsed(f.ing("semgrep", false));
+    let commit = success(run("git", &["-C", f.repo.to_str().unwrap(), "rev-parse", "HEAD"]));
+    let commit = String::from_utf8(commit).unwrap();
+    let source = SourceRef::from_git(&f.repo, commit.trim(), "app.go").unwrap();
+    let stored = f.database().query(
+        "SELECT source_blob FROM security_ingest_candidate WHERE source_path='app.go'",
+        &[],
+    ).unwrap();
+    assert_eq!(stored[0][0].as_deref(), Some(source.blob.as_str()));
+    parsed(f.ing("semgrep", true));
 }
 #[test]
 fn codeql_flow_steps_are_source_bound_and_sql_mutations_refused() {

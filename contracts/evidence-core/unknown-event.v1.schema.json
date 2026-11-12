@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/unknown-event.v1.schema.json",
+  "title": "Excession immutable evidence uncertainty event v1",
+  "description": "Persisted append-only event. JSON Schema checks shape; Rust and SQLite enforce receipt membership, chain validity and transition semantics. A resolution proposal is never an attestation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "unknown_id",
+    "snapshot_id",
+    "question",
+    "revision",
+    "previous_event_id",
+    "action",
+    "state",
+    "support_receipt_ids",
+    "counterevidence_receipt_ids",
+    "resolution_receipt_id",
+    "semantic_verification",
+    "event_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.evidence-unknown-event.v1"
+    },
+    "unknown_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 128
+    },
+    "previous_event_id": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha256"
+        }
+      ]
+    },
+    "action": {
+      "enum": [
+        "CREATE",
+        "ADD_EVIDENCE",
+        "PROPOSE_RESOLUTION",
+        "REOPEN"
+      ]
+    },
+    "state": {
+      "enum": [
+        "OPEN",
+        "RESOLUTION_REPORTED_NOT_VERIFIED"
+      ]
+    },
+    "support_receipt_ids": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "counterevidence_receipt_ids": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/sha256"
+      }
+    },
+    "resolution_receipt_id": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha256"
+        }
+      ]
+    },
+    "semantic_verification": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "event_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "CREATE"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "properties": {
+          "revision": {
+            "const": 1
+          },
+          "previous_event_id": {
+            "type": "null"
+          },
+          "resolution_receipt_id": {
+            "type": "null"
+          },
+          "state": {
+            "const": "OPEN"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "PROPOSE_RESOLUTION"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "properties": {
+          "resolution_receipt_id": {
+            "$ref": "#/$defs/sha256"
+          },
+          "state": {
+            "const": "RESOLUTION_REPORTED_NOT_VERIFIED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "ADD_EVIDENCE",
+              "REOPEN"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "properties": {
+          "resolution_receipt_id": {
+            "type": "null"
+          },
+          "state": {
+            "const": "OPEN"
+          }
+        }
+      }
+    }
+  ]
+}

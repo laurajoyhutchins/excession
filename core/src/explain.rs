@@ -115,12 +115,10 @@ pub fn audit(
         ("git_authentication", Value::string("PASS")),
         ("replay", Value::string("PASS")),
         ("semantic_correctness", Value::string("NOT_EVALUATED")),
-        // This is a content-addressed explanation, not oracle evidence.
-        ("explanation_report_id", explanation.get("report_id")?.clone()),
     ]);
-    // The published v1 schema is strict. This association will be in v2 when
-    // an audit can reference report IDs explicitly; do not assert a new field.
-    result.entries_mut()?.remove("explanation_report_id");
+    // Replaying the source authenticates the supported observation path,
+    // but independent semantic truth remains deliberately unassessed.
+    let _ = explanation.get("report_id")?;
     let id = result.sha256();
     result.entries_mut()?.insert("report_id".into(), Value::string(id));
     Ok(result)

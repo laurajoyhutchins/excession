@@ -26,8 +26,8 @@ const COMPILER: &str = "excession.llm-ontology-authoring.v1";
 fn validate_draft(draft: &Value, batch: &Value) -> Result<()> {
     let schema: serde_json::Value =
         serde_json::from_str(SCHEMA).map_err(|e| format!("ontology proposal schema: {e}"))?;
-    let instance: serde_json::Value =
-        serde_json::from_str(&draft.canonical()).map_err(|e| format!("ontology draft JSON: {e}"))?;
+    let instance: serde_json::Value = serde_json::from_str(&draft.canonical())
+        .map_err(|e| format!("ontology draft JSON: {e}"))?;
     let validator = jsonschema::draft202012::new(&schema)
         .map_err(|e| format!("compile ontology proposal schema: {e}"))?;
     if let Err(e) = validator.validate(&instance) {
@@ -39,14 +39,18 @@ fn validate_draft(draft: &Value, batch: &Value) -> Result<()> {
         ("batch_id", "batch_id"),
     ] {
         if draft.get(draft_key)? != batch.get(batch_key)? {
-            return refuse(format!("ontology proposal does not match pinned {draft_key}"));
+            return refuse(format!(
+                "ontology proposal does not match pinned {draft_key}"
+            ));
         }
     }
     Ok(())
 }
 
 pub fn read_draft(path: &Path) -> Result<Value> {
-    if std::fs::metadata(path).map_err(|e| format!("ontology draft metadata: {e}"))?.len()
+    if std::fs::metadata(path)
+        .map_err(|e| format!("ontology draft metadata: {e}"))?
+        .len()
         > MAX_DRAFT_BYTES
     {
         return refuse("ontology proposal exceeds 256 KiB");
@@ -90,11 +94,16 @@ fn observations(batch: &Value) -> Result<Observations<'_>> {
         return refuse("LLM proposal requires exactly one source-bound SCIP index receipt");
     }
     let receipt = inputs[0].get("receipt_id")?.str()?.to_owned();
-    let by_subject = batch.get("subjects")?.array_ref()?.iter()
-        .map(|s| Ok((
-            s.get("subject_id")?.str()?.to_owned(),
-            s.get("path")?.str()?.to_owned()
-        )))
+    let by_subject = batch
+        .get("subjects")?
+        .array_ref()?
+        .iter()
+        .map(|s| {
+            Ok((
+                s.get("subject_id")?.str()?.to_owned(),
+                s.get("path")?.str()?.to_owned(),
+            ))
+        })
         .collect::<Result<BTreeMap<_, _>>>()?;
     let mut by_id = BTreeMap::new();
     for obs in batch.get("observations")?.array_ref()? {
@@ -110,36 +119,56 @@ fn observations(batch: &Value) -> Result<Observations<'_>> {
             return refuse("duplicate native observation ID");
         }
     }
-    Ok(Observations { by_id, by_subject, receipt })
+    Ok(Observations {
+        by_id,
+        by_subject,
+        receipt,
+    })
 }
 
 fn endpoints<'a>(obs: &Value, evidence: &'a Observations<'_>) -> Result<(&'a str, &'a str)> {
-    let source = evidence.by_subject.get(obs.get("source_subject_id")?.str()?)
+    let source = evidence
+        .by_subject
+        .get(obs.get("source_subject_id")?.str()?)
         .ok_or("observed reference has unknown source")?;
-    let target = evidence.by_subject.get(obs.get("target_subject_id")?.str()?)
+    let target = evidence
+        .by_subject
+        .get(obs.get("target_subject_id")?.str()?)
         .ok_or("observed reference has unknown target")?;
     Ok((source, target))
 }
 
-fn support(ids: &[Value], evidence: &Observations<'_>, subject_paths: &[&str]) -> Result<Vec<Value>> {
+fn support(
+    ids: &[Value],
+    evidence: &Observations<'_>,
+    subject_paths: &[&str],
+) -> Result<Vec<Value>> {
     let mut result = BTreeMap::new();
     for raw in ids {
         let id = raw.str()?;
-        let obs = evidence.by_id.get(id)
+        let obs = evidence
+            .by_id
+            .get(id)
             .ok_or("ontology proposal cites absent SCIP observation")?;
         let (source, target) = endpoints(obs, evidence)?;
-        if !subject_paths.iter().all(|path| source == *path || target == *path) {
+        if !subject_paths
+            .iter()
+            .all(|path| source == *path || target == *path)
+        {
             return refuse("ontology evidence does not touch each asserted source");
         }
         // Use original native reference identity for compatibility with
         // existing SCIP claim support and its receipt replay.
         let native_id = obs.get("source_observation_id")?.str()?;
-        result.insert(native_id.to_owned(), obj(&[
-            ("receipt_id", Value::string(&evidence.receipt)),
-            ("observation_id", Value::string(native_id)),
-            ("role", Value::string("SUPPORTS")),
-            ("observation_kind", Value::string("SCIP_REFERENCE")),
-        ]));
+        result.insert(
+            native_id.to_owned(),
+            obj(&[
+                ("receipt_id", Value::string(&evidence.receipt)),
+                ("observation_id", Value::string(native_id)),
+                ("role", Value::string("SUPPORTS")),
+                ("observation_kind", Value::string("SCIP_REFERENCE")),
+            ]),
+        );
     }
     if result.is_empty() {
         return refuse("each proposed claim needs named source evidence");
@@ -156,14 +185,19 @@ fn claim(
 ) -> Result<Value> {
     let mut fields = obj(&[
         ("predicate", Value::string(predicate)),
-        ("subjects", Value::array(subject_ids.into_iter().map(Value::string))),
+        (
+            "subjects",
+            Value::array(subject_ids.into_iter().map(Value::string)),
+        ),
         ("support", Value::array(supports)),
         ("assessment", Value::string("PROPOSED")),
         ("behavioral_verification", Value::string("UNTESTED")),
         ("rationale", Value::string(rationale)),
     ]);
     if let Some(id) = concept_id {
-        fields.entries_mut()?.insert("concept_id".into(), Value::string(id));
+        fields
+            .entries_mut()?
+            .insert("concept_id".into(), Value::string(id));
     }
     concepts::seal(fields, "claim_id")
 }
@@ -180,7 +214,9 @@ fn coverage(batch: &Value, receipt: &str) -> Result<Value> {
         };
         let mut entry = obj(&[("reason", Value::string(kind))]);
         if let Ok(path) = gap.get("source_path") {
-            entry.entries_mut()?.insert("source_path".into(), path.clone());
+            entry
+                .entries_mut()?
+                .insert("source_path".into(), path.clone());
         }
         gaps.push(entry);
     }
@@ -189,7 +225,10 @@ fn coverage(batch: &Value, receipt: &str) -> Result<Value> {
     }
     Ok(obj(&[
         ("status", Value::string("PARTIAL")),
-        ("producer_receipts", Value::array(vec![Value::string(receipt)])),
+        (
+            "producer_receipts",
+            Value::array(vec![Value::string(receipt)]),
+        ),
         ("gaps", Value::array(gaps)),
     ]))
 }
@@ -213,9 +252,7 @@ pub fn model(batch: &Value, draft: &Value) -> Result<Value> {
         if !used_keys.insert(key.to_owned()) {
             return refuse("duplicate ontology concept key");
         }
-        let id = digest::sha256(
-            format!("excession.llm-concept.v1\0{batch_id}\0{key}").as_bytes()
-        );
+        let id = digest::sha256(format!("excession.llm-concept.v1\0{batch_id}\0{key}").as_bytes());
         let mut members = Vec::new();
         let mut member_paths = BTreeSet::new();
         for member in proposed.get("members")?.array_ref()? {
@@ -223,41 +260,54 @@ pub fn model(batch: &Value, draft: &Value) -> Result<Value> {
             if !member_paths.insert(path.to_owned()) {
                 return refuse("repeated member path in one ontology concept");
             }
-            let subject = file_map.get(path)
+            let subject = file_map
+                .get(path)
                 .ok_or("ontology member is not an indexed source file")?;
             selected.insert(path.to_owned(), subject.clone());
             let member_id = subject.get("subject_id")?.str()?.to_owned();
-            let evidence = support(
-                member.get("observations")?.array_ref()?, &refs, &[path]
-            )?;
+            let evidence = support(member.get("observations")?.array_ref()?, &refs, &[path])?;
             let item = claim(
-                "REALIZES_CONCEPT", vec![member_id],
-                Some(&id), evidence, proposed.get("rationale")?.str()?
+                "REALIZES_CONCEPT",
+                vec![member_id],
+                Some(&id),
+                evidence,
+                proposed.get("rationale")?.str()?,
             )?;
             members.push(item.get("claim_id")?.clone());
             claims.insert(item.get("claim_id")?.str()?.to_owned(), item);
         }
         members.sort_by_key(Value::canonical);
-        let aliases = proposed.get("aliases").ok()
+        let aliases = proposed
+            .get("aliases")
+            .ok()
             .map(Value::array_ref)
             .transpose()?
             .unwrap_or(&[]);
-        let concept = concepts::seal(obj(&[
-            ("concept_id", Value::string(id)),
-            ("name", proposed.get("name")?.clone()),
-            ("definition", proposed.get("definition")?.clone()),
-            ("rationale", proposed.get("rationale")?.clone()),
-            ("aliases", Value::array(aliases.to_vec())),
-            ("membership_claims", Value::array(members)),
-            ("review_status", Value::string("UNREVIEWED")),
-            ("origin", Value::string("LLM_PROPOSAL")),
-            ("author_label", Value::string(author)),
-        ]), "revision_id")?;
+        let concept = concepts::seal(
+            obj(&[
+                ("concept_id", Value::string(id)),
+                ("name", proposed.get("name")?.clone()),
+                ("definition", proposed.get("definition")?.clone()),
+                ("rationale", proposed.get("rationale")?.clone()),
+                ("aliases", Value::array(aliases.to_vec())),
+                ("membership_claims", Value::array(members)),
+                ("review_status", Value::string("UNREVIEWED")),
+                ("origin", Value::string("LLM_PROPOSAL")),
+                ("author_label", Value::string(author)),
+            ]),
+            "revision_id",
+        )?;
         definitions.push(concept);
     }
 
     let mut relation_keys = BTreeSet::new();
-    for relation in draft.get("relations").ok().map(Value::array_ref).transpose()?.unwrap_or(&[]) {
+    for relation in draft
+        .get("relations")
+        .ok()
+        .map(Value::array_ref)
+        .transpose()?
+        .unwrap_or(&[])
+    {
         let paths = relation.get("paths")?.array_ref()?;
         let a = paths[0].str()?;
         let b = paths[1].str()?;
@@ -267,56 +317,82 @@ pub fn model(batch: &Value, draft: &Value) -> Result<Value> {
         let mut ordered = [a, b];
         ordered.sort();
         let predicate = relation.get("predicate")?.str()?;
-        if !relation_keys.insert((predicate.to_owned(), ordered[0].to_owned(), ordered[1].to_owned())) {
+        if !relation_keys.insert((
+            predicate.to_owned(),
+            ordered[0].to_owned(),
+            ordered[1].to_owned(),
+        )) {
             return refuse("duplicate ontology relation");
         }
-        let left = file_map.get(a).ok_or("ontology relation source not in SCIP index")?;
-        let right = file_map.get(b).ok_or("ontology relation target not in SCIP index")?;
+        let left = file_map
+            .get(a)
+            .ok_or("ontology relation source not in SCIP index")?;
+        let right = file_map
+            .get(b)
+            .ok_or("ontology relation target not in SCIP index")?;
         selected.insert(a.to_owned(), left.clone());
         selected.insert(b.to_owned(), right.clone());
-        let supports = support(
-            relation.get("observations")?.array_ref()?, &refs, &[a,b]
-        )?;
+        let supports = support(relation.get("observations")?.array_ref()?, &refs, &[a, b])?;
         let mut ids = vec![
             left.get("subject_id")?.str()?.to_owned(),
             right.get("subject_id")?.str()?.to_owned(),
         ];
         ids.sort();
-        let item = claim(predicate, ids, None, supports, relation.get("rationale")?.str()?)?;
+        let item = claim(
+            predicate,
+            ids,
+            None,
+            supports,
+            relation.get("rationale")?.str()?,
+        )?;
         claims.insert(item.get("claim_id")?.str()?.to_owned(), item);
     }
     definitions.sort_by_key(Value::canonical);
-    let result = concepts::seal(obj(&[
-        ("schema", Value::string("excession.concepts-model.v1")),
-        ("source_commit", batch.get("source_commit")?.clone()),
-        ("source_tree", batch.get("source_tree")?.clone()),
-        ("subjects", Value::array(selected.into_values())),
-        ("claims", Value::array(claims.into_values())),
-        ("concepts", Value::array(definitions)),
-        ("coverage", coverage(batch, &refs.receipt)?),
-    ]), "model_id")?;
+    let result = concepts::seal(
+        obj(&[
+            ("schema", Value::string("excession.concepts-model.v1")),
+            ("source_commit", batch.get("source_commit")?.clone()),
+            ("source_tree", batch.get("source_tree")?.clone()),
+            ("subjects", Value::array(selected.into_values())),
+            ("claims", Value::array(claims.into_values())),
+            ("concepts", Value::array(definitions)),
+            ("coverage", coverage(batch, &refs.receipt)?),
+        ]),
+        "model_id",
+    )?;
     concepts::validate_model(&result)?;
     Ok(result)
 }
 
 fn manifest(batch: &Value, draft: &Value, model: &Value) -> Result<Value> {
     let mut result = concepts_compile::manifest(batch, model)?;
-    result.entries_mut()?.insert("compiler_version".into(), Value::string(COMPILER));
+    result
+        .entries_mut()?
+        .insert("compiler_version".into(), Value::string(COMPILER));
     result.entries_mut()?.insert(
         "rule_set_id".into(),
         Value::string(digest::sha256(
-            format!("excession.llm-ontology-proposal.v1\0{}", draft.sha256()).as_bytes()
+            format!("excession.llm-ontology-proposal.v1\0{}", draft.sha256()).as_bytes(),
         )),
     );
     concepts::seal(result, "snapshot_id")
 }
 
-pub fn preview(repo: &Path, revision: &str, index: &Path, prefix: Option<&str>, draft: &Value) -> Result<Value> {
+pub fn preview(
+    repo: &Path,
+    revision: &str,
+    index: &Path,
+    prefix: Option<&str>,
+    draft: &Value,
+) -> Result<Value> {
     let batch = concepts_scip::normalize_index(repo, revision, index, prefix)?;
     let model = model(&batch, draft)?;
     let receipt = manifest(&batch, draft, &model)?;
     Ok(obj(&[
-        ("schema", Value::string("excession.concepts-ontology-preview.v1")),
+        (
+            "schema",
+            Value::string("excession.concepts-ontology-preview.v1"),
+        ),
         ("proposal_id", Value::string(draft.sha256())),
         ("model", model),
         ("snapshot", receipt),
@@ -325,22 +401,41 @@ pub fn preview(repo: &Path, revision: &str, index: &Path, prefix: Option<&str>, 
     ]))
 }
 
-pub fn publish(db: &Db, repo: &Path, revision: &str, index: &Path, prefix: Option<&str>, draft: &Value) -> Result<Value> {
+pub fn publish(
+    db: &Db,
+    repo: &Path,
+    revision: &str,
+    index: &Path,
+    prefix: Option<&str>,
+    draft: &Value,
+) -> Result<Value> {
     let evaluated = preview(repo, revision, index, prefix, draft)?;
     concepts_store::publish(db, evaluated.get("model")?, evaluated.get("snapshot")?)?;
     Ok(obj(&[
         ("proposal_id", evaluated.get("proposal_id")?.clone()),
         ("model_id", evaluated.get("model")?.get("model_id")?.clone()),
-        ("snapshot_id", evaluated.get("snapshot")?.get("snapshot_id")?.clone()),
+        (
+            "snapshot_id",
+            evaluated.get("snapshot")?.get("snapshot_id")?.clone(),
+        ),
         ("status", Value::string("PUBLISHED_UNREVIEWED")),
         ("verified_architectural_truth", Value::Bool(false)),
     ]))
 }
 
-pub fn audit(db: &Db, repo: &Path, revision: &str, index: &Path, prefix: Option<&str>, draft: &Value, snapshot: &str) -> Result<Value> {
+pub fn audit(
+    db: &Db,
+    repo: &Path,
+    revision: &str,
+    index: &Path,
+    prefix: Option<&str>,
+    draft: &Value,
+    snapshot: &str,
+) -> Result<Value> {
     let expected = preview(repo, revision, index, prefix, draft)?;
     let (model, saved) = concepts_store::audit(db, snapshot)?;
-    if expected.get("model")? != &model || expected.get("snapshot")? != &saved
+    if expected.get("model")? != &model
+        || expected.get("snapshot")? != &saved
         || expected.get("snapshot")?.get("snapshot_id")?.str()? != snapshot
     {
         return refuse("LLM ontology snapshot differs from replayed Git, SCIP and proposal");
@@ -355,8 +450,12 @@ pub fn audit(db: &Db, repo: &Path, revision: &str, index: &Path, prefix: Option<
 /// Give an LLM a bounded page of real source context and exact native
 /// observation IDs for its proposed memberships. Never imply exhaustive scope.
 pub fn context(
-    repo: &Path, revision: &str, index: &Path, prefix: Option<&str>,
-    path: &str, first_line: usize,
+    repo: &Path,
+    revision: &str,
+    index: &Path,
+    prefix: Option<&str>,
+    path: &str,
+    first_line: usize,
 ) -> Result<Value> {
     git::validate_path(path)?;
     if first_line == 0 {
@@ -364,7 +463,9 @@ pub fn context(
     }
     let batch = concepts_scip::normalize_index(repo, revision, index, prefix)?;
     let all = files(&batch)?;
-    let subject = all.get(path).ok_or("requested source path is not in SCIP index")?;
+    let subject = all
+        .get(path)
+        .ok_or("requested source path is not in SCIP index")?;
     let evidence = observations(&batch)?;
     let mut matched = Vec::new();
     let mut total = 0usize;
@@ -390,18 +491,29 @@ pub fn context(
     let mut reader = git::BlobReader::open(repo)?;
     let bytes = reader.read_capped(subject.get("blob")?.str()?, SOURCE_BYTES)?;
     reader.finish()?;
-    let text = std::str::from_utf8(&bytes)
-        .map_err(|_| "source context is not UTF-8 text")?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| "source context is not UTF-8 text")?;
     let total_lines = text.lines().count();
     let start = first_line.saturating_sub(1);
-    let lines = text.lines().enumerate().skip(start).take(MAX_SNIPPET_LINES)
-        .map(|(i, line)| obj(&[
-            ("line", Value::number(i+1)),
-            ("text", Value::string(line.chars().take(500).collect::<String>())),
-        ]))
+    let lines = text
+        .lines()
+        .enumerate()
+        .skip(start)
+        .take(MAX_SNIPPET_LINES)
+        .map(|(i, line)| {
+            obj(&[
+                ("line", Value::number(i + 1)),
+                (
+                    "text",
+                    Value::string(line.chars().take(500).collect::<String>()),
+                ),
+            ])
+        })
         .collect::<Vec<_>>();
     Ok(obj(&[
-        ("schema", Value::string("excession.concepts-ontology-context.v1")),
+        (
+            "schema",
+            Value::string("excession.concepts-ontology-context.v1"),
+        ),
         ("source_commit", batch.get("source_commit")?.clone()),
         ("source_tree", batch.get("source_tree")?.clone()),
         ("batch_id", batch.get("batch_id")?.clone()),
@@ -411,9 +523,17 @@ pub fn context(
         ("source_line_count", Value::number(total_lines)),
         ("observations", Value::array(matched)),
         ("matching_observation_count", Value::number(total)),
-        ("truncated_observations", Value::Bool(total > MAX_CONTEXT_OBSERVATIONS)),
+        (
+            "truncated_observations",
+            Value::Bool(total > MAX_CONTEXT_OBSERVATIONS),
+        ),
         ("coverage", Value::string("PARTIAL_NATIVE_INDEX_ONLY")),
-        ("instructions", Value::string("Propose names, definitions, source memberships and candidate relations using cited observation_id values. No returned relationship implies semantic correctness, code execution, or review.")),
+        (
+            "instructions",
+            Value::string(
+                "Propose names, definitions, source memberships and candidate relations using cited observation_id values. No returned relationship implies semantic correctness, code execution, or review.",
+            ),
+        ),
     ]))
 }
 
@@ -423,7 +543,10 @@ mod tests {
     #[test]
     fn rejects_missing_draft_fields() {
         let batch = obj(&[("source_commit", Value::string("a".repeat(40)))]);
-        let draft = obj(&[("schema", Value::string("excession.concepts-ontology-proposal.v1"))]);
+        let draft = obj(&[(
+            "schema",
+            Value::string("excession.concepts-ontology-proposal.v1"),
+        )]);
         assert!(validate_draft(&draft, &batch).is_err());
     }
 }

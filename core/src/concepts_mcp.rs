@@ -15,7 +15,8 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 const MAX_FRAME_BYTES: usize = 512 * 1024;
-const DRAFT_SCHEMA: &str = include_str!("../../contracts/concepts/ontology-proposal.v1.schema.json");
+const DRAFT_SCHEMA: &str =
+    include_str!("../../contracts/concepts/ontology-proposal.v1.schema.json");
 const QUERY_SCHEMA: &str = include_str!("../../contracts/concepts/query.v1.schema.json");
 
 pub struct Config {
@@ -91,10 +92,13 @@ fn specs(allow_publish: bool) -> Result<Value> {
 fn tool_result(value: Value) -> Value {
     let text = value.canonical();
     obj(&[
-        ("content", Value::array([obj(&[
-            ("type", Value::string("text")),
-            ("text", Value::string(text)),
-        ])])),
+        (
+            "content",
+            Value::array([obj(&[
+                ("type", Value::string("text")),
+                ("text", Value::string(text)),
+            ])]),
+        ),
         ("structuredContent", value),
         ("isError", Value::Bool(false)),
     ])
@@ -102,10 +106,13 @@ fn tool_result(value: Value) -> Value {
 
 fn tool_error(message: &str) -> Value {
     obj(&[
-        ("content", Value::array([obj(&[
-            ("type", Value::string("text")),
-            ("text", Value::string(message)),
-        ])])),
+        (
+            "content",
+            Value::array([obj(&[
+                ("type", Value::string("text")),
+                ("text", Value::string(message)),
+            ])]),
+        ),
         ("isError", Value::Bool(true)),
     ])
 }
@@ -118,16 +125,29 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
     let fields = args.entries()?;
     match name {
         "inspect_code_evidence" => {
-            if fields.keys().any(|key| !matches!(key.as_str(), "path" | "first_line")) {
+            if fields
+                .keys()
+                .any(|key| !matches!(key.as_str(), "path" | "first_line"))
+            {
                 return refuse("unexpected source context parameter");
             }
-            let line = args.get("first_line").ok().map(Value::integer).transpose()?
+            let line = args
+                .get("first_line")
+                .ok()
+                .map(Value::integer)
+                .transpose()?
                 .unwrap_or(1);
             if line < 1 || line > 1_000_000 {
                 return refuse("first_line must be 1..1000000");
             }
-            concepts_author::context(repo, revision, index, prefix,
-                args.get("path")?.str()?, usize::try_from(line).map_err(|e| e.to_string())?)
+            concepts_author::context(
+                repo,
+                revision,
+                index,
+                prefix,
+                args.get("path")?.str()?,
+                usize::try_from(line).map_err(|e| e.to_string())?,
+            )
         }
         "ontology_schema" => {
             if !fields.is_empty() {
@@ -136,8 +156,16 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
             Ok(obj(&[
                 ("proposal", json::parse(DRAFT_SCHEMA.as_bytes())?),
                 ("query", json::parse(QUERY_SCHEMA.as_bytes())?),
-                ("authorization", Value::string("UNVERIFIED_LLM_AUTHOR; no review authority")),
-                ("workflow", Value::string("Inspect code evidence, propose a grounded ontology, preview, optionally publish unreviewed, then audit and query.")),
+                (
+                    "authorization",
+                    Value::string("UNVERIFIED_LLM_AUTHOR; no review authority"),
+                ),
+                (
+                    "workflow",
+                    Value::string(
+                        "Inspect code evidence, propose a grounded ontology, preview, optionally publish unreviewed, then audit and query.",
+                    ),
+                ),
             ]))
         }
         "draft_ontology" => {
@@ -162,8 +190,13 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
             }
             let db = Db::open(&config.db)?;
             concepts_author::audit(
-                &db, repo, revision, index, prefix,
-                args.get("proposal")?, args.get("snapshot_id")?.str()?,
+                &db,
+                repo,
+                revision,
+                index,
+                prefix,
+                args.get("proposal")?,
+                args.get("snapshot_id")?.str()?,
             )
         }
         "query_ontology" => {
@@ -203,10 +236,13 @@ fn protocol_error(id: Value, code: i64, message: &str) -> Value {
     obj(&[
         ("jsonrpc", Value::string("2.0")),
         ("id", id),
-        ("error", obj(&[
-            ("code", Value::number(code)),
-            ("message", Value::string(message)),
-        ])),
+        (
+            "error",
+            obj(&[
+                ("code", Value::number(code)),
+                ("message", Value::string(message)),
+            ]),
+        ),
     ])
 }
 
@@ -218,19 +254,31 @@ fn request(input: &Value, config: &Config) -> Value {
         }
         let method = input.get("method")?.str()?;
         match method {
-            "initialize" => Ok(response(id.clone(), obj(&[
-                ("protocolVersion", Value::string("2025-06-18")),
-                ("capabilities", obj(&[("tools", obj(&[]))])),
-                ("serverInfo", obj(&[
-                    ("name", Value::string("excession-ontology")),
-                    ("version", Value::string(env!("CARGO_PKG_VERSION"))),
-                ])),
-                ("instructions", Value::string("You author ontology proposals. Only pinned SCIP/Git observations are evidence. All authored semantics are unreviewed and no tool certifies truth.")),
-            ]))),
+            "initialize" => Ok(response(
+                id.clone(),
+                obj(&[
+                    ("protocolVersion", Value::string("2025-06-18")),
+                    ("capabilities", obj(&[("tools", obj(&[]))])),
+                    (
+                        "serverInfo",
+                        obj(&[
+                            ("name", Value::string("excession-ontology")),
+                            ("version", Value::string(env!("CARGO_PKG_VERSION"))),
+                        ]),
+                    ),
+                    (
+                        "instructions",
+                        Value::string(
+                            "You author ontology proposals. Only pinned SCIP/Git observations are evidence. All authored semantics are unreviewed and no tool certifies truth.",
+                        ),
+                    ),
+                ]),
+            )),
             "ping" => Ok(response(id.clone(), obj(&[]))),
-            "tools/list" => Ok(response(id.clone(), obj(&[
-                ("tools", specs(config.allow_publish)?),
-            ]))),
+            "tools/list" => Ok(response(
+                id.clone(),
+                obj(&[("tools", specs(config.allow_publish)?)]),
+            )),
             "tools/call" => {
                 let params = input.get("params")?;
                 let name = params.get("name")?.str()?;
@@ -266,14 +314,19 @@ pub fn serve(config: &Config) -> Result<()> {
     let mut output = stdout.lock();
     loop {
         let mut line = String::new();
-        let bytes = input.read_line(&mut line)
+        let bytes = input
+            .read_line(&mut line)
             .map_err(|e| format!("MCP input read: {e}"))?;
         if bytes == 0 {
             return Ok(());
         }
         if bytes > MAX_FRAME_BYTES {
-            writeln!(output, "{}", protocol_error(Value::Null, -32600, "MCP input exceeds 512 KiB").canonical())
-                .map_err(|e| e.to_string())?;
+            writeln!(
+                output,
+                "{}",
+                protocol_error(Value::Null, -32600, "MCP input exceeds 512 KiB").canonical()
+            )
+            .map_err(|e| e.to_string())?;
             output.flush().map_err(|e| e.to_string())?;
             continue;
         }
@@ -288,7 +341,9 @@ pub fn serve(config: &Config) -> Result<()> {
             Err(message) => protocol_error(Value::Null, -32700, &message),
         };
         writeln!(output, "{}", result.canonical()).map_err(|e| format!("MCP output write: {e}"))?;
-        output.flush().map_err(|e| format!("MCP output flush: {e}"))?;
+        output
+            .flush()
+            .map_err(|e| format!("MCP output flush: {e}"))?;
     }
 }
 
@@ -316,30 +371,67 @@ mod tests {
     }
     #[test]
     fn mcp_initialize_and_tools_list_are_protocol_responses() {
-        let init = request(&obj(&[
-            ("jsonrpc", Value::string("2.0")),
-            ("id", Value::number(1)),
-            ("method", Value::string("initialize")),
-        ]), &config());
-        assert_eq!(init.get("result").unwrap().get("protocolVersion").unwrap().str().unwrap(), "2025-06-18");
-        let list = request(&obj(&[
-            ("jsonrpc", Value::string("2.0")),
-            ("id", Value::number(2)),
-            ("method", Value::string("tools/list")),
-        ]), &config());
-        assert_eq!(list.get("result").unwrap().get("tools").unwrap().array_ref().unwrap().len(), 6);
+        let init = request(
+            &obj(&[
+                ("jsonrpc", Value::string("2.0")),
+                ("id", Value::number(1)),
+                ("method", Value::string("initialize")),
+            ]),
+            &config(),
+        );
+        assert_eq!(
+            init.get("result")
+                .unwrap()
+                .get("protocolVersion")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "2025-06-18"
+        );
+        let list = request(
+            &obj(&[
+                ("jsonrpc", Value::string("2.0")),
+                ("id", Value::number(2)),
+                ("method", Value::string("tools/list")),
+            ]),
+            &config(),
+        );
+        assert_eq!(
+            list.get("result")
+                .unwrap()
+                .get("tools")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .len(),
+            6
+        );
     }
     #[test]
     fn untrusted_lm_cannot_publish_without_host_permission() {
-        let call = request(&obj(&[
-            ("jsonrpc", Value::string("2.0")),
-            ("id", Value::number(3)),
-            ("method", Value::string("tools/call")),
-            ("params", obj(&[
-                ("name", Value::string("publish_ontology")),
-                ("arguments", obj(&[("proposal", obj(&[]))])),
-            ])),
-        ]), &config());
-        assert_eq!(call.get("result").unwrap().get("isError").unwrap().bool().unwrap(), true);
+        let call = request(
+            &obj(&[
+                ("jsonrpc", Value::string("2.0")),
+                ("id", Value::number(3)),
+                ("method", Value::string("tools/call")),
+                (
+                    "params",
+                    obj(&[
+                        ("name", Value::string("publish_ontology")),
+                        ("arguments", obj(&[("proposal", obj(&[]))])),
+                    ]),
+                ),
+            ]),
+            &config(),
+        );
+        assert_eq!(
+            call.get("result")
+                .unwrap()
+                .get("isError")
+                .unwrap()
+                .bool()
+                .unwrap(),
+            true
+        );
     }
 }

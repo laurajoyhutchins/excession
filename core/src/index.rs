@@ -253,13 +253,20 @@ fn record_object(db: &Db, repo_id: i64, oid: &str, kind: &str) -> Result<()> {
 }
 
 pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
-    if path.contains("/node_modules/") {
+    if path
+        .split('/')
+        .any(|part| matches!(part, "node_modules" | ".venv"))
+    {
         return None;
     }
     for &root in roots {
-        let prefix = format!("{}/", root.trim_end_matches('/').replace('.', "/"));
-        if !path.starts_with(&prefix) {
-            continue;
+        // "." is an explicit whole-repository root. It supports tracked
+        // top-level modules without inventing a path prefix.
+        if root != "." {
+            let prefix = format!("{}/", root.trim_end_matches('/').replace('.', "/"));
+            if !path.starts_with(&prefix) {
+                continue;
+            }
         }
         let stem = if let Some(p) = path.strip_suffix(".py") {
             p.to_owned()
@@ -605,6 +612,14 @@ mod tree_tests {
 #[cfg(test)]
 mod import_base_tests {
     use super::*;
+
+    #[test]
+    fn whole_repository_root_includes_top_level_modules_but_not_dependencies() {
+        assert_eq!(module_name("app.py", &["."]).unwrap().0, "app");
+        assert_eq!(module_name("pkg/a.py", &["."]).unwrap().0, "pkg.a");
+        assert!(module_name("node_modules/tool.js", &["."]).is_none());
+        assert!(module_name(".venv/lib/tool.py", &["."]).is_none());
+    }
 
     #[test]
     fn git_paths_remain_distinct_from_python_import_names() {

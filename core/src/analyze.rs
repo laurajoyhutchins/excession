@@ -205,11 +205,7 @@ pub fn run_if_supported(
     let mut normalized_roots = roots;
     normalized_roots.sort();
     normalized_roots.dedup();
-    let languages = scoped_languages(
-        &discovered,
-        &normalized_roots,
-        explicit_roots.is_some(),
-    )?;
+    let languages = scoped_languages(&discovered, &normalized_roots, explicit_roots.is_some())?;
     let capabilities = doctor::report();
     let cap = capabilities.get("capabilities")?;
     for (lang, key) in [

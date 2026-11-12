@@ -3,7 +3,7 @@
 //! correctness. Repairs remain explicitly unverified until independent gates.
 use crate::json::{self, Value, obj};
 use crate::{Result, digest, git, refactor_rust_analyzer, refuse};
-use serde_json::{Value as Json, json};
+use serde_json::Value as Json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -453,6 +453,7 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     fn sample(code: &str, file: &str, line: usize, column: usize) -> Vec<u8> {
         serde_json::to_vec(&json!({
             "reason":"compiler-message",

@@ -101,20 +101,39 @@ fn independent_git_oracle_checks_exact_import_edges_and_changed_dependents() {
             b.get("blob").unwrap().str().unwrap(),
             run(&repo, "git", &["rev-parse", &format!("{base}:{target}")])
         );
-        assert!(relationship.get("evidence").unwrap().array_ref().unwrap().iter().all(
-            |observation| observation.get("assessment").unwrap().str().unwrap() == "CANDIDATE"
-        ));
+        assert!(
+            relationship
+                .get("evidence")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .iter()
+                .all(
+                    |observation| observation.get("assessment").unwrap().str().unwrap()
+                        == "CANDIDATE"
+                )
+        );
         actual.insert((path.to_owned(), target.to_owned()));
     }
-    assert_eq!(actual, expected, "the independently authored relationship set must match exactly");
+    assert_eq!(
+        actual, expected,
+        "the independently authored relationship set must match exactly"
+    );
     fs::write(repo.join("pkg/b.py"), "VALUE = 2\n").unwrap();
     let head = commit(&repo, "modify imported module");
     let impact = run(
         &repo,
         binary,
         &[
-            "impact", ".", "--base", &base, "--head", &head,
-            "--db", cache.to_str().unwrap(), "--json",
+            "impact",
+            ".",
+            "--base",
+            &base,
+            "--head",
+            &head,
+            "--db",
+            cache.to_str().unwrap(),
+            "--json",
         ],
     );
     let reported = json::parse(impact.as_bytes()).unwrap();
@@ -125,8 +144,17 @@ fn independent_git_oracle_checks_exact_import_edges_and_changed_dependents() {
         .unwrap()
         .iter()
         .map(|e| {
-            assert_eq!(e.get("assessment").unwrap().str().unwrap(), "CANDIDATE_PATH");
-            e.get("entity").unwrap().get("path").unwrap().str().unwrap().to_owned()
+            assert_eq!(
+                e.get("assessment").unwrap().str().unwrap(),
+                "CANDIDATE_PATH"
+            );
+            e.get("entity")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap()
+                .to_owned()
         })
         .collect();
     assert_eq!(
@@ -135,5 +163,11 @@ fn independent_git_oracle_checks_exact_import_edges_and_changed_dependents() {
             .into_iter()
             .collect()
     );
-    assert!(!reported.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+    assert!(
+        !reported
+            .get("safe_to_skip_unlisted_tests")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
 }

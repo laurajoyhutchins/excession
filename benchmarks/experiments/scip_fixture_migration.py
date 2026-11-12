@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from real_fixtures import checkout
+from concepts_scip_oracle import reconcile
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLES = ROOT / "core/fixtures"
@@ -297,6 +298,37 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
                 or receipt["report_id"] != report["report_id"]):
             raise ValueError("SCIP Git binding, digest or replay receipt mismatch")
         finding = coverage(included, set(relative), report["coverage"])
+        concept_oracle = None
+        if args.concepts:
+            # Run the *same actual native index* through the semantic layer.
+            # The oracle separately reads official decoded occurrences and
+            # pinned Git, not Rust's graph, claims or observation normalizer.
+            stem = f"{name}-{language}"
+            def concepts(verb: str, *extra: object) -> dict:
+                payload = command([
+                    args.bin, "concepts", verb, "--repo", repo,
+                    "--rev", commit, "--index", output, *extra
+                ])
+                return json.loads(payload)
+            batch = concepts("scip-normalize")
+            model = concepts("scip-preview")
+            store = work / f"{stem}.concepts.sqlite"
+            manifest = concepts("scip-compile", "--db", store)
+            audit = concepts("scip-audit", "--db", store,
+                             "--snapshot", manifest["snapshot_id"])
+            if manifest != concepts("scip-compile", "--db", store):
+                raise ValueError("semantic SCIP snapshot replay is not idempotent")
+            concept_oracle = reconcile(
+                parsed, batch, model, manifest, audit, repo, commit, tree
+            )
+            artifacts = {
+                "batch": batch, "model": model, "snapshot": manifest,
+                "audit": audit, "oracle": concept_oracle,
+            }
+            for label, contents in artifacts.items():
+                (evidence / f"{stem}.concepts.{label}.json").write_text(
+                    json.dumps(contents, sort_keys=True, indent=2) + "\n"
+                )
         result["languages"].append({
             "language_family": language,
             "status": finding["status"],
@@ -307,6 +339,7 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             "evidence_origin": producer,
             "analysis_configuration": configuration,
             "coverage": finding,
+            "concepts": concept_oracle,
         })
     if not result["languages"]:
         result["status"] = "UNSUPPORTED"
@@ -343,6 +376,8 @@ def main() -> None:
     parser.add_argument("--historical", action="store_true")
     parser.add_argument("--trusted-local", action="store_true")
     parser.add_argument("--decoded-dir", type=Path)
+    parser.add_argument("--concepts", action="store_true",
+                        help="compile and independently reconcile source-bound semantic concepts")
     parser.add_argument("--scip", type=Path, default=Path("scip"))
     parser.add_argument("--python-indexer", type=Path, default=Path("scip-python"))
     parser.add_argument("--typescript-indexer", type=Path,
@@ -383,6 +418,17 @@ def main() -> None:
             print(f"{finding['name']}: {finding['status']}", flush=True)
     observed = independently_replayed_occurrences(results["fixtures"])
     results["source_bound_occurrences"] = observed
+    if args.concepts:
+        native_matches = sum(
+            (language.get("concepts") or {}).get("independent_native_reference_count", 0)
+            for fixture in results["fixtures"]
+            for language in fixture.get("languages", [])
+        )
+        results["independently_oracled_native_references"] = native_matches
+        # A zero-reference smoke would not demonstrate the semantic bridge.
+        if native_matches == 0:
+            invalid = True
+            results["diagnostic"] = "no independently validated SCIP cross-file reference"
     if observed == 0:
         invalid = True
         results["status"] = "NO_VALID_SCIP_OBSERVATIONS"

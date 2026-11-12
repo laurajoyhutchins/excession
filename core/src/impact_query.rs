@@ -115,8 +115,7 @@ fn observe(
     roots: Option<&str>,
     database: Option<&str>,
 ) -> Result<Option<Value>> {
-    Ok(analyze::run_if_supported(path, rev, roots, database)?
-        .map(|(report, _)| report))
+    Ok(analyze::run_if_supported(path, rev, roots, database)?.map(|(report, _)| report))
 }
 
 /// Investigate both revision graphs. A removed source is considered under the

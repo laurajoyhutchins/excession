@@ -9,7 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from compare_prospective_security import load_manifest, relevant  # noqa: E402
+from compare_prospective_security import load_manifest, relevant, aggregate, _scan_failure  # noqa: E402
 
 
 class ProspectiveSecurityTests(unittest.TestCase):
@@ -73,6 +73,35 @@ class ProspectiveSecurityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             relevant({"results": [], "errors": [{"message": "timeout"}]},
                      {"weakness": "CWE-78", "file": "git/cmd.py"})
+
+    def test_archived_parse_error_retains_independent_oracle(self):
+        import json
+        c = next(x for x in self.manifest["cases"]
+                 if x["id"] == "tornado-protocol-relative-redirect")
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / ("prospective-" + c["id"]) / "patched"
+            p.mkdir(parents=True)
+            (p / "metadata.json").write_text(json.dumps({
+                "case": c["id"], "phase": "patched",
+                "source_commit": c["patched"]["commit"],
+                "source_blob": c["patched"]["blob"],
+            }))
+            (p / "oracle.json").write_text(json.dumps({
+                "status": "OBSERVED_EXPECTED",
+                "source_commit": c["patched"]["commit"],
+                "source_blob": c["patched"]["blob"],
+            }))
+            (p / "semgrep.json").write_text(json.dumps({
+                "results": [], "errors": [{
+                    "type": "Syntax error", "message": "unexpected token"
+                }]
+            }))
+            self.assertEqual(_scan_failure(p)[0], "SCANNER_ERROR")
+            result = aggregate(self.manifest, Path(tmp))
+            record = next(x for x in result["cases"] if x["case"] == c["id"])
+            self.assertEqual(record["patched"]["scan_status"], "SCANNER_ERROR")
+            self.assertEqual(record["patched"]["oracle"], "OBSERVED_EXPECTED")
+            self.assertIn("unexpected token", record["patched"]["error"])
 
 
 if __name__ == "__main__":

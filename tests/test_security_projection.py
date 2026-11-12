@@ -57,7 +57,7 @@ def case(engine: str = "semgrep", findings: bool = True):
     report_hash = sha(raw)
     run_id = sha(f"relgit-security-v1\0{source_commit}\0{report_hash}\0{engine}".encode())
     evidence = canonical(original)
-    logical_key = sha(f"{engine}\0{rule}\0src/app.py\04".encode())
+    logical_key = sha(f"{engine}\0{rule}\0src/app.py\0{4}".encode())
     candidate_id = sha(f"{logical_key}\0{blob}\0{evidence}".encode())
     with sqlite3.connect(db_path) as db:
         db.executescript("""

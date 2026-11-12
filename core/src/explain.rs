@@ -9,7 +9,9 @@ use std::path::Path;
 const MAX_REPORT_BYTES: u64 = 64 * 1024 * 1024;
 
 fn supported_report(path: &Path) -> Result<Value> {
-    let len = fs::metadata(path).map_err(|e| format!("impact report: {e}"))?.len();
+    let len = fs::metadata(path)
+        .map_err(|e| format!("impact report: {e}"))?
+        .len();
     if len > MAX_REPORT_BYTES {
         return refuse("impact report exceeds 64 MiB input limit");
     }
@@ -22,7 +24,11 @@ fn supported_report(path: &Path) -> Result<Value> {
 }
 
 fn find_claim<'a>(report: &'a Value, id: &str) -> Result<&'a Value> {
-    if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+    if id.len() != 64
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
         return refuse("explanation claim ID requires a lowercase SHA-256 digest");
     }
     let mut found = None;
@@ -97,7 +103,8 @@ pub fn explain(
         ("coverage", report.get("coverage")?.clone()),
     ]);
     let report_id = out.sha256();
-    out.entries_mut()?.insert("report_id".into(), Value::string(report_id));
+    out.entries_mut()?
+        .insert("report_id".into(), Value::string(report_id));
     Ok(out)
 }
 
@@ -120,7 +127,9 @@ pub fn audit(
     // but independent semantic truth remains deliberately unassessed.
     let _ = explanation.get("report_id")?;
     let id = result.sha256();
-    result.entries_mut()?.insert("report_id".into(), Value::string(id));
+    result
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(id));
     Ok(result)
 }
 
@@ -162,10 +171,16 @@ mod tests {
             ("assessment", Value::string("CANDIDATE_PATH")),
         ]);
         let mut correct = effect.clone();
-        correct.entries_mut().unwrap().insert("claim_id".into(), Value::string(effect.sha256()));
+        correct
+            .entries_mut()
+            .unwrap()
+            .insert("claim_id".into(), Value::string(effect.sha256()));
         let report = obj(&[("effects", Value::array([correct.clone()]))]);
         assert!(find_claim(&report, &effect.sha256()).is_ok());
-        correct.entries_mut().unwrap().insert("claim_id".into(), Value::string("a".repeat(64)));
+        correct
+            .entries_mut()
+            .unwrap()
+            .insert("claim_id".into(), Value::string("a".repeat(64)));
         let poisoned = obj(&[("effects", Value::array([correct]))]);
         assert!(find_claim(&poisoned, &effect.sha256()).is_err());
     }

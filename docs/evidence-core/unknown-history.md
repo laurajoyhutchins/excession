@@ -42,3 +42,31 @@ This module supplies the native persistence primitive only. Public CLI
 integration, cross-snapshot reconciliation, independent producer attestations
 and predicate-specific verification are still unimplemented. Integrate them
 into existing query and agent interfaces; do not create an ontology service.
+
+## CLI workflow
+
+```sh
+# Snapshot must already exist in the canonical SQLite evidence store.
+excession evidence unknown-append --db /tmp/evidence.sqlite \
+  --snapshot SNAPSHOT_SHA256 --question "Which target can be called?" \
+  --expected 0 --action CREATE --support RECEIPT_SHA256
+
+# An operator may record an *unverified* proposal.
+excession evidence unknown-append --db /tmp/evidence.sqlite \
+  --snapshot SNAPSHOT_SHA256 --question "Which target can be called?" \
+  --expected 1 --action PROPOSE_RESOLUTION \
+  --support RECEIPT_SHA256 --resolution RECEIPT_SHA256
+
+# Replay the append-only history by the unknown_id returned above.
+excession inspect unknown-history --db /tmp/evidence.sqlite --id UNKNOWN_SHA256
+```
+
+`ADD_EVIDENCE` preserves prior receipts. `REOPEN` requires new
+counterevidence and a previous resolution proposal. Pass receipt IDs as a
+comma-separated `--support` or `--counter` list; each must belong to the
+same immutable snapshot. A write with a stale `--expected` revision refuses,
+and no CLI operation can promote a proposal to verified semantic truth.
+
+The CLI test exercises create, stale-write refusal, unsupported action
+refusal, proposed resolution, reopen, and complete canonical readback through
+the installed binary.

@@ -828,6 +828,43 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "evidence" && sub == "unknown-append" => {
+            let expected = opt
+                .get("expected")
+                .parse::<usize>()
+                .map_err(|_| "unknown expected revision must be an integer")?;
+            let action = excession::evidence::unknowns::Action::from_name(opt.get("action"))?;
+            let support = opt
+                .0
+                .get("support")
+                .map(|s| s.split(',').collect::<Vec<_>>())
+                .unwrap_or_default();
+            let counter = opt
+                .0
+                .get("counter")
+                .map(|s| s.split(',').collect::<Vec<_>>())
+                .unwrap_or_default();
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::evidence::unknowns::append(
+                &db,
+                &excession::evidence::unknowns::Event {
+                    snapshot_id: opt.get("snapshot"),
+                    question: opt.get("question"),
+                    expected_revision: expected,
+                    action,
+                    support_receipts: &support,
+                    counterevidence_receipts: &counter,
+                    resolution_receipt: opt.0.get("resolution").map(String::as_str),
+                },
+            )?))
+        }
+        [top, sub] if top == "inspect" && sub == "unknown-history" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::evidence::unknowns::audit(
+                &db,
+                opt.get("id"),
+            )?))
+        }
         [top, sub] if top == "inspect" && sub == "verify-observation" => {
             let db = Db::open(opt.path("db"))?;
             Ok(json(excession::evidence::claims::verify_scip_reference(

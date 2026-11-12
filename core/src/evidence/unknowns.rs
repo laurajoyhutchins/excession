@@ -27,7 +27,7 @@ impl Action {
             Self::Reopen => "REOPEN",
         }
     }
-    fn from_name(name: &str) -> Result<Self> {
+    pub fn from_name(name: &str) -> Result<Self> {
         match name {
             "CREATE" => Ok(Self::Create),
             "ADD_EVIDENCE" => Ok(Self::AddEvidence),

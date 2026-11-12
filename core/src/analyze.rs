@@ -191,7 +191,9 @@ pub fn run_if_supported(
             return refuse("at least one source root is required");
         }
         for root in &roots {
-            crate::git::validate_path(root)?;
+            if root != "." {
+                crate::git::validate_path(root)?;
+            }
         }
         roots
     } else {

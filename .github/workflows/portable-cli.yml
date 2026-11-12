@@ -57,20 +57,30 @@ jobs:
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib
       - name: Installed CLI test in independent checkout
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --test portability
-      - name: Build release executable
-        run: cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
+      # PRs smoke the same portable archive contract using the already-built
+      # debug profile; the expensive LTO release build remains on tags/manual.
+      - name: Build executable for archive smoke
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+            echo "EXCESSION_BIN=core/target/debug/${{ matrix.executable }}" >> "$GITHUB_ENV"
+          else
+            cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
+            echo "EXCESSION_BIN=core/target/release/${{ matrix.executable }}" >> "$GITHUB_ENV"
+          fi
       - name: Check dynamic libraries on Unix
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$RUNNER_OS" == Linux ]]; then
-            ! ldd core/target/release/excession | grep -E 'libsqlite3|libcrypto'
+            ! ldd "$EXCESSION_BIN" | grep -E 'libsqlite3|libcrypto'
           else
-            ! otool -L core/target/release/excession | grep -E 'libsqlite3|libcrypto'
+            ! otool -L "$EXCESSION_BIN" | grep -E 'libsqlite3|libcrypto'
           fi
       - name: Construct portable archive and SHA-256 manifest
-        run: python tools/package_release.py --binary core/target/release/${{ matrix.executable }} --output dist
+        run: python tools/package_release.py --binary "$EXCESSION_BIN" --output dist
       - name: Test extracted archive without repository-side dependencies
         run: python tools/test_portable_archive.py dist
       - name: Validate archive provenance manifest

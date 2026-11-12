@@ -54,11 +54,20 @@ fn source_layout(
         }
         let Some((root, _)) = entry.path.split_once('/') else {
             root_level += 1;
+            *languages.entry(language).or_insert(0usize) += 1;
             continue;
         };
         roots.insert(root.to_owned());
         included += 1;
         *languages.entry(language).or_insert(0usize) += 1;
+    }
+    if root_level > 0 {
+        // The module indexer can use "." to include both top-level files
+        // and nested modules. Reporting an exclusion here would be incorrect.
+        roots.clear();
+        roots.insert(".".to_owned());
+        included += root_level;
+        root_level = 0;
     }
     (roots.into_iter().collect(), included, root_level, languages)
 }
@@ -198,10 +207,10 @@ mod tests {
             entry("node_modules/a.js"),
             entry(".venv/lib/b.py"),
         ]);
-        assert_eq!(roots, ["examples", "lib", "tests"]);
-        assert_eq!(n, 3);
-        assert_eq!(root_level, 1);
-        assert_eq!(langs["python"], 2);
+        assert_eq!(roots, ["."]);
+        assert_eq!(n, 4);
+        assert_eq!(root_level, 0);
+        assert_eq!(langs["python"], 3);
         assert_eq!(langs["javascript"], 1);
     }
 

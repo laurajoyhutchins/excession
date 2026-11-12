@@ -58,10 +58,7 @@ fn python_catalog(
     roots.dedup();
     let catalog = obj(&[
         ("modules", Value::array(modules)),
-        (
-            "roots",
-            Value::array(roots.iter().map(Value::string)),
-        ),
+        ("roots", Value::array(roots.iter().map(Value::string))),
         ("import_base", Value::string(import_base.unwrap_or(""))),
     ]);
     digest::sha256(catalog.canonical().as_bytes())

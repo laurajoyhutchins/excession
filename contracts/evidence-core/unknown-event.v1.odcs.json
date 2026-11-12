@@ -1,0 +1,154 @@
+{
+  "version": "0.1.0",
+  "apiVersion": "v3.2.0",
+  "kind": "DataContract",
+  "id": "excession_evidence_core_f_unknowns_v1",
+  "name": "contracts: append-only unknowns and evidence-resolution event history",
+  "status": "active",
+  "domain": "source-analysis",
+  "description": {
+    "purpose": "Draft contract for evidence-core f-unknowns. Interchange definitions; not evidence of implemented Rust behavior.",
+    "limitations": "Schema conformity and ODCS metadata do not authenticate Git sources, analyzer correctness, execution, security validity or completeness."
+  },
+  "schema": [
+    {
+      "name": "f_unknowns",
+      "logicalType": "object",
+      "physicalType": "application/json",
+      "description": "Bounded, versioned evidence-core proposal",
+      "properties": [
+        {
+          "name": "schema",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "unknown_id",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "question",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "scope_commit",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "revision",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "expected_previous_revision",
+          "logicalType": "integer",
+          "required": true
+        },
+        {
+          "name": "state",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "support_receipts",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "counterevidence_receipts",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "required_evidence",
+          "logicalType": "array",
+          "required": true
+        },
+        {
+          "name": "action",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "resolution_receipt",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "event_semantics",
+          "logicalType": "string",
+          "required": true
+        }
+      ],
+      "quality": [
+        {
+          "name": "strict_json_schema",
+          "type": "text",
+          "dimension": "conformity",
+          "severity": "error",
+          "description": "Validate against contracts/evidence-core/unknown-event.v1.schema.json; no undeclared fields."
+        },
+        {
+          "name": "source_and_evidence_identity",
+          "type": "text",
+          "dimension": "consistency",
+          "severity": "error",
+          "description": "Recompute canonical IDs, referenced input digests and source identities in Rust; ODCS alone does not establish integrity."
+        },
+        {
+          "name": "independent_producer_acceptance",
+          "type": "text",
+          "dimension": "accuracy",
+          "severity": "error",
+          "description": "Independently audit exact evidence and producer-specific scope before trusting any claim."
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "jsonSchemaPath",
+      "value": "contracts/evidence-core/unknown-event.v1.schema.json"
+    },
+    {
+      "property": "implementationStatus",
+      "value": "CONTRACT_TDD_SCAFFOLD_ONLY"
+    },
+    {
+      "property": "sourceObjectFormat",
+      "value": "git-sha1-current"
+    }
+  ],
+  "team": {
+    "id": "excession_maintainers",
+    "name": "Excession maintainers",
+    "description": "Versioned contract maintenance"
+  },
+  "context": {
+    "instructions": "Never infer missing relationships as absence or convert self-hashed receipts into execution attestations. Feature acceptance needs independent Rust/native tests.",
+    "verifiedStatements": [
+      {
+        "id": "shape_only",
+        "question": "Does this metadata establish implementation?",
+        "answer": "No. It documents a proposed wire shape; real behavior is not yet implemented or independently verified."
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no_semantic_promotion",
+        "constraint": "Do not convert a candidate, generic graph edge or review event into a stronger claim than the producer supplied."
+      },
+      {
+        "id": "no_absence_inference",
+        "constraint": "Missing observations with incomplete coverage do not prove that relations are absent."
+      },
+      {
+        "id": "no_self_hash_attestation",
+        "constraint": "A self-consistent digest does not attest an independent tool execution or security impact."
+      }
+    ]
+  }
+}

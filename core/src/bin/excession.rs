@@ -828,6 +828,18 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "inspect" && sub == "verify-observation" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::evidence::claims::verify_scip_reference(
+                &db,
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.get("snapshot"),
+                opt.get("observation"),
+                opt.get("source"),
+                opt.get("predicate"),
+            )?))
+        }
         [top, sub] if top == "inspect" && sub == "scip-evidence" => {
             let db = Db::open(opt.path("db"))?;
             let focus = opt.0.get("focus").map(String::as_str);

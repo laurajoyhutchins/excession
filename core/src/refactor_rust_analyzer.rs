@@ -125,7 +125,7 @@ impl Server {
                     let status = self.process.try_wait().map_err(|e| e.to_string())?;
                     let mut stderr = String::new();
                     if status.is_some()
-                        && let Some(mut stream) = self.process.stderr.take()
+                        && let Some(stream) = self.process.stderr.take()
                     {
                         let _ = stream.take(8192).read_to_string(&mut stderr);
                     }

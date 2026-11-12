@@ -20,14 +20,18 @@ declared twice:
 | Runtime | Authoritative version file |
 | --- | --- |
 | Rust (including rustfmt and Clippy) | `rust-toolchain.toml` |
-| Python | `.python-version` |
+| Python (opt-in) | `.python-version` |
 | Node.js | `.node-version` |
 | Go, optional adapter | `.go-version` |
 
-Mise creates a local `.venv` for Python dependencies, installs the ordinary
-pinned `requirements/research.txt`, and runs `npm ci` with the existing
-integrity-checked `package-lock.json`. Cargo keeps its `core/Cargo.lock`;
-Rust build and test commands use `--offline --locked`.
+Default `mise install` and `mise run setup` need only Rust and Node, and
+`setup` runs `npm ci` with the integrity-checked `package-lock.json`.
+Python is optional for a Rust-only CLI installation and for the default
+setup. To run the independent Python oracles, install Python 3.13.5 using
+`.python-version`, then run `mise run setup-python` and
+`mise run check-full`. This is distinct from the ordinary `mise run check`.
+Cargo keeps its `core/Cargo.lock`; Rust build and test commands use
+`--offline --locked`.
 
 Optional Go tests: `mise run go-check`. Install the default syntax grammars
 with `mise run syntax-setup`, or every language covered by Excession's
@@ -89,9 +93,12 @@ hermetic OS image. Run `excession doctor --json` to inspect local capabilities.
 
 ## Test reports
 
-`make check` runs Rust format/Clippy/tests, Python integration checks, and
-the JavaScript adapter tests. For JUnit XML, install `cargo-nextest` 0.9.151
-and use `make junit` after `mise run setup`. Reports are written to
+`make check` runs Rust format/Clippy/tests and JavaScript adapter tests.
+`make check-full` additionally runs opt-in Python integration checks and
+independent oracles. The CI Verify workflow still runs both suites;
+optional Python dependencies are installed after the Rust/JS steps.
+For JUnit XML, install `cargo-nextest` 0.9.151 and use `make junit` after
+installing the Python test dependencies. Reports are written to
 `core/target/nextest/ci/junit.xml` and `test-results/python.xml`. CI keeps
 those artifacts on failure.
 

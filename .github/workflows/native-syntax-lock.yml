@@ -1,0 +1,27 @@
+name: Generate pinned offline native syntax dependency lock
+on:
+  pull_request:
+    paths:
+      - 'core/Cargo.toml'
+      - 'core/src/native_syntax.rs'
+      - '.github/workflows/native-syntax-lock.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm Rust toolchain
+        run: rustup show active-toolchain
+      - name: Resolve Rust dependency graph
+        run: cargo generate-lockfile --manifest-path core/Cargo.toml
+      - name: Verify native syntax compile
+        run: cargo check --locked --manifest-path core/Cargo.toml --lib
+      - name: Emit lock for same-head reproducibility
+        run: |
+          echo EXCESSION_CARGO_LOCK_BEGIN
+          cat core/Cargo.lock
+          echo EXCESSION_CARGO_LOCK_END

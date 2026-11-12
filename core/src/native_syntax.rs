@@ -79,6 +79,12 @@ fn structure_item(item: &StructureItem, depth: usize, budget: &mut usize) -> Res
     ]))
 }
 
+/// Check parser availability from the exact registry used by native scans.
+/// This never downloads and is also used by integration tests.
+pub fn has_parser(language: &str) -> bool {
+    REGISTRY.has_parser(language)
+}
+
 /// Exact response shape of the previous Python bridge, from the same language-pack
 /// upstream engine and grammar cache. Not a resolver or a source-coverage proof.
 pub fn parse(entries: &[Value]) -> Result<Value> {

@@ -41,7 +41,7 @@ fn identifier(value: &str) -> bool {
 
 /// Restrict the recipe to this exactly verified rust-analyzer move:
 ///
-///     pub fn f(...) { ... }  ->  mod name { pub fn f(...) { ... } }
+/// A `pub fn f(...)` is wrapped by `mod name { pub fn f(...) }`.
 ///
 /// Both the original declaration and its entire function body must be
 /// byte-identical after removing the provider's four-space indentation.

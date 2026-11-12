@@ -16,7 +16,10 @@ draft schema to public API without comparing it against the real CLI output.
 
 The prior `cli-result`, `acceptance-case`, `installed-smoke` and
 `onboarding-example` schemas are removed: these were proposed test-only
-representations rather than independent consumers of runtime JSON. The
+representations rather than independent consumers of runtime JSON.
+Three internal evidence-core ODCS catalogues and their skipped metadata-only
+tests are also removed; the source identity, snapshot and coverage JSON Schemas,
+Rust implementation and SQLite enforcement remain. The
 associated Python tests verified only fabricated fixture shapes and left their
 behavioral tests skipped.
 

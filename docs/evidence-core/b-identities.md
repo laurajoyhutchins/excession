@@ -8,7 +8,7 @@
 - `core/src/git.rs::entry_at`: exact Git tree-entry lookup, avoiding a whole-repository inventory on each source check.
 - `core/src/lib.rs`: exports `evidence::identity`.
 - `contracts/evidence-core/identity-receipt.v1.schema.json`: discriminated subject types and provenance requirements.
-- `tests/test_ec_b_identities.py` and `tests/test_ec_odcs_b_identities.py`: structural and ODCS tests.
+- `tests/test_ec_b_identities.py`: structural source/producer wire contract tests. The redundant internal ODCS catalogue and its metadata-only tests have been removed; Rust validates the identity invariants.
 
 ## Authority boundaries
 

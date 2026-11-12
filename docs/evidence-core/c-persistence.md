@@ -27,14 +27,12 @@ Binary/non-JSON evidence, independent artifact binding, predicate-specific verif
 ## Contracts
 
 - `contracts/evidence-core/persistence.v1.schema.json`: JSON Schema Draft 2020-12 for the manifest actually emitted by the Rust implementation.
-- `contracts/evidence-core/persistence.v1.odcs.json`: quality/limitations metadata; **not** an independent verification authority.
 - `tests/test_ec_c_persistence.py`: positive/negative structural contract tests.
-- `tests/test_ec_odcs_c_persistence.py`: pinned ODCS schema and dataset field alignment checks.
 - `core/src/evidence_store_tests.rs`: Rust idempotency, reopen, rollback and adversarial SQL tampering tests.
 
 ## Completion requirements
 
-1. Rust `cargo fmt --check`, unit and integration tests, and contract/ODCS suites pass against exact head.
+1. Rust `cargo fmt --check`, unit and integration tests, and the JSON wire-contract suite pass against exact head.
 2. Re-run a real native SCIP producer and independently authenticate the exact Git source and original producer receipts in #117/#89, then import that evidence using this store.
 3. Exercise source-change invalidation, fail-closed query and independent semantic/behavioral oracles without implying completeness.
 4. Preserve existing `semantic-observations.v1`, `evidence-query.v1` and concept/product report semantics. Keep the `excession research` entry point retired.

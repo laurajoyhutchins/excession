@@ -14,7 +14,7 @@ use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
     kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refactor_codegen,
-    refactor_rust_analyzer, refuse, scip_evidence, scip_refactor, security_ingest, syntax,
+    refactor_rust_analyzer, refactor_rust_repair, refuse, scip_evidence, scip_refactor, security_ingest, syntax,
     syntax_resolution, views,
 };
 use std::env;
@@ -705,6 +705,17 @@ fn execute(args: &[String]) -> Result<Response> {
                     output: opt.0.get("output").map(Path::new),
                 },
             )?))
+        }
+        [top, sub] if top == "refactor" && sub == "rust-repair" => {
+            Ok(json(refactor_rust_repair::repair(&refactor_rust_repair::Request {
+                repo: opt.path("repo"),
+                base: opt.get("base"),
+                plan: opt.path("plan"),
+                diagnostics: opt.path("diagnostics"),
+                source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                analyzer: Path::new(opt.get_or("rust-analyzer", "rust-analyzer")),
+                output: opt.0.get("output").map(Path::new),
+            })?))
         }
         [top, sub] if top == "refactor" && sub == "scip-ingest" => {
             let db = Db::open(opt.path("db"))?;

@@ -224,6 +224,12 @@ pub(super) fn command() -> Command {
                 &["rust-analyzer", "source-prefix", "action", "output"],
             )
             .about("Find or apply rust-analyzer refactoring code actions with Git/SCIP evidence"),
+            leaf(
+                "rust-repair",
+                &["repo", "base", "plan", "diagnostics"],
+                &["source-prefix", "rust-analyzer", "output"],
+            )
+            .about("Select an unambiguous native import repair from independent compiler diagnostics"),
         ],
         )
         .about("Source-bound refactoring hypotheses and guarded recipes");

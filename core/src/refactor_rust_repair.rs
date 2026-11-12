@@ -6,7 +6,7 @@ use crate::{Result, digest, git, refactor_rust_analyzer, refuse};
 use serde_json::{Value as Json, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const MAX_PLAN: usize = 2 * 1024 * 1024;
 const MAX_DIAGNOSTICS: usize = 4 * 1024 * 1024;

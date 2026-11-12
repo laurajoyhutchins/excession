@@ -274,13 +274,108 @@ def evaluate(directories: list[Path]) -> tuple[dict, dict]:
     return report, review
 
 
+def attach_measured_costs(report: dict, run_summaries: list[Path]) -> None:
+    """Record real per-process costs separately from unmeasured full-run costs.
+
+    These single Linux-run samples are not paired performance benchmarks.
+    Every staged process has its own GNU-time child max RSS; native compiler
+    (indexer) peak memory and complete end-to-end peak remain unmeasured.
+    """
+    mapped: dict[tuple[str, str], dict] = {}
+    for path in run_summaries:
+        summary = read(path)
+        if summary.get("schema") != "excession.scip-fixture-evidence.v2":
+            fail("unsupported native-run performance evidence")
+        for fixture in summary["fixtures"]:
+            if fixture["status"] == "INVALID":
+                fail("cannot benchmark a failed native fixture")
+            for language in fixture.get("languages", []):
+                key = (fixture["name"], language["language_family"])
+                if key in mapped:
+                    fail("duplicate measured fixture/language stage")
+                mapped[key] = {
+                    "source_commit": fixture["source_commit"],
+                    "source_tree": fixture["source_tree"],
+                    "index_sha256": language["index_sha256"],
+                    "execution_cost": language.get("execution_cost"),
+                }
+    measured_count = 0
+    cumulative_child_wall_ms = 0.0
+    peak_excession_child_rss_bytes = 0
+    source_generation_ms = 0.0
+    for fixture in report["fixtures"]:
+        stem = fixture["fixture"]
+        language = stem.rsplit("-", 1)[-1]
+        name = stem[:-(len(language) + 1)]
+        key = (name, language)
+        meta = mapped.get(key)
+        if meta is None:
+            fail(f"missing independently source-bound performance receipt: {stem}")
+        if (meta["source_commit"] != fixture["source_commit"] or
+                meta["source_tree"] != fixture["source_tree"]):
+            fail(f"performance evidence from another Git revision: {stem}")
+        cost = meta["execution_cost"]
+        if not isinstance(cost, dict) or cost.get("sample_count") != 1:
+            fail(f"not an actually measured process sample: {stem}")
+        stages = cost.get("per_process")
+        if not isinstance(stages, list) or not stages:
+            fail("measured cost requires individual process samples")
+        expected = {"baseline-suggest", "baseline-audit", "concept-scip-normalize",
+                    "concept-scip-preview", "concept-scip-compile",
+                    "concept-scip-audit"}
+        stages_seen = {s["stage"] for s in stages}
+        if not expected.issubset(stages_seen):
+            fail(f"missing measured baseline or semantic stage: {stem}")
+        for stage in stages:
+            if (stage["measurement"] != "GNU_TIME_LINUX_SINGLE_PROCESS" or
+                    not isinstance(stage["peak_rss_bytes"], int) or
+                    stage["peak_rss_bytes"] <= 0 or
+                    not isinstance(stage["wall_ms"], (int, float)) or
+                    stage["wall_ms"] < 0):
+                fail("malformed performance measurement")
+        total = round(sum(float(stage["wall_ms"]) for stage in stages), 3)
+        if abs(total - cost["total_excession_wall_ms"]) > 0.01:
+            fail("process runtimes do not reconcile with summary")
+        fixture["performance"] = {
+            "indexer_generation_wall_ms": cost["native_index_generation_wall_ms"],
+            "measured_cli_stage_wall_ms": total,
+            "measured_cli_child_peak_rss_bytes": max(
+                stage["peak_rss_bytes"] for stage in stages
+            ),
+            "per_process": stages,
+            "limitation": "Single-run process costs; no native indexer RSS, no paired variance estimates",
+        }
+        measured_count += 1
+        cumulative_child_wall_ms += total
+        peak_excession_child_rss_bytes = max(
+            peak_excession_child_rss_bytes,
+            fixture["performance"]["measured_cli_child_peak_rss_bytes"]
+        )
+        generation = cost["native_index_generation_wall_ms"]
+        if generation is not None:
+            source_generation_ms += generation
+    report["measured_performance"] = {
+        "language_fixture_samples": measured_count,
+        "sum_cli_process_wall_ms": round(cumulative_child_wall_ms, 3),
+        "max_cli_child_rss_bytes": peak_excession_child_rss_bytes,
+        "sum_native_indexer_wall_ms": round(source_generation_ms, 3),
+        "indexer_peak_rss_bytes": None,
+        "paired_baseline_cost_benefit": "NOT_ESTABLISHED",
+    }
+    report.pop("report_id")
+    report["report_id"] = digest(report)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-dir", required=True, type=Path, action="append")
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--review-packets", required=True, type=Path)
+    parser.add_argument("--run-summary", type=Path, action="append", default=[])
     args = parser.parse_args()
     report, review = evaluate(args.evidence_dir)
+    if args.run_summary:
+        attach_measured_costs(report, args.run_summary)
     args.out.write_bytes(canonical(report) + b"\n")
     args.review_packets.write_bytes(canonical(review) + b"\n")
     print(json.dumps(report["totals"], sort_keys=True))

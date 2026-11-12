@@ -191,6 +191,28 @@ pub fn suggest_with_prefix(
     input: &Path,
     source_prefix: Option<&str>,
 ) -> Result<Value> {
+    let bytes = std::fs::read(input).map_err(|e| format!("SCIP JSON read: {e}"))?;
+    analyze_bytes(repo, revision, &bytes, source_prefix, false)
+}
+
+/// Export all matched cross-file references, not only refactor candidates.
+/// The producer's partial scope and unresolved count remain visible.
+pub fn evidence_from_bytes(
+    repo: &Path,
+    revision: &str,
+    input: &[u8],
+    source_prefix: Option<&str>,
+) -> Result<Value> {
+    analyze_bytes(repo, revision, input, source_prefix, true)
+}
+
+fn analyze_bytes(
+    repo: &Path,
+    revision: &str,
+    bytes: &[u8],
+    source_prefix: Option<&str>,
+    include_references: bool,
+) -> Result<Value> {
     if let Some(prefix) = source_prefix {
         git::validate_path(prefix)?;
     }
@@ -200,11 +222,10 @@ pub fn suggest_with_prefix(
         return refuse("SCIP revision must be a commit");
     }
     let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
-    let bytes = std::fs::read(input).map_err(|e| format!("SCIP JSON read: {e}"))?;
     if bytes.len() > MAX_INDEX_BYTES {
         return refuse("SCIP JSON exceeds 16 MiB, narrow the source index");
     }
-    let parsed = json::parse(&bytes)?;
+    let parsed = json::parse(bytes)?;
     let metadata = parsed.get("metadata")?;
     if let Some(prefix) = source_prefix {
         let expected_root = format!(
@@ -417,7 +438,7 @@ pub fn suggest_with_prefix(
         ("status", Value::string("UNVERIFIED_SCIP_RELATIONS")),
         ("source_commit", Value::string(commit)),
         ("source_tree", Value::string(tree)),
-        ("index_sha256", Value::string(crate::digest::sha256(&bytes))),
+        ("index_sha256", Value::string(crate::digest::sha256(bytes))),
         (
             "indexer",
             obj(&[
@@ -454,6 +475,23 @@ pub fn suggest_with_prefix(
         ),
         ("candidates", Value::array(candidates)),
     ]);
+    if include_references {
+        // Preserve the exact native SCIP reference predicate. Neither this
+        // collection nor the indexer proves all possible references are known.
+        report.entries_mut()?.insert(
+            "schema".into(),
+            Value::string("excession.scip-observations.v1"),
+        );
+        report.entries_mut()?.insert(
+            "observations".into(),
+            Value::array(
+                matched
+                    .iter()
+                    .map(|item| reference(item, &documents))
+                    .collect::<Vec<_>>(),
+            ),
+        );
+    }
     let id = report.sha256();
     report
         .entries_mut()?

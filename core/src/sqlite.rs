@@ -108,8 +108,8 @@ impl Db {
         Ok(())
     }
 
-    pub fn transaction<T>(&self, f: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
-        self.exec("BEGIN IMMEDIATE")?;
+    fn run_transaction<T>(&self, begin: &str, f: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
+        self.exec(begin)?;
         match f(self) {
             Ok(value) => {
                 if let Err(error) = self.exec("COMMIT") {
@@ -123,6 +123,16 @@ impl Db {
                 Err(error)
             }
         }
+    }
+
+    pub fn transaction<T>(&self, f: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
+        self.run_transaction("BEGIN IMMEDIATE", f)
+    }
+
+    /// Read a consistent SQLite snapshot without acquiring a write reservation.
+    /// The first read pins the snapshot for the complete inspection/audit.
+    pub fn read_transaction<T>(&self, f: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
+        self.run_transaction("BEGIN", f)
     }
 }
 
@@ -179,6 +189,18 @@ mod tests {
                 db.transaction::<()>(|db| {
                     db.execute("INSERT INTO sample(id) VALUES (?)", &[Param::Integer(44)])?;
                     refuse("intentional rollback")
+                })
+                .is_err()
+            );
+            assert_eq!(
+                db.read_transaction(|db| db.scalar("SELECT count(*) FROM sample", &[]))
+                    .unwrap(),
+                "2"
+            );
+            assert!(
+                db.read_transaction::<()>(|db| {
+                    assert_eq!(db.scalar("SELECT count(*) FROM sample", &[])?, "2");
+                    refuse("intentional read-transaction rollback")
                 })
                 .is_err()
             );

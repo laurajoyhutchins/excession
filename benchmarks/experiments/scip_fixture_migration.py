@@ -204,6 +204,48 @@ def coverage(expected: set[str], documents: set[str],
     }
 
 
+def replay_stored_scip_evidence(bin_path: Path, source: Path, commit: str,
+                                decoded: Path, database: Path,
+                                expected_cross_file: int) -> dict:
+    """Import a real upstream index without rerunning it, then replay Git from
+    the *stored original bytes* and independently audit stored relationships.
+    A successful replay does not establish indexer semantic correctness.
+    """
+    imported = json.loads(command([
+        bin_path, "refactor", "scip-ingest", "--repo", source,
+        "--rev", commit, "--index", decoded, "--db", database,
+    ]))
+    snapshot_id = imported["snapshot_id"]
+    if (len(snapshot_id) != 64
+            or imported["source_commit"] != commit
+            or imported["matched_cross_file_references"] != expected_cross_file):
+        raise ValueError("SCIP persisted evidence identity or relation count mismatch")
+    inspected = json.loads(command([
+        bin_path, "inspect", "scip-evidence", "--db", database,
+        "--snapshot", snapshot_id,
+    ]))
+    replayed = json.loads(command([
+        bin_path, "refactor", "scip-store-audit", "--repo", source,
+        "--rev", commit, "--db", database, "--snapshot", snapshot_id,
+    ]))
+    if (inspected["source_commit"] != commit
+            or inspected["matched_observation_count"] != expected_cross_file
+            or inspected["absence_proven"]
+            or inspected["safe_to_skip_tests"]
+            or replayed["status"] != "REPLAYED_GIT_BOUND_SCIP_OBSERVATIONS"
+            or replayed["indexer_independently_executed"]
+            or replayed["symbol_semantics_independently_verified"]
+            or replayed["relationship_absence_proven"]):
+        raise ValueError("SCIP store query/replay contradicts its coverage or authority limits")
+    return {
+        "snapshot_id": snapshot_id,
+        "source_replay": replayed["status"],
+        "retained_cross_file_references": inspected["matched_observation_count"],
+        "indexer_semantics_verified": False,
+        "relationship_absence_proven": False,
+    }
+
+
 def verify_one(args: argparse.Namespace, case: dict, work: Path,
                evidence: Path) -> dict:
     name = case["name"]
@@ -297,6 +339,21 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
                 or receipt["report_id"] != report["report_id"]):
             raise ValueError("SCIP Git binding, digest or replay receipt mismatch")
         finding = coverage(included, set(relative), report["coverage"])
+        # A large upstream index is still valid SCIP; the present in-DB
+        # receipt implementation has a separate 4 MiB capacity bound.
+        # Report unsupported capacity instead of treating it as a clean index.
+        if len(decoded) <= 4 * 1024 * 1024:
+            stored = replay_stored_scip_evidence(
+                args.bin, repo, commit, output,
+                evidence / f"{name}-{language}.evidence.sqlite",
+                report["coverage"]["matched_cross_file_references"],
+            )
+        else:
+            stored = {
+                "status": "UNSUPPORTED_RECEIPT_CAPACITY",
+                "index_bytes": len(decoded),
+                "limit_bytes": 4 * 1024 * 1024,
+            }
         result["languages"].append({
             "language_family": language,
             "status": finding["status"],
@@ -307,6 +364,7 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             "evidence_origin": producer,
             "analysis_configuration": configuration,
             "coverage": finding,
+            "stored_evidence": stored,
         })
     if not result["languages"]:
         result["status"] = "UNSUPPORTED"
@@ -383,9 +441,32 @@ def main() -> None:
             print(f"{finding['name']}: {finding['status']}", flush=True)
     observed = independently_replayed_occurrences(results["fixtures"])
     results["source_bound_occurrences"] = observed
+    stored_real = sum(
+        entry["stored_evidence"]["retained_cross_file_references"]
+        for finding in results["fixtures"]
+        for entry in finding.get("languages", [])
+        if "retained_cross_file_references" in entry.get("stored_evidence", {})
+    )
+    results["persisted_source_bound_cross_file_references"] = stored_real
+    persisted = sum(
+        1 for finding in results["fixtures"]
+        for entry in finding.get("languages", [])
+        if "snapshot_id" in entry.get("stored_evidence", {})
+    )
+    results["persisted_source_bound_scip_snapshots"] = persisted
+    # A legitimate upstream index can have zero cross-file matches.
+    # Requiring a replayed original receipt tests the integration without
+    # incorrectly claiming a negative relationship conclusion.
+    if persisted == 0:
+        invalid = True
+        results["status"] = "NO_REPLAYED_SCIP_EVIDENCE_SNAPSHOTS"
     if observed == 0:
         invalid = True
         results["status"] = "NO_VALID_SCIP_OBSERVATIONS"
+    elif persisted == 0:
+        results["status"] = "NO_REPLAYED_SCIP_EVIDENCE_SNAPSHOTS"
+    elif stored_real == 0:
+        results["status"] = "SOURCE_BOUND_SCIP_OBSERVATIONS_WITH_UNRESOLVED_RELATIONS"
     else:
         results["status"] = "SOURCE_BOUND_SCIP_OBSERVATIONS"
     args.out.parent.mkdir(parents=True, exist_ok=True)

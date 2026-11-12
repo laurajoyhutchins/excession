@@ -82,8 +82,11 @@ class SecurityDiscoveryContractTests(unittest.TestCase):
         x["coverages"][0].update(claim="NOT_SCANNED", rule_ids=[], evidence_refs=[])
         x["coverages"][0]["target"]["language"] = "go"
         validate_bundle(x)
-        x["coverages"][0]["claim"] = "SCANNED_APPLICABLE"
-        with self.assertRaises(ValueError):
+        x["coverages"][0].update(
+            claim="SCANNED_APPLICABLE", rule_ids=["py/path-injection"],
+            evidence_refs=["query-pack:metadata/path-injection"],
+        )
+        with self.assertRaisesRegex(ValueError, "unscanned language"):
             validate_bundle(x)
 
     def test_excluded_path_cannot_be_claimed_covered(self):

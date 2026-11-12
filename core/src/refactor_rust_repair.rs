@@ -181,7 +181,9 @@ fn validate_chain(repo: &Path, revision: &str, plan: &Value, base: &str) -> Resu
         };
         let replay = refactor_codegen::replay_edits(&original, plan.get("edits")?, path)?;
         if replay.as_bytes() != body.as_slice() {
-            return refuse("original Git blobs and parent byte edits do not replay to the candidate");
+            return refuse(
+                "original Git blobs and parent byte edits do not replay to the candidate",
+            );
         }
     }
     if actual != expected {
@@ -329,7 +331,11 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
     let plan = json::parse(&plan_bytes)?;
     let prefix = request.source_prefix.unwrap_or("");
     scip_refactor::audit_with_prefix(
-        repo, &base, request.index, request.report, request.source_prefix,
+        repo,
+        &base,
+        request.index,
+        request.report,
+        request.source_prefix,
     )?;
     let report_bytes = fs::read(request.report).map_err(|e| format!("SCIP report: {e}"))?;
     let report = json::parse(&report_bytes)?;

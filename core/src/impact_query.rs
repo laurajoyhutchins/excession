@@ -66,13 +66,16 @@ fn walk(
     effects: &mut Vec<Value>,
 ) -> Result<bool> {
     for seed in changed {
-        let mut visited = BTreeSet::from([seed.to_owned()]);
-        let mut queue = VecDeque::from([(seed.to_owned(), Vec::<Value>::new())]);
-        while let Some((target, suffix)) = queue.pop_front() {
+        // An importer may depend on the changed module through more than one
+        // route. A global visited set loses distinct evidence chains in a
+        // diamond graph; only forbid cycles *within the current path*.
+        let visited = BTreeSet::from([seed.to_owned()]);
+        let mut queue = VecDeque::from([(seed.to_owned(), Vec::<Value>::new(), visited)]);
+        while let Some((target, suffix, visited)) = queue.pop_front() {
             if let Some(edges) = incoming.get(&target) {
                 for edge in edges {
                     let path = edge.get("source")?.get("path")?.str()?.to_owned();
-                    if !visited.insert(path.clone()) {
+                    if visited.contains(&path) {
                         continue;
                     }
                     if suffix.len() >= MAX_DEPTH {
@@ -95,7 +98,9 @@ fn walk(
                     if effects.len() >= MAX_EFFECTS {
                         return Ok(true);
                     }
-                    queue.push_back((path, hops));
+                    let mut next_visited = visited.clone();
+                    next_visited.insert(path.clone());
+                    queue.push_back((path, hops, next_visited));
                 }
             }
         }
@@ -115,15 +120,7 @@ fn observe(
     roots: Option<&str>,
     database: Option<&str>,
 ) -> Result<Option<Value>> {
-    match analyze::run(path, rev, roots, database) {
-        Ok((report, _)) => Ok(Some(report)),
-        Err(message)
-            if message.starts_with("no supported Python/JavaScript source directories") =>
-        {
-            Ok(None)
-        }
-        Err(message) => Err(message),
-    }
+    Ok(analyze::run_if_supported(path, rev, roots, database)?.map(|(report, _)| report))
 }
 
 /// Investigate both revision graphs. A removed source is considered under the
@@ -157,10 +154,10 @@ pub fn run(
         }
         let Some(report) = observe(path, revision, roots, database)? else {
             gaps.push(obj(&[
-                ("reason", Value::string("MISSING_ADAPTER")),
+                ("reason", Value::string("EXCLUDED_SCOPE")),
                 (
                     "detail",
-                    Value::string("no supported static module graph for selected revision"),
+                    Value::string("no supported static module roots in selected revision"),
                 ),
             ]));
             continue;
@@ -244,6 +241,57 @@ mod tests {
             ])]),
         )]);
         assert!(incoming(&report).is_err());
+    }
+
+    #[test]
+    fn preserves_independent_paths_through_a_diamond() {
+        let make_edge = |source: &str, target: &str| {
+            obj(&[
+                ("kind", Value::string("STATIC_IMPORT")),
+                ("source", obj(&[("path", Value::string(source))])),
+                ("target", obj(&[("path", Value::string(target))])),
+                (
+                    "evidence",
+                    Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])]),
+                ),
+            ])
+        };
+        let input = obj(&[(
+            "relationships",
+            Value::array([
+                make_edge("pkg/left.py", "pkg/changed.py"),
+                make_edge("pkg/right.py", "pkg/changed.py"),
+                make_edge("pkg/top.py", "pkg/left.py"),
+                make_edge("pkg/top.py", "pkg/right.py"),
+            ]),
+        )]);
+        let mut effects = Vec::new();
+        assert!(
+            !walk(
+                &incoming(&input).unwrap(),
+                &BTreeSet::from(["pkg/changed.py".to_owned()]),
+                &mut effects,
+            )
+            .unwrap()
+        );
+        let from_top = effects
+            .iter()
+            .filter(|effect| {
+                effect
+                    .get("entity")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+                    == "pkg/top.py"
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(from_top.len(), 2, "each distinct import path has evidence");
+        assert_ne!(
+            from_top[0].get("claim_id").unwrap(),
+            from_top[1].get("claim_id").unwrap()
+        );
     }
 
     #[test]

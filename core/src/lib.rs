@@ -28,6 +28,7 @@ pub mod identity;
 pub mod impact;
 pub mod impact_query;
 pub mod index;
+mod incremental_python;
 pub mod integration;
 pub mod json;
 pub mod kbuild_graph;

@@ -204,18 +204,19 @@ class ProductionPythonIncremental(unittest.TestCase):
         env = dict(os.environ, EXCESSION_PYTHON=str(wrapper))
         self.compare_fresh(head, 5, 0, env=env)
 
-    def test_completed_snapshot_refuses_derived_row_tamper(self):
-        self.analyze(self.base, self.incremental_db)
+    def test_same_revision_reanalysis_repairs_derived_row_tamper(self):
+        original = self.analyze(self.base, self.incremental_db)
         with sqlite3.connect(self.incremental_db) as con:
             con.execute(
                 "DELETE FROM dependency WHERE source_name='pkg.mid'"
             )
-        result = call(
-            BIN, "analyze", self.repo, "--rev", self.base, "--roots", "pkg",
-            "--db", self.incremental_db, "--json", check=False,
+            self.assertEqual(con.total_changes, 1)
+        # The refreshed main-branch architecture deliberately reruns the
+        # parser outside a write transaction on repeated same-revision calls.
+        self.assertEqual(
+            original, self.analyze(self.base, self.incremental_db)
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("stored Python index rows disagree", result.stderr)
+        self.assertEqual(len(recorded(self.incremental_db, self.base)["dependency"]), 2)
 
 
 if __name__ == "__main__":

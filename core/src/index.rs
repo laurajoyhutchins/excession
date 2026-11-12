@@ -116,7 +116,25 @@ fn index_revision_inner(
     }
     let tree = git::rev(root, &format!("{commit}^{{tree}}"))?;
     let entries = git::entries(root, &commit)?;
+    // Plan reuse and run language-native adapters before acquiring the writer
+    // lock. Only Git-authenticated completed Python observations may be carried.
     db.init_schema()?;
+    let python_plan = match semantics {
+        SemanticMode::GitOnly => None,
+        SemanticMode::Parse { import_base } => crate::incremental_python::plan(
+            db, root, name, &commit, &entries, roots, import_base,
+        )?,
+    };
+    let prepared = match semantics {
+        SemanticMode::GitOnly => None,
+        SemanticMode::Parse { import_base } => Some(crate::semantic::prepare_sources(
+            root,
+            &entries,
+            roots,
+            import_base,
+            python_plan.as_ref(),
+        )?),
+    };
 
     db.transaction(|db| {
         let repo_id = register_repository(db, root, name, provenance)?;
@@ -183,10 +201,25 @@ fn index_revision_inner(
                 "Git/SQLite tree mismatch: expected {tree}, got {reconstructed}"
             ));
         }
-        if matches!(semantics, SemanticMode::Parse { .. }) {
-            crate::semantic::index_sources(
-                db, repo_id, root, &commit, &entries, roots, import_base,
-            )?;
+        if let Some(prepared) = &prepared {
+            // The Git revision is immutable, but the analyzer implementation
+            // is not. Replacing derived rows on *every* analysis prevents
+            // obsolete imports, symbols and hazards surviving a parser fix.
+            // The only permitted reuse copies authenticated rows from the
+            // original relational store; no second cache authority is added.
+            for table in ["dependency", "symbol", "api_binding", "hazard"] {
+                db.execute(
+                    &format!("DELETE FROM {table} WHERE repo_id=? AND commit_oid=?"),
+                    &[Param::Integer(repo_id), Param::Text(&commit)],
+                )?;
+            }
+            if let Some(plan) = &python_plan {
+                crate::incremental_python::carry(db, root, repo_id, &commit, plan)?;
+            }
+            crate::semantic::index_prepared(db, repo_id, &commit, prepared)?;
+            if let Some(plan) = &python_plan {
+                crate::incremental_python::finish(db, repo_id, &commit, plan)?;
+            }
         }
         db.foreign_keys_valid()?;
         Ok(repo_id)
@@ -234,13 +267,20 @@ fn record_object(db: &Db, repo_id: i64, oid: &str, kind: &str) -> Result<()> {
 }
 
 pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
-    if path.contains("/node_modules/") {
+    if path
+        .split('/')
+        .any(|part| matches!(part, "node_modules" | ".venv"))
+    {
         return None;
     }
     for &root in roots {
-        let prefix = format!("{}/", root.trim_end_matches('/').replace('.', "/"));
-        if !path.starts_with(&prefix) {
-            continue;
+        // "." is an explicit whole-repository root. It supports tracked
+        // top-level modules without inventing a path prefix.
+        if root != "." {
+            let prefix = format!("{}/", root.trim_end_matches('/').replace('.', "/"));
+            if !path.starts_with(&prefix) {
+                continue;
+            }
         }
         let stem = if let Some(p) = path.strip_suffix(".py") {
             p.to_owned()
@@ -586,6 +626,14 @@ mod tree_tests {
 #[cfg(test)]
 mod import_base_tests {
     use super::*;
+
+    #[test]
+    fn whole_repository_root_includes_top_level_modules_but_not_dependencies() {
+        assert_eq!(module_name("app.py", &["."]).unwrap().0, "app");
+        assert_eq!(module_name("pkg/a.py", &["."]).unwrap().0, "pkg.a");
+        assert!(module_name("node_modules/tool.js", &["."]).is_none());
+        assert!(module_name(".venv/lib/tool.py", &["."]).is_none());
+    }
 
     #[test]
     fn git_paths_remain_distinct_from_python_import_names() {

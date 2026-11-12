@@ -105,15 +105,15 @@ run_assist() {
 }
 run_assist > "$TMP/assist-actions.json"
 jq -e '.status == "AVAILABLE_UNVERIFIED_ACTIONS" and
-  any(.actions[]; .title == "Extract module" and (.kind | startswith("refactor")))' \
+  any(.actions[]; .title == "Extract Module" and (.kind | startswith("refactor")))' \
   "$TMP/assist-actions.json"
-run_assist --action "Extract module" > "$TMP/assist-preview.json"
+run_assist --action "Extract Module" > "$TMP/assist-preview.json"
 jq -e '.status == "UNVERIFIED_CODE_ACTION_PREVIEW"
   and (.edits | length) > 0 and (.plan_id | length) == 64' \
   "$TMP/assist-preview.json"
 ASSIST_OUT="$TMP/assisted-candidate"
 test ! -e "$ASSIST_OUT"
-run_assist --action "Extract module" --output "$ASSIST_OUT" > "$TMP/assist-applied.json"
+run_assist --action "Extract Module" --output "$ASSIST_OUT" > "$TMP/assist-applied.json"
 jq -e --slurpfile preview "$TMP/assist-preview.json" '
   .status == "APPLIED_UNVERIFIED"
   and .plan_id == $preview[0].plan_id

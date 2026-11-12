@@ -169,3 +169,90 @@ fn analyze_one_command_reports_git_bound_candidates_and_honest_limits() {
     assert!(String::from_utf8_lossy(&help).contains("compile-db"));
     fs::remove_dir_all(temp).unwrap();
 }
+
+#[test]
+fn explicit_roots_only_require_their_own_language_adapter() {
+    let root = std::env::temp_dir().join(format!(
+        "excession-scoped-adapter-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let repo = root.join("repo");
+    fs::create_dir_all(repo.join("pkg")).unwrap();
+    fs::create_dir_all(repo.join("web")).unwrap();
+    cmd(&repo, "git", &["init", "-q"]);
+    fs::write(repo.join("pkg/__init__.py"), "").unwrap();
+    fs::write(repo.join("pkg/a.py"), "import pkg.b\n").unwrap();
+    fs::write(repo.join("pkg/b.py"), "VALUE = 1\n").unwrap();
+    fs::write(repo.join("web/app.js"), "export const answer = 42;\n").unwrap();
+    cmd(&repo, "git", &["add", "."]);
+    cmd(
+        &repo,
+        "git",
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "mixed-language fixture",
+        ],
+    );
+
+    let binary = env!("CARGO_BIN_EXE_excession");
+    let missing_node = root.join("missing-node-binary");
+    let scoped_db = root.join("scoped.sqlite");
+    let selected = Command::new(binary)
+        .current_dir(&repo)
+        .env("EXCESSION_NODE", &missing_node)
+        .args(["analyze", ".", "--roots", "pkg", "--db"])
+        .arg(&scoped_db)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        selected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&selected.stderr)
+    );
+    let report = json::parse(&selected.stdout).unwrap();
+    let relationships = report.get("relationships").unwrap().array_ref().unwrap();
+    assert!(relationships.iter().any(|edge| {
+        edge.get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap()
+            == "pkg/a.py"
+    }));
+    assert_eq!(
+        report
+            .get("coverage")
+            .unwrap()
+            .get("analyzed_sources")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        3
+    );
+
+    // Selecting JavaScript, or auto-discovering both languages, must still
+    // reject a genuinely missing Node adapter instead of silently skipping it.
+    for roots in [Some("web"), None] {
+        let mut command = Command::new(binary);
+        command
+            .current_dir(&repo)
+            .env("EXCESSION_NODE", &missing_node)
+            .args(["analyze", ".", "--db"])
+            .arg(root.join("unavailable.sqlite"));
+        if let Some(selected) = roots {
+            command.args(["--roots", selected]);
+        }
+        let out = command.output().unwrap();
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("javascript analyzer unavailable"));
+    }
+    fs::remove_dir_all(root).unwrap();
+}

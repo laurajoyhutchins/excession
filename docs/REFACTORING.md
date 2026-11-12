@@ -293,3 +293,64 @@ historical replay asserts this failure as an **unresolved verification
 obligation**, alongside the original ast-grep extraction's successful
 compile/test/reindex path. Excession will not promote either native action or
 compiler evidence into a guarantee of behavioral equivalence.
+
+## Compiler-diagnosed native import repair
+
+`excession refactor rust-repair` accepts a **clean, detached linked
+worktree** containing an exact committed candidate produced by
+`rust-assist`, plus `--source-repo` pointing to the clean original
+checkout at the base revision. The caller supplies the previous `APPLIED_UNVERIFIED`
+JSON plan, original Git base revision, independently re-audited original
+rust-analyzer SCIP index/report, and independently captured
+`cargo check --locked --offline --message-format=json` diagnostics.
+
+The command verifies that the candidate changes match the **exact generated
+SHA-256 of every file in the parent plan**, including the original Git blob
+identities and the complete base-to-candidate changed-file inventory.
+It recomputes the parent plan ID, replays the exact byte edits against
+the original Git blobs, and re-audits the SCIP report before selecting
+any repair. It
+accepts only compiler unresolved-name/import errors (E0432, E0425, E0433)
+with supported Rust source paths and unambiguous coordinates.
+
+For each bounded error location, Excession asks native rust-analyzer for
+code actions. It **automatically selects only if there is exactly one**
+provider-supplied `Import ...` quick fix with a supported workspace edit.
+No native action is invented or guessed. An absent or ambiguous candidate
+is returned as `NO_SUPPORTED_NATIVE_REPAIR` or
+`AMBIGUOUS_NATIVE_REPAIRS`; no source changes are made.
+
+Preview returns source-blob-anchored byte edits and a deterministic plan ID.
+Adding `--output /absolute/new/worktree` creates a **second detached
+worktree** at the committed candidate revision and applies only the
+validated native quick fix. The original candidate and the original source
+checkout remain unmodified. Excession never automatically invokes Cargo or
+runs an untrusted build script. External CI performs independent compilation.
+
+Example:
+
+```sh
+cargo check --locked --offline --message-format=json \
+  --manifest-path /candidate/core/Cargo.toml > /tmp/compiler.jsonl
+excession refactor rust-repair \
+  --repo /candidate --source-repo /original-clean-checkout \
+  --base <original-git-sha> \
+  --plan /tmp/rust-assist-applied.json \
+  --index /tmp/original.scip.json --report /tmp/original-report.json \
+  --diagnostics /tmp/compiler.jsonl \
+  --source-prefix core
+```
+
+The repair result **always remains unverified**. A compiler pass is an
+observation, not proof of preserved public API or behavior. Follow-up
+acceptance requires explicit public API compatibility checks, relevant
+regression tests, and a newly generated/audited SCIP index for the precise
+candidate commit. If no supported native quick fix exists, the correct
+behavior is to preserve that limitation rather than generate a speculative
+re-export or invent a Rust import.
+
+The original clean checkout is required because a SCIP index's
+`project_root` is a path-bound observation, not merely a set of Git blobs.
+The repair executor authenticates the SCIP report **there**, while replaying
+the generated candidate's exact Git blobs in its separate detached worktree.
+Both checkouts must share the same canonical Git common directory.

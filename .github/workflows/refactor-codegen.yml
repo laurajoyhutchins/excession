@@ -4,6 +4,7 @@ on:
     paths:
       - 'core/src/refactor_codegen.rs'
       - 'core/src/refactor_rust_analyzer.rs'
+      - 'core/src/refactor_rust_repair.rs'
       - 'core/src/agent.rs'
       - 'contracts/agent/**'
       - 'core/src/bin/excession.rs'
@@ -66,6 +67,11 @@ jobs:
             ${{ runner.temp }}/excession-codegen-test/assist-preview.json
             ${{ runner.temp }}/excession-codegen-test/assist-applied.json
             ${{ runner.temp }}/excession-codegen-test/assist-build.log
+            ${{ runner.temp }}/excession-codegen-test/assist-compiler.jsonl
+            ${{ runner.temp }}/excession-codegen-test/repair-preview.json
+            ${{ runner.temp }}/excession-codegen-test/repair-applied.json
+            ${{ runner.temp }}/excession-codegen-test/repair-compiler.jsonl
+            ${{ runner.temp }}/excession-codegen-test/repair-build.log
             ${{ runner.temp }}/excession-codegen-test/build.log
             ${{ runner.temp }}/excession-codegen-test/test.log
           if-no-files-found: warn

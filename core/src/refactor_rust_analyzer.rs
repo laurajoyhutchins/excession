@@ -232,13 +232,14 @@ fn action_allowed(action: &Json) -> bool {
         && (kind.starts_with("refactor") || (kind == "quickfix" && title.starts_with("Import ")))
 }
 
-fn request_actions(
+pub(crate) fn request_actions(
     analyzer: &Path,
     workspace: &Path,
     relative: &Path,
     source: &str,
     selection: [usize; 4],
     title: Option<&str>,
+    diagnostics: &[Json],
 ) -> Result<Vec<Json>> {
     let canonical = workspace.canonicalize().map_err(|e| e.to_string())?;
     let file = canonical.join(relative);
@@ -283,7 +284,7 @@ fn request_actions(
     let result = server.request(
         "textDocument/codeAction",
         json!({
-            "textDocument":{"uri":file_uri},"range":range,"context":{"diagnostics":[]}
+            "textDocument":{"uri":file_uri},"range":range,"context":{"diagnostics":diagnostics}
         }),
     )?;
     let values = if result.is_null() {
@@ -414,7 +415,11 @@ fn path_for_uri(root: &Path, value: &str) -> Result<String> {
     Ok(result.to_owned())
 }
 
-fn collect_edits(repo: &Path, rev: &str, edit: &Json) -> Result<(Value, BTreeMap<String, String>)> {
+pub(crate) fn collect_edits(
+    repo: &Path,
+    rev: &str,
+    edit: &Json,
+) -> Result<(Value, BTreeMap<String, String>)> {
     let root = repo.canonicalize().map_err(|e| e.to_string())?;
     let tracked = git::entries(repo, rev)?
         .into_iter()
@@ -657,6 +662,7 @@ pub fn execute(request: &Request<'_>) -> Result<Value> {
         &source,
         request.selection,
         request.title,
+        &[],
     )?;
     if request.title.is_none() {
         if request.output.is_some() {

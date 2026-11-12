@@ -218,12 +218,31 @@ pub(super) fn command() -> Command {
             leaf(
                 "rust-assist",
                 &[
-                    "repo", "rev", "index", "report", "candidate", "source",
-                    "start-line", "start-character", "end-line", "end-character",
+                    "repo",
+                    "rev",
+                    "index",
+                    "report",
+                    "candidate",
+                    "source",
+                    "start-line",
+                    "start-character",
+                    "end-line",
+                    "end-character",
                 ],
                 &["rust-analyzer", "source-prefix", "action", "output"],
             )
             .about("Find or apply rust-analyzer refactoring code actions with Git/SCIP evidence"),
+            leaf(
+                "rust-repair",
+                &[
+                    "repo", "source-repo", "base", "plan", "index",
+                    "report", "diagnostics",
+                ],
+                &["source-prefix", "rust-analyzer", "output"],
+            )
+            .about(
+                "Select an unambiguous native import repair from independent compiler diagnostics",
+            ),
         ],
         )
         .about("Source-bound refactoring hypotheses and guarded recipes");

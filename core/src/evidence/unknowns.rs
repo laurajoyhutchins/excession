@@ -97,7 +97,7 @@ fn read_ids(value: &Value, key: &str, manifest: &BTreeSet<String>) -> Result<Vec
     let values = value.get(key)?.array_ref()?;
     let raw_ids = values.iter().map(Value::str).collect::<Result<Vec<_>>>()?;
     let normalized = ids(raw_ids.as_slice(), manifest)?;
-    if raw_ids.iter().copied().collect::<Vec<_>>()
+    if raw_ids.to_vec()
         != normalized.iter().map(String::as_str).collect::<Vec<_>>()
     {
         return refuse("history receipt IDs must be sorted and unique");

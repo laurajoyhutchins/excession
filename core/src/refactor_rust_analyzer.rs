@@ -8,7 +8,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const MAX_FRAME: usize = 8 * 1024 * 1024;
 const MAX_FILES: usize = 8;
@@ -72,7 +75,8 @@ fn frame(reader: &mut impl BufRead) -> Result<Json> {
 struct Server {
     process: Child,
     input: ChildStdin,
-    output: BufReader<ChildStdout>,
+    incoming: Receiver<Result<Json>>,
+    diagnostics: Arc<Mutex<Vec<u8>>>,
     next_id: i64,
 }
 impl Drop for Server {
@@ -93,11 +97,41 @@ impl Server {
             .spawn()
             .map_err(|e| format!("rust-analyzer LSP launch failed: {e}"))?;
         let input = process.stdin.take().ok_or("LSP stdin unavailable")?;
-        let output = BufReader::new(process.stdout.take().ok_or("LSP stdout unavailable")?);
+        let stdout = process.stdout.take().ok_or("LSP stdout unavailable")?;
+        let mut stderr = process.stderr.take().ok_or("LSP stderr unavailable")?;
+        let (sender, incoming) = mpsc::sync_channel(32);
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                let message = frame(&mut reader);
+                let done = message.is_err();
+                if sender.send(message).is_err() || done {
+                    break;
+                }
+            }
+        });
+        // Always drain stderr. Without this, a chatty language server can
+        // fill the OS pipe and deadlock before returning its JSON-RPC result.
+        let diagnostics = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&diagnostics);
+        std::thread::spawn(move || {
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let count = match stderr.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(count) => count,
+                };
+                if let Ok(mut data) = sink.lock() {
+                    let available = 8192_usize.saturating_sub(data.len()).min(count);
+                    data.extend_from_slice(&buffer[..available]);
+                }
+            }
+        });
         Ok(Self {
             process,
             input,
-            output,
+            incoming,
+            diagnostics,
             next_id: 0,
         })
     }
@@ -114,23 +148,31 @@ impl Server {
     fn notify(&mut self, method: &str, params: Json) -> Result<()> {
         self.send(&json!({"jsonrpc":"2.0","method":method,"params":params}))
     }
+    fn diagnostics(&self) -> String {
+        self.diagnostics.lock().map_or_else(
+            |_| "<unavailable>".to_owned(),
+            |bytes| String::from_utf8_lossy(&bytes).to_string(),
+        )
+    }
     fn request(&mut self, method: &str, params: Json) -> Result<Json> {
         self.next_id += 1;
         let wanted = self.next_id;
         self.send(&json!({"jsonrpc":"2.0","id":wanted,"method":method,"params":params}))?;
+        let deadline = Instant::now() + Duration::from_secs(60);
         for _ in 0..2048 {
-            let message = match frame(&mut self.output) {
-                Ok(message) => message,
-                Err(error) => {
-                    let status = self.process.try_wait().map_err(|e| e.to_string())?;
-                    let mut stderr = String::new();
-                    if status.is_some()
-                        && let Some(stream) = self.process.stderr.take()
-                    {
-                        let _ = stream.take(8192).read_to_string(&mut stderr);
-                    }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let message = match self.incoming.recv_timeout(remaining) {
+                Ok(Ok(message)) => message,
+                Ok(Err(error)) => {
                     return refuse(format!(
-                        "rust-analyzer {method} LSP failed ({status:?}): {error}; stderr: {stderr}"
+                        "rust-analyzer {method} protocol error: {error}; {}",
+                        self.diagnostics(),
+                    ));
+                }
+                Err(error) => {
+                    return refuse(format!(
+                        "rust-analyzer {method} deadline/connection failed: {error}; {}",
+                        self.diagnostics(),
                     ));
                 }
             };
@@ -210,7 +252,12 @@ fn request_actions(
             "processId":null,
             "rootUri":root_uri,
             "workspaceFolders":[{"uri":root_uri,"name":"source"}],
-            "capabilities":{
+            "initializationOptions":{
+            "cargo":{"buildScripts":{"enable":false}},
+            "procMacro":{"enable":false},
+            "check":{"enable":false}
+        },
+        "capabilities":{
                 "workspace":{"workspaceEdit":{"documentChanges":true,
                     "resourceOperations":["create"]}},
                 "textDocument":{"codeAction":{"codeActionLiteralSupport":{

@@ -38,6 +38,9 @@ impl Db {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        // Indexing repeats a bounded family of INSERT and SELECT statements
+        // for every source row. Keep their SQLite VM programs per connection.
+        conn.set_prepared_statement_cache_capacity(64);
         conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
             .map_err(|e| e.to_string())?;
         Ok(Self { conn })
@@ -54,7 +57,7 @@ impl Db {
     /// Preserve the existing row contract: every non-NULL SQLite column is
     /// returned as UTF-8 text. Numeric values are decimal strings.
     pub fn query(&self, sql: &str, args: &[Param<'_>]) -> Result<Vec<Vec<Option<String>>>> {
-        let mut statement = self.conn.prepare(sql).map_err(|e| e.to_string())?;
+        let mut statement = self.conn.prepare_cached(sql).map_err(|e| e.to_string())?;
         let column_count = statement.column_count();
         let mut cursor = statement
             .query(params_from_iter(args.iter()))
@@ -81,10 +84,12 @@ impl Db {
     }
 
     pub fn execute(&self, sql: &str, args: &[Param<'_>]) -> Result<()> {
-        let rows = self.query(sql, args)?;
-        if !rows.is_empty() {
-            return refuse("SQL mutation returned unexpected rows");
-        }
+        // Mutations must not materialize result rows. Prepared statements are
+        // reused by the same SQLite connection, without a second SQL path.
+        let mut statement = self.conn.prepare_cached(sql).map_err(|e| e.to_string())?;
+        statement
+            .execute(params_from_iter(args.iter()))
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -206,6 +211,26 @@ mod tests {
             );
             assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
             assert!(db.execute("SELECT * FROM sample", &[]).is_err());
+            assert!(db.execute(
+                "INSERT INTO sample(id,description) VALUES(45,'must refuse') RETURNING id",
+                &[],
+            ).is_err());
+            assert_eq!(
+                db.scalar("SELECT COUNT(*) FROM sample", &[]).unwrap(),
+                "2",
+                "refusing a returning mutation must leave the transaction unchanged"
+            );
+            for id in 50..70 {
+                db.execute(
+                    "INSERT INTO sample(id,description) VALUES(?,?)",
+                    &[Param::Integer(id), Param::Text("prepared cached")],
+                ).unwrap();
+            }
+            assert_eq!(
+                db.scalar("SELECT COUNT(*) FROM sample", &[]).unwrap(),
+                "22"
+            );
+
         }
         // This is an ordinary SQLite file, readable after closing and
         // independently of the connection that originally created it.

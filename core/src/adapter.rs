@@ -4,12 +4,12 @@ use crate::json::{Value, obj};
 use crate::{Result, refuse};
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 /// Resolve interpreters without relying on Unix-only `python3` executable names.
 /// Overrides are executable paths, not shell commands.
@@ -140,11 +140,7 @@ fn read_pipe<R: Read + Send + 'static>(
     receiver
 }
 
-fn receive<T>(
-    receiver: mpsc::Receiver<io::Result<T>>,
-    deadline: Instant,
-    name: &str,
-) -> Result<T> {
+fn receive<T>(receiver: mpsc::Receiver<io::Result<T>>, deadline: Instant, name: &str) -> Result<T> {
     receiver
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
         .map_err(|_| format!("{name} did not finish before adapter deadline"))?
@@ -162,7 +158,9 @@ fn run_bounded(
     limits: AdapterLimits,
 ) -> Result<Value> {
     // Calculate and check the input size *before* launching the child.
-    let input = Value::array(entries.iter().cloned()).canonical().into_bytes();
+    let input = Value::array(entries.iter().cloned())
+        .canonical()
+        .into_bytes();
     if input.len() > limits.input_bytes {
         return refuse(format!(
             "{binary} adapter input exceeds {} bytes",
@@ -207,7 +205,10 @@ fn run_bounded(
             let _ = process.wait();
             return refuse(format!("{binary} adapter output exceeds byte limit"));
         }
-        if let Some(status) = process.try_wait().map_err(|e| format!("{binary} wait: {e}"))? {
+        if let Some(status) = process
+            .try_wait()
+            .map_err(|e| format!("{binary} wait: {e}"))?
+        {
             break status;
         }
         if Instant::now() >= deadline {

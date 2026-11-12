@@ -15,8 +15,16 @@ impl Drop for Fixture {
 }
 
 fn git(root: &Path, args: &[&str]) {
-    let output = Command::new("git").current_dir(root).args(args).output().unwrap();
-    assert!(output.status.success(), "git failed: {}", String::from_utf8_lossy(&output.stderr));
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -36,15 +44,29 @@ fn reanalysis_replaces_stale_derived_rows_for_the_same_commit() {
     git(&repo, &["add", "."]);
     git(
         &repo,
-        &["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-          "commit", "-q", "-m", "baseline"],
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "baseline",
+        ],
     );
     let db_path = work.join("index.sqlite");
     let db = Db::open(&db_path).unwrap();
     let analyze = || {
         excession::index::index_revision_with_roots(
-            &db, &repo, "fixture", "HEAD", "test", &["pkg"],
-        ).unwrap();
+            &db,
+            &repo,
+            "fixture",
+            "HEAD",
+            "test",
+            &["pkg"],
+        )
+        .unwrap();
     };
     analyze();
     let original = db.scalar("SELECT COUNT(*) FROM dependency", &[]).unwrap();
@@ -56,24 +78,36 @@ fn reanalysis_replaces_stale_derived_rows_for_the_same_commit() {
          SELECT repo_id,commit_oid,name,1,'OBSOLETE_ANALYZER_ROW'
          FROM module WHERE name='pkg.a'",
         &[],
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(
-        db.scalar("SELECT COUNT(*) FROM hazard WHERE reason='OBSOLETE_ANALYZER_ROW'", &[])
-            .unwrap(),
+        db.scalar(
+            "SELECT COUNT(*) FROM hazard WHERE reason='OBSOLETE_ANALYZER_ROW'",
+            &[]
+        )
+        .unwrap(),
         "1"
     );
     analyze();
     assert_eq!(
-        db.scalar("SELECT COUNT(*) FROM hazard WHERE reason='OBSOLETE_ANALYZER_ROW'", &[])
-            .unwrap(),
+        db.scalar(
+            "SELECT COUNT(*) FROM hazard WHERE reason='OBSOLETE_ANALYZER_ROW'",
+            &[]
+        )
+        .unwrap(),
         "0"
     );
-    assert_eq!(db.scalar("SELECT COUNT(*) FROM dependency", &[]).unwrap(), original);
+    assert_eq!(
+        db.scalar("SELECT COUNT(*) FROM dependency", &[]).unwrap(),
+        original
+    );
     assert_eq!(
         db.query(
             "SELECT source_name,target_name FROM dependency ORDER BY source_name,target_name",
             &[],
-        ).unwrap().len(),
+        )
+        .unwrap()
+        .len(),
         1
     );
 }

@@ -903,3 +903,43 @@ fn ontology_source_search_is_deterministic_and_explicitly_partial() {
         concepts_author::list_sources(&f.repo, &f.commit, &f.index, None, "", 1_000_001,).is_err()
     );
 }
+
+#[test]
+fn llm_can_propose_a_nonreciprocal_concept_without_turning_it_into_truth() {
+    let f = Fixture::new();
+    f.write_index(false, false);
+    let batch = concepts_scip::normalize_index(&f.repo, &f.commit, &f.index, None).unwrap();
+    let observed = batch.get("observations").unwrap().array_ref().unwrap();
+    assert_eq!(observed.len(), 1);
+    // This one-way source reference would *not* produce a deterministic
+    // reciprocal-file concept, but an LLM may interpret both files together.
+    assert!(concepts_compile::compile(&batch)
+        .unwrap().get("concepts").unwrap().array_ref().unwrap().is_empty());
+    let id = observed[0].get("observation_id").unwrap().clone();
+    let draft = obj(&[
+        ("schema", Value::string("excession.concepts-ontology-proposal.v1")),
+        ("source_commit", batch.get("source_commit").unwrap().clone()),
+        ("source_tree", batch.get("source_tree").unwrap().clone()),
+        ("batch_id", batch.get("batch_id").unwrap().clone()),
+        ("author_label", Value::string("unverified-author")),
+        ("concepts", Value::array([obj(&[
+            ("key", Value::string("one-way-feature")),
+            ("name", Value::string("Proposed one-way feature")),
+            ("definition", Value::string("Author-suggested grouping; the only native link is one-way.")),
+            ("rationale", Value::string("Source inspection is still needed to establish purpose.")),
+            ("members", Value::array([
+                obj(&[("path", Value::string("alpha.rs")), ("observations", Value::array([id.clone()]))]),
+                obj(&[("path", Value::string("beta.py")), ("observations", Value::array([id]))]),
+            ])),
+        ])])),
+    ]);
+    let model = concepts_author::model(&batch, &draft).unwrap();
+    assert_eq!(model.get("concepts").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(
+        model.get("concepts").unwrap().array_ref().unwrap()[0]
+            .get("review_status").unwrap().str().unwrap(), "UNREVIEWED"
+    );
+    assert!(model.get("claims").unwrap().array_ref().unwrap().iter().all(|claim|
+        claim.get("behavioral_verification").unwrap().str().unwrap() == "UNTESTED"
+    ));
+}

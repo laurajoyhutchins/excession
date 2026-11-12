@@ -211,10 +211,13 @@ mod tests {
             );
             assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
             assert!(db.execute("SELECT * FROM sample", &[]).is_err());
-            assert!(db.execute(
-                "INSERT INTO sample(id,description) VALUES(45,'must refuse') RETURNING id",
-                &[],
-            ).is_err());
+            assert!(
+                db.execute(
+                    "INSERT INTO sample(id,description) VALUES(45,'must refuse') RETURNING id",
+                    &[],
+                )
+                .is_err()
+            );
             assert_eq!(
                 db.scalar("SELECT COUNT(*) FROM sample", &[]).unwrap(),
                 "2",
@@ -224,13 +227,10 @@ mod tests {
                 db.execute(
                     "INSERT INTO sample(id,description) VALUES(?,?)",
                     &[Param::Integer(id), Param::Text("prepared cached")],
-                ).unwrap();
+                )
+                .unwrap();
             }
-            assert_eq!(
-                db.scalar("SELECT COUNT(*) FROM sample", &[]).unwrap(),
-                "22"
-            );
-
+            assert_eq!(db.scalar("SELECT COUNT(*) FROM sample", &[]).unwrap(), "22");
         }
         // This is an ordinary SQLite file, readable after closing and
         // independently of the connection that originally created it.

@@ -127,3 +127,209 @@ fn schema_rejects_false_verification_and_missing_identity() {
     duplicate["support_receipt_ids"] = json!(["c".repeat(64), "c".repeat(64)]);
     assert!(!schema.is_valid(&duplicate));
 }
+
+#[test]
+fn cli_appends_and_audits_uncertainty_without_fabricating_verification() {
+    use std::process::{Command, Output};
+
+    let path = std::env::temp_dir().join(format!(
+        "excession-unknown-cli-{}-{}.sqlite",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let db = Db::open(&path).unwrap();
+    let first = Receipt {
+        producer: "native-indexer".into(),
+        version: "1".into(),
+        native_id: "initial".into(),
+        raw_json: "{\"candidate\":true}".into(),
+    };
+    let second = Receipt {
+        producer: "native-indexer".into(),
+        version: "1".into(),
+        native_id: "contradiction".into(),
+        raw_json: "{\"contradiction\":true}".into(),
+    };
+    let support = first
+        .document()
+        .unwrap()
+        .get("receipt_id")
+        .unwrap()
+        .str()
+        .unwrap()
+        .to_owned();
+    let counter = second
+        .document()
+        .unwrap()
+        .get("receipt_id")
+        .unwrap()
+        .str()
+        .unwrap()
+        .to_owned();
+    let snapshot = evidence_store::persist(
+        &db,
+        &Batch {
+            source_commit: "a".repeat(40),
+            receipts: vec![first, second],
+            observations: vec![],
+        },
+    )
+    .unwrap();
+    drop(db);
+
+    let database = path.to_str().unwrap();
+    let question = "Which implementation is actually used?";
+    let run = |args: &[&str]| -> Output {
+        Command::new(env!("CARGO_BIN_EXE_excession"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let accept = |output: Output| -> JsonValue {
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    };
+    let reject = |output: Output| {
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("REFUSED:"));
+    };
+
+    let created = accept(run(&[
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "0",
+        "--action",
+        "CREATE",
+        "--support",
+        &support,
+    ]));
+    assert!(event_schema().is_valid(&created));
+    assert_eq!(created["state"], "OPEN");
+    let unknown = created["unknown_id"].as_str().unwrap();
+    reject(run(&[
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "0",
+        "--action",
+        "CREATE",
+        "--support",
+        &support,
+    ]));
+    reject(run(&[
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "1",
+        "--action",
+        "CLOSE_PROVEN_SAFE",
+        "--support",
+        &support,
+    ]));
+    let reported = accept(run(&[
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "1",
+        "--action",
+        "PROPOSE_RESOLUTION",
+        "--support",
+        &support,
+        "--resolution",
+        &support,
+    ]));
+    assert!(event_schema().is_valid(&reported));
+    assert_eq!(reported["state"], "RESOLUTION_REPORTED_NOT_VERIFIED");
+    assert_eq!(reported["semantic_verification"], "NOT_ESTABLISHED");
+    reject(run(&[
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "2",
+        "--action",
+        "REOPEN",
+        "--support",
+        &support,
+    ]));
+    let reopened = accept(run(&[
+        "evidence",
+        "unknown-append",
+        "--db",
+        database,
+        "--snapshot",
+        &snapshot,
+        "--question",
+        question,
+        "--expected",
+        "2",
+        "--action",
+        "REOPEN",
+        "--support",
+        &support,
+        "--counter",
+        &counter,
+    ]));
+    assert!(event_schema().is_valid(&reopened));
+    assert_eq!(reopened["state"], "OPEN");
+    let report = accept(run(&[
+        "inspect",
+        "unknown-history",
+        "--db",
+        database,
+        "--id",
+        unknown,
+    ]));
+    assert_eq!(report["schema"], "excession.unknown-history.v1");
+    assert_eq!(report["events"].as_array().unwrap().len(), 3);
+    assert_eq!(report["semantic_verification"], "NOT_ESTABLISHED");
+    assert_eq!(report["source_authentication"], "NOT_ESTABLISHED");
+    assert_eq!(report["events"][0]["event_id"], created["event_id"]);
+    assert_eq!(report["events"][1]["event_id"], reported["event_id"]);
+    assert_eq!(report["events"][2]["event_id"], reopened["event_id"]);
+    reject(run(&[
+        "inspect",
+        "unknown-history",
+        "--db",
+        database,
+        "--id",
+        &"f".repeat(64),
+    ]));
+    drop(report);
+    std::fs::remove_file(path).unwrap();
+}

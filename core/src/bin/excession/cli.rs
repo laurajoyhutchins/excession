@@ -156,6 +156,7 @@ pub(super) fn command() -> Command {
                 &["db", "snapshot"],
                 &["focus", "after", "repo", "rev", "source-prefix"],
             ),
+            leaf("unknown-history", &["db", "id"], &[]),
             leaf(
                 "verify-observation",
                 &[
@@ -172,6 +173,15 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Query indexed Git relationships");
+    let evidence = group(
+        "evidence",
+        vec![leaf(
+            "unknown-append",
+            &["db", "snapshot", "question", "expected", "action"],
+            &["support", "counter", "resolution"],
+        )],
+    )
+    .about("Append receipt-backed uncertainty without semantic promotion");
     let benchmark = group(
         "benchmark",
         vec![
@@ -518,6 +528,7 @@ pub(super) fn command() -> Command {
         .subcommand(semantic)
         .subcommand(views)
         .subcommand(security)
+        .subcommand(evidence)
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)

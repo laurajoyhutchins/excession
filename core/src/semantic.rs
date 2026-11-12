@@ -121,15 +121,22 @@ fn resolve_js_target(
     options.iter().find_map(|p| available.get(p).cloned())
 }
 
-pub fn index_sources(
-    db: &Db,
-    id: i64,
+/// Prepared outside SQLite's write transaction. A failed adapter cannot
+/// modify a previous, successfully indexed revision.
+pub(crate) struct PreparedSources {
+    modules: BTreeMap<String, String>,
+    map_js: BTreeMap<String, String>,
+    mains: BTreeMap<String, String>,
+    python: Value,
+    javascript: Value,
+}
+
+pub(crate) fn prepare_sources(
     root: &Path,
-    commit: &str,
     entries: &[Entry],
     roots: &[&str],
     import_base: Option<&str>,
-) -> Result<()> {
+) -> Result<PreparedSources> {
     let mut modules = BTreeMap::new();
     let mut files = BTreeMap::new();
     let mut mains = BTreeMap::<String, String>::new();
@@ -168,8 +175,42 @@ pub fn index_sources(
         }
     }
     blob_reader.finish()?;
-    if !py.is_empty() {
-        for item in adapter::python(&py)?.array_ref()? {
+    let python = if py.is_empty() {
+        Value::array([])
+    } else {
+        adapter::python(&py)?
+    };
+    let javascript = if js.is_empty() {
+        Value::array([])
+    } else {
+        adapter::javascript(&js)?
+    };
+    Ok(PreparedSources {
+        modules,
+        map_js,
+        mains,
+        python,
+        javascript,
+    })
+}
+
+/// Persist fresh observations after old derived rows have been deleted in the
+/// same transaction. Git identity rows and independent receipts are untouched.
+pub(crate) fn index_prepared(
+    db: &Db,
+    id: i64,
+    commit: &str,
+    prepared: &PreparedSources,
+) -> Result<()> {
+    let PreparedSources {
+        modules,
+        map_js,
+        mains,
+        python,
+        javascript,
+    } = prepared;
+    if !python.array_ref()?.is_empty() {
+        for item in python.array_ref()? {
             let module = item.get("name")?.str()?;
             let path = item.get("path")?.str()?;
             if modules.get(module).map(String::as_str) != Some(path) {
@@ -222,8 +263,8 @@ pub fn index_sources(
             }
         }
     }
-    if !js.is_empty() {
-        for item in adapter::javascript(&js)?.array_ref()? {
+    if !javascript.array_ref()?.is_empty() {
+        for item in javascript.array_ref()? {
             let path = item.get("path")?.str()?;
             let module = map_js
                 .get(path)
@@ -231,7 +272,7 @@ pub fn index_sources(
             for imp in item.get("imports")?.array_ref()? {
                 let spec = imp.get("specifier")?.str()?;
                 let line = imp.get("line")?.integer()?;
-                if let Some(target) = resolve_js_target(path, spec, &map_js, &mains) {
+                if let Some(target) = resolve_js_target(path, spec, map_js, mains) {
                     put_dependency(
                         db,
                         id,

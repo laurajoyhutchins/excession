@@ -33,7 +33,14 @@ static REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     LanguageRegistry::new()
 });
 
-fn observation(path: &str, language: &str, status: &str, structure: Vec<Value>, imports: Vec<Value>, diagnostics: Vec<Value>) -> Value {
+fn observation(
+    path: &str,
+    language: &str,
+    status: &str,
+    structure: Vec<Value>,
+    imports: Vec<Value>,
+    diagnostics: Vec<Value>,
+) -> Value {
     obj(&[
         ("path", Value::string(path)),
         ("language", Value::string(language)),
@@ -45,7 +52,8 @@ fn observation(path: &str, language: &str, status: &str, structure: Vec<Value>, 
 }
 
 fn line_number(line: usize) -> Result<usize> {
-    line.checked_add(1).ok_or("source line number overflow".to_owned())
+    line.checked_add(1)
+        .ok_or("source line number overflow".to_owned())
 }
 
 fn structure_item(item: &StructureItem, depth: usize, budget: &mut usize) -> Result<Value> {
@@ -92,11 +100,25 @@ pub fn parse(entries: &[Value]) -> Result<Value> {
             return refuse("Tree-sitter source exceeds 512 KiB");
         }
         let Some(language) = detect_language_from_path(path) else {
-            records.push(observation(path, "", "UNSUPPORTED_LANGUAGE", vec![], vec![], vec![]));
+            records.push(observation(
+                path,
+                "",
+                "UNSUPPORTED_LANGUAGE",
+                vec![],
+                vec![],
+                vec![],
+            ));
             continue;
         };
         if !REGISTRY.has_parser(language) {
-            records.push(observation(path, language, "GRAMMAR_NOT_INSTALLED", vec![], vec![], vec![]));
+            records.push(observation(
+                path,
+                language,
+                "GRAMMAR_NOT_INSTALLED",
+                vec![],
+                vec![],
+                vec![],
+            ));
             continue;
         }
         let mut config = ProcessConfig::new(language);
@@ -107,7 +129,14 @@ pub fn parse(entries: &[Value]) -> Result<Value> {
         let parsed = match REGISTRY.process(text, &config) {
             Ok(parsed) => parsed,
             Err(_) => {
-                records.push(observation(path, language, "PARSER_ERROR", vec![], vec![], vec![]));
+                records.push(observation(
+                    path,
+                    language,
+                    "PARSER_ERROR",
+                    vec![],
+                    vec![],
+                    vec![],
+                ));
                 continue;
             }
         };
@@ -137,17 +166,38 @@ pub fn parse(entries: &[Value]) -> Result<Value> {
                 budget -= 1;
                 diagnostics.push(obj(&[
                     ("line", Value::number(line_number(item.span.start_line)?)),
-                    ("message", Value::string(item.message.chars().take(512).collect::<String>())),
+                    (
+                        "message",
+                        Value::string(item.message.chars().take(512).collect::<String>()),
+                    ),
                 ]));
             }
             Ok((structure, imports, diagnostics))
         })();
         match converted {
             Ok((structure, imports, diagnostics)) => {
-                let status = if parsed.metrics.error_count == 0 { "PARSED" } else { "PARSED_WITH_ERRORS" };
-                records.push(observation(path, language, status, structure, imports, diagnostics));
+                let status = if parsed.metrics.error_count == 0 {
+                    "PARSED"
+                } else {
+                    "PARSED_WITH_ERRORS"
+                };
+                records.push(observation(
+                    path,
+                    language,
+                    status,
+                    structure,
+                    imports,
+                    diagnostics,
+                ));
             }
-            Err(_) => records.push(observation(path, language, "RESOURCE_LIMIT", vec![], vec![], vec![])),
+            Err(_) => records.push(observation(
+                path,
+                language,
+                "RESOURCE_LIMIT",
+                vec![],
+                vec![],
+                vec![],
+            )),
         }
     }
     Ok(obj(&[
@@ -182,8 +232,17 @@ mod tests {
         ]);
         let parsed = parse(&[item]).unwrap();
         let row = &parsed.get("sources").unwrap().array_ref().unwrap()[0];
-        assert_eq!(row.get("status").unwrap().str().unwrap(), "UNSUPPORTED_LANGUAGE");
-        assert!(row.get("structure").unwrap().array_ref().unwrap().is_empty());
+        assert_eq!(
+            row.get("status").unwrap().str().unwrap(),
+            "UNSUPPORTED_LANGUAGE"
+        );
+        assert!(
+            row.get("structure")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -195,7 +254,10 @@ mod tests {
         let parsed = parse(&[item]).unwrap();
         let row = &parsed.get("sources").unwrap().array_ref().unwrap()[0];
         let status = row.get("status").unwrap().str().unwrap();
-        assert!(matches!(status, "PARSED" | "PARSED_WITH_ERRORS" | "GRAMMAR_NOT_INSTALLED" | "PARSER_ERROR"));
+        assert!(matches!(
+            status,
+            "PARSED" | "PARSED_WITH_ERRORS" | "GRAMMAR_NOT_INSTALLED" | "PARSER_ERROR"
+        ));
         if status == "GRAMMAR_NOT_INSTALLED" {
             assert!(row.get("imports").unwrap().array_ref().unwrap().is_empty());
         }

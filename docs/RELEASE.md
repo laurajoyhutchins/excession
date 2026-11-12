@@ -8,7 +8,9 @@ existing [Portable CLI workflow](../.github/workflows/portable-cli.yml).
 
 1. Select an exact clean main commit and confirm its full `Verify` run.
 2. Run the full portability matrix (label a review PR `ci:full-portability`
-   or invoke the existing manual Portable CLI workflow). Verify Linux x86-64,
+   **before pushing its next commit**, or invoke the existing manual Portable
+   CLI workflow). The default PR trigger does not run on label changes alone;
+   the next PR synchronize event must see the label. Verify Linux x86-64,
    Linux ARM64, macOS Apple Silicon, macOS Intel, Windows, and musl/Alpine
    independently. Do not include a target that failed.
 3. Check the dedicated independent upstream source oracle, including the

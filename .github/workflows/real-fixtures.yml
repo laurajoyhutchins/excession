@@ -88,6 +88,12 @@ jobs:
           python3 benchmarks/experiments/index_incremental_scale.py \
             --bin core/target/release/excession --modules 256 \
             --repetitions 5 --out native-incremental-scale-results.json
+      - name: Benchmark 512 nontrivial Python modules with native incremental indexing
+        run: |
+          python3 benchmarks/experiments/index_incremental_scale.py \
+            --bin core/target/release/excession \
+            --modules 512 --functions-per-module 32 --repetitions 3 \
+            --out native-incremental-realistic-scale-results.json
       - name: Verify immutable upstream fixtures and corruption refusals
         run: |
           python3 benchmarks/experiments/real_fixtures.py \
@@ -106,4 +112,5 @@ jobs:
             scaled-incremental-results.json
             native-incremental-h11-results.json
             native-incremental-scale-results.json
+            native-incremental-realistic-scale-results.json
           if-no-files-found: warn

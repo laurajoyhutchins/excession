@@ -340,6 +340,41 @@ fn execute(args: &[String]) -> Result<Response> {
     let opt = &parsed.options;
     match parsed.path.as_slice() {
         [top, sub] if top == "concepts" => {
+            if sub.starts_with("scip-") {
+                let batch = excession::concepts_scip::normalize_index(
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
+                    opt.0.get("source-prefix").map(String::as_str),
+                )?;
+                return match sub.as_str() {
+                    "scip-normalize" => Ok(json(batch)),
+                    "scip-preview" => Ok(json(excession::concepts_compile::compile(&batch)?)),
+                    "scip-compile" => {
+                        let model = excession::concepts_compile::compile(&batch)?;
+                        let manifest = excession::concepts_compile::manifest(&batch, &model)?;
+                        let db = Db::open(opt.path("db"))?;
+                        excession::concepts_store::publish(&db, &model, &manifest)?;
+                        Ok(json(manifest))
+                    }
+                    "scip-audit" => {
+                        let model = excession::concepts_compile::compile(&batch)?;
+                        let manifest = excession::concepts_compile::manifest(&batch, &model)?;
+                        let db = Db::open(opt.path("db"))?;
+                        let id = opt.get("snapshot");
+                        let (saved, stored) = excession::concepts_store::audit(&db, id)?;
+                        if stored != manifest || saved != model {
+                            return refuse("stored SCIP concept snapshot differs from current Git-bound SCIP inputs");
+                        }
+                        Ok(json(excession::json::obj(&[
+                            ("snapshot_id", excession::json::Value::string(id)),
+                            ("status", excession::json::Value::string("SOURCE_BOUND_SCIP_INDEX_REPLAYED")),
+                            ("indexer_independently_executed", excession::json::Value::Bool(false)),
+                        ])))
+                    }
+                    _ => refuse(format!("unknown SCIP concept command {sub}")),
+                };
+            }
             if sub == "annotate-refactor" {
                 let db = Db::open(opt.path("db"))?;
                 return Ok(json(excession::concepts_analysis::annotate_refactor(

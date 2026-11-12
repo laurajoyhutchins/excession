@@ -87,8 +87,10 @@ impl Drop for Server {
 }
 impl Server {
     fn start(program: &Path, workspace: &Path) -> Result<Self> {
+        // The pinned rust-analyzer binary starts LSP in its default mode.
+        // Passing an explicit "lsp-server" command is not supported by
+        // some toolchain-distributed builds, including Rust 1.99.1.
         let mut process = Command::new(program)
-            .arg("lsp-server")
             .current_dir(workspace)
             .env("CARGO_NET_OFFLINE", "true")
             .stdin(Stdio::piped())

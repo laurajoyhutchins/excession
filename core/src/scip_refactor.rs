@@ -221,9 +221,7 @@ fn likely_rust_module_structure(
     // retain the pair among the review candidates. Unindexed links are unknown.
     root_to_child.len() == 1
         && root_to_child[0].symbol.starts_with("rust-analyzer cargo ")
-        && root_to_child[0]
-            .symbol
-            .ends_with(&format!(" {module}/"))
+        && root_to_child[0].symbol.ends_with(&format!(" {module}/"))
 }
 
 /// Accept JSON decoded by the official SCIP CLI. No SCIP indexer is invoked:
@@ -463,10 +461,23 @@ fn analyze_bytes(
             let item = candidate(obj(&[
                 ("kind", Value::string("reciprocal_symbol_references")),
                 ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESIS")),
-                ("sources", Value::array([source(&documents[left]), source(&documents[right])])),
+                (
+                    "sources",
+                    Value::array([source(&documents[left]), source(&documents[right])]),
+                ),
                 ("references", Value::array(evidence)),
-                ("action", Value::string("Review reciprocal symbol use for a possible boundary or responsibility split; this is not proven to be an import cycle.")),
-                ("verification", Value::string("Check language-specific compilation, generated code, runtime linkage and tests before modifying either file.")),
+                (
+                    "action",
+                    Value::string(
+                        "Review reciprocal symbol use for a possible boundary or responsibility split; this is not proven to be an import cycle.",
+                    ),
+                ),
+                (
+                    "verification",
+                    Value::string(
+                        "Check language-specific compilation, generated code, runtime linkage and tests before modifying either file.",
+                    ),
+                ),
             ]))?;
             let id = item.get("candidate_id")?.str()?.to_owned();
             if likely_structure {
@@ -489,8 +500,18 @@ fn analyze_bytes(
                 ("kind", Value::string("cross_language_symbol_boundary")),
                 ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESIS")),
                 ("reference", reference(edge, &documents)),
-                ("action", Value::string("Inspect the explicitly indexed cross-language symbol boundary and its ownership; do not infer FFI or API equivalence.")),
-                ("verification", Value::string("Independently verify the language-specific bridge, build configurations and integration tests.")),
+                (
+                    "action",
+                    Value::string(
+                        "Inspect the explicitly indexed cross-language symbol boundary and its ownership; do not infer FFI or API equivalence.",
+                    ),
+                ),
+                (
+                    "verification",
+                    Value::string(
+                        "Independently verify the language-specific bridge, build configurations and integration tests.",
+                    ),
+                ),
             ]))?;
             review_candidate_ids.insert(item.get("candidate_id")?.str()?.to_owned());
             candidates.push(item);
@@ -546,11 +567,23 @@ fn analyze_bytes(
             ]),
         ),
         ("candidates", Value::array(candidates)),
-        ("triage", obj(&[
-            ("basis", Value::string("ADVISORY_RUST_ANALYZER_TOP_LEVEL_MODULE_SYMBOL")),
-            ("review_candidate_ids", Value::array(review_candidate_ids.into_iter().map(Value::string))),
-            ("likely_structural_module_candidate_ids", Value::array(structural_candidate_ids.into_iter().map(Value::string))),
-        ])),
+        (
+            "triage",
+            obj(&[
+                (
+                    "basis",
+                    Value::string("ADVISORY_RUST_ANALYZER_TOP_LEVEL_MODULE_SYMBOL"),
+                ),
+                (
+                    "review_candidate_ids",
+                    Value::array(review_candidate_ids.into_iter().map(Value::string)),
+                ),
+                (
+                    "likely_structural_module_candidate_ids",
+                    Value::array(structural_candidate_ids.into_iter().map(Value::string)),
+                ),
+            ]),
+        ),
     ]);
     if include_references {
         // Preserve the exact native SCIP reference predicate. Neither this
@@ -636,7 +669,7 @@ mod tests {
         )]);
         assert!(range_line(&bad, &lines, 1).is_err());
     }
- 
+
     #[test]
     fn crate_root_module_triangulation_is_conservative() {
         let root = Document {
@@ -714,5 +747,4 @@ mod tests {
         assert_eq!(item.get("candidate_id").unwrap().str().unwrap(), expected);
         assert!(item.get("triage").is_err());
     }
-
 }

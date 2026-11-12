@@ -11,7 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "benchmarks/experiments"))
 from concepts_baseline_value import (  # noqa: E402
-    baseline_pairs, concept_pairs, evaluate, fixture_report, digest,
+    baseline_pairs, concept_pairs, evaluate, fixture_report, digest, attach_measured_costs,
 )
 
 
@@ -184,6 +184,55 @@ class ValueGateTests(unittest.TestCase):
         self.write()
         with self.assertRaisesRegex(ValueError, "duplicate baseline"):
             fixture_report(self.root, self.prefix)
+
+    def test_measured_costs_are_bound_to_the_same_git_revision(self):
+        report, _ = evaluate([self.root])
+        stages = [
+            {
+                "stage": stage,
+                "wall_ms": 1.0,
+                "peak_rss_bytes": 1024,
+                "stdout_bytes": 128,
+                "measurement": "GNU_TIME_LINUX_SINGLE_PROCESS",
+            }
+            for stage in [
+                "baseline-suggest", "baseline-audit",
+                "concept-scip-normalize", "concept-scip-preview",
+                "concept-scip-compile", "concept-scip-audit",
+            ]
+        ]
+        fixture = {
+            "name": "fixture", "source_commit": "f" * 40,
+            "source_tree": "d" * 40, "status": "SOURCE_BOUND",
+            "languages": [{
+                "language_family": "python",
+                "index_sha256": "1" * 64,
+                "execution_cost": {
+                    "sample_count": 1,
+                    "native_index_generation_wall_ms": 7.5,
+                    "total_excession_wall_ms": 6.0,
+                    "per_process": stages,
+                },
+            }],
+        }
+        path = self.root / "native-run-summary.json"
+        path.write_text(json.dumps({
+            "schema": "excession.scip-fixture-evidence.v2",
+            "fixtures": [fixture],
+        }))
+        attach_measured_costs(report, [path])
+        self.assertEqual(report["measured_performance"]["sum_cli_process_wall_ms"], 6.0)
+        self.assertEqual(report["measured_performance"]["sum_native_indexer_wall_ms"], 7.5)
+        self.assertIsNone(report["measured_performance"]["indexer_peak_rss_bytes"])
+        self.assertEqual(report["report_id"], digest({
+            k: v for k, v in report.items() if k != "report_id"
+        }))
+        fixture["source_commit"] = "a" * 40
+        path.write_text(json.dumps({
+            "schema": "excession.scip-fixture-evidence.v2", "fixtures": [fixture],
+        }))
+        with self.assertRaisesRegex(ValueError, "another Git revision"):
+            attach_measured_costs(evaluate([self.root])[0], [path])
 
     def test_partial_invalid_native_observation_classification_rejected(self):
         self.batch["observations"][0]["native_relation"] = "CALLS"

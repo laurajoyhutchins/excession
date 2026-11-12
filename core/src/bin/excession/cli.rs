@@ -214,6 +214,15 @@ pub(super) fn command() -> Command {
             .about(
                 "Preview or apply a bounded AST-backed Rust extraction to a new detached worktree",
             ),
+            leaf(
+                "rust-assist",
+                &[
+                    "repo", "rev", "index", "report", "candidate", "source",
+                    "start-line", "start-character", "end-line", "end-character",
+                ],
+                &["rust-analyzer", "source-prefix", "action", "output"],
+            )
+            .about("Find or apply rust-analyzer refactoring code actions with Git/SCIP evidence"),
         ],
     )
     .about("Source-bound refactoring hypotheses and guarded recipes");

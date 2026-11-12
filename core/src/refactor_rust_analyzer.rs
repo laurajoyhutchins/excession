@@ -148,6 +148,7 @@ fn action_allowed(action: &Json) -> bool {
     let title = action.get("title").and_then(Json::as_str).unwrap_or("");
     let kind = action.get("kind").and_then(Json::as_str).unwrap_or("");
     !title.is_empty()
+        && !action.get("command").is_some_and(|value| !value.is_null())
         && (kind.starts_with("refactor")
             || (kind == "quickfix" && title.starts_with("Import ")))
 }
@@ -309,8 +310,12 @@ fn collect_edits(repo: &Path, rev: &str, edit: &Json) -> Result<(Value, BTreeMap
                 if string(op, "kind")? != "create" {
                     return refuse("LSP rename/delete file operations are unsupported");
                 }
-                if op.get("options").is_some_and(|v| !v.is_null()) {
-                    return refuse("LSP create options are unsupported");
+                if let Some(options) = op.get("options")
+                    && !options.is_null()
+                    && (options.get("overwrite").is_some_and(|v| v.as_bool() != Some(false))
+                        || options.get("ignoreIfExists").is_some_and(|v| v.as_bool() != Some(false)))
+                {
+                    return refuse("LSP overwrite/ignore create options are unsupported");
                 }
                 let path = path_for_uri(&root, string(op, "uri")?)?;
                 if tracked.contains_key(&path) || changed.contains_key(&path) {

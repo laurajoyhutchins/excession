@@ -137,24 +137,40 @@ fn extracted_items(source: &str, outlines: &Value, names: &BTreeSet<String>) -> 
         }
         // This first recipe does not relocate attributes, doc comments, or
         // qualified module-relative references. Do not silently leave docs behind.
-        let previous = source[..start].lines().last().unwrap_or("").trim();
-        if previous.starts_with("///")
-            || previous.starts_with("//!")
-            || previous.starts_with("#[")
-            || previous.starts_with("/**")
-            || body.contains("super::")
-            || body.contains("self::")
-            || body.contains("crate::")
-        {
+        // Keep adjacent line/documentation comments with the declaration.
+        // Attributes and block comments require a different AST-aware recipe.
+        let mut item_start = source[..start].rfind('\n').map_or(0, |pos| pos + 1);
+        if !source[item_start..start].trim().is_empty() {
+            return refuse("ast-grep function does not start on its own source line");
+        }
+        while item_start > 0 {
+            let previous_end = item_start - 1;
+            let previous_start = source[..previous_end].rfind('\n').map_or(0, |pos| pos + 1);
+            let previous = source[previous_start..previous_end].trim();
+            if previous.starts_with("//") && !previous.starts_with("//!") {
+                item_start = previous_start;
+            } else if previous.starts_with("#[")
+                || previous.starts_with("/*")
+                || previous.ends_with("*/")
+                || previous.starts_with("//!")
+            {
+                return refuse(format!(
+                    "unsupported attributes or module/block documentation on {name}"
+                ));
+            } else {
+                break;
+            }
+        }
+        if body.contains("super::") || body.contains("self::") || body.contains("crate::") {
             return refuse(format!(
-                "unsupported attached metadata or module-relative use in {name}"
+                "module-relative reference in extracted function {name}"
             ));
         }
         extracted.push(Item {
             name: name.to_owned(),
-            start,
+            start: item_start,
             end,
-            body: body.to_owned(),
+            body: source[item_start..end].to_owned(),
         });
     }
     extracted.sort_by_key(|item| item.start);
@@ -202,11 +218,19 @@ fn edits(
         .collect::<Vec<_>>()
         .join("\n\n");
     destination.push('\n');
-    let updated_root = format!("{}\n{declaration}\n", root.trim_end());
+    // Preserve all original root bytes, including trailing whitespace.
+    let separator = if root.ends_with('\n') { "" } else { "\n" };
+    let updated_root = format!("{root}{separator}{declaration}\n");
     Ok((reduced, destination, updated_root))
 }
 
-fn assert_candidate(report: &Value, id: &str, source: &str, blob: &str) -> Result<()> {
+fn assert_candidate(
+    report: &Value,
+    id: &str,
+    source: &str,
+    blob: &str,
+    selected: &BTreeSet<String>,
+) -> Result<BTreeSet<String>> {
     if report.get("indexer")?.get("name")?.str()? != "rust-analyzer" {
         return refuse("recipe only supports rust-analyzer SCIP evidence");
     }
@@ -244,7 +268,78 @@ fn assert_candidate(report: &Value, id: &str, source: &str, blob: &str) -> Resul
     {
         return refuse("ordinary structural module relationship is not an extraction target");
     }
-    Ok(())
+    // A file participating in a reciprocal reference is not evidence that
+    // *any* arbitrary function in that file is a useful extraction. Require
+    // at least one selected public function to be the native symbol targeted
+    // by the candidate. Other selected functions are explicit helper moves.
+    let mut linked = BTreeSet::new();
+    for reference in found.get("references")?.array_ref()? {
+        let destination = reference.get("to")?;
+        if destination.get("path")?.str()? != source || destination.get("blob")?.str()? != blob {
+            continue;
+        }
+        let symbol = reference.get("symbol")?.str()?;
+        for name in selected {
+            if symbol.ends_with(&format!("/{name}().")) {
+                linked.insert(name.clone());
+            }
+        }
+    }
+    if linked.is_empty() {
+        return refuse("selected functions are unrelated to the cited SCIP references");
+    }
+    Ok(linked)
+}
+
+/// One edit over the original Git blob; ranges never depend on prior edits.
+fn edit_operation(
+    path: &str,
+    before: Option<&str>,
+    start: usize,
+    end: usize,
+    replacement: &str,
+) -> Value {
+    obj(&[
+        ("path", Value::string(path)),
+        (
+            "original_blob",
+            before.map(Value::string).unwrap_or(Value::Null),
+        ),
+        ("start_byte", Value::number(start)),
+        ("end_byte", Value::number(end)),
+        ("replacement", Value::string(replacement)),
+    ])
+}
+
+/// Independent, bounded replay of the byte ranges that will be written.
+fn replay_edits(original: &str, operations: &Value, path: &str) -> Result<String> {
+    let mut edits = Vec::new();
+    for edit in operations.array_ref()? {
+        if edit.get("path")?.str()? != path {
+            continue;
+        }
+        let start = usize::try_from(edit.get("start_byte")?.integer()?)
+            .map_err(|_| "negative generated edit offset")?;
+        let end = usize::try_from(edit.get("end_byte")?.integer()?)
+            .map_err(|_| "negative generated edit offset")?;
+        if start > end
+            || end > original.len()
+            || !original.is_char_boundary(start)
+            || !original.is_char_boundary(end)
+        {
+            return refuse("generated edit crosses a source boundary");
+        }
+        edits.push((start, end, edit.get("replacement")?.str()?));
+    }
+    edits.sort_by_key(|edit| (edit.0, edit.1));
+    if edits.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+        return refuse("generated edits overlap");
+    }
+    let mut result = original.to_owned();
+    for (start, end, replacement) in edits.into_iter().rev() {
+        result.replace_range(start..end, replacement);
+    }
+    Ok(result)
 }
 
 pub struct Request<'a> {
@@ -307,17 +402,68 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
     let report_bytes =
         fs::read(request.report).map_err(|e| format!("SCIP candidate report read: {e}"))?;
     let report = json::parse(&report_bytes)?;
-    assert_candidate(
+    let linked = assert_candidate(
         &report,
         request.candidate,
         request.source,
         &source_entry.oid,
+        &names,
     )?;
     let source = read_blob(repo, &source_entry.oid)?;
     let root = read_blob(repo, &root_entry.oid)?;
     let syntax = outline(request.ast_grep, &source)?;
     let extracted = extracted_items(&source, &syntax, &names)?;
     let (updated_source, created_module, updated_root) = edits(&source, &root, module, &extracted)?;
+    // Exact byte edits against the original blobs make preview actionable,
+    // independently replayable, and stable across preview/apply invocations.
+    let export = format!(
+        "pub use crate::{module}::{{{}}};",
+        extracted
+            .iter()
+            .map(|item| item.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let mut operations = Vec::new();
+    for (position, item) in extracted.iter().enumerate() {
+        operations.push(edit_operation(
+            request.source,
+            Some(&source_entry.oid),
+            item.start,
+            item.end,
+            if position == 0 { &export } else { "" },
+        ));
+    }
+    let suffix = if root.ends_with('\n') { "" } else { "\n" };
+    operations.push(edit_operation(
+        &root_path,
+        Some(&root_entry.oid),
+        root.len(),
+        root.len(),
+        &format!("{suffix}mod {module};\n"),
+    ));
+    operations.push(edit_operation(
+        request.destination,
+        None,
+        0,
+        0,
+        &created_module,
+    ));
+    let operation_values = Value::array(operations);
+    // The edits must reproduce every generated byte before a worktree is made.
+    if replay_edits(&source, &operation_values, request.source)? != updated_source
+        || replay_edits(&root, &operation_values, &root_path)? != updated_root
+        || replay_edits("", &operation_values, request.destination)? != created_module
+    {
+        return refuse("generated extraction plan does not replay to its outputs");
+    }
+    let plan = obj(&[
+        ("source_commit", Value::string(&revision)),
+        ("candidate_id", Value::string(request.candidate)),
+        ("scip_report_id", report.get("report_id")?.clone()),
+        ("edits", operation_values.clone()),
+    ]);
+    let plan_id = plan.sha256();
 
     let mut status = "UNVERIFIED_CODEGEN_PREVIEW";
     let mut workspace = None;
@@ -325,15 +471,29 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         if !output.is_absolute() || output.exists() {
             return refuse("output worktree must be a new absolute path");
         }
-        let _parent = output
+        let parent = output
             .parent()
             .ok_or("worktree output has no parent")?
             .canonicalize()
             .map_err(|e| format!("worktree parent: {e}"))?;
+        let repository = repo
+            .canonicalize()
+            .map_err(|e| format!("source checkout: {e}"))?;
+        if parent.starts_with(&repository) {
+            return refuse("generated worktree cannot be inside the original checkout");
+        }
         let output_str = output.to_str().ok_or("non-UTF-8 worktree output path")?;
         git::command(
             repo,
-            &["worktree", "add", "--detach", output_str, &revision],
+            &[
+                "-c",
+                "core.hooksPath=/dev/null",
+                "worktree",
+                "add",
+                "--detach",
+                output_str,
+                &revision,
+            ],
         )?;
         let write_result = (|| -> Result<()> {
             fs::write(output.join(request.source), &updated_source)
@@ -345,7 +505,17 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
             Ok(())
         })();
         if let Err(error) = write_result {
-            let _ = git::command(repo, &["worktree", "remove", "--force", output_str]);
+            let _ = git::command(
+                repo,
+                &[
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "worktree",
+                    "remove",
+                    "--force",
+                    output_str,
+                ],
+            );
             return Err(error);
         }
         status = "APPLIED_UNVERIFIED";
@@ -366,6 +536,16 @@ pub fn extract_shared_module(request: &Request<'_>) -> Result<Value> {
         ("candidate_id", Value::string(request.candidate)),
         ("scip_report_id", report.get("report_id")?.clone()),
         ("recipe", Value::string("extract-shared-module")),
+        ("plan_id", Value::string(plan_id)),
+        ("edits", operation_values),
+        (
+            "linked_functions",
+            Value::array(linked.iter().map(Value::string)),
+        ),
+        (
+            "additional_helper_functions",
+            Value::array(names.difference(&linked).map(Value::string)),
+        ),
         (
             "worktree",
             workspace.map(Value::string).unwrap_or(Value::Null),
@@ -471,9 +651,25 @@ mod tests {
         assert!(extracted_items(source, &duplicate, &names).is_err());
         assert!(selection("foo,foo").is_err());
         assert!(selection("../foo").is_err());
+        let docs = "/// documented\npub fn foo() {}\n";
+        let captured = extracted_items(
+            docs,
+            &fake_outline(&[("foo", "function_item", 15, 30)]),
+            &names,
+        )
+        .unwrap();
+        assert_eq!(captured[0].body, "/// documented\npub fn foo() {}");
         assert!(
             extracted_items(
-                "/// documented\npub fn foo() {}\n",
+                "#[cfg(test)]\npub fn foo() {}\n",
+                &fake_outline(&[("foo", "function_item", 13, 28)]),
+                &names,
+            )
+            .is_err()
+        );
+        assert!(
+            extracted_items(
+                "/* attached */\npub fn foo() {}\n",
                 &fake_outline(&[("foo", "function_item", 15, 30)]),
                 &names,
             )
@@ -491,5 +687,158 @@ mod tests {
             body: source.into(),
         }];
         assert!(edits(source, "mod shared;\n", "shared", &items).is_err());
+    }
+
+    fn evidence_report(target: &str, symbol: &str) -> Value {
+        obj(&[
+            ("indexer", obj(&[("name", Value::string("rust-analyzer"))])),
+            (
+                "triage",
+                obj(&[("likely_structural_module_candidate_ids", Value::array([]))]),
+            ),
+            (
+                "candidates",
+                Value::array([obj(&[
+                    ("candidate_id", Value::string("candidate")),
+                    ("kind", Value::string("reciprocal_symbol_references")),
+                    (
+                        "sources",
+                        Value::array([obj(&[
+                            ("path", Value::string("core/src/semantic.rs")),
+                            ("blob", Value::string("a".repeat(40))),
+                            ("language", Value::string("rust")),
+                        ])]),
+                    ),
+                    (
+                        "references",
+                        Value::array([obj(&[
+                            (
+                                "to",
+                                obj(&[
+                                    ("path", Value::string(target)),
+                                    ("blob", Value::string("a".repeat(40))),
+                                ]),
+                            ),
+                            ("symbol", Value::string(symbol)),
+                        ])]),
+                    ),
+                ])]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn requires_a_selected_function_actually_linked_by_native_scip() {
+        let report = evidence_report(
+            "core/src/semantic.rs",
+            "rust-analyzer cargo excession 0.2.0 semantic/module_name_with_import_base().",
+        );
+        let selections = BTreeSet::from([
+            "module_name".to_owned(),
+            "module_name_with_import_base".to_owned(),
+        ]);
+        assert_eq!(
+            assert_candidate(
+                &report,
+                "candidate",
+                "core/src/semantic.rs",
+                &"a".repeat(40),
+                &selections,
+            )
+            .unwrap(),
+            BTreeSet::from(["module_name_with_import_base".to_owned()])
+        );
+        let irrelevant = BTreeSet::from(["module_name".to_owned()]);
+        assert!(
+            assert_candidate(
+                &report,
+                "candidate",
+                "core/src/semantic.rs",
+                &"a".repeat(40),
+                &irrelevant,
+            )
+            .is_err()
+        );
+        let wrong_destination = evidence_report(
+            "core/src/index.rs",
+            "rust-analyzer cargo excession 0.2.0 semantic/module_name_with_import_base().",
+        );
+        assert!(
+            assert_candidate(
+                &wrong_destination,
+                "candidate",
+                "core/src/semantic.rs",
+                &"a".repeat(40),
+                &selections,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn preview_edits_are_replayable_and_refuse_bad_offsets() {
+        let original = "pub fn one() {}\n\npub fn two() {}\n";
+        let first = "pub fn one() {}";
+        let second_start = original.find("pub fn two").unwrap();
+        let selected = extracted_items(
+            original,
+            &fake_outline(&[
+                ("one", "function_item", 0, first.len()),
+                (
+                    "two",
+                    "function_item",
+                    second_start,
+                    second_start + first.len(),
+                ),
+            ]),
+            &selection("two,one").unwrap(),
+        )
+        .unwrap();
+        let root = "pub mod existing;\n  \n";
+        let (source_after, _, root_after) = edits(original, root, "shared", &selected).unwrap();
+        let replacements = Value::array(vec![
+            edit_operation(
+                "src/original.rs",
+                Some("a"),
+                selected[0].start,
+                selected[0].end,
+                "pub use crate::shared::{one, two};",
+            ),
+            edit_operation(
+                "src/original.rs",
+                Some("a"),
+                selected[1].start,
+                selected[1].end,
+                "",
+            ),
+            edit_operation(
+                "src/lib.rs",
+                Some("b"),
+                root.len(),
+                root.len(),
+                "mod shared;\n",
+            ),
+        ]);
+        assert_eq!(
+            replay_edits(original, &replacements, "src/original.rs").unwrap(),
+            source_after
+        );
+        assert_eq!(
+            replay_edits(root, &replacements, "src/lib.rs").unwrap(),
+            root_after
+        );
+        let invalid = Value::array([edit_operation(
+            "src/original.rs",
+            Some("a"),
+            original.len() + 1,
+            original.len() + 1,
+            "bad",
+        )]);
+        assert!(replay_edits(original, &invalid, "src/original.rs").is_err());
+        let overlap = Value::array([
+            edit_operation("src/original.rs", Some("a"), 0, 6, "a"),
+            edit_operation("src/original.rs", Some("a"), 5, 8, "b"),
+        ]);
+        assert!(replay_edits(original, &overlap, "src/original.rs").is_err());
     }
 }

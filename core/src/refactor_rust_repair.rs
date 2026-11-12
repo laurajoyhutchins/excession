@@ -180,7 +180,7 @@ fn validate_chain(repo: &Path, revision: &str, plan: &Value, base: &str) -> Resu
             String::new()
         };
         let replay = refactor_codegen::replay_edits(&original, plan.get("edits")?, path)?;
-        if replay.as_bytes() != body {
+        if replay.as_bytes() != body.as_slice() {
             return refuse("original Git blobs and parent byte edits do not replay to the candidate");
         }
     }

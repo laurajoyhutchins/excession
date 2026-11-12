@@ -59,7 +59,7 @@ fn python_catalog(
     roots.dedup();
     let catalog = obj(&[
         ("modules", Value::array(modules)),
-        ("roots", Value::array(roots.iter().map(Value::string))),
+        ("roots", Value::array(roots.iter().map(|root| Value::string(root)))),
         ("import_base", Value::string(import_base.unwrap_or(""))),
     ]);
     digest::sha256(catalog.canonical().as_bytes())
@@ -388,10 +388,51 @@ pub fn index_sources(
             files.insert(e.path.clone(), (name, e.oid.clone()));
         }
     }
+    // Python-only revision reuse is intentionally narrow. JS resolution also
+    // depends on package.json/main and TypeScript configuration, so mixed and
+    // JS-only repositories retain their existing full-analysis behavior.
+    let python_only = !files.is_empty() && files.keys().all(|path| path.ends_with(".py"));
+    let mut reusable_paths = BTreeSet::new();
+    let mut reuse_parent = None;
+    let mut python_identity = None;
+    if python_only {
+        let producer = python_producer()?;
+        let catalog = python_catalog(&files, roots, import_base);
+        if let Some(existing) = snapshot(db, id, commit)? {
+            if existing.producer != producer || existing.catalog != catalog {
+                return refuse("completed Python index used a different parser or module catalog");
+            }
+            authenticate_snapshot(db, id, commit, &existing)?;
+            blob_reader.finish()?;
+            return Ok(());
+        }
+        if let Some((parent, paths)) =
+            reusable_python(db, id, root, commit, &producer, &catalog)?
+        {
+            reuse_parent = Some(parent);
+            reusable_paths = paths;
+        }
+        clear_derived_rows(db, id, commit)?;
+        if let Some(ref parent) = reuse_parent {
+            carry_python_rows(db, id, parent, commit)?;
+        }
+        python_identity = Some((producer, catalog));
+    }
+
+    let python_module_catalog = files.iter()
+        .filter(|(path, _)| path.ends_with(".py"))
+        .map(|(path, (name, _))| obj(&[
+            ("name", Value::string(name)),
+            ("path", Value::string(path)),
+        ]))
+        .collect::<Vec<_>>();
     let mut py = Vec::new();
     let mut js = Vec::new();
     let mut map_js = BTreeMap::new();
     for (path, (name, oid)) in &files {
+        if reusable_paths.contains(path) {
+            continue;
+        }
         let content = String::from_utf8(blob_reader.read(oid)?)
             .map_err(|_| "source is not UTF-8; unsupported source decoder".to_owned())?;
         if path.ends_with(".py") {
@@ -403,7 +444,12 @@ pub fn index_sources(
     }
     blob_reader.finish()?;
     if !py.is_empty() {
-        for item in adapter::python(&py)?.array_ref()? {
+        let result = if reusable_paths.is_empty() {
+            adapter::python(&py)?
+        } else {
+            adapter::python_subset(&py, &python_module_catalog)?
+        };
+        for item in result.array_ref()? {
             let module = item.get("name")?.str()?;
             let path = item.get("path")?.str()?;
             if modules.get(module).map(String::as_str) != Some(path) {
@@ -522,6 +568,24 @@ pub fn index_sources(
         .map_err(|e| e.to_string())?;
     if indexed != modules.len() {
         return refuse("module catalog count differs from analyzed source identities");
+    }
+    if let Some((producer, catalog)) = python_identity {
+        let parsed = py.len();
+        let reused = reusable_paths.len();
+        if parsed + reused != files.len() {
+            return refuse("incomplete Python module reuse accounting");
+        }
+        let rows = python_rows_digest(db, id, commit)?;
+        db.execute(
+            "INSERT INTO python_index_snapshot
+             (repo_id,commit_oid,producer_sha256,catalog_sha256,rows_sha256,
+              parsed_modules,reused_modules) VALUES(?,?,?,?,?,?,?)",
+            &[
+                Param::Integer(id), Param::Text(commit),
+                Param::Text(&producer), Param::Text(&catalog), Param::Text(&rows),
+                Param::Integer(parsed as i64), Param::Integer(reused as i64),
+            ],
+        )?;
     }
     Ok(())
 }

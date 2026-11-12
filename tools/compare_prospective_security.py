@@ -57,12 +57,11 @@ def load_manifest(path: Path) -> dict:
             revision = case[phase]
             if not (OID.fullmatch(revision["commit"]) and OID.fullmatch(revision["blob"])):
                 raise ValueError("unverified source commit/blob identity")
-            key = (repo, revision["commit"], source_file)
+            key = (repo, revision["commit"], source_file, cwe)
             if key in cohorts:
-                # Same source revision can appear in more than one independent
-                # advisory, but must not be treated as separate observations
-                # of the same file under two scoring labels.
-                raise ValueError("duplicate source revision/file in cohort")
+                # Distinct weakness families may share a release and file;
+                # do not count the same source/weakness twice.
+                raise ValueError("duplicate source revision/file/weakness in cohort")
             cohorts.add(key)
         if case["vulnerable"]["commit"] == case["patched"]["commit"]:
             raise ValueError("identical vulnerable and patched commit")

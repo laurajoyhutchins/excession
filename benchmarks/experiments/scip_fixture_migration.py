@@ -45,6 +45,38 @@ def command(args: list[object], *, cwd: Path | None = None,
     return proc.stdout
 
 
+def measured_command(args: list[object], evidence: Path, stem: str,
+                     stage: str) -> tuple[bytes, dict]:
+    """One real GNU-time measurement per child, no synthetic peak-RSS proxy.
+
+    Available only on the deep Linux fixture runner. Wall time includes process
+    startup and excludes native-index generation, which is measured separately.
+    Costs are sample timings, not calibrated distribution or paired speedups.
+    """
+    native_time = Path("/usr/bin/time")
+    if not native_time.is_file():
+        raise RuntimeError("GNU /usr/bin/time required for real peak-RSS measurement")
+    receipt = evidence / f".{stem}.{stage}.maxrss.txt"
+    start = time.perf_counter_ns()
+    try:
+        payload = command([
+            native_time, "-f", "%M", "-o", receipt, *args
+        ])
+        elapsed_ms = round((time.perf_counter_ns() - start) / 1_000_000, 3)
+        lines = receipt.read_text(encoding="ascii").splitlines()
+        if len(lines) != 1 or not lines[0].isdigit():
+            raise RuntimeError("GNU time did not return measured maximum RSS")
+        return payload, {
+            "stage": stage,
+            "wall_ms": elapsed_ms,
+            "peak_rss_bytes": int(lines[0]) * 1024,
+            "stdout_bytes": len(payload),
+            "measurement": "GNU_TIME_LINUX_SINGLE_PROCESS",
+        }
+    finally:
+        receipt.unlink(missing_ok=True)
+
+
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -280,16 +312,31 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             raise ValueError("SCIP document path is not text")
         report_file = evidence / f"{name}-{language}.report.json"
         audit_file = evidence / f"{name}-{language}.audit.json"
-        report_bytes = command([
+        report_args = [
             args.bin, "refactor", "scip-suggest",
             "--repo", repo, "--rev", commit, "--index", output,
-        ])
+        ]
+        measured_costs = []
+        if args.measure_cost:
+            report_bytes, measure = measured_command(
+                report_args, evidence, f"{name}-{language}", "baseline-suggest"
+            )
+            measured_costs.append(measure)
+        else:
+            report_bytes = command(report_args)
         report_file.write_bytes(report_bytes)
         report = json.loads(report_bytes)
-        receipt_bytes = command([
+        audit_args = [
             args.bin, "refactor", "scip-audit", "--repo", repo,
             "--rev", commit, "--index", output, "--report", report_file,
-        ])
+        ]
+        if args.measure_cost:
+            receipt_bytes, measure = measured_command(
+                audit_args, evidence, f"{name}-{language}", "baseline-audit"
+            )
+            measured_costs.append(measure)
+        else:
+            receipt_bytes = command(audit_args)
         audit_file.write_bytes(receipt_bytes)
         receipt = json.loads(receipt_bytes)
         if (report["source_commit"] != commit
@@ -306,10 +353,18 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             # pinned Git, not Rust's graph, claims or observation normalizer.
             stem = f"{name}-{language}"
             def concepts(verb: str, *extra: object) -> dict:
-                payload = command([
+                argv = [
                     args.bin, "concepts", verb, "--repo", repo,
                     "--rev", commit, "--index", output, *extra
-                ])
+                ]
+                if args.measure_cost:
+                    payload, measure = measured_command(
+                        argv, evidence, stem, f"concept-{verb}-{len(measured_costs)}"
+                    )
+                    measure["stage"] = f"concept-{verb}"
+                    measured_costs.append(measure)
+                else:
+                    payload = command(argv)
                 return json.loads(payload)
             batch = concepts("scip-normalize")
             model = concepts("scip-preview")
@@ -347,6 +402,22 @@ def verify_one(args: argparse.Namespace, case: dict, work: Path,
             "analysis_configuration": configuration,
             "coverage": finding,
             "concepts": concept_oracle,
+            "execution_cost": {
+                "sample_count": 1 if args.measure_cost else 0,
+                "native_index_generation_wall_ms": elapsed_ms,
+                "per_process": measured_costs,
+                "total_excession_wall_ms": round(
+                    sum(item["wall_ms"] for item in measured_costs), 3
+                ) if args.measure_cost else None,
+                "peak_child_rss_bytes": max(
+                    (item["peak_rss_bytes"] for item in measured_costs), default=None
+                ),
+                "decoded_native_index_bytes": len(decoded),
+                "measurement_scope": (
+                    "Linux GNU time single sample; subprocesses cold/warm caches uncontrolled"
+                    if args.measure_cost else "NO_EXCESSION_TIMING_MEASURED"
+                ),
+            },
         })
     if not result["languages"]:
         result["status"] = "UNSUPPORTED"
@@ -385,6 +456,8 @@ def main() -> None:
     parser.add_argument("--decoded-dir", type=Path)
     parser.add_argument("--concepts", action="store_true",
                         help="compile and independently reconcile source-bound semantic concepts")
+    parser.add_argument("--measure-cost", action="store_true",
+                        help="measure baseline and concept stage wall time and GNU time peak RSS")
     parser.add_argument("--require-positive-source-anchors", action="store_true",
                         help="require real source-level independently attested import fixtures")
     parser.add_argument("--require-positive-concepts", action="store_true",

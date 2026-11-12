@@ -42,7 +42,7 @@ impl Config {
             || self.sizes.len() > 8
             || self.fanouts.len() > 8
             || self.sizes.iter().any(|n| !(4..=512).contains(n))
-            || self.fanouts.iter().any(|f| *f == 0)
+            || self.fanouts.contains(&0)
             || self
                 .fanouts
                 .iter()
@@ -342,16 +342,19 @@ fn indexed_edges(db: &Path, name: &str, commit: &str) -> Result<BTreeSet<(String
         .map_err(|e| e.to_string())
 }
 
-fn query(
-    binary: &Path,
-    db: &Path,
-    workload: &str,
-    snapshot: &Revision,
-    seed: &str,
-    kind: &str,
-    arm: &str,
+struct Query<'a> {
+    binary: &'a Path,
+    db: &'a Path,
+    workload: &'a str,
+    snapshot: &'a Revision,
+    seed: &'a str,
+    kind: &'a str,
+    arm: &'a str,
     repetition: usize,
-) -> Result<Value> {
+}
+
+fn query(request: Query<'_>) -> Result<Value> {
+    let Query { binary, db, workload, snapshot, seed, kind, arm, repetition } = request;
     let mut cmd = Command::new(binary);
     cmd.arg("view")
         .arg(if arm == "graph" { "graph" } else { "paths" })
@@ -464,7 +467,7 @@ fn median(mut values: Vec<f64>) -> Result<f64> {
     }
     values.sort_by(f64::total_cmp);
     let n = values.len();
-    Ok(round3(if n % 2 == 0 {
+    Ok(round3(if n.is_multiple_of(2) {
         (values[n / 2 - 1] + values[n / 2]) / 2.0
     } else {
         values[n / 2]
@@ -582,16 +585,16 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
                 };
                 let mut pair = Vec::new();
                 for arm in arms {
-                    pair.push(query(
+                    pair.push(query(Query {
                         binary,
-                        &db,
-                        &name,
+                        db: &db,
+                        workload: &name,
                         snapshot,
-                        &job.seed,
-                        job.kind,
+                        seed: &job.seed,
+                        kind: job.kind,
                         arm,
-                        job.repetition,
-                    )?);
+                        repetition: job.repetition,
+                    })?);
                 }
                 if pair.iter().all(|trial| trial["status"] == "ok")
                     && pair[0]["source_paths"] != pair[1]["source_paths"]

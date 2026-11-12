@@ -524,7 +524,7 @@ fn execute(args: &[String]) -> Result<Response> {
             } else {
                 Ok(Response::Message(impact_query::human(&result)?))
             }
-        },
+        }
         [top] if top == "changes" => Ok(json(change_inventory::inventory(
             Path::new(opt.get_or("path", ".")),
             opt.get("base"),

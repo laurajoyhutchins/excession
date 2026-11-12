@@ -68,11 +68,13 @@ fn modules(db: &Db, repo_id: i64, commit: &str) -> Result<BTreeMap<String, Modul
 /// enforced before Db::open can create or modify anything.
 fn checked_cache_destination(source_root: &Path, destination: &Path) -> Result<PathBuf> {
     if !destination.is_absolute()
-        || destination.components().any(|component| {
-            matches!(component, Component::CurDir | Component::ParentDir)
-        })
+        || destination
+            .components()
+            .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
     {
-        return refuse("SQLite destination must be an absolute, normalized path outside the source repository");
+        return refuse(
+            "SQLite destination must be an absolute, normalized path outside the source repository",
+        );
     }
     let canonical_root = source_root
         .canonicalize()

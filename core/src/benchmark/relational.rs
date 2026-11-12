@@ -37,14 +37,22 @@ impl Config {
         if self.out.exists() {
             return refuse("benchmark output directory already exists");
         }
-        if self.sizes.is_empty() || self.fanouts.is_empty() || self.sizes.len() > 8 || self.fanouts.len() > 8
+        if self.sizes.is_empty()
+            || self.fanouts.is_empty()
+            || self.sizes.len() > 8
+            || self.fanouts.len() > 8
             || self.sizes.iter().any(|n| !(4..=512).contains(n))
             || self.fanouts.iter().any(|f| *f == 0)
-            || self.fanouts.iter().any(|f| self.sizes.iter().any(|n| f >= n))
+            || self
+                .fanouts
+                .iter()
+                .any(|f| self.sizes.iter().any(|n| f >= n))
             || !(1..=20).contains(&self.revisions)
             || !(1..=50).contains(&self.repetitions)
         {
-            return refuse("invalid benchmark dimensions (size 4..512, fanout < size, revisions 1..20, repetitions 1..50)");
+            return refuse(
+                "invalid benchmark dimensions (size 4..512, fanout < size, revisions 1..20, repetitions 1..50)",
+            );
         }
         Ok(())
     }
@@ -80,9 +88,15 @@ fn graph_spec(n: usize, fanout: usize, revision: usize) -> Result<Graph> {
     }
     if revision > 0 {
         let pivot = 1 + (revision - 1) % (n - 1);
-        graph.get_mut(&module_name(pivot)).ok_or("missing pivot")?.insert(module_name(0));
+        graph
+            .get_mut(&module_name(pivot))
+            .ok_or("missing pivot")?
+            .insert(module_name(0));
     }
-    graph.insert("tests.test_links".into(), [module_name(0), module_name(n / 2)].into_iter().collect());
+    graph.insert(
+        "tests.test_links".into(),
+        [module_name(0), module_name(n / 2)].into_iter().collect(),
+    );
     Ok(graph)
 }
 
@@ -110,7 +124,11 @@ fn reachable(graph: &Graph, seed: &str, reverse: bool) -> BTreeMap<String, usize
     while let Some(current) = pending.pop_front() {
         let depth = found[&current];
         let neighbors: Vec<String> = if reverse {
-            graph.iter().filter(|(_, edges)| edges.contains(&current)).map(|(from, _)| from.clone()).collect()
+            graph
+                .iter()
+                .filter(|(_, edges)| edges.contains(&current))
+                .map(|(from, _)| from.clone())
+                .collect()
         } else {
             graph[&current].iter().cloned().collect()
         };
@@ -133,11 +151,20 @@ fn oracle(graph: &Graph, seed: &str, kind: &str) -> Result<Vec<String>> {
         "tests" => {
             let forward = reachable(graph, seed, false);
             let backward = reachable(graph, seed, true);
-            forward.keys().chain(backward.keys())
-                .filter(|name| name.starts_with("tests.") && name.as_str() != seed).cloned().collect()
-        },
-        "dependencies_direct" | "dependents_direct" => reachable(graph, seed, kind == "dependents_direct")
-            .into_iter().filter(|(_, depth)| *depth == 1).map(|(name, _)| name).collect(),
+            forward
+                .keys()
+                .chain(backward.keys())
+                .filter(|name| name.starts_with("tests.") && name.as_str() != seed)
+                .cloned()
+                .collect()
+        }
+        "dependencies_direct" | "dependents_direct" => {
+            reachable(graph, seed, kind == "dependents_direct")
+                .into_iter()
+                .filter(|(_, depth)| *depth == 1)
+                .map(|(name, _)| name)
+                .collect()
+        }
         _ => unreachable!(),
     };
     Ok(selected.iter().map(|name| module_path(name)).collect())
@@ -178,28 +205,52 @@ struct Observation {
 fn observe(command: &mut Command) -> Result<Observation> {
     let before = children_cpu_ms()?;
     let started = Instant::now();
-    let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| format!("spawn {:?}: {e}", command))?;
     let mut stdout = child.stdout.take().ok_or("missing subprocess stdout")?;
     let mut stderr = child.stderr.take().ok_or("missing subprocess stderr")?;
-    let reader_out = thread::spawn(move || { let mut output = Vec::new(); stdout.read_to_end(&mut output).map(|_| output) });
-    let reader_err = thread::spawn(move || { let mut output = Vec::new(); stderr.read_to_end(&mut output).map(|_| output) });
+    let reader_out = thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).map(|_| output)
+    });
+    let reader_err = thread::spawn(move || {
+        let mut output = Vec::new();
+        stderr.read_to_end(&mut output).map(|_| output)
+    });
     let (status, timed_out) = loop {
         match child.try_wait().map_err(|e| format!("wait: {e}"))? {
             Some(status) => break (status, false),
             None if started.elapsed() >= TIMEOUT => {
                 let _ = child.kill();
-                break (child.wait().map_err(|e| format!("reap timed-out process: {e}"))?, true);
+                break (
+                    child
+                        .wait()
+                        .map_err(|e| format!("reap timed-out process: {e}"))?,
+                    true,
+                );
             }
             None => thread::sleep(Duration::from_millis(10)),
         }
     };
-    let out = reader_out.join().map_err(|_| "stdout reader panicked")?.map_err(|e| e.to_string())?;
-    let err = reader_err.join().map_err(|_| "stderr reader panicked")?.map_err(|e| e.to_string())?;
+    let out = reader_out
+        .join()
+        .map_err(|_| "stdout reader panicked")?
+        .map_err(|e| e.to_string())?;
+    let err = reader_err
+        .join()
+        .map_err(|_| "stderr reader panicked")?
+        .map_err(|e| e.to_string())?;
     Ok(Observation {
         stdout: out,
         stderr: err,
-        exit_code: if timed_out { 124 } else { status.code().unwrap_or(1) },
+        exit_code: if timed_out {
+            124
+        } else {
+            status.code().unwrap_or(1)
+        },
         wall_ms: round3(started.elapsed().as_secs_f64() * 1000.0),
         child_cpu_ms: round3((children_cpu_ms()? - before).max(0.0)),
         timeout: timed_out,
@@ -209,15 +260,24 @@ fn observe(command: &mut Command) -> Result<Observation> {
 fn checked(command: &mut Command) -> Result<Observation> {
     let observed = observe(command)?;
     if observed.exit_code != 0 {
-        return refuse(format!("command {:?} failed ({}): {}", command, observed.exit_code,
-            String::from_utf8_lossy(&observed.stderr).chars().take(500).collect::<String>()));
+        return refuse(format!(
+            "command {:?} failed ({}): {}",
+            command,
+            observed.exit_code,
+            String::from_utf8_lossy(&observed.stderr)
+                .chars()
+                .take(500)
+                .collect::<String>()
+        ));
     }
     Ok(observed)
 }
 
 fn git_string(repo: &Path, args: &[&str]) -> Result<String> {
     let data = checked(Command::new("git").arg("-C").arg(repo).args(args))?.stdout;
-    String::from_utf8(data).map(|x| x.trim().to_string()).map_err(|e| e.to_string())
+    String::from_utf8(data)
+        .map(|x| x.trim().to_string())
+        .map_err(|e| e.to_string())
 }
 
 fn fixture(source: &Path, n: usize, fanout: usize, revisions: usize) -> Result<Vec<Revision>> {
@@ -228,16 +288,34 @@ fn fixture(source: &Path, n: usize, fanout: usize, revisions: usize) -> Result<V
         let graph = graph_spec(n, fanout, rev)?;
         for name in graph.keys() {
             let path = source.join(module_path(name));
-            fs::create_dir_all(path.parent().ok_or("invalid module path")?).map_err(|e| e.to_string())?;
+            fs::create_dir_all(path.parent().ok_or("invalid module path")?)
+                .map_err(|e| e.to_string())?;
             fs::write(path, source_for(&graph, name)?).map_err(|e| e.to_string())?;
         }
         let date = format!("2020-01-{:02}T00:00:00+0000", rev + 1);
-        checked(Command::new("git").arg("-C").arg(source).args(["add", "bench", "tests"]))?;
-        checked(Command::new("git").arg("-C").arg(source).args(["commit", "-q", "-m", &format!("Generated workload revision {rev}")])
-            .env("GIT_AUTHOR_NAME", "Benchmark").env("GIT_COMMITTER_NAME", "Benchmark")
-            .env("GIT_AUTHOR_EMAIL", "benchmark@example.invalid")
-            .env("GIT_COMMITTER_EMAIL", "benchmark@example.invalid")
-            .env("GIT_AUTHOR_DATE", &date).env("GIT_COMMITTER_DATE", &date))?;
+        checked(
+            Command::new("git")
+                .arg("-C")
+                .arg(source)
+                .args(["add", "bench", "tests"]),
+        )?;
+        checked(
+            Command::new("git")
+                .arg("-C")
+                .arg(source)
+                .args([
+                    "commit",
+                    "-q",
+                    "-m",
+                    &format!("Generated workload revision {rev}"),
+                ])
+                .env("GIT_AUTHOR_NAME", "Benchmark")
+                .env("GIT_COMMITTER_NAME", "Benchmark")
+                .env("GIT_AUTHOR_EMAIL", "benchmark@example.invalid")
+                .env("GIT_COMMITTER_EMAIL", "benchmark@example.invalid")
+                .env("GIT_AUTHOR_DATE", &date)
+                .env("GIT_COMMITTER_DATE", &date),
+        )?;
         history.push(Revision {
             commit: git_string(source, &["rev-parse", "HEAD"])?,
             tree: git_string(source, &["rev-parse", "HEAD^{tree}"])?,
@@ -255,19 +333,46 @@ fn indexed_edges(db: &Path, name: &str, commit: &str) -> Result<BTreeSet<(String
     let connection = Connection::open(db).map_err(|e| e.to_string())?;
     let mut statement = connection.prepare("SELECT d.source_name,d.target_name FROM dependency d JOIN repository r ON r.id=d.repo_id WHERE r.name=? AND d.commit_oid=?")
         .map_err(|e| e.to_string())?;
-    let rows = statement.query_map(params![name, commit], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+    let rows = statement
+        .query_map(params![name, commit], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| e.to_string())?;
-    rows.collect::<std::result::Result<BTreeSet<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<std::result::Result<BTreeSet<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
-fn query(binary: &Path, db: &Path, workload: &str, snapshot: &Revision, seed: &str, kind: &str, arm: &str, repetition: usize) -> Result<Value> {
+fn query(
+    binary: &Path,
+    db: &Path,
+    workload: &str,
+    snapshot: &Revision,
+    seed: &str,
+    kind: &str,
+    arm: &str,
+    repetition: usize,
+) -> Result<Value> {
     let mut cmd = Command::new(binary);
-    cmd.arg("view").arg(if arm == "graph" { "graph" } else { "paths" })
-        .args(["--db", db.to_str().ok_or("non-UTF8 DB path")?, "--name", workload,
-               "--rev", &snapshot.commit, "--seed", seed]);
-    if arm == "graph" { cmd.args(["--kind", kind]); }
-    else {
-        let role = KINDS.iter().find(|(name, _)| *name == kind).ok_or("invalid query kind")?.1;
+    cmd.arg("view")
+        .arg(if arm == "graph" { "graph" } else { "paths" })
+        .args([
+            "--db",
+            db.to_str().ok_or("non-UTF8 DB path")?,
+            "--name",
+            workload,
+            "--rev",
+            &snapshot.commit,
+            "--seed",
+            seed,
+        ]);
+    if arm == "graph" {
+        cmd.args(["--kind", kind]);
+    } else {
+        let role = KINDS
+            .iter()
+            .find(|(name, _)| *name == kind)
+            .ok_or("invalid query kind")?
+            .1;
         cmd.args(["--role", role]);
     }
     let observation = observe(&mut cmd)?;
@@ -280,21 +385,29 @@ fn query(binary: &Path, db: &Path, workload: &str, snapshot: &Revision, seed: &s
         "status":if observation.timeout { "timeout" } else if observation.exit_code == 0 { "ok" } else { "error" },
     });
     if observation.exit_code != 0 {
-        trial["error"] = String::from_utf8_lossy(&observation.stderr).chars().take(400).collect::<String>().into();
+        trial["error"] = String::from_utf8_lossy(&observation.stderr)
+            .chars()
+            .take(400)
+            .collect::<String>()
+            .into();
         return Ok(trial);
     }
     let parsed = (|| -> Result<(Vec<String>, usize)> {
-        let output: Value = serde_json::from_slice(&observation.stdout).map_err(|e| e.to_string())?;
+        let output: Value =
+            serde_json::from_slice(&observation.stdout).map_err(|e| e.to_string())?;
         if output["source_commit"] != snapshot.commit || output["source_tree"] != snapshot.tree {
             return refuse("source revision/tree mismatch");
         }
-        let raw_paths = output["source_paths"].as_array().ok_or("missing source_paths array")?;
+        let raw_paths = output["source_paths"]
+            .as_array()
+            .ok_or("missing source_paths array")?;
         let mut paths = Vec::new();
         for path in raw_paths {
             paths.push(path.as_str().ok_or("non-string source path")?.to_string());
         }
         let count = paths.len();
-        paths.sort(); paths.dedup();
+        paths.sort();
+        paths.dedup();
         Ok((paths, count))
     })();
     match parsed {
@@ -306,7 +419,9 @@ fn query(binary: &Path, db: &Path, workload: &str, snapshot: &Revision, seed: &s
             trial["declared_oracle_paths"] = json!(expected);
             trial["duplicate_paths"] = json!(original_len - paths.len());
             trial["exact_oracle_match"] = json!(good);
-            if !good { trial["status"] = "oracle-mismatch".into(); }
+            if !good {
+                trial["status"] = "oracle-mismatch".into();
+            }
         }
         Err(message) => {
             trial["status"] = "invalid-output".into();
@@ -320,21 +435,40 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Result<Self> {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let root = std::env::temp_dir().join(format!("excession-relations-{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed)));
+        let root = std::env::temp_dir().join(format!(
+            "excession-relations-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir(&root).map_err(|e| format!("create scratch directory: {e}"))?;
         Ok(Self(root))
     }
 }
-impl Drop for Scratch { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); } }
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 #[derive(Clone)]
-struct Job { revision: usize, seed: String, kind: &'static str, repetition: usize }
+struct Job {
+    revision: usize,
+    seed: String,
+    kind: &'static str,
+    repetition: usize,
+}
 
 fn median(mut values: Vec<f64>) -> Result<f64> {
-    if values.is_empty() { return refuse("cannot summarize empty observations"); }
+    if values.is_empty() {
+        return refuse("cannot summarize empty observations");
+    }
     values.sort_by(f64::total_cmp);
     let n = values.len();
-    Ok(round3(if n % 2 == 0 { (values[n / 2 - 1] + values[n / 2]) / 2.0 } else { values[n / 2] }))
+    Ok(round3(if n % 2 == 0 {
+        (values[n / 2 - 1] + values[n / 2]) / 2.0
+    } else {
+        values[n / 2]
+    }))
 }
 
 fn write_json(path: &Path, value: &Value) -> Result<()> {
@@ -345,9 +479,14 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
 
 pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
     config.validate()?;
-    if !binary.is_file() { return refuse("benchmark binary is missing"); }
+    if !binary.is_file() {
+        return refuse("benchmark binary is missing");
+    }
     fs::create_dir(&config.out).map_err(|e| format!("create benchmark output: {e}"))?;
-    let output = config.out.canonicalize().map_err(|e| format!("resolve output directory: {e}"))?;
+    let output = config
+        .out
+        .canonicalize()
+        .map_err(|e| format!("resolve output directory: {e}"))?;
     let scratch = Scratch::new()?;
     let mut observations: Vec<Value> = Vec::new();
     let mut workloads = Vec::new();
@@ -359,15 +498,36 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
             let history = fixture(&source, n, fanout, config.revisions)?;
             let bundle_name = format!("{name}.bundle");
             let bundle = output.join(&bundle_name);
-            checked(Command::new("git").arg("-C").arg(&source).args(["bundle", "create"]).arg(&bundle).arg("--all"))?;
+            checked(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&source)
+                    .args(["bundle", "create"])
+                    .arg(&bundle)
+                    .arg("--all"),
+            )?;
             let bundle_sha = digest::sha256(&fs::read(&bundle).map_err(|e| e.to_string())?);
             let mut item = json!({"name":name,"size":n,"fanout":fanout,"source_bundle":bundle_name,"bundle_sha256":bundle_sha,"revisions":[]});
             for snapshot in &history {
-                let index = checked(Command::new(binary).arg("index").arg("--repo").arg(&source)
-                    .arg("--db").arg(&db).arg("--name").arg(&name).arg("--rev").arg(&snapshot.commit)
-                    .arg("--roots").arg("bench,tests"))?;
-                let expected: BTreeSet<(String, String)> = snapshot.graph.iter()
-                    .flat_map(|(from, tos)| tos.iter().map(|to| (from.clone(), to.clone()))).collect();
+                let index = checked(
+                    Command::new(binary)
+                        .arg("index")
+                        .arg("--repo")
+                        .arg(&source)
+                        .arg("--db")
+                        .arg(&db)
+                        .arg("--name")
+                        .arg(&name)
+                        .arg("--rev")
+                        .arg(&snapshot.commit)
+                        .arg("--roots")
+                        .arg("bench,tests"),
+                )?;
+                let expected: BTreeSet<(String, String)> = snapshot
+                    .graph
+                    .iter()
+                    .flat_map(|(from, tos)| tos.iter().map(|to| (from.clone(), to.clone())))
+                    .collect();
                 let actual = indexed_edges(&db, &name, &snapshot.commit)?;
                 let exact = expected == actual;
                 let missing: Vec<_> = expected.difference(&actual).cloned().collect();
@@ -381,7 +541,10 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
                 }));
                 if !exact {
                     write_json(&output.join("coverage_failure.json"), &item)?;
-                    return refuse(format!("indexed edges contradict independent fixture: {name} revision {}", snapshot.ordinal));
+                    return refuse(format!(
+                        "indexed edges contradict independent fixture: {name} revision {}",
+                        snapshot.ordinal
+                    ));
                 }
             }
             workloads.push(item);
@@ -390,22 +553,49 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
                 for index in [0, n / 2, n - 1] {
                     for (kind, _) in KINDS {
                         for repetition in 0..config.repetitions {
-                            jobs.push(Job { revision: snapshot.ordinal, seed: module_name(index), kind, repetition });
+                            jobs.push(Job {
+                                revision: snapshot.ordinal,
+                                seed: module_name(index),
+                                kind,
+                                repetition,
+                            });
                         }
                     }
                 }
             }
             // Public SHA-256 permutation: recorded, deterministic workload ordering.
-            jobs.sort_by_key(|job| digest::sha256(format!("20261111:{name}:{}:{}:{}:{}",
-                job.revision, job.seed, job.kind, job.repetition).as_bytes()));
+            jobs.sort_by_key(|job| {
+                digest::sha256(
+                    format!(
+                        "20261111:{name}:{}:{}:{}:{}",
+                        job.revision, job.seed, job.kind, job.repetition
+                    )
+                    .as_bytes(),
+                )
+            });
             for (pair_idx, job) in jobs.iter().enumerate() {
                 let snapshot = &history[job.revision];
-                let arms = if pair_idx % 2 == 0 { ["graph", "view"] } else { ["view", "graph"] };
+                let arms = if pair_idx % 2 == 0 {
+                    ["graph", "view"]
+                } else {
+                    ["view", "graph"]
+                };
                 let mut pair = Vec::new();
                 for arm in arms {
-                    pair.push(query(binary, &db, &name, snapshot, &job.seed, job.kind, arm, job.repetition)?);
+                    pair.push(query(
+                        binary,
+                        &db,
+                        &name,
+                        snapshot,
+                        &job.seed,
+                        job.kind,
+                        arm,
+                        job.repetition,
+                    )?);
                 }
-                if pair.iter().all(|trial| trial["status"] == "ok") && pair[0]["source_paths"] != pair[1]["source_paths"] {
+                if pair.iter().all(|trial| trial["status"] == "ok")
+                    && pair[0]["source_paths"] != pair[1]["source_paths"]
+                {
                     pair[0]["status"] = "pair-mismatch".into();
                     pair[1]["status"] = "pair-mismatch".into();
                 }
@@ -423,14 +613,46 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
     let mut med_size = serde_json::Map::new();
     let mut totals = serde_json::Map::new();
     for arm in ["graph", "view"] {
-        let samples: Vec<&Value> = observations.iter().filter(|trial| trial["arm"] == arm).collect();
+        let samples: Vec<&Value> = observations
+            .iter()
+            .filter(|trial| trial["arm"] == arm)
+            .collect();
         let mut states = serde_json::Map::new();
-        for state in ["ok","timeout","error","invalid-output","oracle-mismatch","pair-mismatch"] {
-            states.insert(state.into(), json!(samples.iter().filter(|trial| trial["status"] == state).count()));
+        for state in [
+            "ok",
+            "timeout",
+            "error",
+            "invalid-output",
+            "oracle-mismatch",
+            "pair-mismatch",
+        ] {
+            states.insert(
+                state.into(),
+                json!(
+                    samples
+                        .iter()
+                        .filter(|trial| trial["status"] == state)
+                        .count()
+                ),
+            );
         }
         counts.insert(arm.into(), Value::Object(states));
-        let wall: Vec<f64> = samples.iter().map(|x| x["wall_ms"].as_f64().ok_or("missing wall_ms sample".to_owned())).collect::<Result<_>>()?;
-        let bytes: Vec<f64> = samples.iter().map(|x| x["stdout_bytes"].as_f64().ok_or("missing stdout_bytes sample".to_owned())).collect::<Result<_>>()?;
+        let wall: Vec<f64> = samples
+            .iter()
+            .map(|x| {
+                x["wall_ms"]
+                    .as_f64()
+                    .ok_or("missing wall_ms sample".to_owned())
+            })
+            .collect::<Result<_>>()?;
+        let bytes: Vec<f64> = samples
+            .iter()
+            .map(|x| {
+                x["stdout_bytes"]
+                    .as_f64()
+                    .ok_or("missing stdout_bytes sample".to_owned())
+            })
+            .collect::<Result<_>>()?;
         med_wall.insert(arm.into(), json!(median(wall.clone())?));
         med_size.insert(arm.into(), json!(median(bytes)?));
         totals.insert(arm.into(), json!(round3(wall.iter().sum())));
@@ -448,7 +670,10 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
     write_json(&output.join("summary.json"), &summary)?;
     let report = super::build_relational(&output)?;
     if observations.iter().any(|trial| trial["status"] != "ok") {
-        return refuse(format!("relational benchmark contains failed observations; see {}", report.display()));
+        return refuse(format!(
+            "relational benchmark contains failed observations; see {}",
+            report.display()
+        ));
     }
     Ok(report)
 }
@@ -458,33 +683,72 @@ mod tests {
     use super::*;
     #[test]
     fn generated_oracle_is_independent_and_revision_sensitive() {
-        let old = graph_spec(8,2,0).unwrap();
-        let changed = graph_spec(8,2,1).unwrap();
+        let old = graph_spec(8, 2, 0).unwrap();
+        let changed = graph_spec(8, 2, 1).unwrap();
         assert_eq!(old.len(), 11);
-        assert_eq!(old["bench.m0000"], [module_name(1), module_name(2)].into_iter().collect());
+        assert_eq!(
+            old["bench.m0000"],
+            [module_name(1), module_name(2)].into_iter().collect()
+        );
         assert!(!old["bench.m0001"].contains("bench.m0000"));
         assert!(changed["bench.m0001"].contains("bench.m0000"));
-        assert_eq!(oracle(&old,"bench.m0000","focus").unwrap(), vec!["bench/m0000.py"]);
-        assert_eq!(oracle(&old,"bench.m0000","dependencies_direct").unwrap(), vec!["bench/m0001.py","bench/m0002.py"]);
-        assert_eq!(oracle(&old,"bench.m0000","dependents_direct").unwrap(), vec!["tests/test_links.py"]);
-        assert_eq!(oracle(&old,"bench.m0004","tests").unwrap(), vec!["tests/test_links.py"]);
-        assert!(oracle(&old,"missing","focus").is_err());
+        assert_eq!(
+            oracle(&old, "bench.m0000", "focus").unwrap(),
+            vec!["bench/m0000.py"]
+        );
+        assert_eq!(
+            oracle(&old, "bench.m0000", "dependencies_direct").unwrap(),
+            vec!["bench/m0001.py", "bench/m0002.py"]
+        );
+        assert_eq!(
+            oracle(&old, "bench.m0000", "dependents_direct").unwrap(),
+            vec!["tests/test_links.py"]
+        );
+        assert_eq!(
+            oracle(&old, "bench.m0004", "tests").unwrap(),
+            vec!["tests/test_links.py"]
+        );
+        assert!(oracle(&old, "missing", "focus").is_err());
     }
     #[test]
     fn invalid_dimensions_are_rejected_before_creating_output() {
-        for (size, fanout) in [(0,1),(3,1),(8,0),(8,8)] {
-            let cfg=Config { out:PathBuf::from("/tmp/unreachable-native-relational"), sizes:vec![size], fanouts:vec![fanout], revisions:1, repetitions:1 };
+        for (size, fanout) in [(0, 1), (3, 1), (8, 0), (8, 8)] {
+            let cfg = Config {
+                out: PathBuf::from("/tmp/unreachable-native-relational"),
+                sizes: vec![size],
+                fanouts: vec![fanout],
+                revisions: 1,
+                repetitions: 1,
+            };
             assert!(cfg.validate().is_err());
         }
     }
+    #[cfg(unix)]
     #[test]
     fn generated_source_commits_replay() {
-        let scratch=Scratch::new().unwrap();
-        let source=scratch.0.join("source");
-        let history=fixture(&source,8,2,3).unwrap();
-        assert_eq!(history.len(),3);
-        assert_eq!(history.iter().map(|s| &s.commit).collect::<BTreeSet<_>>().len(),3);
-        assert_eq!(history.iter().map(|s| &s.tree).collect::<BTreeSet<_>>().len(),3);
-        assert_eq!(fs::read_to_string(source.join("bench/m0001.py")).unwrap(),source_for(&history[2].graph,"bench.m0001").unwrap());
+        let scratch = Scratch::new().unwrap();
+        let source = scratch.0.join("source");
+        let history = fixture(&source, 8, 2, 3).unwrap();
+        assert_eq!(history.len(), 3);
+        assert_eq!(
+            history
+                .iter()
+                .map(|s| &s.commit)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            3
+        );
+        assert_eq!(
+            history
+                .iter()
+                .map(|s| &s.tree)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            3
+        );
+        assert_eq!(
+            fs::read_to_string(source.join("bench/m0001.py")).unwrap(),
+            source_for(&history[2].graph, "bench.m0001").unwrap()
+        );
     }
 }

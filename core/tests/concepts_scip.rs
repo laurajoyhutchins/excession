@@ -411,12 +411,39 @@ fn duplicate_symbol_definitions_in_one_file_are_not_a_unique_reference_target() 
 fn native_scip_value_is_a_source_bound_rust_comparison_not_a_certification() {
     let f = Fixture::new();
     let result = f.cli("scip-value", &[]);
-    assert_eq!(result, concepts_value::compare_index(&f.repo, &f.commit, &f.index, None).unwrap());
-    assert_eq!(result.get("baseline_reciprocal_pairs").unwrap().integer().unwrap(), 1);
-    assert_eq!(result.get("proposed_concept_pairs").unwrap().integer().unwrap(), 1);
+    assert_eq!(
+        result,
+        concepts_value::compare_index(&f.repo, &f.commit, &f.index, None).unwrap()
+    );
+    assert_eq!(
+        result
+            .get("baseline_reciprocal_pairs")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        result
+            .get("proposed_concept_pairs")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
     assert_eq!(result.get("unchanged_pairs").unwrap().integer().unwrap(), 1);
-    assert_eq!(result.get("concept_only_pairs").unwrap().integer().unwrap(), 0);
-    assert_eq!(result.get("baseline_only_pairs").unwrap().integer().unwrap(), 0);
+    assert_eq!(
+        result.get("concept_only_pairs").unwrap().integer().unwrap(),
+        0
+    );
+    assert_eq!(
+        result
+            .get("baseline_only_pairs")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        0
+    );
     assert_eq!(
         result.get("decision").unwrap().str().unwrap(),
         "DO_NOT_ENABLE_BY_DEFAULT"
@@ -426,7 +453,10 @@ fn native_scip_value_is_a_source_bound_rust_comparison_not_a_certification() {
         "UNJUDGED"
     );
     assert_eq!(result.get("architectural_precision").unwrap(), &Value::Null);
-    assert_eq!(result.get("held_out_independent_oracle").unwrap(), &Value::Bool(false));
+    assert_eq!(
+        result.get("held_out_independent_oracle").unwrap(),
+        &Value::Bool(false)
+    );
     assert_eq!(result, f.cli("scip-value", &[]));
 }
 
@@ -435,8 +465,22 @@ fn one_way_native_scip_evidence_has_no_new_concept_value() {
     let f = Fixture::new();
     f.write_index(false, false);
     let result = f.cli("scip-value", &[]);
-    assert_eq!(result.get("baseline_reciprocal_pairs").unwrap().integer().unwrap(), 0);
-    assert_eq!(result.get("proposed_concept_pairs").unwrap().integer().unwrap(), 0);
+    assert_eq!(
+        result
+            .get("baseline_reciprocal_pairs")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        result
+            .get("proposed_concept_pairs")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        0
+    );
     assert_eq!(result.get("unchanged_pairs").unwrap().integer().unwrap(), 0);
 }
 
@@ -446,19 +490,31 @@ fn value_gate_refuses_stale_source_and_wrong_native_index_binding() {
     let mut baseline = scip_refactor::suggest(&f.repo, &f.commit, &f.index).unwrap();
     let batch = concepts_scip::normalize_index(&f.repo, &f.commit, &f.index, None).unwrap();
     let model = concepts_compile::compile(&batch).unwrap();
-    baseline.entries_mut().unwrap().insert("source_commit".into(), Value::string("f".repeat(40)));
+    baseline
+        .entries_mut()
+        .unwrap()
+        .insert("source_commit".into(), Value::string("f".repeat(40)));
     assert!(concepts_value::compare(&baseline, &batch, &model).is_err());
     let mut baseline = scip_refactor::suggest(&f.repo, &f.commit, &f.index).unwrap();
-    baseline.entries_mut().unwrap().insert("index_sha256".into(), Value::string("e".repeat(64)));
+    baseline
+        .entries_mut()
+        .unwrap()
+        .insert("index_sha256".into(), Value::string("e".repeat(64)));
     assert!(concepts_value::compare(&baseline, &batch, &model).is_err());
     let mut model = model;
     let claims = model.entries_mut().unwrap().get_mut("claims").unwrap();
     if let Value::Array(items) = claims {
-        items[0].entries_mut().unwrap().insert(
-            "behavioral_verification".into(), Value::string("PROVEN"),
-        );
+        items[0]
+            .entries_mut()
+            .unwrap()
+            .insert("behavioral_verification".into(), Value::string("PROVEN"));
     }
-    assert!(concepts_value::compare(
-        &scip_refactor::suggest(&f.repo, &f.commit, &f.index).unwrap(), &batch, &model
-    ).is_err());
+    assert!(
+        concepts_value::compare(
+            &scip_refactor::suggest(&f.repo, &f.commit, &f.index).unwrap(),
+            &batch,
+            &model
+        )
+        .is_err()
+    );
 }

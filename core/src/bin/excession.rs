@@ -342,7 +342,9 @@ fn execute(args: &[String]) -> Result<Response> {
         [top, sub] if top == "concepts" => {
             if sub == "scip-value" {
                 return Ok(json(excession::concepts_value::compare_index(
-                    opt.path("repo"), opt.get("rev"), opt.path("index"),
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("index"),
                     opt.0.get("source-prefix").map(String::as_str),
                 )?));
             }

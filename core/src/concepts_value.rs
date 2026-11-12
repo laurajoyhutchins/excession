@@ -16,7 +16,11 @@ fn identity(node: &Value) -> Result<Source> {
     let path = node.get("path")?.str()?;
     crate::git::validate_path(path)?;
     let blob = node.get("blob")?.str()?;
-    if blob.len() != 40 || !blob.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) {
+    if blob.len() != 40
+        || !blob
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    {
         return refuse("source identity requires a lowercase 40-digit Git blob");
     }
     Ok((path.to_owned(), blob.to_owned()))
@@ -57,10 +61,16 @@ fn base_pairs(report: &Value) -> Result<BTreeSet<Pair>> {
 
 fn semantic_pairs(model: &Value) -> Result<BTreeSet<Pair>> {
     concepts::validate_model(model)?;
-    let subjects = model.get("subjects")?.array_ref()?.iter()
+    let subjects = model
+        .get("subjects")?
+        .array_ref()?
+        .iter()
         .map(|v| Ok((v.get("subject_id")?.str()?.to_owned(), v)))
         .collect::<Result<BTreeMap<_, _>>>()?;
-    let claims = model.get("claims")?.array_ref()?.iter()
+    let claims = model
+        .get("claims")?
+        .array_ref()?
+        .iter()
         .map(|v| Ok((v.get("claim_id")?.str()?.to_owned(), v)))
         .collect::<Result<BTreeMap<_, _>>>()?;
     let mut result = BTreeSet::new();
@@ -86,7 +96,9 @@ fn semantic_pairs(model: &Value) -> Result<BTreeSet<Pair>> {
             if ids.len() != 1 {
                 return refuse("membership must bind exactly one native source");
             }
-            let node = subjects.get(ids[0].str()?).ok_or("missing source identity")?;
+            let node = subjects
+                .get(ids[0].str()?)
+                .ok_or("missing source identity")?;
             sources.push(identity(node)?);
         }
         if !result.insert(pair(sources[0].clone(), sources[1].clone())?) {
@@ -122,7 +134,10 @@ pub fn compare(baseline: &Value, batch: &Value, model: &Value) -> Result<Value> 
     let proposed = semantic_pairs(model)?;
     let intersection = base.intersection(&proposed).count();
     let report = obj(&[
-        ("schema", Value::string("excession.concepts-native-value.v1")),
+        (
+            "schema",
+            Value::string("excession.concepts-native-value.v1"),
+        ),
         ("source_commit", baseline.get("source_commit")?.clone()),
         ("source_tree", baseline.get("source_tree")?.clone()),
         ("index_sha256", baseline.get("index_sha256")?.clone()),
@@ -132,9 +147,18 @@ pub fn compare(baseline: &Value, batch: &Value, model: &Value) -> Result<Value> 
         ("baseline_reciprocal_pairs", Value::number(base.len())),
         ("proposed_concept_pairs", Value::number(proposed.len())),
         ("unchanged_pairs", Value::number(intersection)),
-        ("concept_only_pairs", Value::number(proposed.len() - intersection)),
-        ("baseline_only_pairs", Value::number(base.len() - intersection)),
-        ("independently_adjudicated_architectural_labels", Value::number(0)),
+        (
+            "concept_only_pairs",
+            Value::number(proposed.len() - intersection),
+        ),
+        (
+            "baseline_only_pairs",
+            Value::number(base.len() - intersection),
+        ),
+        (
+            "independently_adjudicated_architectural_labels",
+            Value::number(0),
+        ),
         ("architectural_precision", Value::Null),
         ("architectural_recall", Value::Null),
         ("user_usefulness_gain", Value::Null),
@@ -142,14 +166,23 @@ pub fn compare(baseline: &Value, batch: &Value, model: &Value) -> Result<Value> 
         ("held_out_independent_oracle", Value::Bool(false)),
         ("decision", Value::string("DO_NOT_ENABLE_BY_DEFAULT")),
         ("baseline_bytes", Value::number(baseline.canonical().len())),
-        ("semantic_model_bytes", Value::number(model.canonical().len())),
-        ("normalized_observation_bytes", Value::number(batch.canonical().len())),
+        (
+            "semantic_model_bytes",
+            Value::number(model.canonical().len()),
+        ),
+        (
+            "normalized_observation_bytes",
+            Value::number(batch.canonical().len()),
+        ),
     ]);
     concepts::seal(report, "report_id")
 }
 
 pub fn compare_index(
-    repo: &Path, revision: &str, index: &Path, prefix: Option<&str>,
+    repo: &Path,
+    revision: &str,
+    index: &Path,
+    prefix: Option<&str>,
 ) -> Result<Value> {
     let baseline = scip_refactor::suggest_with_prefix(repo, revision, index, prefix)?;
     let batch = concepts_scip::normalize_index(repo, revision, index, prefix)?;

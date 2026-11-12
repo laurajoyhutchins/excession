@@ -23,10 +23,12 @@ def main() -> int:
     p.add_argument("--bin", type=Path, required=True)
     p.add_argument("--modules", type=int, default=256)
     p.add_argument("--repetitions", type=int, default=5)
+    p.add_argument("--functions-per-module", type=int, default=0)
     p.add_argument("--out", type=Path, required=True)
     args = p.parse_args()
-    if not 8 <= args.modules <= 2048 or not 1 <= args.repetitions <= 20:
-        p.error("modules must be 8..2048; repetitions 1..20")
+    if (not 8 <= args.modules <= 2048 or not 1 <= args.repetitions <= 20
+            or not 0 <= args.functions_per_module <= 128):
+        p.error("modules 8..2048; repetitions 1..20; functions-per-module 0..128")
     with tempfile.TemporaryDirectory(prefix="excession-native-scale-") as tmp:
         repo = Path(tmp) / "repo"
         pkg = repo / "pkg"
@@ -38,6 +40,12 @@ def main() -> int:
         for n in range(args.modules):
             content = "VALUE = 1\n" if n == 0 else (
                 f"import pkg.m{n - 1:04d}\nVALUE = {n}\n"
+            )
+            # Nontrivial ASTs and symbol metadata expose whether the existing
+            # SQLite/producer path can avoid work that matters in real modules.
+            content += "".join(
+                f"\ndef compute_{i}(x: int) -> int:\n    return x + {n + i}\n"
+                for i in range(args.functions_per_module)
             )
             (pkg / f"m{n:04d}.py").write_text(content, encoding="utf-8")
         git(repo, "add", ".")
@@ -53,6 +61,7 @@ def main() -> int:
                 "pkg", args.repetitions,
             )
             result["generated_modules"] = args.modules
+            result["functions_per_module"] = args.functions_per_module
         except Exception as exc:
             result = {
                 "schema": "excession.native-incremental-cli-benchmark.v1",
@@ -63,7 +72,7 @@ def main() -> int:
     args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps({
         key: result.get(key) for key in [
-            "status", "generated_modules", "median_ms",
+            "status", "generated_modules", "functions_per_module", "median_ms",
             "speedup_warm_vs_fresh", "head_parsed_modules",
             "head_reused_modules", "error",
         ]

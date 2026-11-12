@@ -26,14 +26,12 @@ It tracks examined, unsupported and excluded population counts separately from u
 ## Contracts and tests
 
 - `contracts/evidence-core/coverage.v1.schema.json`: facet-scoped report format with finite/unbounded scope restrictions and negative-promotion refusal.
-- `contracts/evidence-core/coverage.v1.odcs.json`: quality metadata only, not proof of coverage.
 - `tests/test_ec_d_coverage.py`: positive and negative contract tests.
-- `tests/test_ec_odcs_d_coverage.py`: dataset catalogue consistency.
 - Rust inline tests: an empty/partial SCIP index cannot certify absence; unsupported, excluded, unresolved and truncated cases cannot become complete; invalid counts/configurations are refused; deterministic reports preserve facets and explicit limits.
 
 ## Next integration
 
-1. Run exact-head Cargo + Python/ODCS verification.
+1. Run exact-head Cargo and JSON wire-contract verification.
 2. Add a thin adapter from **successful** `kernel_coverage::audit` results to the source-inventory facet, without reimplementing Git partition audits.
 3. Feed qualified coverage into the existing `excession explain` and `impact` answers; do not create a parallel query engine.
 4. Compare against independent real SCIP/native producer data before allowing a negative claim about any semantic relation.

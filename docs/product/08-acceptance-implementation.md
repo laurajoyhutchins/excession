@@ -4,4 +4,4 @@ A Rust integration test creates its own pinned Git repository with two author-re
 
 This is a **bounded independent synthetic fixture**, not proof of cross-language completeness or an unfamiliar production-repository study. The separate real-repository and installed-archive acceptance requirements remain tracked by #84 and #113.
 
-The versioned acceptance-case schema documents future held-out pinned source cases and adversarial mutations. Auto-ontology evaluation must reuse #95's independent concept baseline, not be treated as native dependency validation.
+Held-out cases and adversarial mutations belong in real test fixtures and the existing benchmark report format, not a separate acceptance-case JSON Schema. Semantic concept evaluation uses its own independent baseline; it is not native dependency validation.

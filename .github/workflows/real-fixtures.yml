@@ -8,6 +8,7 @@ on:
       - benchmarks/experiments/incremental_python.py
       - benchmarks/experiments/incremental_python_scale.py
       - benchmarks/experiments/index_incremental_cli.py
+      - benchmarks/experiments/index_incremental_scale.py
       - tests/test_incremental_python_experiment.py
       - benchmarks/experiments/dependency_oracle.py
       - benchmarks/experiments/js_import_oracle.cjs
@@ -82,6 +83,11 @@ jobs:
             --head fb40afcdf14f1762e3466a01de99ff114b10d228 \
             --roots h11,tests --repetitions 5 \
             --out native-incremental-h11-results.json
+      - name: Benchmark native incremental indexing across 256 Python modules
+        run: |
+          python3 benchmarks/experiments/index_incremental_scale.py \
+            --bin core/target/release/excession --modules 256 \
+            --repetitions 5 --out native-incremental-scale-results.json
       - name: Verify immutable upstream fixtures and corruption refusals
         run: |
           python3 benchmarks/experiments/real_fixtures.py \
@@ -99,4 +105,5 @@ jobs:
             heldout-h11-incremental-results.json
             scaled-incremental-results.json
             native-incremental-h11-results.json
+            native-incremental-scale-results.json
           if-no-files-found: warn

@@ -7,6 +7,7 @@ on:
       - benchmarks/experiments/impact_heldout.py
       - benchmarks/experiments/incremental_python.py
       - benchmarks/experiments/incremental_python_scale.py
+      - benchmarks/experiments/index_incremental_cli.py
       - tests/test_incremental_python_experiment.py
       - benchmarks/experiments/dependency_oracle.py
       - benchmarks/experiments/js_import_oracle.cjs
@@ -72,6 +73,15 @@ jobs:
           python3 benchmarks/experiments/incremental_python_scale.py \
             --modules 256 --repetitions 5 \
             --out scaled-incremental-results.json
+      - name: Verify native Rust/SQLite incremental indexing against fresh head
+        run: |
+          python3 benchmarks/experiments/index_incremental_cli.py \
+            --bin core/target/release/excession \
+            --repo "$RUNNER_TEMP/excession-h11-impact" \
+            --base ea01274303adbb895e1a359ac856241e70184b44 \
+            --head fb40afcdf14f1762e3466a01de99ff114b10d228 \
+            --roots h11,tests --repetitions 5 \
+            --out native-incremental-h11-results.json
       - name: Verify immutable upstream fixtures and corruption refusals
         run: |
           python3 benchmarks/experiments/real_fixtures.py \
@@ -88,4 +98,5 @@ jobs:
             heldout-h11-impact-results.json
             heldout-h11-incremental-results.json
             scaled-incremental-results.json
+            native-incremental-h11-results.json
           if-no-files-found: warn

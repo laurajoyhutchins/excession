@@ -27,15 +27,10 @@ fn source_subject(
         }
         return Ok(id.clone());
     }
-    let entry = git::entry_at(repo, commit, path)?;
-    let src = SourceRef {
-        commit: commit.to_owned(),
-        tree: tree.to_owned(),
-        path: path.to_owned(),
-        blob: blob.clone(),
-        mode: entry.mode,
-    };
-    src.verify_git(repo)?;
+    let src = SourceRef::from_git(repo, commit, path)?;
+    if src.tree != tree || src.blob != blob {
+        return refuse("SCIP source differs from authenticated Git identity");
+    }
     let id = Subject::Source(src).id()?;
     seen.insert(path.to_owned(), (blob, id.clone()));
     Ok(id)

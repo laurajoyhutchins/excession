@@ -152,3 +152,15 @@ python3 tools/validate_semantic_contract.py
 python3 tools/validate_evidence_contract.py
 ```
 
+
+## Indexed JavaScript and TypeScript imports
+
+The ordinary `analyze` and `index` commands use the pinned TypeScript
+compiler's module resolver instead of custom filename-extension guesses.
+The compiler sees a virtual snapshot of tracked JS/TS and configuration
+blobs (`package.json`, `tsconfig.json`, `jsconfig.json`), never an
+uncommitted checkout. Resolved aliases and package entry points are candidates.
+Unsupported compiler configuration inheritance, project references, plugins,
+and absent or out-of-index targets produce explicit unresolved observations.
+No result establishes runtime dependency completeness or permission to skip
+verification. The separately versioned `semantic scan` resolver is unchanged.

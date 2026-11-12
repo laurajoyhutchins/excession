@@ -4,12 +4,14 @@
 use crate::adapter;
 use crate::digest;
 use crate::git::{self, Entry};
-use crate::index::module_name_with_import_base;
 use crate::json::{Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+
+// Compatibility exports for callers of the original semantic module.
+pub use crate::module_identity::{module_name, module_name_with_import_base};
 
 fn put_dependency(
     db: &Db,
@@ -77,58 +79,36 @@ fn put_symbol(db: &Db, id: i64, commit: &str, module: &str, info: &Value) -> Res
     )
 }
 
-fn normalize_local(path: &str, reference: &str) -> Option<String> {
-    if !reference.starts_with('.') {
-        return None;
-    }
-    let base = path.rsplit_once('/').map(|(a, _)| a).unwrap_or("");
-    let mut parts: Vec<&str> = base.split('/').filter(|x| !x.is_empty()).collect();
-    for part in reference.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            _ => parts.push(part),
-        }
-    }
-    Some(parts.join("/"))
-}
-
-fn resolve_js_target(
-    source: &str,
-    reference: &str,
-    available: &BTreeMap<String, String>,
-    mains: &BTreeMap<String, String>,
-) -> Option<String> {
-    let candidate = normalize_local(source, reference)?;
-    let mut options = vec![
-        candidate.clone(),
-        format!("{candidate}.js"),
-        format!("{candidate}.mjs"),
-        format!("{candidate}.cjs"),
-        format!("{candidate}.ts"),
-        format!("{candidate}/index.js"),
-        format!("{candidate}/index.mjs"),
-        format!("{candidate}/index.cjs"),
-        format!("{candidate}/index.ts"),
-    ];
-    if let Some(main) = mains.get(&candidate)
-        && let Some(path) = normalize_local(&format!("{candidate}/package.json"), main)
-    {
-        options.insert(0, path);
-    }
-    options.iter().find_map(|p| available.get(p).cloned())
-}
-
 /// Prepared outside SQLite's write transaction. A failed adapter cannot
 /// modify a previous, successfully indexed revision.
 pub(crate) struct PreparedSources {
     modules: BTreeMap<String, String>,
     map_js: BTreeMap<String, String>,
-    mains: BTreeMap<String, String>,
     python: Value,
     javascript: Value,
+}
+
+/// The only incremental-reuse facts needed by source preparation. The
+/// authenticated snapshot, database writes and producer checks remain owned
+/// by incremental_python, not the language adapter boundary.
+#[derive(Clone, Copy)]
+pub(crate) struct ReuseSelection<'a> {
+    pub paths: &'a BTreeSet<String>,
+    pub total: usize,
+}
+
+fn verify_reuse_inventory(
+    reuse: Option<ReuseSelection<'_>>,
+    parsed: usize,
+    catalog: usize,
+) -> Result<()> {
+    if let Some(selection) = reuse
+        && (selection.total != catalog
+            || parsed.checked_add(selection.paths.len()) != Some(selection.total))
+    {
+        return refuse("incomplete Python incremental source inventory");
+    }
+    Ok(())
 }
 
 pub(crate) fn prepare_sources(
@@ -136,24 +116,23 @@ pub(crate) fn prepare_sources(
     entries: &[Entry],
     roots: &[&str],
     import_base: Option<&str>,
-    reuse: Option<&crate::incremental_python::Plan>,
+    reuse: Option<ReuseSelection<'_>>,
 ) -> Result<PreparedSources> {
     let mut modules = BTreeMap::new();
     let mut files = BTreeMap::new();
-    let mut mains = BTreeMap::<String, String>::new();
+    let mut configs = Vec::new();
     let mut blob_reader = git::BlobReader::open(root)?;
     for e in entries {
-        if e.kind == "blob"
-            && e.path.ends_with("/package.json")
-            && matches!(e.mode.as_str(), "100644" | "100755")
-            && let Ok(v) = crate::json::parse(&blob_reader.read(&e.oid)?)
-            && let Ok(main) = v.get("main").and_then(Value::str)
-        {
-            let parent = e.path.rsplit_once('/').map(|x| x.0).unwrap_or("");
-            mains.insert(parent.into(), main.into());
-        }
         if e.kind != "blob" || !matches!(e.mode.as_str(), "100644" | "100755") {
             continue;
+        }
+        if ["package.json", "tsconfig.json", "jsconfig.json"]
+            .iter()
+            .any(|name| e.path == *name || e.path.ends_with(&format!("/{name}")))
+        {
+            let content = String::from_utf8(blob_reader.read_capped(&e.oid, 1024 * 1024)?)
+                .map_err(|_| "Git configuration file is not UTF-8")?;
+            configs.push(adapter::js_entry(&e.path, &content));
         }
         if let Some((name, _)) = module_name_with_import_base(&e.path, roots, import_base) {
             if modules.insert(name.clone(), e.path.clone()).is_some() {
@@ -173,7 +152,7 @@ pub(crate) fn prepare_sources(
     let mut js = Vec::new();
     let mut map_js = BTreeMap::new();
     for (path, (name, oid)) in &files {
-        if reuse.is_some_and(|plan| plan.reused.contains(path)) {
+        if reuse.is_some_and(|selection| selection.paths.contains(path)) {
             continue;
         }
         let content = String::from_utf8(blob_reader.read(oid)?)
@@ -188,26 +167,20 @@ pub(crate) fn prepare_sources(
     blob_reader.finish()?;
     let python = if py.is_empty() {
         Value::array([])
-    } else if reuse.is_some_and(|plan| !plan.reused.is_empty()) {
+    } else if reuse.is_some_and(|selection| !selection.paths.is_empty()) {
         adapter::python_subset(&py, &catalog)?
     } else {
         adapter::python(&py)?
     };
-    if let Some(plan) = reuse
-        && (plan.total != catalog.len()
-            || python.array_ref()?.len() + plan.reused.len() != plan.total)
-    {
-        return refuse("incomplete Python incremental source inventory");
-    }
+    verify_reuse_inventory(reuse, python.array_ref()?.len(), catalog.len())?;
     let javascript = if js.is_empty() {
         Value::array([])
     } else {
-        adapter::javascript(&js)?
+        adapter::javascript_with_config(&js, &configs)?
     };
     Ok(PreparedSources {
         modules,
         map_js,
-        mains,
         python,
         javascript,
     })
@@ -224,7 +197,6 @@ pub(crate) fn index_prepared(
     let PreparedSources {
         modules,
         map_js,
-        mains,
         python,
         javascript,
     } = prepared;
@@ -291,25 +263,23 @@ pub(crate) fn index_prepared(
             for imp in item.get("imports")?.array_ref()? {
                 let spec = imp.get("specifier")?.str()?;
                 let line = imp.get("line")?.integer()?;
-                if let Some(target) = resolve_js_target(path, spec, map_js, mains) {
+                let target = imp.get("target_path")?;
+                if target != &Value::Null {
+                    let target_path = target.str()?;
+                    let target_module = map_js
+                        .get(target_path)
+                        .ok_or("native JS resolver returned unindexed source")?;
                     put_dependency(
                         db,
                         id,
                         commit,
                         module,
-                        &target,
+                        target_module,
                         line,
                         imp.get("syntax")?.str()?,
                     )?;
-                } else if spec.starts_with('.') {
-                    put_hazard(
-                        db,
-                        id,
-                        commit,
-                        module,
-                        line,
-                        &format!("unresolved local import: {spec}"),
-                    )?;
+                } else if imp.get("resolution_issue")?.str()?.is_empty() {
+                    return refuse(format!("native JS resolver lost import: {spec}"));
                 }
             }
             for symbol in item.get("symbols")?.array_ref()? {
@@ -350,4 +320,37 @@ pub(crate) fn index_prepared(
         return refuse("module catalog count differs from analyzed source identities");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod module_name_tests {
+    use super::*;
+
+    #[test]
+    fn source_selection_refuses_an_incomplete_or_inconsistent_reuse_inventory() {
+        let reused = BTreeSet::from(["pkg/left.py".to_owned()]);
+        let selection = ReuseSelection {
+            paths: &reused,
+            total: 2,
+        };
+        assert!(verify_reuse_inventory(Some(selection), 1, 2).is_ok());
+        assert!(verify_reuse_inventory(None, 2, 2).is_ok());
+        assert!(verify_reuse_inventory(Some(selection), 0, 2).is_err());
+        assert!(verify_reuse_inventory(Some(selection), 1, 3).is_err());
+        assert!(verify_reuse_inventory(Some(selection), usize::MAX, 2).is_err());
+    }
+
+    #[test]
+    fn semantic_module_names_preserve_import_root_and_test_flags() {
+        assert_eq!(
+            module_name_with_import_base("pkg/features/test_parse.py", &["pkg"], Some("pkg")),
+            Some(("features.test_parse".to_owned(), true)),
+        );
+        assert_eq!(
+            module_name("pkg/client.ts", &["pkg"]),
+            Some(("pkg.client.ts".to_owned(), false)),
+        );
+        assert!(module_name("node_modules/pkg/client.js", &["."]).is_none());
+        assert!(module_name_with_import_base("other/a.py", &["pkg"], Some("pkg")).is_none());
+    }
 }

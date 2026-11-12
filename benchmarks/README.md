@@ -14,27 +14,20 @@ queries and Git revisions, while preserving a stated verification guarantee?**
 | --- | --- | --- |
 | [Observable protocol](protocol.md) | Defined | Equal information contracts, independent oracle and four cost axes |
 | [Relational experiments](experiments/README.md) | Rust CLI | Source-written oracle, multi-revision retrieval, size/fanout/revision variation |
-| [Checked-tree A/B](experiments/checked_tree_ab.py) | Existing | Reusable source-binding checks with adversarial refusal parity |
 | [Real repository fixtures](experiments/real_fixtures.py) | Existing | Pinned Git objects and independent bounded import-edge oracle; dynamic imports unsupported |
 | [Single-query microbenchmarks](micro/README.md) | Existing, preserved | Git, ripgrep, clangd, graph-only and view phase diagnostics |
 | [Historical reports](results/) | Retained | Original measured results and GitHub Actions artifact pointers |
 
 **No agent task-completion or subjective productivity metric is used.**
 
-## Historical performance experiments
+## Retired one-off experiments
 
-The one-off A/B experiments remain reproducible, but are no longer separate
-pull-request CI gates. Run **Actions → Historical performance experiments →
-Run workflow**, choose `manifest-output`, `direct-id`, `canonical-json`,
-`checked-tree`, or `projection-phases`. One manually selected experiment
-runs on a pinned Rust toolchain and uploads its raw JSON measurements.
-
-The matching source scripts and past receipts in [results/](results/) are
-preserved. The baselines intentionally use historical commits; do not treat
-differences across many intervening commits as attribution to one optimization.
-Ordinary PR CI still checks serialization identity and Git/SQLite refusals.
-Native retrieval calibration and the relational benchmark retain their own
-path-scoped workflows because they validate actively maintained protocols.
+The old manifest-output, direct-ID, canonical-JSON, checked-tree and
+projection-phase A/B scripts and their manual workflow have been removed.
+Historical measurement receipts remain in [results/](results/) for provenance;
+Git history retains the original sources. These past cross-commit comparisons
+are not current performance gates. The active Rust relational benchmark and
+native calibration have their own workflows.
 
 ## First executable experiment
 
@@ -59,7 +52,7 @@ in any end-to-end comparison. The compact view authenticates a source-bound
 projection; the simple graph query does not authenticate an equivalent view.
 The difference must not be presented as a comparison of equal guarantees.
 
-Existing `micro/` scripts remain separately runnable and have their original
+Active `micro/` probes remain separately runnable and have their original
 results under `results/`. They are not inputs to a global "Excession wins" score.
 
 See [experiment details](experiments/README.md) and

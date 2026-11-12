@@ -10,7 +10,8 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -21,6 +22,9 @@ const KINDS: [(&str, &str); 4] = [
     ("tests", "indexed-test"),
 ];
 const TIMEOUT: Duration = Duration::from_secs(90);
+const MAX_STDOUT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_STDERR_BYTES: usize = 64 * 1024;
+const MAX_QUERY_INVOCATIONS: usize = 10_000;
 type Graph = BTreeMap<String, BTreeSet<String>>;
 
 #[derive(Debug)]
@@ -53,6 +57,21 @@ impl Config {
             return refuse(
                 "invalid benchmark dimensions (size 4..512, fanout < size, revisions 1..20, repetitions 1..50)",
             );
+        }
+        let invocations = self
+            .sizes
+            .len()
+            .saturating_mul(self.fanouts.len())
+            .saturating_mul(self.revisions)
+            .saturating_mul(self.repetitions)
+            .saturating_mul(24);
+        if invocations > MAX_QUERY_INVOCATIONS {
+            return refuse("relational benchmark exceeds 10,000 child query invocations");
+        }
+        if self.sizes.iter().copied().collect::<BTreeSet<_>>().len() != self.sizes.len()
+            || self.fanouts.iter().copied().collect::<BTreeSet<_>>().len() != self.fanouts.len()
+        {
+            return refuse("relational benchmark has duplicate sizes or fanouts");
         }
         Ok(())
     }
@@ -202,6 +221,22 @@ struct Observation {
     timeout: bool,
 }
 
+fn read_bounded<R: Read>(mut pipe: R, limit: usize, exceeded: &AtomicBool) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let len = pipe.read(&mut buf).map_err(|e| e.to_string())?;
+        if len == 0 {
+            return Ok(out);
+        }
+        if out.len().saturating_add(len) > limit {
+            exceeded.store(true, Ordering::Release);
+            return refuse("benchmark subprocess output exceeded byte limit");
+        }
+        out.extend_from_slice(&buf[..len]);
+    }
+}
+
 fn observe(command: &mut Command) -> Result<Observation> {
     let before = children_cpu_ms()?;
     let started = Instant::now();
@@ -210,47 +245,37 @@ fn observe(command: &mut Command) -> Result<Observation> {
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("spawn {:?}: {e}", command))?;
-    let mut stdout = child.stdout.take().ok_or("missing subprocess stdout")?;
-    let mut stderr = child.stderr.take().ok_or("missing subprocess stderr")?;
-    let reader_out = thread::spawn(move || {
-        let mut output = Vec::new();
-        stdout.read_to_end(&mut output).map(|_| output)
-    });
-    let reader_err = thread::spawn(move || {
-        let mut output = Vec::new();
-        stderr.read_to_end(&mut output).map(|_| output)
-    });
+    let stdout = child.stdout.take().ok_or("missing subprocess stdout")?;
+    let stderr = child.stderr.take().ok_or("missing subprocess stderr")?;
+    let output_exceeded = Arc::new(AtomicBool::new(false));
+    let stdout_exceeded = Arc::clone(&output_exceeded);
+    let stderr_exceeded = Arc::clone(&output_exceeded);
+    let reader_out = thread::spawn(move || read_bounded(stdout, MAX_STDOUT_BYTES, &stdout_exceeded));
+    let reader_err = thread::spawn(move || read_bounded(stderr, MAX_STDERR_BYTES, &stderr_exceeded));
     let (status, timed_out) = loop {
         match child.try_wait().map_err(|e| format!("wait: {e}"))? {
             Some(status) => break (status, false),
-            None if started.elapsed() >= TIMEOUT => {
+            None
+                if output_exceeded.load(Ordering::Acquire) || started.elapsed() >= TIMEOUT =>
+            {
+                let timed_out = started.elapsed() >= TIMEOUT;
                 let _ = child.kill();
                 break (
                     child
                         .wait()
-                        .map_err(|e| format!("reap timed-out process: {e}"))?,
-                    true,
+                        .map_err(|e| format!("reap interrupted process: {e}"))?,
+                    timed_out,
                 );
             }
             None => thread::sleep(Duration::from_millis(10)),
         }
     };
-    let out = reader_out
-        .join()
-        .map_err(|_| "stdout reader panicked")?
-        .map_err(|e| e.to_string())?;
-    let err = reader_err
-        .join()
-        .map_err(|_| "stderr reader panicked")?
-        .map_err(|e| e.to_string())?;
+    let out = reader_out.join().map_err(|_| "stdout reader panicked")??;
+    let err = reader_err.join().map_err(|_| "stderr reader panicked")??;
     Ok(Observation {
         stdout: out,
         stderr: err,
-        exit_code: if timed_out {
-            124
-        } else {
-            status.code().unwrap_or(1)
-        },
+        exit_code: if timed_out { 124 } else { status.code().unwrap_or(1) },
         wall_ms: round3(started.elapsed().as_secs_f64() * 1000.0),
         child_cpu_ms: round3((children_cpu_ms()? - before).max(0.0)),
         timeout: timed_out,
@@ -693,6 +718,34 @@ pub fn run(config: &Config, binary: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn excessive_output_is_refused_without_retaining_unbounded_bytes() {
+        let exceeded = AtomicBool::new(false);
+        let input = std::io::Cursor::new(vec![42u8; 8193]);
+        assert!(read_bounded(input, 8192, &exceeded).is_err());
+        assert!(exceeded.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn pathological_query_budget_and_duplicate_workloads_are_rejected() {
+        let many = Config {
+            out: PathBuf::from("/tmp/excession-benchmark-budget-test-unused"),
+            sizes: vec![8],
+            fanouts: vec![1],
+            revisions: 20,
+            repetitions: 50,
+        };
+        assert!(many.validate().is_err());
+        let duplicate = Config {
+            out: PathBuf::from("/tmp/excession-benchmark-duplicate-test-unused"),
+            sizes: vec![8, 8],
+            fanouts: vec![1],
+            revisions: 1,
+            repetitions: 1,
+        };
+        assert!(duplicate.validate().is_err());
+    }
+
     #[test]
     fn generated_oracle_is_independent_and_revision_sensitive() {
         let old = graph_spec(8, 2, 0).unwrap();

@@ -46,3 +46,33 @@ test('JS transform rewrites only a moved relative import', () => {
   assert.equal(rows[0].content, "const b = require('../src/b');\n");
   assert.equal(rows[0].edits.length, 1);
 });
+
+test('native TS resolution uses only Git snapshot aliases and package main', () => {
+  const entries = [
+    {path:'src/start.ts', content:'import x from "@/util"; import y from "../pkg"; import z from "./missing";'},
+    {path:'src/util.ts', content:'export default 1;'},
+    {path:'pkg/lib/index.js', content:'module.exports=2;'},
+  ];
+  const configs = [
+    {path:'tsconfig.json', content:JSON.stringify({compilerOptions:{baseUrl:'.',paths:{'@/*':['src/*']}}})},
+    {path:'pkg/package.json', content:'{"main":"./lib/index.js"}'},
+  ];
+  const [result] = runAdapter('js_adapter.cjs', {entries, configs});
+  const targets = Object.fromEntries(result.imports.map(i => [i.specifier, i.target_path]));
+  assert.equal(targets['@/util'], 'src/util.ts');
+  assert.equal(targets['../pkg'], 'pkg/lib/index.js');
+  assert.equal(targets['./missing'], null);
+  assert.ok(result.hazards.some(h => h.reason.includes('unresolved source import: ./missing')));
+});
+
+test('unsupported tsconfig inheritance cannot produce guessed source edges', () => {
+  const entries = [
+    {path:'a.ts', content:'import "./b";'},
+    {path:'b.ts', content:'export const b=1;'},
+  ];
+  const [result] = runAdapter('js_adapter.cjs', {
+    entries, configs:[{path:'tsconfig.json',content:'{"extends":"../../untrusted"}'}]
+  });
+  assert.equal(result.imports[0].target_path, null);
+  assert.ok(result.hazards[0].reason.includes('unsupported compiler configuration'));
+});

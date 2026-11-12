@@ -31,6 +31,29 @@ pub struct SourceRef {
 }
 
 impl SourceRef {
+    /// Construct one canonical source identity exclusively from a pinned Git
+    /// revision. No working-tree paths or caller-provided blobs are trusted.
+    /// This authenticates file identity, not the producer's interpretation.
+    pub fn from_git(repo: &Path, commit: &str, path: &str) -> Result<Self> {
+        git::verify_repo(repo)?;
+        git::oid(commit)?;
+        git::validate_path(path)?;
+        let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
+        let entry = git::entry_at(repo, commit, path)?;
+        if entry.kind != "blob" || !matches!(entry.mode.as_str(), "100644" | "100755") {
+            return refuse("evidence source requires tracked regular file mode");
+        }
+        let source = Self {
+            commit: commit.to_owned(),
+            tree,
+            path: path.to_owned(),
+            blob: entry.oid,
+            mode: entry.mode,
+        };
+        source.verify_git(repo)?;
+        Ok(source)
+    }
+
     pub fn validate(&self) -> Result<()> {
         git::oid(&self.commit)?;
         git::oid(&self.tree)?;
@@ -390,6 +413,12 @@ mod tests {
             mode: "100644".into(),
         };
         src.verify_git(&root).unwrap();
+        assert_eq!(
+            SourceRef::from_git(&root, &src.commit, &src.path).unwrap(),
+            src,
+            "a Git-derived source must retain the original canonical identity"
+        );
+        assert!(SourceRef::from_git(&root, &src.commit, "../outside").is_err());
         let mut bad = src.clone();
         bad.blob = "d".repeat(40);
         assert!(bad.verify_git(&root).is_err());

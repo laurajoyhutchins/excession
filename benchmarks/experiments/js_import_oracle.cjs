@@ -18,7 +18,10 @@ function resolveRelative(source, specifier) {
   if (!suffixes.some(ext => base.endsWith(ext))) {
     for (const ext of suffixes) candidates.push(base + ext);
   }
-  for (const ext of suffixes) candidates.push(path.join(base, 'index' + ext));
+  // TypeScript Node10 does not infer index.cjs/index.mjs for a bare
+  // directory specifier. Node CommonJS likewise does not infer index.cjs.
+  // Explicit './alt/index.cjs' is valid; './alt' is unresolved here.
+  for (const ext of ['.js', '.ts']) candidates.push(path.join(base, 'index' + ext));
   return candidates.find(candidate => tracked.has(candidate)) ?? null;
 }
 

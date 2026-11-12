@@ -43,6 +43,28 @@ class LiteralImportCoverage(unittest.TestCase):
         self.assertEqual(found, self.expected)
         self.assertEqual(unresolved, [])
 
+    def test_js_oracle_does_not_invent_implicit_index_cjs(self):
+        entries = [
+            {"path": "lib/main.js", "content":
+             "const a = require('./alt');\n"
+             "const b = require('./alt/index.cjs');\n"},
+            {"path": "lib/alt/index.cjs", "content": "module.exports = 1;\n"},
+        ]
+        proc = subprocess.run(
+            ["node", str(ROOT / "benchmarks/experiments/js_import_oracle.cjs")],
+            input=json.dumps(entries), capture_output=True, text=True,
+            check=True, timeout=30,
+        )
+        report = json.loads(proc.stdout)
+        self.assertEqual(report["edges"], [
+            {"source": "lib/main.js", "target": "lib/alt/index.cjs",
+             "line": 2, "syntax": "require"}
+        ])
+        self.assertEqual(report["unresolved"], [
+            {"path": "lib/main.js", "line": 1,
+             "kind": "unresolved-relative", "specifier": "./alt"}
+        ])
+
     def test_production_python_adapter_recovers_the_same_edges(self):
         items = [
             {"name": name, "path": path, "content": self.sources[path]}

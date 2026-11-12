@@ -81,10 +81,15 @@ impl Db {
     }
 
     pub fn execute(&self, sql: &str, args: &[Param<'_>]) -> Result<()> {
-        let rows = self.query(sql, args)?;
-        if !rows.is_empty() {
+        let mut statement = self.conn.prepare(sql).map_err(|e| e.to_string())?;
+        // A statement with RETURNING may modify rows on the first step.
+        // Reject every row-producing statement before SQLite executes it.
+        if statement.column_count() != 0 {
             return refuse("SQL mutation returned unexpected rows");
         }
+        statement
+            .execute(params_from_iter(args.iter()))
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -206,6 +211,18 @@ mod tests {
             );
             assert_eq!(db.scalar("SELECT count(*) FROM sample", &[]).unwrap(), "2");
             assert!(db.execute("SELECT * FROM sample", &[]).is_err());
+            assert!(
+                db.execute(
+                    "INSERT INTO sample(id,description) VALUES(45,'must refuse') RETURNING id",
+                    &[],
+                )
+                .is_err()
+            );
+            assert_eq!(
+                db.scalar("SELECT COUNT(*) FROM sample", &[]).unwrap(),
+                "2",
+                "refused RETURNING statement must not mutate the database"
+            );
         }
         // This is an ordinary SQLite file, readable after closing and
         // independently of the connection that originally created it.

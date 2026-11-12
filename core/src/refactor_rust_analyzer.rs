@@ -232,7 +232,7 @@ fn action_allowed(action: &Json) -> bool {
         && (kind.starts_with("refactor") || (kind == "quickfix" && title.starts_with("Import ")))
 }
 
-fn request_actions(
+pub(crate) fn request_actions(
     analyzer: &Path,
     workspace: &Path,
     relative: &Path,
@@ -414,7 +414,7 @@ fn path_for_uri(root: &Path, value: &str) -> Result<String> {
     Ok(result.to_owned())
 }
 
-fn collect_edits(repo: &Path, rev: &str, edit: &Json) -> Result<(Value, BTreeMap<String, String>)> {
+pub(crate) fn collect_edits(repo: &Path, rev: &str, edit: &Json) -> Result<(Value, BTreeMap<String, String>)> {
     let root = repo.canonicalize().map_err(|e| e.to_string())?;
     let tracked = git::entries(repo, rev)?
         .into_iter()

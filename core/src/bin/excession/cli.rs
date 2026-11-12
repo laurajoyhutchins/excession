@@ -387,6 +387,13 @@ pub(super) fn command() -> Command {
                         .value_parser(NonEmptyStringValueParser::new()),
                 )
                 .arg(
+                    Arg::new("output")
+                        .long("output")
+                        .help("Save a replayable JSON report to a new absolute path outside the repository")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
                     Arg::new("json")
                         .long("json")
                         .action(clap::ArgAction::SetTrue),

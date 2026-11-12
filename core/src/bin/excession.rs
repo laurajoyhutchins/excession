@@ -537,10 +537,42 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.0.get("roots").map(String::as_str),
                 opt.0.get("db").map(String::as_str),
             )?;
+            if let Some(path) = opt.0.get("output") {
+                let checkout = discovery::inspect(
+                    Path::new(opt.get_or("path", ".")),
+                    result.get("head_commit")?.str()?,
+                )?;
+                let destination = analyze::checked_external_destination(
+                    &checkout.root,
+                    Path::new(path),
+                    "impact report",
+                )?;
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&destination)
+                    .map_err(|e| {
+                        format!("create new impact report {}: {e}", destination.display())
+                    })?;
+                let write_result =
+                    writeln!(file, "{}", result.canonical()).and_then(|_| file.sync_all());
+                drop(file);
+                if let Err(error) = write_result {
+                    let _ = std::fs::remove_file(&destination);
+                    return refuse(format!(
+                        "write impact report {}: {error}",
+                        destination.display()
+                    ));
+                }
+            }
             if opt.get_or("json", "false") == "true" {
                 Ok(json(result))
             } else {
-                Ok(Response::Message(impact_query::human(&result)?))
+                let mut human = impact_query::human(&result)?;
+                if let Some(path) = opt.0.get("output") {
+                    human.push_str(&format!("\nSaved replayable report: {path:?}"));
+                }
+                Ok(Response::Message(human))
             }
         }
         [top] if top == "changes" => Ok(json(change_inventory::inventory(

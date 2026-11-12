@@ -70,6 +70,7 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
     );
     let bin = env!("CARGO_BIN_EXE_excession");
     let db = root.join("cache.sqlite");
+    let path = root.join("impact.json");
     let impact = ok(
         bin,
         &[
@@ -80,6 +81,8 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
             "--db",
             db.to_str().unwrap(),
             "--json",
+            "--output",
+            path.to_str().unwrap(),
         ],
     );
     let mut report = json::parse(impact.as_bytes()).unwrap();
@@ -91,8 +94,10 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
         .str()
         .unwrap()
         .to_owned();
-    let path = root.join("impact.json");
-    fs::write(&path, format!("{}\n", report.canonical())).unwrap();
+    assert_eq!(
+        fs::read_to_string(&path).unwrap().trim(),
+        report.canonical()
+    );
     let explain = ok(
         bin,
         &[

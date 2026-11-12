@@ -26,7 +26,7 @@ def model():
             "subjects": ["d" * 64], "assessment": "PROPOSED",
             "behavioral_verification": "UNTESTED",
             "support": [{"receipt_id": "f" * 64, "role": "SUPPORTS",
-                         "observation_kind": "SCIP_REFERENCE"}]
+                         "observation_kind": "SCIP_REFERENCE", "observation_id": "4" * 64}]
         }],
         "concepts": [{
             "concept_id": "2" * 64, "revision_id": "3" * 64,
@@ -54,6 +54,11 @@ class ConceptsModelContractTests(unittest.TestCase):
     def test_untyped_relationship_rejected(self):
         value = model()
         value["claims"][0]["predicate"] = "RELATED_TO"
+        self.assert_rejected(value)
+
+    def test_scip_reference_requires_exact_observation_identity(self):
+        value = model()
+        del value["claims"][0]["support"][0]["observation_id"]
         self.assert_rejected(value)
 
     def test_evidence_role_must_be_explicit(self):

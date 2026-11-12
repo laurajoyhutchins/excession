@@ -8,8 +8,8 @@ use crate::{Result, digest, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_CANDIDATES: usize = 128;
-const COMPILER: &str = "excession.concepts-static-candidates.v1";
-const RULE: &str = "reciprocal-static-import-hypothesis.v1";
+const COMPILER: &str = "excession.concepts-source-candidates.v2";
+const RULE: &str = "reciprocal-static-import.v1;reciprocal-scip-reference.v1";
 
 fn support(observation: &Value) -> Result<Value> {
     Ok(obj(&[
@@ -19,7 +19,7 @@ fn support(observation: &Value) -> Result<Value> {
             observation.get("source_observation_id")?.clone(),
         ),
         ("role", Value::string("SUPPORTS")),
-        ("observation_kind", Value::string("STATIC_IMPORT_CANDIDATE")),
+        ("observation_kind", observation.get("kind")?.clone()),
     ]))
 }
 
@@ -55,15 +55,18 @@ pub fn compile(batch: &Value) -> Result<Value> {
     for value in batch.get("subjects")?.array_ref()? {
         subjects.insert(value.get("subject_id")?.str()?.to_owned(), value.clone());
     }
-    let mut edges = BTreeMap::<(String, String), Vec<(String, Value)>>::new();
+    let mut edges = BTreeMap::<(String, String, String), Vec<(String, Value)>>::new();
     let mut receipt_ids = BTreeSet::new();
     for input in batch.get("inputs")?.array_ref()? {
         receipt_ids.insert(input.get("receipt_id")?.str()?.to_owned());
     }
     for observation in batch.get("observations")?.array_ref()? {
-        if observation.get("kind")?.str()? != "STATIC_IMPORT_CANDIDATE"
-            || observation.get("status")?.str()? != "CANDIDATE"
-        {
+        let kind = observation.get("kind")?.str()?;
+        let status = observation.get("status")?.str()?;
+        if !matches!(
+            (kind, status),
+            ("STATIC_IMPORT_CANDIDATE", "CANDIDATE") | ("SCIP_REFERENCE", "OBSERVED")
+        ) {
             continue;
         }
         let source_id = observation.get("source_subject_id")?.str()?;
@@ -84,7 +87,7 @@ pub fn compile(batch: &Value) -> Result<Value> {
             continue;
         }
         edges
-            .entry((from, to))
+            .entry((kind.to_owned(), from, to))
             .or_default()
             .push((source_id.to_owned(), observation.clone()));
     }
@@ -92,8 +95,8 @@ pub fn compile(batch: &Value) -> Result<Value> {
     let mut concepts_out = Vec::new();
     let mut claims = Vec::new();
     let mut seen_pairs = BTreeSet::new();
-    for ((left, right), forward) in &edges {
-        if left >= right || !edges.contains_key(&(right.clone(), left.clone())) {
+    for ((kind, left, right), forward) in &edges {
+        if left >= right || !edges.contains_key(&(kind.clone(), right.clone(), left.clone())) {
             continue;
         }
         if !seen_pairs.insert((left.clone(), right.clone())) {
@@ -102,7 +105,7 @@ pub fn compile(batch: &Value) -> Result<Value> {
         if concepts_out.len() >= MAX_CANDIDATES {
             return refuse("semantic concept candidate limit exceeded");
         }
-        let backward = &edges[&(right.clone(), left.clone())];
+        let backward = &edges[&(kind.clone(), right.clone(), left.clone())];
         let (left_id, left_observation) = &forward[0];
         let (right_id, right_observation) = &backward[0];
         let support = [support(left_observation)?, support(right_observation)?];
@@ -110,8 +113,9 @@ pub fn compile(batch: &Value) -> Result<Value> {
         // establish a durable concept identity across later source revisions.
         let concept_id = digest::sha256(
             format!(
-                "excession.concept-candidate.v1\0{}\0{}\0{}",
+                "excession.concept-candidate.v2\0{}\0{}\0{}\0{}",
                 batch.get("source_commit")?.str()?,
+                kind,
                 left,
                 right
             )
@@ -147,9 +151,11 @@ pub fn compile(batch: &Value) -> Result<Value> {
                 ),
                 (
                     "definition",
-                    Value::string(
-                        "Proposed architectural responsibility from reciprocal static import candidates; not a verified import cycle, interface implementation, or behavioral equivalence.",
-                    ),
+                    Value::string(if kind == "SCIP_REFERENCE" {
+                        "Proposed architectural responsibility from reciprocal SCIP symbol references; not a compiler import cycle, call graph, FFI bridge, or behavioral equivalence."
+                    } else {
+                        "Proposed architectural responsibility from reciprocal static import candidates; not a verified import cycle, interface implementation, or behavioral equivalence."
+                    }),
                 ),
                 ("membership_claims", Value::array(vec![member_a, member_b])),
                 ("review_status", Value::string("UNREVIEWED")),

@@ -89,8 +89,10 @@ pub fn validate_model(model: &Value) -> Result<()> {
             if !receipts.contains(receipt) {
                 return refuse("claim support is absent from source coverage manifest");
             }
-            if support.get("observation_kind")?.str()? == "STATIC_IMPORT_CANDIDATE"
-                && support.get("observation_id").is_err()
+            if matches!(
+                support.get("observation_kind")?.str()?,
+                "STATIC_IMPORT_CANDIDATE" | "SCIP_REFERENCE"
+            ) && support.get("observation_id").is_err()
             {
                 return refuse("static import support must identify its source observation");
             }

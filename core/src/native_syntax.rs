@@ -246,6 +246,32 @@ mod tests {
     }
 
     #[test]
+    fn prefetched_multi_language_grammars_parse_natively() {
+        if std::env::var_os("TREE_SITTER_LANGUAGE_PACK_CACHE_DIR").is_none()
+            && std::env::var_os("TREE_SITTER_LANGUAGE_PACK_LIBS_DIR").is_none()
+        {
+            return;
+        }
+        for (path, text) in [
+            ("main.rs", "fn answer() -> u32 { 42 }"),
+            ("main.go", "package main\nfunc answer() int { return 42 }"),
+            ("main.py", "def answer():\n    return 42\n"),
+        ] {
+            let record = obj(&[
+                ("path", Value::string(path)),
+                ("content", Value::string(text)),
+            ]);
+            let parsed = parse(&[record]).unwrap();
+            let entry = &parsed.get("sources").unwrap().array_ref().unwrap()[0];
+            assert_eq!(
+                entry.get("status").unwrap().str().unwrap(),
+                "PARSED",
+                "expected prefetched native grammar for {path}"
+            );
+        }
+    }
+
+    #[test]
     fn offline_rust_grammar_does_not_invent_parse_success() {
         let item = obj(&[
             ("path", Value::string("src/main.rs")),

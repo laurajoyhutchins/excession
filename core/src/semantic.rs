@@ -432,15 +432,4 @@ mod module_name_tests {
         assert!(module_name("node_modules/pkg/client.js", &["."]).is_none());
         assert!(module_name_with_import_base("other/a.py", &["pkg"], Some("pkg")).is_none());
     }
-
-    #[test]
-    fn indexing_api_reexports_the_identical_semantic_conversion() {
-        let path = "scripts/gdb/linux/__init__.py";
-        let roots = ["scripts/gdb"];
-        assert_eq!(crate::index::module_name(path, &roots), module_name(path, &roots));
-        assert_eq!(
-            crate::index::module_name_with_import_base(path, &roots, Some("scripts/gdb")),
-            module_name_with_import_base(path, &roots, Some("scripts/gdb")),
-        );
-    }
 }

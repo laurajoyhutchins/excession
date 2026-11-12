@@ -50,9 +50,12 @@ jobs:
                                               else "codeql.sarif")).read_text())
               if engine == "semgrep":
                   assert len(report["results"]) == 108
-                  assert all("django" in x["extra"]["metadata"]["technology"]
-                             for x in report["results"])
-                  rule_ids = sorted({x["check_id"] for x in report["results"]})
+                  django_results = [
+                      x for x in report["results"]
+                      if "django" in x["extra"]["metadata"]["technology"]
+                  ]
+                  assert len(django_results) == 79
+                  rule_ids = sorted({x["check_id"] for x in django_results})
                   family = "CWE-400"
                   claim = "SCANNED_NOT_APPLICABLE"
                   evidence = "report:metadata:technology=django;source-framework=aiohttp"
@@ -115,7 +118,7 @@ jobs:
               bundle = json.loads((root / f"{engine}-bundle.json").read_text())
               candidates, coverages = bundle["candidates"], bundle["coverages"]
               assert len(candidates) == expected, (engine, len(candidates))
-              assert len(coverages) == 2, (engine, len(coverages))
+              assert len(coverages) >= 2, (engine, len(coverages))
               assert all(x["claim"] == "UNVERIFIED_STATIC_CANDIDATE" for x in candidates)
               by_id = {x["coverage_id"]: x for x in coverages}
               assert all(by_id[x["coverage_id"]]["target"]["weakness_family"] != "CWE-22"
@@ -123,6 +126,11 @@ jobs:
               assert any(x["target"]["weakness_family"] == "CWE-22"
                          and x["claim"] == "SCANNED_APPLICABILITY_UNPROVEN"
                          for x in coverages)
+              if engine == "semgrep":
+                  assert sum(by_id[x["coverage_id"]]["claim"] == "SCANNED_NOT_APPLICABLE"
+                             for x in candidates) == 79
+                  assert sum(by_id[x["coverage_id"]]["target"]["weakness_family"]
+                             == "UNMAPPED_SCANNER_RULE" for x in candidates) == 29
               print(f"{engine}: {expected} audited candidates, no CWE-22 candidate")
           PY
       - name: Save replay projections

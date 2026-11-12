@@ -97,6 +97,20 @@ pub(crate) struct ReuseSelection<'a> {
     pub total: usize,
 }
 
+fn verify_reuse_inventory(
+    reuse: Option<ReuseSelection<'_>>,
+    parsed: usize,
+    catalog: usize,
+) -> Result<()> {
+    if let Some(selection) = reuse
+        && (selection.total != catalog
+            || parsed.checked_add(selection.paths.len()) != Some(selection.total))
+    {
+        return refuse("incomplete Python incremental source inventory");
+    }
+    Ok(())
+}
+
 pub(crate) fn prepare_sources(
     root: &Path,
     entries: &[Entry],
@@ -158,12 +172,7 @@ pub(crate) fn prepare_sources(
     } else {
         adapter::python(&py)?
     };
-    if let Some(selection) = reuse
-        && (selection.total != catalog.len()
-            || python.array_ref()?.len() + selection.paths.len() != selection.total)
-    {
-        return refuse("incomplete Python incremental source inventory");
-    }
+    verify_reuse_inventory(reuse, python.array_ref()?.len(), catalog.len())?;
     let javascript = if js.is_empty() {
         Value::array([])
     } else {
@@ -316,6 +325,20 @@ pub(crate) fn index_prepared(
 #[cfg(test)]
 mod module_name_tests {
     use super::*;
+
+    #[test]
+    fn source_selection_refuses_an_incomplete_or_inconsistent_reuse_inventory() {
+        let reused = BTreeSet::from(["pkg/left.py".to_owned()]);
+        let selection = ReuseSelection {
+            paths: &reused,
+            total: 2,
+        };
+        assert!(verify_reuse_inventory(Some(selection), 1, 2).is_ok());
+        assert!(verify_reuse_inventory(None, 2, 2).is_ok());
+        assert!(verify_reuse_inventory(Some(selection), 0, 2).is_err());
+        assert!(verify_reuse_inventory(Some(selection), 1, 3).is_err());
+        assert!(verify_reuse_inventory(Some(selection), usize::MAX, 2).is_err());
+    }
 
     #[test]
     fn semantic_module_names_preserve_import_root_and_test_flags() {

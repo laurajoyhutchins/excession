@@ -13,8 +13,8 @@ use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
-    kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refuse,
-    scip_evidence, scip_refactor, security_ingest, syntax, syntax_resolution, views,
+    kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refactor_codegen,
+    refuse, scip_evidence, scip_refactor, security_ingest, syntax, syntax_resolution, views,
 };
 use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -663,6 +663,21 @@ fn execute(args: &[String]) -> Result<Response> {
                 sub == "audit",
             )?))
         }
+        [top, sub] if top == "refactor" && sub == "extract-shared-module" => Ok(json(
+            refactor_codegen::extract_shared_module(&refactor_codegen::Request {
+                repo: opt.path("repo"),
+                revision: opt.get("rev"),
+                index: opt.path("index"),
+                report: opt.path("report"),
+                candidate: opt.get("candidate"),
+                source: opt.get("source"),
+                destination: opt.get("destination"),
+                symbols: opt.get("symbols"),
+                ast_grep: Path::new(opt.get_or("ast-grep", "ast-grep")),
+                source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                output: opt.0.get("output").map(Path::new),
+            })?,
+        )),
         [top, sub] if top == "refactor" && sub == "scip-ingest" => {
             let db = Db::open(opt.path("db"))?;
             Ok(json(scip_evidence::import(
@@ -737,6 +752,37 @@ fn execute(args: &[String]) -> Result<Response> {
                     other => return refuse(format!("unknown benchmark report kind {other}")),
                 };
                 Ok(Response::Message(format!("VALID {}", output.display())))
+            }
+            "run-relational" => {
+                let parse_sizes = |key: &str, default: &str| -> Result<Vec<usize>> {
+                    opt.get_or(key, default)
+                        .split(',')
+                        .map(|value| {
+                            value
+                                .parse::<usize>()
+                                .map_err(|_| format!("invalid --{key} element: {value}"))
+                        })
+                        .collect()
+                };
+                let revisions = opt
+                    .get_or("revisions", "3")
+                    .parse::<usize>()
+                    .map_err(|_| "invalid --revisions".to_owned())?;
+                let repetitions = opt
+                    .get_or("repetitions", "2")
+                    .parse::<usize>()
+                    .map_err(|_| "invalid --repetitions".to_owned())?;
+                let config = benchmark::relational::Config {
+                    out: opt.path("out").to_path_buf(),
+                    sizes: parse_sizes("sizes", "8,24")?,
+                    fanouts: parse_sizes("fanouts", "1,3")?,
+                    revisions,
+                    repetitions,
+                };
+                let binary = std::env::current_exe()
+                    .map_err(|e| format!("resolve benchmark executable: {e}"))?;
+                let report = benchmark::relational::run(&config, &binary)?;
+                Ok(Response::Message(format!("VALID {}", report.display())))
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },

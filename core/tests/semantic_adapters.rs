@@ -378,3 +378,21 @@ fn semantic_scan_refuses_dirty_checkout() {
         &f.commit,
     ]));
 }
+
+#[test]
+fn historical_index_and_semantic_name_exports_agree() {
+    use excession::{index, semantic};
+    for (path, roots, base) in [
+        ("pkg/a.py", &["pkg"][..], Some("pkg")),
+        ("pkg/sub/__init__.py", &["pkg"][..], Some("pkg")),
+        ("node_modules/vendor.js", &["."][..], None),
+        ("other/tool.ts", &["pkg"][..], Some("pkg")),
+    ] {
+        let expected = semantic::module_name_with_import_base(path, roots, base);
+        assert_eq!(
+            index::module_name_with_import_base(path, roots, base),
+            expected,
+            "compatibility export for {path}",
+        );
+    }
+}

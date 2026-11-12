@@ -164,3 +164,49 @@ references, establish architectural responsibility or certify a refactor.
 It is only a presentation heuristic derived from existing native symbol
 observations. Missing, unsupported or differently shaped evidence remains
 a review candidate, never a safe-to-ignore finding.
+
+## First deterministic code-generation recipe: `extract-shared-module`
+
+This bounded first recipe operates on **one explicitly chosen source module** from a
+source-bound, successfully replayed rust-analyzer SCIP candidate. It does not
+invent a source-code parser or infer that a candidate is a defect. The caller
+selects 1–8 top-level public `fn` items and a new sibling `src/*.rs` module.
+
+The external [ast-grep](https://ast-grep.github.io/) `outline` command is the
+only Rust syntax locator. The recipe passes it **pinned Git blob bytes** over
+stdin and validates its exact byte ranges, item kind and names. The recipe
+refuses non-top-level items, attributes, adjacent documentation, module-relative
+references, duplicate names, unsupported source layouts and pre-existing
+destinations. It preserves the original public paths with a `pub use` in the
+original source and registers the new module in `src/lib.rs`.
+
+### Preview (no source writes)
+
+```sh
+excession refactor extract-shared-module \
+  --repo /path/to/checkout --rev <exact-commit> \
+  --index /path/to/index.scip.json --report /path/to/scip-report.json \
+  --candidate <candidate-id> \
+  --source core/src/semantic.rs --destination core/src/new_shared.rs \
+  --symbols item_one,item_two --ast-grep /path/to/pinned/ast-grep
+```
+
+### Apply (new detached worktree only)
+
+Pass `--output /absolute/new/worktree` to materialize the same candidate
+changes in an **absent** directory using `git worktree add --detach` at the
+original commit. This never edits the original checkout. Excession does **not**
+commit or approve the result, and does not execute hooks, arbitrary scripts,
+`rustfmt`, or builds. It reports edited paths, source Git OIDs and generated
+content digests.
+
+The result is `UNVERIFIED_CODEGEN_PREVIEW` or `APPLIED_UNVERIFIED`, **not**
+a certified refactor. A candidate requires `cargo fmt`, `cargo check`,
+`cargo-semver-checks` where relevant, independent tests, and a fresh
+rust-analyzer SCIP index. A successful compiler check alone is not proof of
+equivalent behavior, and a disappearing reciprocal edge is not proof of safety.
+
+**Scope limitation:** this recipe does not move private structs/types, update
+arbitrary imports, infer where functions belong, repair references, or resolve
+the richer `Plan`/reuse-selection transformation from PR #161. Those cases
+return unsupported until they have a separate mechanically checked recipe.

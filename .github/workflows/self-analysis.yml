@@ -3,12 +3,18 @@ name: Excession self-analysis (advisory)
 # Deep dogfooding is scheduled/on-demand, not a PR admission gate.
 on:
   workflow_dispatch:
-  # Re-check the actual post-merge source whenever SCIP triage changes.
-  # This remains advisory and does not run on every commit or PR.
+  # Re-check when SCIP interpretation or the indexing boundaries selected
+  # for real Excession-on-Excession refactors change on main.
+  # This remains advisory and is not a per-commit or PR admission gate.
   push:
     branches: [main]
     paths:
       - 'core/src/scip_refactor.rs'
+      - 'core/src/index.rs'
+      - 'core/src/semantic.rs'
+      - 'core/src/incremental_python.rs'
+      - 'core/src/indexed_tree.rs'
+      - 'core/src/module_identity.rs'
       - 'tools/self_analysis.py'
       - 'tests/test_self_analysis.py'
       - '.github/workflows/self-analysis.yml'

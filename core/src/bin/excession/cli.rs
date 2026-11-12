@@ -164,6 +164,11 @@ pub(super) fn command() -> Command {
         vec![
             leaf("validate", &["report"], &[]),
             leaf("report", &["kind", "directory"], &["input"]),
+            leaf(
+                "run-relational",
+                &["out"],
+                &["sizes", "fanouts", "revisions", "repetitions"],
+            ),
         ],
     )
     .about("Validate and generate benchmark reports");
@@ -192,9 +197,26 @@ pub(super) fn command() -> Command {
                 &["repo", "rev", "db", "snapshot"],
                 &["source-prefix"],
             ),
+            leaf(
+                "extract-shared-module",
+                &[
+                    "repo",
+                    "rev",
+                    "index",
+                    "report",
+                    "candidate",
+                    "source",
+                    "destination",
+                    "symbols",
+                ],
+                &["ast-grep", "source-prefix", "output"],
+            )
+            .about(
+                "Preview or apply a bounded AST-backed Rust extraction to a new detached worktree",
+            ),
         ],
     )
-    .about("Source-bound refactoring hypotheses");
+    .about("Source-bound refactoring hypotheses and guarded recipes");
     let configured_graph = group(
         "graph",
         vec![

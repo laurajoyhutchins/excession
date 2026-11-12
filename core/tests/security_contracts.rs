@@ -279,6 +279,41 @@ fn changed_or_untracked_checkout_is_rejected() {
     refused(g.ing("semgrep", false));
 }
 #[test]
+fn scanner_anchors_reject_empty_and_terminal_newline_phantom_lines() {
+    for (path, source, line) in [
+        ("empty.go", "", 1_i64),
+        ("trailing.go", "package app\n", 2_i64),
+    ] {
+        let f = Fixture::new();
+        fs::write(f.repo.join(path), source).unwrap();
+        f.commit();
+        let mut report = semgrep();
+        let item = item_mut(field_mut(&mut report, "results"));
+        field_mut(item, "path").clone_from(&Value::string(path));
+        field_mut(field_mut(item, "start"), "line").clone_from(&Value::number(line));
+        f.report(&report);
+        refused(f.ing("semgrep", false));
+    }
+}
+
+#[test]
+fn scanner_accepts_git_tracked_hyphen_prefixed_source_names() {
+    let f = Fixture::new();
+    fs::write(
+        f.repo.join("--help.go"),
+        "package app\n\nfunc Handle() {}\n",
+    )
+    .unwrap();
+    f.commit();
+    let mut report = semgrep();
+    let item = item_mut(field_mut(&mut report, "results"));
+    field_mut(item, "path").clone_from(&Value::string("--help.go"));
+    f.report(&report);
+    parsed(f.ing("semgrep", false));
+    parsed(f.ing("semgrep", true));
+}
+
+#[test]
 fn unsafe_uris_and_invalid_line_numbers_are_refused() {
     for uri in ["/etc/passwd", "../outside.go", "file:///app.go", "app%2Ego"] {
         let f = Fixture::new();

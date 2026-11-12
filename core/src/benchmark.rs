@@ -2,6 +2,8 @@
 //!
 //! The schema validates structure, not the truth of the benchmark's oracle.
 //! Raw observations remain the evidence of what was actually measured.
+pub mod relational;
+
 use crate::{Result, digest, json, refuse};
 use serde_json::{Value, json as document};
 use std::collections::{BTreeMap, BTreeSet};

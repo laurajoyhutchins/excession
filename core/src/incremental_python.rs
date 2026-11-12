@@ -5,9 +5,9 @@
 use crate::adapter;
 use crate::digest;
 use crate::git::{self, Entry};
-use crate::index;
-use crate::index::module_name_with_import_base;
+use crate::indexed_tree;
 use crate::json::{Value, obj};
+use crate::module_identity::module_name_with_import_base;
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet};
@@ -45,6 +45,9 @@ fn producer() -> Result<String> {
     bytes.extend_from_slice(b"excession-python-incremental-v2");
     bytes.extend_from_slice(include_str!("incremental_python.rs").as_bytes());
     bytes.extend_from_slice(include_str!("semantic.rs").as_bytes());
+    // Module-name semantics affect the reuse catalog and must invalidate
+    // authenticated snapshots when they change.
+    bytes.extend_from_slice(include_str!("module_identity.rs").as_bytes());
     bytes.extend_from_slice(include_str!("../adapters/python_ast.py").as_bytes());
     bytes.extend_from_slice(version);
     Ok(digest::sha256(&bytes))
@@ -145,7 +148,7 @@ fn snapshot(db: &Db, repo: i64, commit: &str) -> Result<Option<Snapshot>> {
 
 fn authenticate(db: &Db, root: &Path, repo: i64, parent: &str, proof: &Snapshot) -> Result<()> {
     let actual = git::rev(root, &format!("{parent}^{{tree}}"))?;
-    if index::reconstruct_tree(db, repo, parent)? != actual {
+    if indexed_tree::reconstruct_tree(db, repo, parent)? != actual {
         return refuse("parent Git tree does not match stored source index");
     }
     if row_digest(db, repo, parent)? != proof.rows {

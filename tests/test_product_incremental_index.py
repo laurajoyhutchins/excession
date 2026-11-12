@@ -157,7 +157,8 @@ class ProductionPythonIncremental(unittest.TestCase):
         ))
 
     def test_mode_only_change_forces_module_reparse(self):
-        git(self.repo, "update-index", "--chmod=+x", "pkg/core.py")
+        (self.repo / "pkg/core.py").chmod(0o755)
+        git(self.repo, "add", "pkg/core.py")
         git(self.repo, "commit", "-qm", "change Python source mode")
         head = git(self.repo, "rev-parse", "HEAD")
         self.compare_fresh(head, 1, 4)

@@ -89,13 +89,12 @@ fn reports_importer_as_candidate_without_authorizing_test_skips() {
     );
     assert_eq!(result.get("base_commit").unwrap().str().unwrap(), base);
     assert_eq!(result.get("head_commit").unwrap().str().unwrap(), head);
-    assert_eq!(
-        result
+    assert!(
+        !result
             .get("safe_to_skip_unlisted_tests")
             .unwrap()
             .bool()
-            .unwrap(),
-        false
+            .unwrap()
     );
     assert_eq!(
         result

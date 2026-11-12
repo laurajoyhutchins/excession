@@ -185,12 +185,29 @@ pub fn suggest(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
 
 /// Source-prefix binds a nested Cargo project (such as core/) to the outer
 /// repository's Git tree, without rewriting the upstream SCIP index.
-pub fn suggest_with_prefix(
+/// Native-index facts authenticated against a pinned Git tree by the same
+/// validation path used by the existing refactor hypotheses.
+struct Scan {
+    commit: String,
+    tree: String,
+    index_sha256: String,
+    name: String,
+    version: String,
+    documents: BTreeMap<String, Document>,
+    definitions: BTreeMap<String, BTreeSet<String>>,
+    matched: BTreeSet<Reference>,
+    unresolved: usize,
+    count: usize,
+    languages: BTreeSet<String>,
+    lines_only: usize,
+}
+
+fn scan_with_prefix(
     repo: &Path,
     revision: &str,
     input: &Path,
     source_prefix: Option<&str>,
-) -> Result<Value> {
+) -> Result<Scan> {
     if let Some(prefix) = source_prefix {
         git::validate_path(prefix)?;
     }
@@ -359,6 +376,91 @@ pub fn suggest_with_prefix(
         }
     }
 
+
+    Ok(Scan {
+        commit,
+        tree,
+        index_sha256: crate::digest::sha256(&bytes),
+        name: name.to_owned(),
+        version: version.to_owned(),
+        documents,
+        definitions,
+        matched,
+        unresolved,
+        count,
+        languages,
+        lines_only,
+    })
+}
+
+/// Expose all uniquely matched cross-file SCIP references, not only the pairs
+/// which happen to suggest refactoring. Uses exactly the original native
+/// index/Git validation; does not execute or attest to the indexer itself.
+pub fn references_with_prefix(
+    repo: &Path,
+    revision: &str,
+    input: &Path,
+    source_prefix: Option<&str>,
+) -> Result<Value> {
+    let scan = scan_with_prefix(repo, revision, input, source_prefix)?;
+    let documents = scan.documents.values().map(source).collect::<Vec<_>>();
+    let references = scan.matched.iter().map(|edge| reference(edge, &scan.documents))
+        .collect::<Vec<_>>();
+    let mut result = obj(&[
+        ("schema", Value::string("excession.scip-references.v1")),
+        ("status", Value::string("GIT_BOUND_INDEX_NOT_REEXECUTED")),
+        ("source_commit", Value::string(scan.commit)),
+        ("source_tree", Value::string(scan.tree)),
+        ("index_sha256", Value::string(scan.index_sha256)),
+        ("indexer", obj(&[
+            ("name", Value::string(scan.name)),
+            ("version", Value::string(scan.version)),
+        ])),
+        ("documents", Value::array(documents)),
+        ("references", Value::array(references)),
+        ("coverage", obj(&[
+            ("indexed_occurrences", Value::number(scan.count)),
+            ("unresolved_references", Value::number(scan.unresolved)),
+            ("matched_cross_file_references", Value::number(scan.matched.len())),
+            ("line_only_position_documents", Value::number(scan.lines_only)),
+            ("indexed_documents", Value::number(scan.documents.len())),
+            ("languages", Value::array(scan.languages.into_iter().map(Value::string))),
+            ("completeness", Value::string("PARTIAL_INDEX_SCOPE_ONLY")),
+        ])),
+    ]);
+    let id = result.sha256();
+    result.entries_mut()?.insert("report_id".into(), Value::string(id));
+    if result.canonical().len() > MAX_INDEX_BYTES {
+        return refuse("source-bound SCIP reference report exceeds 16 MiB");
+    }
+    Ok(result)
+}
+
+pub fn references(repo: &Path, revision: &str, input: &Path) -> Result<Value> {
+    references_with_prefix(repo, revision, input, None)
+}
+
+pub fn suggest_with_prefix(
+    repo: &Path,
+    revision: &str,
+    input: &Path,
+    source_prefix: Option<&str>,
+) -> Result<Value> {
+    let Scan {
+        commit,
+        tree,
+        index_sha256,
+        name,
+        version,
+        documents,
+        definitions,
+        matched,
+        unresolved,
+        count,
+        languages,
+        lines_only,
+    } = scan_with_prefix(repo, revision, input, source_prefix)?;
+
     let mut by_pair: BTreeMap<(String, String), Vec<Reference>> = BTreeMap::new();
     for edge in &matched {
         by_pair
@@ -417,7 +519,7 @@ pub fn suggest_with_prefix(
         ("status", Value::string("UNVERIFIED_SCIP_RELATIONS")),
         ("source_commit", Value::string(commit)),
         ("source_tree", Value::string(tree)),
-        ("index_sha256", Value::string(crate::digest::sha256(&bytes))),
+        ("index_sha256", Value::string(index_sha256)),
         (
             "indexer",
             obj(&[

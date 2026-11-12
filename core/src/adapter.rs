@@ -28,6 +28,20 @@ pub fn python(entries: &[Value]) -> Result<Value> {
     run("python3", code, entries)
 }
 
+/// Parse only changed Python blobs using the complete, pinned module catalog.
+/// The original list input remains the full-analysis compatibility path.
+pub fn python_subset(entries: &[Value], catalog: &[Value]) -> Result<Value> {
+    let code = include_str!("../adapters/python_ast.py");
+    run_payload(
+        "python3",
+        code,
+        obj(&[
+            ("catalog", Value::array(catalog.iter().cloned())),
+            ("entries", Value::array(entries.iter().cloned())),
+        ]),
+    )
+}
+
 pub fn javascript(entries: &[Value]) -> Result<Value> {
     let code = include_str!("../adapters/js_adapter.cjs");
     run("node", code, entries)
@@ -83,6 +97,10 @@ pub fn clang_ast(request: &Value) -> Result<Value> {
 }
 
 fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
+    run_payload(binary, code, Value::array(entries.iter().cloned()))
+}
+
+fn run_payload(binary: &str, code: &str, payload: Value) -> Result<Value> {
     let mut command = if binary == "node" {
         node_command()
     } else {
@@ -102,7 +120,7 @@ fn run(binary: &str, code: &str, entries: &[Value]) -> Result<Value> {
     {
         let mut stdin = process.stdin.take().ok_or("missing child stdin")?;
         stdin
-            .write_all(Value::array(entries.iter().cloned()).canonical().as_bytes())
+            .write_all(payload.canonical().as_bytes())
             .map_err(|e| format!("{binary} adapter input: {e}"))?;
     }
     let output = process

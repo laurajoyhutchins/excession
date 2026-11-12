@@ -93,3 +93,37 @@ jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" --arg tree "$TREE" \
    and .safe_to_skip_unlisted_tests == false' \
   "$TMP/agent-verification.json"
 echo 'PASS: current evidence-bound native refactor -> committed candidate -> agent context/verify with receipts and unresolved obligations'
+
+# Native symbol-aware code actions use the original historical Git checkout,
+# but every edit remains bound to the audited SCIP candidate and source blobs.
+run_assist() {
+  "$BIN" refactor rust-assist --repo "$OLD" --rev "$OLD_REV" \
+    --index "$TMP/index.scip.json" --report "$TMP/scip-report.json" \
+    --source-prefix core --candidate "$ID" --source core/src/semantic.rs \
+    --start-line 15 --start-character 0 --end-line 74 --end-character 0 \
+    --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" "$@"
+}
+run_assist > "$TMP/assist-actions.json"
+jq -e '.status == "AVAILABLE_UNVERIFIED_ACTIONS" and
+  any(.actions[]; .title == "Extract module" and (.kind | startswith("refactor")))' \
+  "$TMP/assist-actions.json"
+run_assist --action "Extract module" > "$TMP/assist-preview.json"
+jq -e '.status == "UNVERIFIED_CODE_ACTION_PREVIEW"
+  and (.edits | length) > 0 and (.plan_id | length) == 64' \
+  "$TMP/assist-preview.json"
+ASSIST_OUT="$TMP/assisted-candidate"
+test ! -e "$ASSIST_OUT"
+run_assist --action "Extract module" --output "$ASSIST_OUT" > "$TMP/assist-applied.json"
+jq -e --slurpfile preview "$TMP/assist-preview.json" '
+  .status == "APPLIED_UNVERIFIED"
+  and .plan_id == $preview[0].plan_id
+  and .edits == $preview[0].edits
+' "$TMP/assist-applied.json"
+test "$(git -C "$OLD" rev-parse HEAD)" = "$OLD_REV"
+test -z "$(git -C "$OLD" status --porcelain --untracked-files=all)"
+cargo +1.99.1 fmt --manifest-path "$ASSIST_OUT/core/Cargo.toml"
+cargo +1.99.1 check --locked --offline --manifest-path "$ASSIST_OUT/core/Cargo.toml"
+cargo +1.99.1 test --locked --offline --manifest-path "$ASSIST_OUT/core/Cargo.toml" --lib \
+  semantic::module_name_tests::semantic_module_names_preserve_import_root_and_test_flags
+git -C "$ASSIST_OUT" diff --check
+echo 'PASS: rust-analyzer semantic code action replayed in isolated pinned worktree'

@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'core/src/refactor_codegen.rs'
+      - 'core/src/refactor_rust_analyzer.rs'
       - 'core/src/agent.rs'
       - 'contracts/agent/**'
       - 'core/src/bin/excession.rs'
@@ -61,6 +62,9 @@ jobs:
             ${{ runner.temp }}/excession-codegen-test/agent-context.json
             ${{ runner.temp }}/excession-codegen-test/agent-receipts.json
             ${{ runner.temp }}/excession-codegen-test/agent-verification.json
+            ${{ runner.temp }}/excession-codegen-test/assist-actions.json
+            ${{ runner.temp }}/excession-codegen-test/assist-preview.json
+            ${{ runner.temp }}/excession-codegen-test/assist-applied.json
             ${{ runner.temp }}/excession-codegen-test/build.log
             ${{ runner.temp }}/excession-codegen-test/test.log
           if-no-files-found: warn

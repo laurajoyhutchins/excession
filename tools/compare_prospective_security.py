@@ -106,6 +106,26 @@ def relevant(report: dict, case: dict) -> dict:
             "relevant": len(exact), "relevant_rules": sorted(rules)}
 
 
+def _scan_failure(path: Path) -> tuple[str, str | None]:
+    """Inspect retained raw scanner errors even if ingest refused the report."""
+    report = path / "semgrep.json"
+    if not report.exists():
+        return "INCOMPLETE", None
+    try:
+        raw = json.loads(report.read_bytes())
+        errors = raw.get("errors", [])
+        if errors:
+            descriptions = [
+                str(e.get("type", "scanner error")) + ": " +
+                str(e.get("message", ""))[:320]
+                for e in errors if isinstance(e, dict)
+            ]
+            return "SCANNER_ERROR", "; ".join(descriptions) or "scanner reported errors"
+    except (ValueError, OSError, TypeError):
+        return "INCOMPLETE", "scanner report invalid JSON"
+    return "INCOMPLETE", None
+
+
 def aggregate(manifest: dict, evidence_dir: Path) -> dict:
     rows = []
     errors = []
@@ -113,6 +133,7 @@ def aggregate(manifest: dict, evidence_dir: Path) -> dict:
         phase_reports = {}
         for phase in PHASES:
             path = evidence_dir / f"prospective-{case['id']}" / phase
+            oracle_status = None
             try:
                 metadata = json.loads((path / "metadata.json").read_text())
                 oracle = json.loads((path / "oracle.json").read_text())
@@ -124,6 +145,7 @@ def aggregate(manifest: dict, evidence_dir: Path) -> dict:
                 assert oracle["source_commit"] == case[phase]["commit"]
                 assert oracle["status"] in ("OBSERVED_EXPECTED", "OBSERVED_CONTRADICTION",
                                             "INCONCLUSIVE")
+                oracle_status = oracle["status"]
                 assert status["phase"] == phase and status["case"] == case["id"]
                 assert status["scanner_version"] == manifest["scanner"]["version"]
                 assert status["rules_commit"] == manifest["scanner"]["rules_commit"]
@@ -146,10 +168,13 @@ def aggregate(manifest: dict, evidence_dir: Path) -> dict:
                                 "ingest_replayed": True, "scan_status": "COMPLETE"})
                 phase_reports[phase] = summary
             except Exception as exc:
-                reason = f"{case['id']}/{phase}: {type(exc).__name__}: {exc}"
+                failure_kind, scanner_details = _scan_failure(path)
+                reason = (f"{case['id']}/{phase}: {failure_kind}: {scanner_details}"
+                          if scanner_details else
+                          f"{case['id']}/{phase}: {type(exc).__name__}: {exc}")
                 errors.append(reason)
-                phase_reports[phase] = {"phase": phase, "scan_status": "INCOMPLETE",
-                                        "error": reason}
+                phase_reports[phase] = {"phase": phase, "scan_status": failure_kind,
+                                        "error": reason, "oracle": oracle_status}
         rows.append({"case": case["id"], "repository": case["repository"],
                      "weakness": case["weakness"], "advisory": case["advisory"],
                      **phase_reports})
@@ -180,7 +205,8 @@ def markdown(report: dict) -> str:
             case["case"], case["weakness"],
             str(v.get("relevant", "incomplete")), str(p.get("relevant", "incomplete")),
             f"{v.get('oracle','?')} / {p.get('oracle','?')}",
-            "complete" if v["scan_status"] == p["scan_status"] == "COMPLETE" else "INCOMPLETE",
+            "complete" if v["scan_status"] == p["scan_status"] == "COMPLETE"
+            else f"{v['scan_status']} / {p['scan_status']}",
         ]) + " |")
     lines += ["", f"Complete scan pairs: {report['complete_pairs']}/6",
               f"Method-level oracle-confirmed pairs: {report['oracle_confirmed_pairs']}/6",

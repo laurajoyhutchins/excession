@@ -5,6 +5,7 @@ on:
       - 'core/src/refactor_codegen.rs'
       - 'core/src/refactor_rust_analyzer.rs'
       - 'core/src/refactor_rust_repair.rs'
+      - 'core/src/refactor_module_api.rs'
       - 'core/src/agent.rs'
       - 'contracts/agent/**'
       - 'core/src/bin/excession.rs'
@@ -72,6 +73,9 @@ jobs:
             ${{ runner.temp }}/excession-codegen-test/repair-applied.json
             ${{ runner.temp }}/excession-codegen-test/repair-compiler.jsonl
             ${{ runner.temp }}/excession-codegen-test/repair-build.log
+            ${{ runner.temp }}/excession-codegen-test/public-api-before.txt
+            ${{ runner.temp }}/excession-codegen-test/public-api-after.txt
+            ${{ runner.temp }}/excession-codegen-test/preserved-scip-report.json
             ${{ runner.temp }}/excession-codegen-test/build.log
             ${{ runner.temp }}/excession-codegen-test/test.log
           if-no-files-found: warn

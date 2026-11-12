@@ -150,34 +150,89 @@ run_repair() {
     --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" "$@"
 }
 run_repair > "$TMP/repair-preview.json"
-jq -e '.status == "REPAIR_PREVIEW_UNVERIFIED"
-  or .status == "NO_SUPPORTED_NATIVE_REPAIR"
-  or .status == "AMBIGUOUS_NATIVE_REPAIRS"' "$TMP/repair-preview.json"
-jq -e '(.verification | startswith("OPEN_OBLIGATIONS:"))
-  and (.parent_plan_id | length) == 64' "$TMP/repair-preview.json"
-case "$(jq -r '.status' "$TMP/repair-preview.json")" in
-  REPAIR_PREVIEW_UNVERIFIED)
-    REPAIR_OUT="$TMP/repaired-candidate"
-    test ! -e "$REPAIR_OUT"
-    run_repair --output "$REPAIR_OUT" > "$TMP/repair-applied.json"
-    jq -e --slurpfile preview "$TMP/repair-preview.json" '
-      .status == "REPAIR_APPLIED_UNVERIFIED"
-      and .plan_id == $preview[0].plan_id
-      and .edits == $preview[0].edits
-      and (.verification | startswith("OPEN_OBLIGATIONS:"))' \
-      "$TMP/repair-applied.json"
-    test "$(git -C "$REPAIR_OUT" rev-parse HEAD)" = \
-      "$(git -C "$ASSIST_OUT" rev-parse HEAD)"
-    test -z "$(git -C "$ASSIST_OUT" status --porcelain --untracked-files=all)"
-    # A valid code action does not imply a successful or equivalent program.
-    # Record the second compiler result without forcing a success conclusion.
-    cargo +1.99.1 check --locked --offline --message-format=json \
-      --manifest-path "$REPAIR_OUT/core/Cargo.toml" \
-      > "$TMP/repair-compiler.jsonl" 2> "$TMP/repair-build.log" || true
-    git -C "$REPAIR_OUT" diff --check
-    ;;
-  NO_SUPPORTED_NATIVE_REPAIR|AMBIGUOUS_NATIVE_REPAIRS)
-    test ! -e "$TMP/repaired-candidate"
-    ;;
-esac
-echo 'PASS: real native code action, source-bound compiler diagnostics, bounded repair/refusal, and unresolved verification obligations'
+jq -e '
+  .status == "REPAIR_PREVIEW_UNVERIFIED"
+  and .repair_kind == "byte-conservative-extract-module-api"
+  and .parent_helpers == ["module_name"]
+  and .action_title == "Preserve public path of module_name_with_import_base"
+  and (.edits | length) == 2
+  and (.plan_id | length) == 64
+' "$TMP/repair-preview.json"
+
+REPAIR_OUT="$TMP/repaired-candidate"
+test ! -e "$REPAIR_OUT"
+run_repair --output "$REPAIR_OUT" > "$TMP/repair-applied.json"
+jq -e --slurpfile preview "$TMP/repair-preview.json" '
+  .status == "REPAIR_APPLIED_UNVERIFIED"
+  and .plan_id == $preview[0].plan_id
+  and .edits == $preview[0].edits
+  and (.verification | startswith("OPEN_OBLIGATIONS:"))
+' "$TMP/repair-applied.json"
+test "$(git -C "$REPAIR_OUT" rev-parse HEAD)" = "$(git -C "$ASSIST_OUT" rev-parse HEAD)"
+test -z "$(git -C "$ASSIST_OUT" status --porcelain --untracked-files=all)"
+grep -Fq 'pub use self::modname::module_name_with_import_base;' "$REPAIR_OUT/core/src/semantic.rs"
+grep -Fq 'use super::module_name;' "$REPAIR_OUT/core/src/semantic.rs"
+
+# Independent compilation and regression tests on the generated worktree.
+cargo +1.99.1 fmt --manifest-path "$REPAIR_OUT/core/Cargo.toml"
+cargo +1.99.1 fmt --manifest-path "$REPAIR_OUT/core/Cargo.toml" -- --check
+cargo +1.99.1 check --locked --offline --manifest-path "$REPAIR_OUT/core/Cargo.toml"
+cargo +1.99.1 test --locked --offline --manifest-path "$REPAIR_OUT/core/Cargo.toml" --lib \
+  semantic::module_name_tests::semantic_module_names_preserve_import_root_and_test_flags
+git -C "$REPAIR_OUT" diff --check
+
+# Public API differential: the same external consumer must compile and produce
+# identical behavior against the pre-refactor library and the repaired one.
+mkdir -p "$TMP/public-api-client/src"
+cat > "$TMP/public-api-client/Cargo.toml" <<EOT
+[package]
+name = "excession-refactor-public-api-client"
+version = "0.1.0"
+edition = "2024"
+[dependencies]
+excession = { path = "$OLD/core" }
+EOT
+cat > "$TMP/public-api-client/src/main.rs" <<'RS'
+fn main() {
+    let roots = &["scripts/gdb", "tests"];
+    for path in ["scripts/gdb/sample.py", "tests/test_demo.py", "elsewhere/none.py"] {
+        let import_base = Some("scripts/gdb");
+        let semantic = excession::semantic::module_name_with_import_base(
+            path, roots, import_base
+        );
+        let index = excession::index::module_name_with_import_base(
+            path, roots, import_base
+        );
+        assert_eq!(semantic, index);
+        println!("{path}: {semantic:?}");
+    }
+}
+RS
+cargo +1.99.1 run --offline --quiet \
+  --manifest-path "$TMP/public-api-client/Cargo.toml" > "$TMP/public-api-before.txt"
+sed -i "s|$OLD/core|$REPAIR_OUT/core|" "$TMP/public-api-client/Cargo.toml"
+cargo +1.99.1 run --offline --quiet \
+  --manifest-path "$TMP/public-api-client/Cargo.toml" > "$TMP/public-api-after.txt"
+cmp "$TMP/public-api-before.txt" "$TMP/public-api-after.txt"
+
+# Fresh SCIP must bind to the exact new committed tree, not the old cached
+# evidence. No trusted inference is made from the stale original index.
+git -C "$REPAIR_OUT" add core/src/semantic.rs
+git -C "$REPAIR_OUT" -c user.name="Excession Replay" \
+  -c user.email="excession@example.invalid" commit -qm "API-preserving module extraction"
+PRESERVED_REV="$(git -C "$REPAIR_OUT" rev-parse HEAD)"
+test "$PRESERVED_REV" != "$OLD_REV"
+test -z "$(git -C "$REPAIR_OUT" status --porcelain --untracked-files=all)"
+rustup run 1.99.1 rust-analyzer scip "$REPAIR_OUT/core" \
+  --output "$TMP/preserved.scip"
+"$SCIP" print --json "$TMP/preserved.scip" > "$TMP/preserved.scip.json"
+"$BIN" refactor scip-suggest \
+  --repo "$REPAIR_OUT" --rev "$PRESERVED_REV" \
+  --index "$TMP/preserved.scip.json" --source-prefix core \
+  > "$TMP/preserved-scip-report.json"
+jq -e --arg rev "$PRESERVED_REV" '
+  .schema == "excession.scip-refactor.v1"
+  and .source_commit == $rev
+  and .indexer.name == "rust-analyzer"
+' "$TMP/preserved-scip-report.json"
+echo 'PASS: native Extract Module API preserved, compiler + regression + external public API differential + fresh SCIP verified'

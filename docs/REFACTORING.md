@@ -354,3 +354,37 @@ The original clean checkout is required because a SCIP index's
 The repair executor authenticates the SCIP report **there**, while replaying
 the generated candidate's exact Git blobs in its separate detached worktree.
 Both checkouts must share the same canonical Git common directory.
+
+## Deterministic preservation of an extracted Rust public function
+
+When rust-analyzer's native `Extract Module` action creates a new private
+inline module, it can leave a previously public function invisible to its
+callers and can strand unqualified references to parent-module functions.
+
+`refactor rust-repair` now has one **strict, byte-conservative** fallback
+when native import quickfix discovery finds no candidates:
+
+- The original, independently source-bound `rust-assist` action must have
+  moved **exactly one** previously public function into a new inline Rust
+  module. The function's source, including documentation and entire body,
+  must be byte-for-byte unchanged after removing the provider's indentation.
+- The original public path is reinstated with
+  `pub use self::<new_module>::<original_function>;`.
+- Each missing helper must be independently identified by compiler E0425
+  inside the extracted module, and declared at the parent module's top
+  level in the original Git source. The recipe inserts a narrow
+  `use super::<helper>;`, never a wildcard import.
+- Attributes, module-relative paths, multiple moved functions, unexpected
+  syntax, altered function bodies, unsupported diagnostics, and ambiguous
+  native fixes **refuse** the fallback rather than guessing.
+- The repair remains `REPAIR_*_UNVERIFIED`. A successful generated
+  patch is not evidence of behavioral equivalence.
+
+The historical acceptance now uses real rust-analyzer for the initial
+extraction, independent Cargo JSON compiler errors, then a bounded
+API-preserving bridge. Acceptance requires the generated code to compile
+and pass the relevant regression test, the *same external Rust client*
+to compile and return identical results against the original and repaired
+libraries, and a **fresh, exact-commit SCIP reindex** on the repaired Git
+revision. These are concrete tested properties, not a universal guarantee
+for all Rust code.

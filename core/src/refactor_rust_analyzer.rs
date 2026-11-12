@@ -6,7 +6,7 @@ use crate::{Result, digest, git, refactor_codegen, refuse, scip_refactor};
 use serde_json::{Value as Json, json};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
@@ -36,8 +36,11 @@ fn frame(reader: &mut impl BufRead) -> Result<Json> {
     loop {
         let mut line = String::new();
         let size = reader.read_line(&mut line).map_err(|e| e.to_string())?;
-        if size == 0 || header_bytes + size > 8192 {
-            return refuse("invalid or oversized rust-analyzer LSP header");
+        if size == 0 {
+            return refuse("rust-analyzer LSP stdout reached EOF");
+        }
+        if header_bytes + size > 8192 {
+            return refuse("oversized rust-analyzer LSP header");
         }
         header_bytes += size;
         if line == "\r\n" || line == "\n" {
@@ -86,7 +89,7 @@ impl Server {
             .env("CARGO_NET_OFFLINE", "true")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("rust-analyzer LSP launch failed: {e}"))?;
         let input = process.stdin.take().ok_or("LSP stdin unavailable")?;
@@ -116,7 +119,21 @@ impl Server {
         let wanted = self.next_id;
         self.send(&json!({"jsonrpc":"2.0","id":wanted,"method":method,"params":params}))?;
         for _ in 0..2048 {
-            let message = frame(&mut self.output)?;
+            let message = match frame(&mut self.output) {
+                Ok(message) => message,
+                Err(error) => {
+                    let status = self.process.try_wait().map_err(|e| e.to_string())?;
+                    let mut stderr = String::new();
+                    if status.is_some()
+                        && let Some(mut stream) = self.process.stderr.take()
+                    {
+                        let _ = stream.take(8192).read_to_string(&mut stderr);
+                    }
+                    return refuse(format!(
+                        "rust-analyzer {method} LSP failed ({status:?}): {error}; stderr: {stderr}"
+                    ));
+                }
+            };
             if message.get("id").and_then(Json::as_i64) == Some(wanted)
                 && message.get("method").is_none()
             {

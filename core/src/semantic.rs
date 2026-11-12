@@ -77,56 +77,11 @@ fn put_symbol(db: &Db, id: i64, commit: &str, module: &str, info: &Value) -> Res
     )
 }
 
-fn normalize_local(path: &str, reference: &str) -> Option<String> {
-    if !reference.starts_with('.') {
-        return None;
-    }
-    let base = path.rsplit_once('/').map(|(a, _)| a).unwrap_or("");
-    let mut parts: Vec<&str> = base.split('/').filter(|x| !x.is_empty()).collect();
-    for part in reference.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            _ => parts.push(part),
-        }
-    }
-    Some(parts.join("/"))
-}
-
-fn resolve_js_target(
-    source: &str,
-    reference: &str,
-    available: &BTreeMap<String, String>,
-    mains: &BTreeMap<String, String>,
-) -> Option<String> {
-    let candidate = normalize_local(source, reference)?;
-    let mut options = vec![
-        candidate.clone(),
-        format!("{candidate}.js"),
-        format!("{candidate}.mjs"),
-        format!("{candidate}.cjs"),
-        format!("{candidate}.ts"),
-        format!("{candidate}/index.js"),
-        format!("{candidate}/index.mjs"),
-        format!("{candidate}/index.cjs"),
-        format!("{candidate}/index.ts"),
-    ];
-    if let Some(main) = mains.get(&candidate)
-        && let Some(path) = normalize_local(&format!("{candidate}/package.json"), main)
-    {
-        options.insert(0, path);
-    }
-    options.iter().find_map(|p| available.get(p).cloned())
-}
-
 /// Prepared outside SQLite's write transaction. A failed adapter cannot
 /// modify a previous, successfully indexed revision.
 pub(crate) struct PreparedSources {
     modules: BTreeMap<String, String>,
     map_js: BTreeMap<String, String>,
-    mains: BTreeMap<String, String>,
     python: Value,
     javascript: Value,
 }
@@ -140,20 +95,19 @@ pub(crate) fn prepare_sources(
 ) -> Result<PreparedSources> {
     let mut modules = BTreeMap::new();
     let mut files = BTreeMap::new();
-    let mut mains = BTreeMap::<String, String>::new();
+    let mut configs = Vec::new();
     let mut blob_reader = git::BlobReader::open(root)?;
     for e in entries {
-        if e.kind == "blob"
-            && e.path.ends_with("/package.json")
-            && matches!(e.mode.as_str(), "100644" | "100755")
-            && let Ok(v) = crate::json::parse(&blob_reader.read(&e.oid)?)
-            && let Ok(main) = v.get("main").and_then(Value::str)
-        {
-            let parent = e.path.rsplit_once('/').map(|x| x.0).unwrap_or("");
-            mains.insert(parent.into(), main.into());
-        }
         if e.kind != "blob" || !matches!(e.mode.as_str(), "100644" | "100755") {
             continue;
+        }
+        if ["package.json", "tsconfig.json", "jsconfig.json"]
+            .iter()
+            .any(|name| e.path == *name || e.path.ends_with(&format!("/{name}")))
+        {
+            let content = String::from_utf8(blob_reader.read_capped(&e.oid, 1024 * 1024)?)
+                .map_err(|_| "Git configuration file is not UTF-8")?;
+            configs.push(adapter::js_entry(&e.path, &content));
         }
         if let Some((name, _)) = module_name_with_import_base(&e.path, roots, import_base) {
             if modules.insert(name.clone(), e.path.clone()).is_some() {
@@ -202,12 +156,11 @@ pub(crate) fn prepare_sources(
     let javascript = if js.is_empty() {
         Value::array([])
     } else {
-        adapter::javascript(&js)?
+        adapter::javascript_with_config(&js, &configs)?
     };
     Ok(PreparedSources {
         modules,
         map_js,
-        mains,
         python,
         javascript,
     })
@@ -224,7 +177,6 @@ pub(crate) fn index_prepared(
     let PreparedSources {
         modules,
         map_js,
-        mains,
         python,
         javascript,
     } = prepared;
@@ -291,25 +243,23 @@ pub(crate) fn index_prepared(
             for imp in item.get("imports")?.array_ref()? {
                 let spec = imp.get("specifier")?.str()?;
                 let line = imp.get("line")?.integer()?;
-                if let Some(target) = resolve_js_target(path, spec, map_js, mains) {
+                let target = imp.get("target_path")?;
+                if target != &Value::Null {
+                    let target_path = target.str()?;
+                    let target_module = map_js
+                        .get(target_path)
+                        .ok_or("native JS resolver returned unindexed source")?;
                     put_dependency(
                         db,
                         id,
                         commit,
                         module,
-                        &target,
+                        target_module,
                         line,
                         imp.get("syntax")?.str()?,
                     )?;
-                } else if spec.starts_with('.') {
-                    put_hazard(
-                        db,
-                        id,
-                        commit,
-                        module,
-                        line,
-                        &format!("unresolved local import: {spec}"),
-                    )?;
+                } else if imp.get("resolution_issue")?.str()?.is_empty() {
+                    return refuse(format!("native JS resolver lost import: {spec}"));
                 }
             }
             for symbol in item.get("symbols")?.array_ref()? {

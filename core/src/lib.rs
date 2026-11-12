@@ -27,6 +27,7 @@ pub mod historical;
 pub mod identity;
 pub mod impact;
 pub mod impact_query;
+mod incremental_python;
 pub mod index;
 pub mod integration;
 pub mod json;

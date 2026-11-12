@@ -5,7 +5,7 @@ use crate::adapter;
 use crate::digest;
 use crate::git::{self, Entry};
 use crate::index::module_name_with_import_base;
-use crate::json::Value;
+use crate::json::{Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, refuse};
 use std::collections::BTreeMap;
@@ -136,6 +136,7 @@ pub(crate) fn prepare_sources(
     entries: &[Entry],
     roots: &[&str],
     import_base: Option<&str>,
+    reuse: Option<&crate::incremental_python::Plan>,
 ) -> Result<PreparedSources> {
     let mut modules = BTreeMap::new();
     let mut files = BTreeMap::new();
@@ -161,10 +162,20 @@ pub(crate) fn prepare_sources(
             files.insert(e.path.clone(), (name, e.oid.clone()));
         }
     }
+    let catalog = files
+        .iter()
+        .filter(|(path, _)| path.ends_with(".py"))
+        .map(|(path, (name, _))| {
+            obj(&[("name", Value::string(name)), ("path", Value::string(path))])
+        })
+        .collect::<Vec<_>>();
     let mut py = Vec::new();
     let mut js = Vec::new();
     let mut map_js = BTreeMap::new();
     for (path, (name, oid)) in &files {
+        if reuse.is_some_and(|plan| plan.reused.contains(path)) {
+            continue;
+        }
         let content = String::from_utf8(blob_reader.read(oid)?)
             .map_err(|_| "source is not UTF-8; unsupported source decoder".to_owned())?;
         if path.ends_with(".py") {
@@ -177,9 +188,17 @@ pub(crate) fn prepare_sources(
     blob_reader.finish()?;
     let python = if py.is_empty() {
         Value::array([])
+    } else if reuse.is_some_and(|plan| !plan.reused.is_empty()) {
+        adapter::python_subset(&py, &catalog)?
     } else {
         adapter::python(&py)?
     };
+    if let Some(plan) = reuse
+        && (plan.total != catalog.len()
+            || python.array_ref()?.len() + plan.reused.len() != plan.total)
+    {
+        return refuse("incomplete Python incremental source inventory");
+    }
     let javascript = if js.is_empty() {
         Value::array([])
     } else {

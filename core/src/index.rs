@@ -116,8 +116,15 @@ fn index_revision_inner(
     }
     let tree = git::rev(root, &format!("{commit}^{{tree}}"))?;
     let entries = git::entries(root, &commit)?;
-    // Do not hold SQLite's writer lock while reading Git blobs or waiting for
-    // language-native analyzers. Keep replacement atomic when persistence starts.
+    // Plan reuse and run language-native adapters before acquiring the writer
+    // lock. Only Git-authenticated completed Python observations may be carried.
+    db.init_schema()?;
+    let python_plan = match semantics {
+        SemanticMode::GitOnly => None,
+        SemanticMode::Parse { import_base } => {
+            crate::incremental_python::plan(db, root, name, &commit, &entries, roots, import_base)?
+        }
+    };
     let prepared = match semantics {
         SemanticMode::GitOnly => None,
         SemanticMode::Parse { import_base } => Some(crate::semantic::prepare_sources(
@@ -125,9 +132,9 @@ fn index_revision_inner(
             &entries,
             roots,
             import_base,
+            python_plan.as_ref(),
         )?),
     };
-    db.init_schema()?;
 
     db.transaction(|db| {
         let repo_id = register_repository(db, root, name, provenance)?;
@@ -198,14 +205,21 @@ fn index_revision_inner(
             // The Git revision is immutable, but the analyzer implementation
             // is not. Replacing derived rows on *every* analysis prevents
             // obsolete imports, symbols and hazards surviving a parser fix.
-            // This conservative baseline needs no separate cache authority.
+            // The only permitted reuse copies authenticated rows from the
+            // original relational store; no second cache authority is added.
             for table in ["dependency", "symbol", "api_binding", "hazard"] {
                 db.execute(
                     &format!("DELETE FROM {table} WHERE repo_id=? AND commit_oid=?"),
                     &[Param::Integer(repo_id), Param::Text(&commit)],
                 )?;
             }
+            if let Some(plan) = &python_plan {
+                crate::incremental_python::carry(db, root, repo_id, &commit, plan)?;
+            }
             crate::semantic::index_prepared(db, repo_id, &commit, prepared)?;
+            if let Some(plan) = &python_plan {
+                crate::incremental_python::finish(db, repo_id, &commit, plan)?;
+            }
         }
         db.foreign_keys_valid()?;
         Ok(repo_id)

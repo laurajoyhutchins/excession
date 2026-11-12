@@ -167,3 +167,18 @@ CREATE TABLE IF NOT EXISTS premise (
  description TEXT NOT NULL,
  supported INTEGER NOT NULL CHECK(supported=1),
  PRIMARY KEY(integration_id,number));
+
+-- A finished, revision-scoped Python index is reusable only if the existing
+-- module, dependency, symbol, export and hazard rows still match its receipt.
+-- No second observation store: derived rows remain in the original tables.
+CREATE TABLE IF NOT EXISTS python_index_snapshot (
+  repo_id INTEGER NOT NULL,
+  commit_oid TEXT NOT NULL,
+  producer_sha256 TEXT NOT NULL,
+  catalog_sha256 TEXT NOT NULL,
+  rows_sha256 TEXT NOT NULL,
+  parsed_modules INTEGER NOT NULL CHECK(parsed_modules >= 0),
+  reused_modules INTEGER NOT NULL CHECK(reused_modules >= 0),
+  PRIMARY KEY(repo_id,commit_oid),
+  FOREIGN KEY(repo_id,commit_oid) REFERENCES revision(repo_id,commit_oid)
+);

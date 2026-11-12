@@ -32,6 +32,19 @@ pub fn python(entries: &[Value]) -> Result<Value> {
     run("python3", code, entries)
 }
 
+/// Parse only changed Python blobs against the complete catalog with bounded IO.
+pub fn python_subset(entries: &[Value], catalog: &[Value]) -> Result<Value> {
+    run_payload(
+        "python3",
+        include_str!("../adapters/python_ast.py"),
+        obj(&[
+            ("catalog", Value::array(catalog.iter().cloned())),
+            ("entries", Value::array(entries.iter().cloned())),
+        ]),
+        AdapterLimits::default(),
+    )
+}
+
 pub fn javascript(entries: &[Value]) -> Result<Value> {
     let code = include_str!("../adapters/js_adapter.cjs");
     run("node", code, entries)
@@ -157,10 +170,12 @@ fn run_bounded(
     entries: &[Value],
     limits: AdapterLimits,
 ) -> Result<Value> {
+    run_payload(binary, code, Value::array(entries.iter().cloned()), limits)
+}
+
+fn run_payload(binary: &str, code: &str, payload: Value, limits: AdapterLimits) -> Result<Value> {
     // Calculate and check the input size *before* launching the child.
-    let input = Value::array(entries.iter().cloned())
-        .canonical()
-        .into_bytes();
+    let input = payload.canonical().into_bytes();
     if input.len() > limits.input_bytes {
         return refuse(format!(
             "{binary} adapter input exceeds {} bytes",

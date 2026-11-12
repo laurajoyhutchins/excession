@@ -53,7 +53,7 @@ pub fn normalize_index(
 
 /// Convert the complete Git-checked native reference report, retaining
 /// each upstream symbol and its exact referenced source evidence.
-pub fn normalize_report(native: &Value) -> Result<Value> {
+fn normalize_report(native: &Value) -> Result<Value> {
     if concepts::content_id(native, "report_id")? != native.get("report_id")?.str()? {
         return refuse("SCIP report identity does not match content");
     }

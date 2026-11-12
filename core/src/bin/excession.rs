@@ -480,7 +480,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     limit,
                     roots,
                     db,
-                    opt.0.get("receipts").map(|p| Path::new(p)),
+                    opt.0.get("receipts").map(Path::new),
                 )?)),
                 _ => refuse(format!("unknown agent command: {sub}")),
             }

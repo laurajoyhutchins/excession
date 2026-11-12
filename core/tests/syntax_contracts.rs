@@ -8,10 +8,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 fn parser_installed() -> bool {
-    Command::new("python3")
-        .args(["-c", "import tree_sitter_language_pack"])
-        .output()
-        .is_ok_and(|output| output.status.success())
+    // The real parser runs in Rust, not through a Python interpreter.
+    // Only exercise full syntax fixtures when every required grammar is installed.
+    ["rust", "go", "java", "c", "python", "typescript", "javascript"]
+        .iter()
+        .all(|language| tree_sitter_language_pack::has_parser(language))
 }
 fn run(program: &str, args: &[&str]) -> Output {
     Command::new(program).args(args).output().expect("spawn")

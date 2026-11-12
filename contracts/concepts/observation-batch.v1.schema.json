@@ -128,7 +128,10 @@
             "$ref": "#/$defs/sha256"
           },
           "native_relation": {
-            "const": "IMPORTS"
+            "enum": [
+              "IMPORTS",
+              "SCIP_SYMBOL_REFERENCE"
+            ]
           },
           "specifier": {
             "type": "string",
@@ -147,7 +150,95 @@
             "minLength": 1,
             "maxLength": 64
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "STATIC_IMPORT_CANDIDATE"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "properties": {
+                "native_relation": {
+                  "const": "IMPORTS"
+                },
+                "status": {
+                  "enum": [
+                    "CANDIDATE",
+                    "UNRESOLVED"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "SCIP_REFERENCE"
+                }
+              },
+              "required": [
+                "kind"
+              ]
+            },
+            "then": {
+              "required": [
+                "target_subject_id"
+              ],
+              "properties": {
+                "native_relation": {
+                  "const": "SCIP_SYMBOL_REFERENCE"
+                },
+                "status": {
+                  "const": "OBSERVED"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "CANDIDATE"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "target_subject_id"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "UNRESOLVED"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "target_subject_id"
+                ]
+              }
+            }
+          }
+        ]
       },
       "maxItems": 10000
     },

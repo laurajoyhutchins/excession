@@ -198,6 +198,23 @@
               "observation_id"
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "observation_kind": {
+                "const": "SCIP_REFERENCE"
+              }
+            },
+            "required": [
+              "observation_kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "observation_id"
+            ]
+          }
         }
       ]
     },

@@ -146,7 +146,10 @@ fn analyze_one_command_reports_git_bound_candidates_and_honest_limits() {
             .output()
             .unwrap();
         assert!(!refused.status.success());
-        assert_eq!(fs::read(sentinel).unwrap(), b"leave this checkout file untouched");
+        assert_eq!(
+            fs::read(sentinel).unwrap(),
+            b"leave this checkout file untouched"
+        );
     }
 
     let help = cmd(&repo, bin, &["analyze", "clang", "--help"]);

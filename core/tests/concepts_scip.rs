@@ -4,7 +4,8 @@ use excession::json::{self, Value, obj};
 use excession::{concepts_author, concepts_compile, concepts_scip, concepts_value, scip_refactor};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -657,4 +658,82 @@ fn llm_tool_context_shows_genuine_pinned_source_and_observation_ids() {
     assert!(concepts_author::context(
         &f.repo, &f.commit, &f.index, None, "absent.py", 1
     ).is_err());
+}
+
+#[test]
+fn local_mcp_agent_lists_bounded_tools_and_can_preview_without_write_permission() {
+    let f = Fixture::new();
+    let batch = concepts_scip::normalize_index(&f.repo, &f.commit, &f.index, None).unwrap();
+    let draft = ontology_draft(&batch);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .args([
+            "mcp", "serve", "--repo", f.repo.to_str().unwrap(),
+            "--rev", &f.commit, "--index", f.index.to_str().unwrap(),
+            "--db", f.db.to_str().unwrap(),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let messages = [
+        obj(&[
+            ("jsonrpc", Value::string("2.0")),
+            ("id", Value::number(1)),
+            ("method", Value::string("initialize")),
+        ]),
+        obj(&[
+            ("jsonrpc", Value::string("2.0")),
+            ("id", Value::number(2)),
+            ("method", Value::string("tools/list")),
+        ]),
+        obj(&[
+            ("jsonrpc", Value::string("2.0")),
+            ("id", Value::number(3)),
+            ("method", Value::string("tools/call")),
+            ("params", obj(&[
+                ("name", Value::string("inspect_code_evidence")),
+                ("arguments", obj(&[("path", Value::string("alpha.rs"))])),
+            ])),
+        ]),
+        obj(&[
+            ("jsonrpc", Value::string("2.0")),
+            ("id", Value::number(4)),
+            ("method", Value::string("tools/call")),
+            ("params", obj(&[
+                ("name", Value::string("draft_ontology")),
+                ("arguments", obj(&[("proposal", draft.clone())])),
+            ])),
+        ]),
+        obj(&[
+            ("jsonrpc", Value::string("2.0")),
+            ("id", Value::number(5)),
+            ("method", Value::string("tools/call")),
+            ("params", obj(&[
+                ("name", Value::string("publish_ontology")),
+                ("arguments", obj(&[("proposal", draft)])),
+            ])),
+        ]),
+    ];
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        for message in messages {
+            writeln!(stdin, "{}", message.canonical()).unwrap();
+        }
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let responses = String::from_utf8(output.stdout).unwrap();
+    let lines = responses.lines().map(|s| json::parse(s.as_bytes()).unwrap()).collect::<Vec<_>>();
+    assert_eq!(lines.len(), 5);
+    assert_eq!(lines[0].get("result").unwrap().get("protocolVersion").unwrap().str().unwrap(), "2025-06-18");
+    assert_eq!(lines[1].get("result").unwrap().get("tools").unwrap().array_ref().unwrap().len(), 6);
+    assert_eq!(lines[2].get("result").unwrap().get("isError").unwrap(), &Value::Bool(false));
+    assert_eq!(lines[3].get("result").unwrap().get("isError").unwrap(), &Value::Bool(false));
+    assert_eq!(
+        lines[3].get("result").unwrap().get("structuredContent").unwrap()
+            .get("status").unwrap().str().unwrap(),
+        "UNREVIEWED_LLM_PROPOSAL"
+    );
+    assert_eq!(lines[4].get("result").unwrap().get("isError").unwrap(), &Value::Bool(true));
 }

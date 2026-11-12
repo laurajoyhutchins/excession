@@ -177,13 +177,19 @@ fn scanner_source_identity_agrees_with_shared_git_subject() {
     let f = Fixture::new();
     f.report(&semgrep());
     parsed(f.ing("semgrep", false));
-    let commit = success(run("git", &["-C", f.repo.to_str().unwrap(), "rev-parse", "HEAD"]));
+    let commit = success(run(
+        "git",
+        &["-C", f.repo.to_str().unwrap(), "rev-parse", "HEAD"],
+    ));
     let commit = String::from_utf8(commit).unwrap();
     let source = SourceRef::from_git(&f.repo, commit.trim(), "app.go").unwrap();
-    let stored = f.database().query(
-        "SELECT source_blob FROM security_ingest_candidate WHERE source_path='app.go'",
-        &[],
-    ).unwrap();
+    let stored = f
+        .database()
+        .query(
+            "SELECT source_blob FROM security_ingest_candidate WHERE source_path='app.go'",
+            &[],
+        )
+        .unwrap();
     assert_eq!(stored[0][0].as_deref(), Some(source.blob.as_str()));
     parsed(f.ing("semgrep", true));
 }

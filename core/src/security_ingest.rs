@@ -73,7 +73,10 @@ fn source_anchor(
             return refuse("source blob mismatched checkout");
         }
         let bytes = fs::read(repo.join(&path)).map_err(|e| e.to_string())?;
-        cache.insert(path.clone(), (source.blob, bytes.split(|b| *b == b'\n').count()));
+        cache.insert(
+            path.clone(),
+            (source.blob, bytes.split(|b| *b == b'\n').count()),
+        );
     }
     let (blob, nlines) = cache.get(&path).ok_or("missing cached source")?;
     if line < 1 || line as usize > *nlines {

@@ -224,6 +224,30 @@ def independently_verify(
     }
 
 
+def validate_scip_triage(report: dict[str, Any]) -> dict[str, int]:
+    """Check advisory IDs and ordering without reinterpreting SCIP semantics."""
+    triage = report["triage"]
+    require(triage["basis"] == "ADVISORY_RUST_ANALYZER_TOP_LEVEL_MODULE_SYMBOL",
+            "unsupported SCIP triage basis")
+    identifiers = [candidate["candidate_id"] for candidate in report["candidates"]]
+    require(len(identifiers) == len(set(identifiers)), "duplicate SCIP candidate identity")
+    structural = triage["likely_structural_module_candidate_ids"]
+    review = triage["review_candidate_ids"]
+    require(len(structural) == len(set(structural))
+            and len(review) == len(set(review))
+            and set(structural).isdisjoint(review)
+            and set(structural) | set(review) == set(identifiers),
+            "SCIP triage does not partition candidate identities")
+    structural_started = False
+    for identifier in identifiers:
+        if identifier in structural:
+            structural_started = True
+        else:
+            require(not structural_started, "SCIP review candidates must appear first")
+    return {"likely_structural_module_links": len(structural),
+            "other_review_candidates": len(review)}
+
+
 def scip_evidence(
     repo: Path,
     binary: Path,
@@ -280,18 +304,7 @@ def scip_evidence(
         if "reference" in candidate:
             check_source(candidate["reference"]["from"])
             check_source(candidate["reference"]["to"])
-    triage = report["triage"]
-    require(triage["basis"] == "ADVISORY_RUST_ANALYZER_TOP_LEVEL_MODULE_SYMBOL",
-            "unsupported SCIP triage basis")
-    identifiers = [candidate["candidate_id"] for candidate in report["candidates"]]
-    require(len(identifiers) == len(set(identifiers)), "duplicate SCIP candidate identity")
-    structural = triage["likely_structural_module_candidate_ids"]
-    review = triage["review_candidate_ids"]
-    require(len(structural) == len(set(structural))
-            and len(review) == len(set(review))
-            and set(structural).isdisjoint(review)
-            and set(structural) | set(review) == set(identifiers),
-            "SCIP triage does not partition candidate identities")
+    triage_counts = validate_scip_triage(report)
     return {
         "source": "rust-analyzer/SCIP",
         "indexer_version": report["indexer"]["version"],
@@ -302,8 +315,7 @@ def scip_evidence(
         "matched_cross_file_references": coverage["matched_cross_file_references"],
         "unresolved_references": coverage["unresolved_references"],
         "refactor_hypotheses": len(report["candidates"]),
-        "likely_structural_module_links": len(structural),
-        "other_review_candidates": len(review),
+        **triage_counts,
         "audit": receipt["status"],
         "indexer_independently_executed": False,
         "provenance": "INDEXER_OUTPUT_GIT_BOUND_NOT_ATTESTED",

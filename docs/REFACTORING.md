@@ -140,3 +140,27 @@ are reported as unresolved rather than guessed.
 The next extension is to add multi-index manifests, which can combine symbol
 evidence from independently version-pinned indexers while preserving each
 indexer's own provenance and configuration.
+
+## Advisory SCIP refactoring triage
+
+The SCIP report keeps every candidate, original Git/blob/source reference,
+and the original content-addressed `candidate_id`. A separate `triage`
+section partitions those IDs into `review_candidate_ids` and
+`likely_structural_module_candidate_ids`. Review candidates appear first
+in the `candidates` array. The audit regenerates and checks the entire
+report, including triage, from the same Git revision and index bytes.
+
+The narrowly scoped structural heuristic requires a `rust-analyzer` index
+of Rust documents, a `src/lib.rs` or `src/main.rs` crate root and a
+same-directory `*.rs` sibling. The **only** indexed root-to-sibling reference
+must be that sibling's exact module symbol (for example `semantic/`).
+An additional native reference to a function or type leaves the pair in
+`review_candidate_ids`. Nested parent/child modules are not automatically
+demoted. Indexer identity, document paths and source identities are still
+checked as before.
+
+This does **not** parse Rust declarations, prove the absence of other
+references, establish architectural responsibility or certify a refactor.
+It is only a presentation heuristic derived from existing native symbol
+observations. Missing, unsupported or differently shaped evidence remains
+a review candidate, never a safe-to-ignore finding.

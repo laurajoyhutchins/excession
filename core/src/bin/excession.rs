@@ -339,6 +339,22 @@ fn execute(args: &[String]) -> Result<Response> {
     };
     let opt = &parsed.options;
     match parsed.path.as_slice() {
+        [top, sub] if top == "mcp" && sub == "serve" => {
+            let grant = match opt.0.get("allow-publish").map(String::as_str) {
+                None | Some("false") => false,
+                Some("true") => true,
+                _ => return refuse("--allow-publish must be true or false"),
+            };
+            excession::concepts_mcp::serve(&excession::concepts_mcp::Config {
+                repo: opt.path("repo").to_path_buf(),
+                revision: opt.get("rev").to_owned(),
+                index: opt.path("index").to_path_buf(),
+                source_prefix: opt.0.get("source-prefix").cloned(),
+                db: opt.path("db").to_path_buf(),
+                allow_publish: grant,
+            })?;
+            Ok(Response::Bytes(Vec::new()))
+        }
         [top, sub] if top == "concepts" => {
             if sub.starts_with("ontology-") {
                 let repo = opt.path("repo");

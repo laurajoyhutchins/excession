@@ -209,6 +209,15 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Query indexed Git relationships");
+    let mcp = group(
+        "mcp",
+        vec![leaf(
+            "serve",
+            &["repo", "rev", "index", "db"],
+            &["source-prefix", "allow-publish"],
+        )],
+    )
+    .about("Local Rust MCP stdio server for source-bound LLM ontology tools");
     let benchmark = group(
         "benchmark",
         vec![
@@ -324,6 +333,7 @@ pub(super) fn command() -> Command {
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)
+        .subcommand(mcp)
         .subcommand(configured_graph)
         .subcommand(analyze)
         .subcommand(kernel)

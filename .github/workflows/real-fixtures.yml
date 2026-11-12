@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - benchmarks/experiments/real_fixtures.py
+      - benchmarks/experiments/impact_heldout.py
       - benchmarks/experiments/dependency_oracle.py
       - benchmarks/experiments/js_import_oracle.cjs
       - core/adapters/python_ast.py
@@ -42,6 +43,19 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Build Excession
         run: cargo +1.99.1 build --offline --release --manifest-path core/Cargo.toml
+      - name: Compare real h11 change impact to independent Python AST
+        run: |
+          H11="$RUNNER_TEMP/excession-h11-impact"
+          mkdir -p "$H11"
+          git -C "$H11" init -q
+          git -C "$H11" fetch -q --depth=2 https://github.com/python-hyper/h11.git fb40afcdf14f1762e3466a01de99ff114b10d228
+          git -C "$H11" checkout -q --detach fb40afcdf14f1762e3466a01de99ff114b10d228
+          test "$(git -C "$H11" rev-parse HEAD^)" = ea01274303adbb895e1a359ac856241e70184b44
+          python3 benchmarks/experiments/impact_heldout.py \
+            --bin core/target/release/excession --repo "$H11" \
+            --base ea01274303adbb895e1a359ac856241e70184b44 \
+            --head fb40afcdf14f1762e3466a01de99ff114b10d228 \
+            --roots h11,tests --out heldout-h11-impact-results.json
       - name: Verify immutable upstream fixtures and corruption refusals
         run: |
           python3 benchmarks/experiments/real_fixtures.py \
@@ -53,5 +67,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: real-projection-fixture-results
-          path: real-fixture-results.json
+          path: |
+            real-fixture-results.json
+            heldout-h11-impact-results.json
           if-no-files-found: warn

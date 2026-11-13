@@ -112,6 +112,8 @@ jobs:
           PY
       - name: JavaScript adapter tests
         run: npm run check && npm test
+      - name: Mocked subscription-only Codex Luna runner (no model usage)
+        run: bash benchmarks/historical-review/test_luna.sh
       - name: Python-specific tooling and independent oracle tests (JUnit XML)
         env:
           EXCESSION_REQUIRE_BIN: '1'

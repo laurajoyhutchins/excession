@@ -128,3 +128,51 @@ the rest of the Rust package. No remote agent calls are made in CI.
 isolated model runner, independently verified model usage receipts, or agent
 effectiveness measurements. The infrastructure intentionally does not invent
 those observations.
+
+## Run an included-allowance Codex trial
+
+Use GPT-6 Luna for the lowest-cost subscription-backed condition review. This is
+one-shot only: no automatic paid overage, no API key, and no unattended batch.
+
+1. On a machine you control, install Codex CLI and run `codex login` with
+   **ChatGPT**. Check `codex login status` reports ChatGPT, not an API key.
+2. Build the Excession Rust CLI and prepare a private historical case with
+   `excession benchmark review-prepare`. Make a sandbox with ONLY the returned
+   assignment directory, no original repository, private study, or oracle.
+3. On that machine, run:
+
+```sh
+EXCESSION_BIN=core/target/debug/excession \
+  bash benchmarks/historical-review/run_luna.sh \
+  /isolated/case-01-baseline/assignment.json \
+  /private/attempts/case-01-baseline.json
+```
+
+The script uses `codex exec --model gpt-6-luna` with low reasoning effort,
+the Codex read-only sandbox and an ephemeral session. It fails before inference
+when login status indicates API-key auth, refuses changed assignment bytes,
+captures JSONL and reported token counts, then calls the native Rust
+`review-record` command. All outputs are local and create-only.
+
+**Security boundary:** Codex's read-only sandbox is NOT a filesystem or network
+isolation boundary. Run it in a separate OS-level sandbox which cannot access
+the original Git checkout or oracle materials, and restrict public repository
+lookups that would leak future fixes. Because ChatGPT authentication requires
+network connectivity, a network-deny sandbox may need an explicit authenticated
+egress policy. Do not put subscription credentials in GitHub secrets.
+
+**Cost boundary:** the script rejects API-key billing, but cannot disable any
+credit purchase or auto-recharge settings on your ChatGPT account. Verify
+those settings and your available Codex allowance first. A successful model
+trial counts against included subscription usage, not against an unlimited
+free inference budget.
+
+Smoke-test the wrapper with no model calls:
+
+```sh
+bash benchmarks/historical-review/test_luna.sh
+```
+
+Only verified real cases plus an actual authenticated model run can establish
+agent effectiveness. The mocked CI test establishes wiring and billing-mode
+refusals, not a model-quality result.

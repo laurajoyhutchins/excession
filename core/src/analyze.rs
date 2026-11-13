@@ -365,11 +365,14 @@ fn compose(
                     ("status", Value::string("PARTIAL")),
                     ("observation_receipts", Value::array([])),
                     ("relationships", Value::array([])),
-                    ("coverage", obj(&[
-                        ("status", Value::string("PARTIAL")),
-                        ("analyzed_sources", Value::number(0)),
-                        ("gaps", gaps),
-                    ])),
+                    (
+                        "coverage",
+                        obj(&[
+                            ("status", Value::string("PARTIAL")),
+                            ("analyzed_sources", Value::number(0)),
+                            ("gaps", gaps),
+                        ]),
+                    ),
                 ]),
                 db_path.clone(),
             )
@@ -397,20 +400,29 @@ fn compose(
         gaps.truncate(9999);
         gaps.push(obj(&[("reason", Value::string("TRUNCATED"))]));
     }
-    coverage.entries_mut()?.insert("gaps".into(), Value::array(gaps));
-    coverage.entries_mut()?.insert("analyzed_sources".into(), Value::number(count));
+    coverage
+        .entries_mut()?
+        .insert("gaps".into(), Value::array(gaps));
+    coverage
+        .entries_mut()?
+        .insert("analyzed_sources".into(), Value::number(count));
     let body = report.entries_mut()?;
     body.insert("relationships".into(), Value::array(relations));
     body.insert(
         "observation_receipts".into(),
         Value::array(receipts.into_iter().map(Value::string)),
     );
-    body.insert("configured_observations".into(), Value::array(selected.configured_observations));
+    body.insert(
+        "configured_observations".into(),
+        Value::array(selected.configured_observations),
+    );
     body.insert("producer_coverage".into(), Value::array(selected.coverage));
     body.insert(selection_key.into(), selection_record);
     body.remove("report_id");
     let report_id = report.sha256();
-    report.entries_mut()?.insert("report_id".into(), Value::string(report_id));
+    report
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(report_id));
     Ok((report, db_path))
 }
 
@@ -432,23 +444,38 @@ pub fn run_with_evidence(
         Observed::default()
     } else {
         let database = db_override.ok_or("selected native evidence requires --db")?;
-        let dest = checked_external_destination(
-            &discovered.root, Path::new(database), "SQLite",
-        )?;
+        let dest = checked_external_destination(&discovered.root, Path::new(database), "SQLite")?;
         if !dest.is_file() {
             return refuse("selected source evidence database does not exist");
         }
         observed_relations::read(
-            &Db::open(&dest)?, &discovered.root, &discovered.commit, selection,
+            &Db::open(&dest)?,
+            &discovered.root,
+            &discovered.commit,
+            selection,
         )?
     };
     compose(
-        path, rev, roots, db_override, &discovered, selected,
+        path,
+        rev,
+        roots,
+        db_override,
+        &discovered,
+        selected,
         "producer_selections",
         obj(&[
-            ("scip_snapshot", selection.scip_snapshot.map_or(Value::Null, Value::string)),
-            ("graph_id", selection.graph_id.map_or(Value::Null, Value::string)),
-            ("source_prefix", selection.source_prefix.map_or(Value::Null, Value::string)),
+            (
+                "scip_snapshot",
+                selection.scip_snapshot.map_or(Value::Null, Value::string),
+            ),
+            (
+                "graph_id",
+                selection.graph_id.map_or(Value::Null, Value::string),
+            ),
+            (
+                "source_prefix",
+                selection.source_prefix.map_or(Value::Null, Value::string),
+            ),
         ]),
         &[],
     )
@@ -474,11 +501,23 @@ pub fn run_with_plan(
         if !dest.is_file() {
             return refuse("pinned native evidence database does not exist");
         }
-        observed_relations::read_plan(&Db::open(&dest)?, &discovered.root, &discovered.commit, plan)?
+        observed_relations::read_plan(
+            &Db::open(&dest)?,
+            &discovered.root,
+            &discovered.commit,
+            plan,
+        )?
     };
     compose(
-        path, rev, roots, db_override, &discovered, selected,
-        "producer_selection_plan", plan.document(), &plan.gaps,
+        path,
+        rev,
+        roots,
+        db_override,
+        &discovered,
+        selected,
+        "producer_selection_plan",
+        plan.document(),
+        &plan.gaps,
     )
 }
 
@@ -498,9 +537,7 @@ pub fn run_default(
         "SQLite",
     )?;
     let plan = if dest.is_file() {
-        observed_relations::default_plan(
-            &Db::open(&dest)?, &discovered.root, &discovered.commit,
-        )?
+        observed_relations::default_plan(&Db::open(&dest)?, &discovered.root, &discovered.commit)?
     } else {
         Plan::default()
     };

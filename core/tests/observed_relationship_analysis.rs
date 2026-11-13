@@ -223,8 +223,24 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
     // Rust-only source without imported evidence is a partial report, not
     // an absence proof or a fatal dependency on Python/JavaScript analyzers.
     let empty = json::parse(success(f.cli(&["analyze", f.repo(), "--json"])).as_bytes()).unwrap();
-    assert!(empty.get("relationships").unwrap().array_ref().unwrap().is_empty());
-    assert_eq!(empty.get("coverage").unwrap().get("status").unwrap().str().unwrap(), "PARTIAL");
+    assert!(
+        empty
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        empty
+            .get("coverage")
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "PARTIAL"
+    );
     let report = json::parse(
         success(f.cli(&[
             "analyze",
@@ -552,56 +568,160 @@ fn stale_wrong_scope_and_sql_tampering_are_refused() {
 fn default_discovers_unique_revision_evidence_and_pins_replay() {
     let f = Fixture::new();
     let graph = f.graph_for_changed_source();
-    let discovered = json::parse(success(f.cli(&[
-        "inspect", "producer-candidates", "--repo", f.repo(), "--rev", &f.head, "--db", f.db(),
-    ])).as_bytes()).unwrap();
-    assert_eq!(discovered.get("status").unwrap().str().unwrap(), "UNAMBIGUOUS");
+    let discovered = json::parse(
+        success(f.cli(&[
+            "inspect",
+            "producer-candidates",
+            "--repo",
+            f.repo(),
+            "--rev",
+            &f.head,
+            "--db",
+            f.db(),
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        discovered.get("status").unwrap().str().unwrap(),
+        "UNAMBIGUOUS"
+    );
 
-    let analysis = json::parse(success(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(), "--json",
-    ])).as_bytes()).unwrap();
-    assert_eq!(analysis.get("relationships").unwrap().array_ref().unwrap().len(), 1);
-    assert_eq!(analysis.get("configured_observations").unwrap().array_ref().unwrap().len(), 1);
+    let analysis = json::parse(
+        success(f.cli(&[
+            "analyze",
+            f.repo(),
+            "--rev",
+            &f.head,
+            "--db",
+            f.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        analysis
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        analysis
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
     let plan = analysis.get("producer_selection_plan").unwrap();
     assert_eq!(
         plan.get("scip").unwrap().array_ref().unwrap()[0]
-            .get("snapshot_id").unwrap().str().unwrap(), f.head_snapshot
+            .get("snapshot_id")
+            .unwrap()
+            .str()
+            .unwrap(),
+        f.head_snapshot
     );
-    assert_eq!(plan.get("graphs").unwrap().array_ref().unwrap()[0].str().unwrap(), graph);
+    assert_eq!(
+        plan.get("graphs").unwrap().array_ref().unwrap()[0]
+            .str()
+            .unwrap(),
+        graph
+    );
 
     let saved = f.root.join("default-impact.json");
-    let impact = json::parse(success(f.cli(&[
-        "impact", f.repo(), "--base", &f.base, "--head", &f.head,
-        "--db", f.db(), "--output", saved.to_str().unwrap(), "--json",
-    ])).as_bytes()).unwrap();
+    let impact = json::parse(
+        success(f.cli(&[
+            "impact",
+            f.repo(),
+            "--base",
+            &f.base,
+            "--head",
+            &f.head,
+            "--db",
+            f.db(),
+            "--output",
+            saved.to_str().unwrap(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
     let selections = impact.get("producer_selection_plan").unwrap();
     assert_eq!(
-        selections.get("base").unwrap().get("scip").unwrap().array_ref().unwrap()[0]
-            .get("snapshot_id").unwrap().str().unwrap(), f.base_snapshot
+        selections
+            .get("base")
+            .unwrap()
+            .get("scip")
+            .unwrap()
+            .array_ref()
+            .unwrap()[0]
+            .get("snapshot_id")
+            .unwrap()
+            .str()
+            .unwrap(),
+        f.base_snapshot
     );
     assert_eq!(
-        selections.get("head").unwrap().get("scip").unwrap().array_ref().unwrap()[0]
-            .get("snapshot_id").unwrap().str().unwrap(), f.head_snapshot
+        selections
+            .get("head")
+            .unwrap()
+            .get("scip")
+            .unwrap()
+            .array_ref()
+            .unwrap()[0]
+            .get("snapshot_id")
+            .unwrap()
+            .str()
+            .unwrap(),
+        f.head_snapshot
     );
-    let effect = impact.get("effects").unwrap().array_ref().unwrap().iter().find(
-        |x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs"
-    ).unwrap();
+    let effect = impact
+        .get("effects")
+        .unwrap()
+        .array_ref()
+        .unwrap()
+        .iter()
+        .find(|x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs")
+        .unwrap();
     let claim = effect.get("claim_id").unwrap().str().unwrap();
     // Import a new competing SCIP snapshot after the report was generated.
     // Explanation must replay only the original chosen identities.
     let db = Db::open(&f.db).unwrap();
-    let alternate = native_index().canonical().replace(
-        r#""version":"1.0""#, r#""version":"2.0""#
-    );
+    let alternate = native_index()
+        .canonical()
+        .replace(r#""version":"1.0""#, r#""version":"2.0""#);
     let index = f.root.join("late-scip.json");
     fs::write(&index, alternate).unwrap();
     scip_evidence::import(&f.repo, &f.head, &index, None, &db).unwrap();
-    let explained = json::parse(success(f.cli(&[
-        "explain", f.repo(), "--report", saved.to_str().unwrap(),
-        "--id", claim, "--db", f.db(), "--json",
-    ])).as_bytes()).unwrap();
+    let explained = json::parse(
+        success(f.cli(&[
+            "explain",
+            f.repo(),
+            "--report",
+            saved.to_str().unwrap(),
+            "--id",
+            claim,
+            "--db",
+            f.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
     assert_eq!(explained.get("claim_id").unwrap().str().unwrap(), claim);
-    assert!(!impact.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+    assert!(
+        !impact
+            .get("safe_to_skip_unlisted_tests")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
 }
 
 #[test]
@@ -609,41 +729,146 @@ fn competing_scip_indexes_quarantine_only_overlapping_paths() {
     let f = Fixture::new();
     let graph = f.graph_for_changed_source();
     let db = Db::open(&f.db).unwrap();
-    let alternate = native_index().canonical().replace(
-        r#""version":"1.0""#, r#""version":"2.0""#
-    );
+    let alternate = native_index()
+        .canonical()
+        .replace(r#""version":"1.0""#, r#""version":"2.0""#);
     let index = f.root.join("duplicate-scip.json");
     fs::write(&index, alternate).unwrap();
     scip_evidence::import(&f.repo, &f.head, &index, None, &db).unwrap();
 
-    let composed = json::parse(success(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(), "--json",
-    ])).as_bytes()).unwrap();
-    assert!(composed.get("relationships").unwrap().array_ref().unwrap().is_empty());
-    assert_eq!(composed.get("configured_observations").unwrap().array_ref().unwrap().len(), 1);
+    let composed = json::parse(
+        success(f.cli(&[
+            "analyze",
+            f.repo(),
+            "--rev",
+            &f.head,
+            "--db",
+            f.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert!(
+        composed
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        composed
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
     let plan = composed.get("producer_selection_plan").unwrap();
     assert_eq!(plan.get("scip").unwrap().array_ref().unwrap().len(), 2);
-    assert_eq!(plan.get("blocked_paths").unwrap().array_ref().unwrap().len(), 2);
-    let gaps = composed.get("coverage").unwrap().get("gaps").unwrap().array_ref().unwrap();
-    assert!(gaps.iter().any(|g| g.get("reason").unwrap().str().unwrap() == "UNRESOLVED_RELATIONSHIP"));
+    assert_eq!(
+        plan.get("blocked_paths")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        2
+    );
+    let gaps = composed
+        .get("coverage")
+        .unwrap()
+        .get("gaps")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(
+        gaps.iter()
+            .any(|g| g.get("reason").unwrap().str().unwrap() == "UNRESOLVED_RELATIONSHIP")
+    );
 
-    let impact = json::parse(success(f.cli(&[
-        "impact", f.repo(), "--base", &f.base, "--head", &f.head,
-        "--db", f.db(), "--json",
-    ])).as_bytes()).unwrap();
-    assert!(impact.get("effects").unwrap().array_ref().unwrap().is_empty());
-    assert_eq!(impact.get("configured_observations").unwrap().array_ref().unwrap().len(), 1);
-    assert!(!impact.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+    let impact = json::parse(
+        success(f.cli(&[
+            "impact",
+            f.repo(),
+            "--base",
+            &f.base,
+            "--head",
+            &f.head,
+            "--db",
+            f.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert!(
+        impact
+            .get("effects")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        impact
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        !impact
+            .get("safe_to_skip_unlisted_tests")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
 
     // Explicit narrowing still permits the originally authenticated index.
-    let narrow = json::parse(success(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
-        "--scip-snapshot", &f.head_snapshot, "--json",
-    ])).as_bytes()).unwrap();
-    assert_eq!(narrow.get("relationships").unwrap().array_ref().unwrap().len(), 1);
-    assert_eq!(narrow.get("producer_selections").unwrap().get("scip_snapshot").unwrap()
-        .str().unwrap(), f.head_snapshot);
-    assert_eq!(plan.get("graphs").unwrap().array_ref().unwrap()[0].str().unwrap(), graph);
+    let narrow = json::parse(
+        success(f.cli(&[
+            "analyze",
+            f.repo(),
+            "--rev",
+            &f.head,
+            "--db",
+            f.db(),
+            "--scip-snapshot",
+            &f.head_snapshot,
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        narrow
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        narrow
+            .get("producer_selections")
+            .unwrap()
+            .get("scip_snapshot")
+            .unwrap()
+            .str()
+            .unwrap(),
+        f.head_snapshot
+    );
+    assert_eq!(
+        plan.get("graphs").unwrap().array_ref().unwrap()[0]
+            .str()
+            .unwrap(),
+        graph
+    );
 }
 
 #[test]
@@ -659,7 +884,8 @@ fn disjoint_scip_indexes_compose_and_build_targets_remain_independent() {
     let first = f.root.join("first-scip.json");
     fs::write(&first, native_index().canonical()).unwrap();
     scip_evidence::import(&f.repo, &revision, &first, None, &db).unwrap();
-    let independent = native_index().canonical()
+    let independent = native_index()
+        .canonical()
         .replace("src/a.rs", "src/c.rs")
         .replace("src/b.rs", "src/d.rs")
         .replace("foo", "cat")
@@ -667,28 +893,71 @@ fn disjoint_scip_indexes_compose_and_build_targets_remain_independent() {
     let second = f.root.join("second-scip.json");
     fs::write(&second, independent).unwrap();
     scip_evidence::import(&f.repo, &revision, &second, None, &db).unwrap();
-    let report = json::parse(success(f.cli(&[
-        "analyze", f.repo(), "--rev", &revision, "--db", f.db(), "--json",
-    ])).as_bytes()).unwrap();
+    let report = json::parse(
+        success(f.cli(&[
+            "analyze",
+            f.repo(),
+            "--rev",
+            &revision,
+            "--db",
+            f.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
     let edges = report.get("relationships").unwrap().array_ref().unwrap();
     assert_eq!(edges.len(), 2);
     let plan = report.get("producer_selection_plan").unwrap();
     assert_eq!(plan.get("scip").unwrap().array_ref().unwrap().len(), 2);
-    assert!(plan.get("blocked_paths").unwrap().array_ref().unwrap().is_empty());
+    assert!(
+        plan.get("blocked_paths")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
 
     // Two independent graph targets are both retained when selected at the
     // same revision; they do not create source-to-source import edges.
     let f2 = Fixture::new();
     let graph_one = f2.graph_for_target("demo");
     let graph_two = f2.graph_for_target("other");
-    let report2 = json::parse(success(f2.cli(&[
-        "analyze", f2.repo(), "--rev", &f2.head, "--db", f2.db(), "--json",
-    ])).as_bytes()).unwrap();
-    let native = report2.get("configured_observations").unwrap().array_ref().unwrap();
+    let report2 = json::parse(
+        success(f2.cli(&[
+            "analyze",
+            f2.repo(),
+            "--rev",
+            &f2.head,
+            "--db",
+            f2.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    let native = report2
+        .get("configured_observations")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert_eq!(native.len(), 2);
-    assert_eq!(report2.get("relationships").unwrap().array_ref().unwrap().len(), 1);
-    let ids = report2.get("producer_selection_plan").unwrap().get("graphs").unwrap()
-        .array_ref().unwrap();
+    assert_eq!(
+        report2
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    let ids = report2
+        .get("producer_selection_plan")
+        .unwrap()
+        .get("graphs")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert_eq!(ids.len(), 2);
     assert!(ids.iter().any(|x| x.str().unwrap() == graph_one));
     assert!(ids.iter().any(|x| x.str().unwrap() == graph_two));
@@ -700,26 +969,89 @@ fn conflicting_configurations_remain_separate_without_blocking_scip() {
     let debug = f.graph_for_target_configuration("app", "debug");
     let release = f.graph_for_target_configuration("app", "release");
     assert_ne!(debug, release);
-    let analysis = json::parse(success(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(), "--json",
-    ])).as_bytes()).unwrap();
-    assert_eq!(analysis.get("relationships").unwrap().array_ref().unwrap().len(), 1);
-    assert_eq!(analysis.get("configured_observations").unwrap().array_ref().unwrap().len(), 2);
-    let graphs = analysis.get("producer_selection_plan").unwrap().get("graphs").unwrap()
-        .array_ref().unwrap();
+    let analysis = json::parse(
+        success(f.cli(&[
+            "analyze",
+            f.repo(),
+            "--rev",
+            &f.head,
+            "--db",
+            f.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        analysis
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        analysis
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        2
+    );
+    let graphs = analysis
+        .get("producer_selection_plan")
+        .unwrap()
+        .get("graphs")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert_eq!(graphs.len(), 2);
     assert!(graphs.iter().any(|x| x.str().unwrap() == debug));
     assert!(graphs.iter().any(|x| x.str().unwrap() == release));
-    let gaps = analysis.get("coverage").unwrap().get("gaps").unwrap().array_ref().unwrap();
-    assert!(gaps.iter().any(|x| x.get("reason").unwrap().str().unwrap() == "MISSING_CONFIGURATION"));
-    let impact = json::parse(success(f.cli(&[
-        "impact", f.repo(), "--base", &f.base, "--head", &f.head,
-        "--db", f.db(), "--json",
-    ])).as_bytes()).unwrap();
-    assert!(impact.get("effects").unwrap().array_ref().unwrap().iter().any(
-        |x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs"
-    ));
-    assert!(!impact.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+    let gaps = analysis
+        .get("coverage")
+        .unwrap()
+        .get("gaps")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(
+        gaps.iter()
+            .any(|x| x.get("reason").unwrap().str().unwrap() == "MISSING_CONFIGURATION")
+    );
+    let impact = json::parse(
+        success(f.cli(&[
+            "impact",
+            f.repo(),
+            "--base",
+            &f.base,
+            "--head",
+            &f.head,
+            "--db",
+            f.db(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert!(
+        impact
+            .get("effects")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs")
+    );
+    assert!(
+        !impact
+            .get("safe_to_skip_unlisted_tests")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
 }
 
 #[test]
@@ -757,14 +1089,47 @@ fn discovery_does_not_create_missing_store_or_assume_source_completeness() {
         found.get("status").unwrap().str().unwrap(),
         "NO_IMPORTED_EVIDENCE"
     );
-    let partial = json::parse(success(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head,
-        "--db", blank.to_str().unwrap(), "--json",
-    ])).as_bytes()).unwrap();
-    assert_eq!(partial.get("coverage").unwrap().get("status").unwrap().str().unwrap(), "PARTIAL");
-    assert!(partial.get("relationships").unwrap().array_ref().unwrap().is_empty());
-    assert!(partial.get("producer_selection_plan").unwrap().get("scip").unwrap()
-        .array_ref().unwrap().is_empty());
+    let partial = json::parse(
+        success(f.cli(&[
+            "analyze",
+            f.repo(),
+            "--rev",
+            &f.head,
+            "--db",
+            blank.to_str().unwrap(),
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        partial
+            .get("coverage")
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "PARTIAL"
+    );
+    assert!(
+        partial
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        partial
+            .get("producer_selection_plan")
+            .unwrap()
+            .get("scip")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
     let store = Db::open(&f.db).unwrap();
     store
         .execute(
@@ -784,7 +1149,13 @@ fn discovery_does_not_create_missing_store_or_assume_source_completeness() {
     ]));
     // Corrupt receipts are never ignored by default analysis.
     refuse(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(), "--json",
+        "analyze",
+        f.repo(),
+        "--rev",
+        &f.head,
+        "--db",
+        f.db(),
+        "--json",
     ]));
 }
 
@@ -865,18 +1236,59 @@ fn auto_detects_native_scip_subproject_only_from_declared_project_root() {
 fn removed_opt_in_flag_is_rejected_and_explicit_scope_remains_supported() {
     let f = Fixture::new();
     refuse(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
-        "--auto-evidence", "--json",
+        "analyze",
+        f.repo(),
+        "--rev",
+        &f.head,
+        "--db",
+        f.db(),
+        "--auto-evidence",
+        "--json",
     ]));
     refuse(f.cli(&[
-        "impact", f.repo(), "--base", &f.base, "--head", &f.head,
-        "--db", f.db(), "--auto-evidence", "--json",
+        "impact",
+        f.repo(),
+        "--base",
+        &f.base,
+        "--head",
+        &f.head,
+        "--db",
+        f.db(),
+        "--auto-evidence",
+        "--json",
     ]));
-    let scoped = json::parse(success(f.cli(&[
-        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
-        "--scip-snapshot", &f.head_snapshot, "--json",
-    ])).as_bytes()).unwrap();
-    assert_eq!(scoped.get("relationships").unwrap().array_ref().unwrap().len(), 1);
-    assert_eq!(scoped.get("producer_selections").unwrap()
-        .get("scip_snapshot").unwrap().str().unwrap(), f.head_snapshot);
+    let scoped = json::parse(
+        success(f.cli(&[
+            "analyze",
+            f.repo(),
+            "--rev",
+            &f.head,
+            "--db",
+            f.db(),
+            "--scip-snapshot",
+            &f.head_snapshot,
+            "--json",
+        ]))
+        .as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        scoped
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        scoped
+            .get("producer_selections")
+            .unwrap()
+            .get("scip_snapshot")
+            .unwrap()
+            .str()
+            .unwrap(),
+        f.head_snapshot
+    );
 }

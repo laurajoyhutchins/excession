@@ -514,10 +514,14 @@ fn execute(args: &[String]) -> Result<Response> {
             let roots = opt.0.get("roots").map(String::as_str);
             let db = opt.0.get("db").map(String::as_str);
             let explicit = ["scip-snapshot", "graph-id", "source-prefix"]
-                .iter().any(|key| opt.0.contains_key(*key));
+                .iter()
+                .any(|key| opt.0.contains_key(*key));
             let (report, db_path) = if explicit {
                 analyze::run_with_evidence(
-                    repo, rev, roots, db,
+                    repo,
+                    rev,
+                    roots,
+                    db,
                     Selection {
                         scip_snapshot: opt.0.get("scip-snapshot").map(String::as_str),
                         graph_id: opt.0.get("graph-id").map(String::as_str),
@@ -600,13 +604,22 @@ fn execute(args: &[String]) -> Result<Response> {
             let roots = opt.0.get("roots").map(String::as_str);
             let db_arg = opt.0.get("db").map(String::as_str);
             let explicit = [
-                "base-scip-snapshot", "head-scip-snapshot",
-                "base-graph-id", "head-graph-id",
-                "base-source-prefix", "head-source-prefix",
-            ].iter().any(|key| opt.0.contains_key(*key));
+                "base-scip-snapshot",
+                "head-scip-snapshot",
+                "base-graph-id",
+                "head-graph-id",
+                "base-source-prefix",
+                "head-source-prefix",
+            ]
+            .iter()
+            .any(|key| opt.0.contains_key(*key));
             let result = if explicit {
                 impact_query::run_with_evidence(
-                    repo, base, head, roots, db_arg,
+                    repo,
+                    base,
+                    head,
+                    roots,
+                    db_arg,
                     impact_query::EvidenceByRevision {
                         base: Selection {
                             scip_snapshot: opt.0.get("base-scip-snapshot").map(String::as_str),

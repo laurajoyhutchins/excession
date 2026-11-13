@@ -257,10 +257,30 @@ fn revisions_without_supported_sources_are_explicitly_out_of_scope() {
         .args(["analyze", ".", "--json"])
         .output()
         .unwrap();
-    assert!(analyze.status.success(), "{}", String::from_utf8_lossy(&analyze.stderr));
+    assert!(
+        analyze.status.success(),
+        "{}",
+        String::from_utf8_lossy(&analyze.stderr)
+    );
     let coverage = json::parse(&analyze.stdout).unwrap();
-    assert_eq!(coverage.get("coverage").unwrap().get("status").unwrap().str().unwrap(), "PARTIAL");
-    assert!(coverage.get("relationships").unwrap().array_ref().unwrap().is_empty());
+    assert_eq!(
+        coverage
+            .get("coverage")
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "PARTIAL"
+    );
+    assert!(
+        coverage
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
     let report = Command::new(bin)
         .current_dir(&repo)
         .args(["impact", ".", "--base", &base, "--json"])

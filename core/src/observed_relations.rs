@@ -503,7 +503,6 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
     })
 }
 
-
 const MAX_PLAN_ITEMS: usize = 24;
 const MAX_COMPOSED_EDGES: usize = 20_000;
 
@@ -530,12 +529,28 @@ impl Plan {
 
     pub fn document(&self) -> Value {
         obj(&[
-            ("scip", Value::array(self.scip.iter().map(|x| obj(&[
-                ("snapshot_id", Value::string(&x.snapshot_id)),
-                ("source_prefix", x.source_prefix.as_deref().map_or(Value::Null, Value::string)),
-            ])))),
-            ("graphs", Value::array(self.graphs.iter().map(Value::string))),
-            ("blocked_paths", Value::array(self.blocked_paths.iter().map(Value::string))),
+            (
+                "scip",
+                Value::array(self.scip.iter().map(|x| {
+                    obj(&[
+                        ("snapshot_id", Value::string(&x.snapshot_id)),
+                        (
+                            "source_prefix",
+                            x.source_prefix
+                                .as_deref()
+                                .map_or(Value::Null, Value::string),
+                        ),
+                    ])
+                })),
+            ),
+            (
+                "graphs",
+                Value::array(self.graphs.iter().map(Value::string)),
+            ),
+            (
+                "blocked_paths",
+                Value::array(self.blocked_paths.iter().map(Value::string)),
+            ),
             ("gaps", Value::array(self.gaps.clone())),
         ])
     }
@@ -579,7 +594,10 @@ fn plan_from_ids(
             return refuse("SCIP plan needs exactly one retained native receipt");
         }
         let receipt = json::parse(
-            rows[0][0].as_deref().ok_or("missing native receipt")?.as_bytes(),
+            rows[0][0]
+                .as_deref()
+                .ok_or("missing native receipt")?
+                .as_bytes(),
         )?;
         if !receipt.get("producer")?.str()?.starts_with("scip:") {
             return refuse("non-SCIP receipt was supplied as a SCIP source index");
@@ -591,16 +609,22 @@ fn plan_from_ids(
         let parsed = json::parse(raw.as_bytes())?;
         let documents = parsed.get("documents")?.array_ref()?;
         for item in documents {
-            let relative = item.entries()?.get("relative_path")
+            let relative = item
+                .entries()?
+                .get("relative_path")
                 .or_else(|| item.entries().ok()?.get("relativePath"))
-                .ok_or("SCIP document lacks a source path")?.str()?;
+                .ok_or("SCIP document lacks a source path")?
+                .str()?;
             git::validate_path(relative)?;
             let path = choice.source_prefix.as_ref().map_or_else(
                 || relative.to_owned(),
                 |prefix| format!("{prefix}/{relative}"),
             );
             git::validate_path(&path)?;
-            by_path.entry(path).or_default().insert(choice.snapshot_id.clone());
+            by_path
+                .entry(path)
+                .or_default()
+                .insert(choice.snapshot_id.clone());
         }
     }
     let mut blocked_paths = BTreeSet::new();
@@ -631,7 +655,10 @@ fn plan_from_ids(
             return refuse("configured graph plan identity is not in SQLite");
         }
         let document = json::parse(
-            rows[0][0].as_deref().ok_or("configured graph document missing")?.as_bytes(),
+            rows[0][0]
+                .as_deref()
+                .ok_or("configured graph document missing")?
+                .as_bytes(),
         )?;
         if document.sha256() != *id || document.get("source_commit")?.str()? != commit {
             return refuse("configured graph plan identity or Git revision differs");
@@ -642,8 +669,10 @@ fn plan_from_ids(
             "excession.kbuild-graph.v1" => document.get("archive")?.str()?,
             _ => return refuse("unsupported configured graph producer in plan"),
         };
-        by_target.entry((schema.to_owned(), target.to_owned()))
-            .or_default().insert(id.to_owned());
+        by_target
+            .entry((schema.to_owned(), target.to_owned()))
+            .or_default()
+            .insert(id.to_owned());
     }
     for ((producer, target), ids) in by_target {
         if ids.len() > 1 {
@@ -659,7 +688,12 @@ fn plan_from_ids(
     if gaps.len() > 9999 {
         return refuse("native evidence conflicts exceed coverage budget");
     }
-    Ok(Plan { scip, graphs, blocked_paths, gaps })
+    Ok(Plan {
+        scip,
+        graphs,
+        blocked_paths,
+        gaps,
+    })
 }
 
 /// Discover every source-compatible index and every independently labeled
@@ -667,7 +701,10 @@ fn plan_from_ids(
 /// configurations remain distinct rather than being silently unioned.
 pub fn default_plan(db: &Db, repo: &Path, revision: &str) -> Result<Plan> {
     let candidates = discover(db, repo, revision)?;
-    let scip = candidates.get("scip_candidates")?.array_ref()?.iter()
+    let scip = candidates
+        .get("scip_candidates")?
+        .array_ref()?
+        .iter()
         .map(|entry| {
             let source_prefix = match entry.get("source_prefix")? {
                 Value::Null => None,
@@ -679,7 +716,10 @@ pub fn default_plan(db: &Db, repo: &Path, revision: &str) -> Result<Plan> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let graphs = candidates.get("graph_candidates")?.array_ref()?.iter()
+    let graphs = candidates
+        .get("graph_candidates")?
+        .array_ref()?
+        .iter()
         .map(|entry| Ok(entry.get("graph_id")?.str()?.to_owned()))
         .collect::<Result<Vec<_>>>()?;
     plan_from_ids(db, repo, revision, scip, graphs)
@@ -688,7 +728,10 @@ pub fn default_plan(db: &Db, repo: &Path, revision: &str) -> Result<Plan> {
 /// Replay only the identities sealed in a saved report. Newly imported
 /// indexes or graphs must not silently change an existing impact claim.
 pub fn pinned_plan(db: &Db, repo: &Path, revision: &str, record: &Value) -> Result<Plan> {
-    let scip = record.get("scip")?.array_ref()?.iter()
+    let scip = record
+        .get("scip")?
+        .array_ref()?
+        .iter()
         .map(|entry| {
             let source_prefix = match entry.get("source_prefix")? {
                 Value::Null => None,
@@ -700,12 +743,17 @@ pub fn pinned_plan(db: &Db, repo: &Path, revision: &str, record: &Value) -> Resu
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let graphs = record.get("graphs")?.array_ref()?.iter()
+    let graphs = record
+        .get("graphs")?
+        .array_ref()?
+        .iter()
         .map(|item| Ok(item.str()?.to_owned()))
         .collect::<Result<Vec<_>>>()?;
     let reconstructed = plan_from_ids(db, repo, revision, scip, graphs)?;
     if reconstructed.document() != *record {
-        return refuse("recorded native evidence conflicts or selection identities differ on replay");
+        return refuse(
+            "recorded native evidence conflicts or selection identities differ on replay",
+        );
     }
     Ok(reconstructed)
 }
@@ -720,8 +768,13 @@ pub fn read_plan(db: &Db, repo: &Path, revision: &str, plan: &Plan) -> Result<Ob
         for choice in &plan.scip {
             let mut native = Observed::default();
             select_scip(
-                db, repo, &commit, &tree, &choice.snapshot_id,
-                choice.source_prefix.as_deref(), &mut native,
+                db,
+                repo,
+                &commit,
+                &tree,
+                &choice.snapshot_id,
+                choice.source_prefix.as_deref(),
+                &mut native,
             )?;
             for relation in native.relationships {
                 let from = relation.get("source")?.get("path")?.str()?;

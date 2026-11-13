@@ -182,7 +182,14 @@ pub fn run_with_plans(
     base_plan: &Plan,
     head_plan: &Plan,
 ) -> Result<Value> {
-    run_core(path, base, head, roots, database, Mode::Pinned(base_plan, head_plan))
+    run_core(
+        path,
+        base,
+        head,
+        roots,
+        database,
+        Mode::Pinned(base_plan, head_plan),
+    )
 }
 
 fn run_core(
@@ -213,7 +220,11 @@ fn run_core(
         let changed = changed_paths(&changes, side)?;
         let scope = match selected {
             Mode::Explicit(choices) => {
-                if side == "before" { choices.base } else { choices.head }
+                if side == "before" {
+                    choices.base
+                } else {
+                    choices.head
+                }
             }
             Mode::Pinned(_, _) => Selection::default(),
         };
@@ -254,7 +265,12 @@ fn run_core(
         {
             gaps.push(obj(&[
                 ("reason", Value::string("EXCLUDED_SCOPE")),
-                ("detail", Value::string("no static or imported source relationships in selected revision")),
+                (
+                    "detail",
+                    Value::string(
+                        "no static or imported source relationships in selected revision",
+                    ),
+                ),
             ]));
         }
         source_count = source_count
@@ -323,51 +339,51 @@ fn run_core(
             body.insert("producer_coverage".into(), Value::array(producer_coverage));
         }
         Mode::Explicit(selected) if !selected.base.is_empty() || !selected.head.is_empty() => {
-        let choices = obj(&[
-            (
-                "base_scip_snapshot",
-                selected
-                    .base
-                    .scip_snapshot
-                    .map_or(Value::Null, Value::string),
-            ),
-            (
-                "head_scip_snapshot",
-                selected
-                    .head
-                    .scip_snapshot
-                    .map_or(Value::Null, Value::string),
-            ),
-            (
-                "base_graph_id",
-                selected.base.graph_id.map_or(Value::Null, Value::string),
-            ),
-            (
-                "head_graph_id",
-                selected.head.graph_id.map_or(Value::Null, Value::string),
-            ),
-            (
-                "base_source_prefix",
-                selected
-                    .base
-                    .source_prefix
-                    .map_or(Value::Null, Value::string),
-            ),
-            (
-                "head_source_prefix",
-                selected
-                    .head
-                    .source_prefix
-                    .map_or(Value::Null, Value::string),
-            ),
-        ]);
-        let body = result.entries_mut()?;
-        body.insert("producer_selections".into(), choices);
-        body.insert(
-            "configured_observations".into(),
-            Value::array(configured_observations),
-        );
-        body.insert("producer_coverage".into(), Value::array(producer_coverage));
+            let choices = obj(&[
+                (
+                    "base_scip_snapshot",
+                    selected
+                        .base
+                        .scip_snapshot
+                        .map_or(Value::Null, Value::string),
+                ),
+                (
+                    "head_scip_snapshot",
+                    selected
+                        .head
+                        .scip_snapshot
+                        .map_or(Value::Null, Value::string),
+                ),
+                (
+                    "base_graph_id",
+                    selected.base.graph_id.map_or(Value::Null, Value::string),
+                ),
+                (
+                    "head_graph_id",
+                    selected.head.graph_id.map_or(Value::Null, Value::string),
+                ),
+                (
+                    "base_source_prefix",
+                    selected
+                        .base
+                        .source_prefix
+                        .map_or(Value::Null, Value::string),
+                ),
+                (
+                    "head_source_prefix",
+                    selected
+                        .head
+                        .source_prefix
+                        .map_or(Value::Null, Value::string),
+                ),
+            ]);
+            let body = result.entries_mut()?;
+            body.insert("producer_selections".into(), choices);
+            body.insert(
+                "configured_observations".into(),
+                Value::array(configured_observations),
+            );
+            body.insert("producer_coverage".into(), Value::array(producer_coverage));
         }
         Mode::Explicit(_) => {}
     }

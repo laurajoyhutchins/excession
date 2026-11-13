@@ -407,7 +407,6 @@ pub(super) fn command() -> Command {
                 .num_args(1)
                 .value_parser(NonEmptyStringValueParser::new()),
         )
-
         .subcommand(clang());
     let kernel = group(
         "kernel",

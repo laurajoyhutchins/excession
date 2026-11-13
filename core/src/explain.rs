@@ -1,10 +1,10 @@
 //! Exact report replay and source-bound explanation.
 //! Does not promote candidate dependencies to verified behavior.
+use crate::analyze;
+use crate::discovery;
 use crate::impact_query::{self, EvidenceByRevision};
 use crate::json::{self, Value, obj};
 use crate::observed_relations::{self, Plan, Selection};
-use crate::analyze;
-use crate::discovery;
 use crate::sqlite::Db;
 use crate::{Result, refuse};
 use std::fs;
@@ -85,9 +85,7 @@ fn checked_claim(
             }
             (Plan::default(), Plan::default())
         };
-        impact_query::run_with_plans(
-            repo, base, head, roots, db, &base_plan, &head_plan,
-        )?
+        impact_query::run_with_plans(repo, base, head, roots, db, &base_plan, &head_plan)?
     } else if let Some(choices) = reported.entries()?.get("producer_selections") {
         let selected = |key: &str| -> Result<Option<&str>> {
             match choices.get(key)? {

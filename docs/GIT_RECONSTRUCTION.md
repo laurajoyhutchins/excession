@@ -70,3 +70,6 @@ build/REA stores or invent a second authority.
 To iterate, revise the candidate plan or produce new Git commits, then invoke
 the verifier again. It is an exact-object checker, not an automatic history
 synthesizer.
+
+
+Executable, bounded source-bound oracle replay is specified in [GIT_RECONSTRUCTION_ORACLES.md](GIT_RECONSTRUCTION_ORACLES.md). The execution path explicitly requires `--trusted-local true`; it does not sandbox target code or establish universal behavioral equivalence.

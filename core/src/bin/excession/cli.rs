@@ -610,6 +610,7 @@ pub(super) fn command() -> Command {
                 leaf("searches", &["db", "target"], &["limit"]),
                 leaf("git", &["repo", "plan"], &[]),
                 leaf("git-evidence", &["repo", "plan", "db", "evidence"], &[]),
+                leaf("git-oracles", &["repo", "plan", "db", "evidence", "checks", "trusted-local"], &[]),
             ],
         ).about("Read-only Git reconstruction and trusted-local C compiler feedback"))
         .subcommand(inspect)

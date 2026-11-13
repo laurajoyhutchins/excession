@@ -946,6 +946,25 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "git-oracles" => {
+            if !opt.path("db").is_file() {
+                return refuse("Git reconstruction oracles need an existing SQLite database");
+            }
+            let trusted = match opt.get("trusted-local") {
+                "true" => true,
+                "false" => false,
+                _ => return refuse("--trusted-local requires true or false"),
+            };
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_oracles::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+                opt.path("checks"),
+                trusted,
+            )?))
+        }
         [top, sub] if top == "reconstruct" && sub == "git-evidence" => {
             if !opt.path("db").is_file() {
                 return refuse("Git reconstruction evidence needs an existing SQLite database");

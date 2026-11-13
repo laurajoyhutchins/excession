@@ -128,6 +128,8 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
         raise ValueError("static candidates must not claim full coverage")
 
     actual: dict[str, set[str]] = {base: set(), head: set()}
+    compact_actual: dict[str, set[str]] = {base: set(), head: set()}
+    compact_ranks: dict[tuple[str, str], int] = {}
     invalid = []
     for effect in report["effects"]:
         entity = effect["entity"]
@@ -157,9 +159,69 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
                     or any(item.get("assessment") != "CANDIDATE" or not item.get("receipt_id")
                            for item in hop["evidence"])):
                 invalid.append(f"unsupported/invented hop {a['path']} -> {b['path']}")
+    # An independently checked, rank-decreasing forest must cover the whole
+    # observed reverse-reachable set even when legacy path output is capped.
+    compact = report.get("candidate_source_impacts", [])
+    compact_count = report.get("candidate_source_count")
+    compact_complete = report.get("candidate_source_enumeration_complete")
+    if compact_count != len(compact) or compact_complete is not True:
+        invalid.append("distinct-source inventory is incomplete or miscounted")
+    for item in compact:
+        entity = item["entity"]
+        commit, path = entity["source_commit"], entity["path"]
+        if commit not in by_revision:
+            invalid.append(f"compact witness has unrequested revision {commit}")
+            continue
+        view = by_revision[commit]
+        def source_valid(source: dict) -> bool:
+            p = source["path"]
+            return (source["source_commit"] == commit
+                    and source["source_tree"] == view["tree"]
+                    and (source["blob"], source["mode"]) == view["files"].get(p))
+        hop = item["next_hop"]
+        next_source, next_target = hop["source"], hop["target"]
+        rank = item["distance_to_change"]
+        key = (commit, path)
+        if (key in compact_ranks or rank < 1
+                or item.get("assessment") != "CANDIDATE_PATH"
+                or not source_valid(entity) or not source_valid(next_source)
+                or not source_valid(next_target) or next_source != entity
+                or hop["relation"] != "STATIC_IMPORT"
+                or (path, next_target["path"]) not in view["edges"]
+                or not hop["evidence"] or any(
+                    observation.get("assessment") != "CANDIDATE"
+                    or not observation.get("receipt_id")
+                    for observation in hop["evidence"]
+                )):
+            invalid.append(f"invalid compact witness {path}")
+        else:
+            compact_actual[commit].add(path)
+            compact_ranks[key] = rank
+    for item in compact:
+        entity, hop = item["entity"], item["next_hop"]
+        commit, path = entity["source_commit"], entity["path"]
+        if (commit, path) not in compact_ranks:
+            continue
+        target = hop["target"]["path"]
+        rank = compact_ranks[(commit, path)]
+        if target in changed and target in by_revision[commit]["files"]:
+            if rank != 1:
+                invalid.append(f"seed not at rank 1 for {path}")
+        elif compact_ranks.get((commit, target)) != rank - 1:
+            invalid.append(f"witness rank does not decrease for {path}")
+    compact_missing = {
+        r: sorted(by_revision[r]["expected"] - compact_actual[r])
+        for r in compact_actual
+    }
+    compact_unexpected = {
+        r: sorted(compact_actual[r] - by_revision[r]["expected"])
+        for r in compact_actual
+    }
     missing = {r: sorted(by_revision[r]["expected"] - actual[r]) for r in actual}
     unexpected = {r: sorted(actual[r] - by_revision[r]["expected"]) for r in actual}
-    passed = not invalid and not any(missing.values()) and not any(unexpected.values())
+    passed = (not invalid and not any(missing.values()) and not any(unexpected.values())
+              and not any(compact_missing.values())
+              and not any(compact_unexpected.values()))
     return {
         "schema": "excession.heldout-impact-evaluation.v1",
         "status": "MATCH" if passed else "MISMATCH",
@@ -182,6 +244,13 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
         "missing": missing,
         "unexpected": unexpected,
         "invalid_hops": invalid[:50],
+        "compact_source_impacts": {
+            "reported_count": compact_count,
+            "complete_in_observed_graph": compact_complete,
+            "actual": {r: sorted(compact_actual[r]) for r in compact_actual},
+            "missing": compact_missing,
+            "unexpected": compact_unexpected,
+        },
         "impact_coverage": report["coverage"],
         "candidate_effect_count": len(report["effects"]),
         "measured_wall_seconds": {

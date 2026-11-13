@@ -780,9 +780,9 @@ mod tests {
     #[test]
     #[ignore = "requires pinned ast-grep; exercised by native historical replay workflow"]
     fn external_pinned_corpus_stress() {
-        let binary=std::env::var_os("EXCESSION_AST_GREP").expect("pinned ast-grep executable");
-        let analyzer=std::path::Path::new(&binary);
-        let corpus=[
+        let binary = std::env::var_os("EXCESSION_AST_GREP").expect("pinned ast-grep executable");
+        let analyzer = std::path::Path::new(&binary);
+        let corpus = [
             (
                 "ripgrep",
                 include_str!("../../tests/fixtures/rust-api/ripgrep-escape.rs"),
@@ -794,74 +794,105 @@ mod tests {
                 "from_str",
             ),
         ];
-        let mut generated=String::new();
-        let mut original=String::new();
-        for (project,source,function) in corpus {
-            let syntax=refactor_codegen::outline(analyzer,source).unwrap();
-            let marker=format!("pub fn {function}");
-            let begin=source.find(&marker).unwrap();
-            let end=source.trim_end().len();
-            let items=moved_items(source,begin,end,&syntax).unwrap().unwrap();
-            assert_eq!(items.public_functions,[function],"{project}");
-            let moved=&source[begin..end];
-            let wrapper=format!("mod extracted {{\n{}\n}}",
-                moved.lines().map(|line| if line.is_empty() {
-                    String::new()
-                } else {
-                    format!("    {line}")
-                }).collect::<Vec<_>>().join("\n")
+        let mut generated = String::new();
+        let mut original = String::new();
+        for (project, source, function) in corpus {
+            let syntax = refactor_codegen::outline(analyzer, source).unwrap();
+            let marker = format!("pub fn {function}");
+            let begin = source.find(&marker).unwrap();
+            let end = source.trim_end().len();
+            let items = moved_items(source, begin, end, &syntax).unwrap().unwrap();
+            assert_eq!(items.public_functions, [function], "{project}");
+            let moved = &source[begin..end];
+            let wrapper = format!(
+                "mod extracted {{\n{}\n}}",
+                moved
+                    .lines()
+                    .map(|line| if line.is_empty() {
+                        String::new()
+                    } else {
+                        format!("    {line}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
             );
-            let mut candidate=source.to_owned();
-            candidate.replace_range(begin..end,&wrapper);
-            let edits=Value::array([refactor_codegen::edit_operation(
-                "src/external.rs",Some("old"),begin,end,&wrapper,
+            let mut candidate = source.to_owned();
+            candidate.replace_range(begin..end, &wrapper);
+            let edits = Value::array([refactor_codegen::edit_operation(
+                "src/external.rs",
+                Some("old"),
+                begin,
+                end,
+                &wrapper,
             )]);
-            let patch=preserve_bytes(
-                "src/external.rs","old",source,&candidate,&edits,&syntax,&[],
-            ).unwrap().unwrap();
-            let after=&patch.outputs["src/external.rs"];
+            let patch = preserve_bytes(
+                "src/external.rs",
+                "old",
+                source,
+                &candidate,
+                &edits,
+                &syntax,
+                &[],
+            )
+            .unwrap()
+            .unwrap();
+            let after = &patch.outputs["src/external.rs"];
             assert!(after.contains(&format!("pub use self::extracted::{function};")));
             assert_eq!(
-                refactor_codegen::replay_edits(&candidate,&patch.edits,"src/external.rs").unwrap(),
+                refactor_codegen::replay_edits(&candidate, &patch.edits, "src/external.rs")
+                    .unwrap(),
                 *after
             );
             if project == "ripgrep" {
-                original=source.to_owned();
-                generated=after.clone();
+                original = source.to_owned();
+                generated = after.clone();
             }
         }
         // A genuine upstream function is dependency-free. Exercise the
         // generated result against rustc and compare output over several cases.
-        let main="\nfn main() { for glob in [\"a*b\",\"foo?\",\"[abc]\",\"plain\"] { println!(\"{}\", escape(glob)); } }\n";
-        let tmp=std::env::temp_dir().join(format!(
-            "excession-upstream-{}-{}",std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        let main = "\nfn main() { for glob in [\"a*b\",\"foo?\",\"[abc]\",\"plain\"] { println!(\"{}\", escape(glob)); } }\n";
+        let tmp = std::env::temp_dir().join(format!(
+            "excession-upstream-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         std::fs::create_dir_all(&tmp).unwrap();
-        let rustc=std::env::var_os("RUSTC").unwrap_or_else(||"rustc".into());
-        let run=|name:&str,source:&str| {
-            let file=tmp.join(format!("{name}.rs"));
-            let executable=tmp.join(name);
-            std::fs::write(&file,format!("{source}{main}")).unwrap();
-            let compiled=std::process::Command::new(&rustc)
-                .args(["--crate-name","upstream","--edition=2024"])
-                .arg(file).arg("-o").arg(&executable).output().unwrap();
-            assert!(compiled.status.success(),"rustc: {}",String::from_utf8_lossy(&compiled.stderr));
-            let finished=std::process::Command::new(executable).output().unwrap();
+        let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+        let run = |name: &str, source: &str| {
+            let file = tmp.join(format!("{name}.rs"));
+            let executable = tmp.join(name);
+            std::fs::write(&file, format!("{source}{main}")).unwrap();
+            let compiled = std::process::Command::new(&rustc)
+                .args(["--crate-name", "upstream", "--edition=2024"])
+                .arg(file)
+                .arg("-o")
+                .arg(&executable)
+                .output()
+                .unwrap();
+            assert!(
+                compiled.status.success(),
+                "rustc: {}",
+                String::from_utf8_lossy(&compiled.stderr)
+            );
+            let finished = std::process::Command::new(executable).output().unwrap();
             assert!(finished.status.success());
             finished.stdout
         };
-        assert_eq!(run("original",&original),run("repaired",&generated));
+        assert_eq!(run("original", &original), run("repaired", &generated));
         std::fs::remove_dir_all(tmp).unwrap();
 
         // A public impl method is not a top-level public function: the old
         // prefix scan could have falsely accepted it. Require AST rejection.
-        let nested="struct Example;\nimpl Example {\n    pub fn method() {}\n}\n";
-        let syntax=refactor_codegen::outline(analyzer,nested).unwrap();
-        let begin=nested.find("pub fn method").unwrap();
-        let end=begin+"pub fn method() {}".len();
-        assert!(moved_items(nested,begin,end,&syntax).is_err()
-            || moved_items(nested,begin,end,&syntax).unwrap().is_none());
+        let nested = "struct Example;\nimpl Example {\n    pub fn method() {}\n}\n";
+        let syntax = refactor_codegen::outline(analyzer, nested).unwrap();
+        let begin = nested.find("pub fn method").unwrap();
+        let end = begin + "pub fn method() {}".len();
+        assert!(
+            moved_items(nested, begin, end, &syntax).is_err()
+                || moved_items(nested, begin, end, &syntax).unwrap().is_none()
+        );
     }
-
 }

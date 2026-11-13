@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/rea-import.v1.schema.json",
+  "title": "Native REA evidence bound to independently hashed artifact bytes",
+  "description": "Exact native records retained and safe-integer RFC8785 IDs replayed; no untrusted execution, unknown-graph or semantic correctness promotion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "bundle_id",
+    "bundle_sha256",
+    "producer",
+    "format",
+    "artifact_sha256",
+    "artifact_size_bytes",
+    "artifact_subject_id",
+    "build_snapshot_id",
+    "native_record_ids",
+    "imported_record_count",
+    "unselected_record_count",
+    "unknown_revisions_retained",
+    "native_identity",
+    "raw_retention",
+    "artifact_binding",
+    "source_artifact_relation",
+    "semantic_correctness",
+    "unknown_graph_verification",
+    "full_bundle_manifest_verification",
+    "security",
+    "report_id"
+  ],
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "evidence": {
+      "type": "string",
+      "pattern": "^ev_[0-9a-f]{64}$"
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "excession.rea-import.v1"
+    },
+    "bundle_id": {
+      "$ref": "#/$defs/sha"
+    },
+    "bundle_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "producer": {
+      "const": "REA"
+    },
+    "format": {
+      "const": "EVIDENCE_V2_EXPORT"
+    },
+    "artifact_sha256": {
+      "$ref": "#/$defs/sha"
+    },
+    "artifact_size_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 16777216
+    },
+    "artifact_subject_id": {
+      "$ref": "#/$defs/sha"
+    },
+    "build_snapshot_id": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sha"
+        }
+      ]
+    },
+    "native_record_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "imported_record_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 128
+    },
+    "unselected_record_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 128
+    },
+    "unknown_revisions_retained": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 256
+    },
+    "native_identity": {
+      "const": "REHASHED_SUPPORTED_RFC8785_INTEGER_DOMAIN"
+    },
+    "raw_retention": {
+      "const": "RETAIN_ORIGINAL_PAYLOAD"
+    },
+    "artifact_binding": {
+      "const": "INDEPENDENT_ARTIFACT_SHA256"
+    },
+    "source_artifact_relation": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "semantic_correctness": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "unknown_graph_verification": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "full_bundle_manifest_verification": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "security": {
+      "const": "IMPORT_ONLY_NO_UNTRUSTED_EXECUTION"
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha"
+    }
+  }
+}

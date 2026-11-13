@@ -29,7 +29,7 @@ fn representation(value: &str) -> Result<()> {
         refuse("unsupported build artifact representation")
     }
 }
-fn read_artifact(path: &Path) -> Result<(String, u64)> {
+pub(crate) fn read_artifact(path: &Path) -> Result<(String, u64)> {
     let file = std::fs::File::open(path).map_err(|e| format!("artifact open: {e}"))?;
     let meta = file.metadata().map_err(|e| e.to_string())?;
     if !meta.is_file() || meta.len() > MAX_ARTIFACT_BYTES {

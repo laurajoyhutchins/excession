@@ -163,6 +163,16 @@ pub(super) fn command() -> Command {
                 &[],
             ),
             leaf(
+                "rea-evidence",
+                &["db", "artifact", "id"],
+                &["repo", "rev", "build-snapshot"],
+            ),
+            leaf(
+                "rea-record",
+                &["db", "artifact", "id", "record"],
+                &["repo", "rev", "build-snapshot"],
+            ),
+            leaf(
                 "verify-observation",
                 &[
                     "db",
@@ -199,6 +209,11 @@ pub(super) fn command() -> Command {
                     "representation",
                 ],
                 &[],
+            ),
+            leaf(
+                "rea-import",
+                &["db", "artifact", "bundle"],
+                &["repo", "rev", "build-snapshot"],
             ),
         ],
     )

@@ -50,6 +50,28 @@ fn json(v: excession::json::Value) -> Response {
     Response::Json(v)
 }
 
+/// REA is artifact-first. Build provenance is a separately verified link, not
+/// a fabricated source identity for binaries with unavailable source.
+fn rea_build_link<'a>(
+    opt: &'a Options,
+) -> Result<Option<excession::evidence::rea::BuildLink<'a>>> {
+    match (
+        opt.0.get("repo"),
+        opt.0.get("rev"),
+        opt.0.get("build-snapshot"),
+    ) {
+        (None, None, None) => Ok(None),
+        (Some(repo), Some(revision), Some(snapshot)) => {
+            Ok(Some(excession::evidence::rea::BuildLink {
+                repo: Path::new(repo),
+                revision,
+                snapshot,
+            }))
+        }
+        _ => refuse("REA build provenance needs --repo, --rev and --build-snapshot together"),
+    }
+}
+
 fn view_cmd(verb: &str, opt: &Options, replay: bool) -> Result<Response> {
     if (verb, replay) == ("deps", false) {
         let db = Db::open(opt.path("db"))?;
@@ -828,6 +850,39 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "evidence" && sub == "rea-import" => {
+            let db = Db::open(opt.path("db"))?;
+            let build = rea_build_link(opt)?;
+            Ok(json(excession::evidence::rea::import(
+                &db,
+                &excession::evidence::rea::ImportSpec {
+                    artifact: opt.path("artifact"),
+                    bundle: opt.path("bundle"),
+                    build,
+                },
+            )?))
+        }
+        [top, sub] if top == "inspect" && sub == "rea-evidence" => {
+            let db = Db::open(opt.path("db"))?;
+            let link = rea_build_link(opt)?;
+            Ok(json(excession::evidence::rea::audit(
+                &db,
+                opt.path("artifact"),
+                opt.get("id"),
+                link.as_ref(),
+            )?))
+        }
+        [top, sub] if top == "inspect" && sub == "rea-record" => {
+            let db = Db::open(opt.path("db"))?;
+            let link = rea_build_link(opt)?;
+            Ok(json(excession::evidence::rea::inspect_record(
+                &db,
+                opt.path("artifact"),
+                opt.get("id"),
+                opt.get("record"),
+                link.as_ref(),
+            )?))
+        }
         [top, sub] if top == "evidence" && sub == "build-record" => {
             let db = Db::open(opt.path("db"))?;
             let sources = opt.get("sources").split(',').collect::<Vec<_>>();

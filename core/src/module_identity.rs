@@ -5,9 +5,7 @@
 // This pure conversion is shared by semantic preparation, revision indexing,
 // and incremental reuse without requiring dependencies on either orchestrator.
 pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
-    if crate::source_capabilities::static_module_producer(path).is_none() {
-        return None;
-    }
+    crate::source_capabilities::static_module_producer(path)?;
     for &root in roots {
         // "." is an explicit whole-repository root. It supports tracked
         // top-level modules without inventing a path prefix.

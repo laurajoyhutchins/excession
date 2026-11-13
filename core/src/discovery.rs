@@ -25,15 +25,15 @@ pub struct Discovery {
 /// Inventory all language-detected tracked files, but select roots only for
 /// languages with a real static-module producer. Source detection is not
 /// evidence of resolved dependencies or installed parser availability.
-fn source_layout(
-    entries: &[git::Entry],
-) -> (
+type SourceLayout = (
     Vec<String>,
     usize,
     usize,
     BTreeMap<&'static str, usize>,
     BTreeMap<String, (usize, usize)>,
-) {
+);
+
+fn source_layout(entries: &[git::Entry]) -> SourceLayout {
     let mut roots = BTreeSet::new();
     let mut included = 0usize;
     let mut root_level = 0usize;

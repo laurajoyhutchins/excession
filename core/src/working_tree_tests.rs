@@ -663,17 +663,23 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
         return blocked;
     }
     let info = Command::new("podman")
-        .args([
-            "--remote=false",
-            "info",
-            "--format",
-            "{{.Host.Security.Rootless}} {{.Host.Security.SeccompEnabled}} {{.Host.CgroupVersion}}",
-        ])
+        .args(["--remote=false", "info", "--format", "json"])
         .output();
-    if !matches!(info, Ok(ref output) if output.status.success()
-        && String::from_utf8_lossy(&output.stdout).trim() == "true true v2")
-    {
-        blocked.push("ROOTLESS_PODMAN_WITH_SECCOMP_REQUIRED".to_owned());
+    let secure = match info {
+        Ok(output) if output.status.success() => {
+            serde_json::from_slice::<serde_json::Value>(&output.stdout)
+                .ok()
+                .is_some_and(|report| {
+                    report.pointer("/host/security/rootless").and_then(serde_json::Value::as_bool) == Some(true)
+                        && report.pointer("/host/security/seccompEnabled").and_then(serde_json::Value::as_bool) == Some(true)
+                        && report.pointer("/host/serviceIsRemote").and_then(serde_json::Value::as_bool) == Some(false)
+                        && report.pointer("/host/cgroupVersion").and_then(serde_json::Value::as_str) == Some("v2")
+                })
+        }
+        _ => false,
+    };
+    if !secure {
+        blocked.push("ROOTLESS_LOCAL_PODMAN_SECCOMP_CGROUP_V2_REQUIRED".to_owned());
     }
     let image_found = Command::new("podman")
         .args(["--remote=false", "image", "exists", image])

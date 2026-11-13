@@ -5,7 +5,6 @@
 use crate::json::{Value, obj};
 use crate::{Result, change_inventory, digest, discovery, git, refuse};
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
@@ -248,21 +247,71 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static CASE: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
-    fn trusted_local_is_required_and_provider_is_explicit() {
+    fn execution_requires_explicit_trust() {
         assert!(require_native_execution("false").is_err());
         assert!(require_native_execution("yes").is_err());
         assert!(require_native_execution("true").is_ok());
     }
 
     #[test]
-    fn jest_output_requires_absolute_existing_git_file() {
-        let tmp = std::env::temp_dir().join(format!("excession-selector-parser-{}", std::process::id()));
-        fs::create_dir_all(&tmp).unwrap();
-        assert!(serde_json::from_slice::<serde_json::Value>(br#"["one.js"]"#).is_ok());
-        assert!(serde_json::from_slice::<serde_json::Value>(br#"{"oops":1}"#).is_ok());
-        assert!(serde_json::from_slice::<serde_json::Value>(br#"malformed"#).is_err());
-        fs::remove_dir_all(&tmp).unwrap();
+    fn only_tracked_absolute_jest_test_paths_are_accepted() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-native-tests-{}-{}",
+            std::process::id(),
+            CASE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("testing")).unwrap();
+        fs::write(root.join("src/module.js"), "module.exports = 1;\n").unwrap();
+        fs::write(root.join("testing/module.test.js"), "test('ok', ()=>{});\n").unwrap();
+
+        let git_call = |args: &[&str]| {
+            let result = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "git {:?}: {}",
+                args,
+                String::from_utf8_lossy(&result.stderr)
+            );
+        };
+        git_call(&["init", "-q"]);
+        git_call(&["add", "."]);
+        git_call(&[
+            "-c",
+            "user.name=Excession Test",
+            "-c",
+            "user.email=excession@example.invalid",
+            "commit",
+            "-qm",
+            "base",
+        ]);
+        let commit = git::rev(&root, "HEAD").unwrap();
+        let path = root.join("testing/module.test.js");
+        let listed = serde_json::to_vec(&vec![path.to_str().unwrap()]).unwrap();
+        assert_eq!(
+            tracked_selection(&root, &commit, &listed).unwrap(),
+            vec!["testing/module.test.js".to_owned()]
+        );
+        assert!(tracked_selection(&root, &commit, br#"["relative.js"]"#).is_err());
+        assert!(tracked_selection(&root, &commit, br#"{"wrong": true}"#).is_err());
+
+        fs::write(root.join("testing/untracked.test.js"), "").unwrap();
+        let untracked = serde_json::to_vec(
+            &vec![root.join("testing/untracked.test.js").to_str().unwrap()]
+        )
+        .unwrap();
+        assert!(tracked_selection(&root, &commit, &untracked).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 }

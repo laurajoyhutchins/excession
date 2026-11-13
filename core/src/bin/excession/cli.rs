@@ -447,6 +447,12 @@ pub(super) fn command() -> Command {
                 &["repo", "base", "candidate"],
                 &["limit", "roots", "db", "receipts"],
             ),
+            leaf(
+                "select-tests",
+                &["repo", "base", "candidate", "provider", "trusted-local"],
+                &["tool", "focus"],
+            )
+            .about("Delegate selection to installed Jest or pytest-testmon on a trusted checkout"),
         ],
     )
     .about("Bounded, machine-readable context and verification for coding agents");

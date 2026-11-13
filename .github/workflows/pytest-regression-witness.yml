@@ -43,26 +43,30 @@ jobs:
       - name: Replay the newly added regression on buggy parent
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           BASE="$(cat "$OUT/base.txt")"
           git -C "$REPO" checkout -q --detach "$BASE"
           cp "$OUT/head-test-nodes.py" "$REPO/testing/test_nodes.py"
+          set +e
           (cd "$REPO" && PYTHONPATH=src python3 -m pytest -p pytester \
             testing/test_nodes.py -k test_collector_repr_failure_collect_error -q) \
             > "$OUT/base.log" 2>&1
           rc=$?
+          set -e
           echo "$rc" > "$OUT/base.exit"
           cat "$OUT/base.log"
           exit 0
       - name: Replay same regression on fixed upstream commit
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           git -C "$REPO" reset -q --hard "$HEAD_SHA"
+          set +e
           (cd "$REPO" && PYTHONPATH=src python3 -m pytest -p pytester \
             testing/test_nodes.py -k test_collector_repr_failure_collect_error -q) \
             > "$OUT/head.log" 2>&1
           rc=$?
+          set -e
           echo "$rc" > "$OUT/head.exit"
           cat "$OUT/head.log"
           exit 0

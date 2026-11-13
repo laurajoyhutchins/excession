@@ -182,7 +182,10 @@ fn real_build_and_rea_are_replayed_without_semantic_promotion() {
     assert_eq!(a, f.replay().unwrap());
     assert_eq!(
         a.get("bindings").unwrap().array_ref().unwrap()[0]
-            .get("rea_bundle").unwrap().str().unwrap(),
+            .get("rea_bundle")
+            .unwrap()
+            .str()
+            .unwrap(),
         f.rea
     );
     assert_eq!(

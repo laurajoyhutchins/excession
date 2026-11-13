@@ -407,7 +407,11 @@ pub(super) fn command() -> Command {
                 .num_args(1)
                 .value_parser(NonEmptyStringValueParser::new()),
         )
-        .arg(Arg::new("auto-evidence").long("auto-evidence").action(clap::ArgAction::SetTrue))
+        .arg(
+            Arg::new("auto-evidence")
+                .long("auto-evidence")
+                .action(clap::ArgAction::SetTrue),
+        )
         .subcommand(clang());
     let kernel = group(
         "kernel",

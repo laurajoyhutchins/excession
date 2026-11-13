@@ -360,10 +360,12 @@ impl AutoSelection {
 }
 
 fn has_table(db: &Db, name: &str) -> Result<bool> {
-    Ok(!db.query(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        &[Param::Text(name)],
-    )?.is_empty())
+    Ok(!db
+        .query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            &[Param::Text(name)],
+        )?
+        .is_empty())
 }
 
 /// Recover the source prefix from the same SCIP project_root declaration
@@ -383,7 +385,9 @@ fn scip_prefix(repo: &Path, raw: &str) -> Result<Option<String>> {
     let physical = root
         .strip_prefix("file://")
         .ok_or("SCIP project root is not a file URI")?;
-    let canonical = repo.canonicalize().map_err(|e| format!("Git source root: {e}"))?;
+    let canonical = repo
+        .canonicalize()
+        .map_err(|e| format!("Git source root: {e}"))?;
     let prefix = Path::new(physical)
         .strip_prefix(&canonical)
         .map_err(|_| "SCIP project root is outside selected Git checkout")?;

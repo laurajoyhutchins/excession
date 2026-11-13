@@ -512,8 +512,10 @@ fn execute(args: &[String]) -> Result<Response> {
             let repo = Path::new(opt.get_or("path", "."));
             let rev = opt.get_or("rev", "HEAD");
             let automatic = opt.get_or("auto-evidence", "false") == "true";
-            if automatic && ["scip-snapshot", "graph-id", "source-prefix"]
-                .iter().any(|key| opt.0.contains_key(*key))
+            if automatic
+                && ["scip-snapshot", "graph-id", "source-prefix"]
+                    .iter()
+                    .any(|key| opt.0.contains_key(*key))
             {
                 return refuse("--auto-evidence cannot be combined with explicit producer IDs");
             }
@@ -521,12 +523,18 @@ fn execute(args: &[String]) -> Result<Response> {
                 let database = opt.0.get("db").ok_or("--auto-evidence requires --db")?;
                 let discovered = discovery::inspect(repo, rev)?;
                 let checked = analyze::checked_external_destination(
-                    &discovered.root, Path::new(database), "SQLite",
+                    &discovered.root,
+                    Path::new(database),
+                    "SQLite",
                 )?;
                 if !checked.is_file() {
                     return refuse("--auto-evidence requires an existing SQLite evidence database");
                 }
-                observed_relations::choose_auto(&Db::open(&checked)?, &discovered.root, &discovered.commit)?
+                observed_relations::choose_auto(
+                    &Db::open(&checked)?,
+                    &discovered.root,
+                    &discovered.commit,
+                )?
             } else {
                 AutoSelection::default()
             };
@@ -540,7 +548,8 @@ fn execute(args: &[String]) -> Result<Response> {
                 }
             };
             let (report, db_path) = analyze::run_with_evidence(
-                repo, rev,
+                repo,
+                rev,
                 opt.0.get("roots").map(String::as_str),
                 opt.0.get("db").map(String::as_str),
                 selection,
@@ -616,18 +625,27 @@ fn execute(args: &[String]) -> Result<Response> {
             let base = opt.get("base");
             let head = opt.get_or("head", "HEAD");
             let automatic = opt.get_or("auto-evidence", "false") == "true";
-            if automatic && [
-                "base-scip-snapshot", "head-scip-snapshot",
-                "base-graph-id", "head-graph-id",
-                "base-source-prefix", "head-source-prefix",
-            ].iter().any(|key| opt.0.contains_key(*key)) {
+            if automatic
+                && [
+                    "base-scip-snapshot",
+                    "head-scip-snapshot",
+                    "base-graph-id",
+                    "head-graph-id",
+                    "base-source-prefix",
+                    "head-source-prefix",
+                ]
+                .iter()
+                .any(|key| opt.0.contains_key(*key))
+            {
                 return refuse("--auto-evidence cannot be combined with explicit producer IDs");
             }
             let (auto_base, auto_head) = if automatic {
                 let database = opt.0.get("db").ok_or("--auto-evidence requires --db")?;
                 let discovered = discovery::inspect(repo, head)?;
                 let checked = analyze::checked_external_destination(
-                    &discovered.root, Path::new(database), "SQLite",
+                    &discovered.root,
+                    Path::new(database),
+                    "SQLite",
                 )?;
                 if !checked.is_file() {
                     return refuse("--auto-evidence requires an existing SQLite evidence database");
@@ -660,7 +678,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 }
             };
             let result = impact_query::run_with_evidence(
-                repo, base, head,
+                repo,
+                base,
+                head,
                 opt.0.get("roots").map(String::as_str),
                 opt.0.get("db").map(String::as_str),
                 selection,
@@ -1078,15 +1098,16 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub] if top == "inspect" && sub == "producer-candidates" => {
             let discovered = discovery::inspect(opt.path("repo"), opt.get_or("rev", "HEAD"))?;
-            let destination = analyze::checked_external_destination(
-                &discovered.root, opt.path("db"), "SQLite",
-            )?;
+            let destination =
+                analyze::checked_external_destination(&discovered.root, opt.path("db"), "SQLite")?;
             if !destination.is_file() {
                 return refuse("producer discovery requires an existing SQLite evidence database");
             }
             let db = Db::open(&destination)?;
             Ok(json(observed_relations::discover(
-                &db, &discovered.root, &discovered.commit,
+                &db,
+                &discovered.root,
+                &discovered.commit,
             )?))
         }
         [top, sub] if top == "inspect" && sub == "scip-evidence" => {

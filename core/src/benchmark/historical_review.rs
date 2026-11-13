@@ -576,9 +576,13 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
                 if let Some(attempt) = attempt {
                     if !value(attempt, "input_tokens")?.is_null() {
                         let row = usage.entry(condition).or_default();
-                        row.0 = row.0.checked_add(number(attempt, "input_tokens")?)
+                        row.0 = row
+                            .0
+                            .checked_add(number(attempt, "input_tokens")?)
                             .ok_or("input token sum overflow")?;
-                        row.1 = row.1.checked_add(number(attempt, "output_tokens")?)
+                        row.1 = row
+                            .1
+                            .checked_add(number(attempt, "output_tokens")?)
                             .ok_or("output token sum overflow")?;
                         row.2 += 1;
                     }
@@ -622,7 +626,7 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
             let (correct, escaped, false_block, abstain, missing) =
                 totals.get(name).copied().unwrap_or_default();
             let (input, output, measured) = usage.get(name).copied().unwrap_or_default();
-        json!({"condition":name,"correct_gate":correct,"escaped_regressions":escaped,
+            json!({"condition":name,"correct_gate":correct,"escaped_regressions":escaped,
                "false_blocks":false_block,"abstentions":abstain,"missing":missing,
                "reported_input_tokens":input,"reported_output_tokens":output,
                "token_measurements":measured,

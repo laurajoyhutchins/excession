@@ -103,14 +103,14 @@ fn observed_constants(disassembly: &str) -> Vec<i32> {
                     && (end == bytes.len() || !bytes[end].is_ascii_hexdigit())
                     && let Ok(value) = u32::from_str_radix(&instruction[begin..end], 16)
                 {
-                        let signed = if at > 0 && bytes[at - 1] == b'-' {
-                            -(value as i64)
-                        } else {
-                            value as i32 as i64
-                        };
-                        if (i32::MIN as i64..=i32::MAX as i64).contains(&signed) {
-                            values.push(signed as i32);
-                        }
+                    let signed = if at > 0 && bytes[at - 1] == b'-' {
+                        -(value as i64)
+                    } else {
+                        value as i32 as i64
+                    };
+                    if (i32::MIN as i64..=i32::MAX as i64).contains(&signed) {
+                        values.push(signed as i32);
+                    }
                 }
                 at = end;
             } else {

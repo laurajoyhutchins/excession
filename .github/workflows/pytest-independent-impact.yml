@@ -62,8 +62,9 @@ jobs:
               report = {'status': 'ERROR', 'error': f'{type(exc).__name__}: {exc}'}
           (out / 'independent-impact.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
           print('Independent oracle status:', report['status'])
-          if report['status'] == 'ERROR':
-              print(report['error'])
+          if report['status'] != 'MATCH':
+              print('Independent oracle rejected:', report.get('error', report.get('missing')))
+              raise SystemExit(1)
           PY
       - name: Cold and warm process-level performance, RSS and output
         shell: bash
@@ -150,22 +151,47 @@ jobs:
           (out / 'summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
           print(json.dumps(summary, indent=2))
           PY
-      - name: Independently reproduce upstream regression on old and fixed code
+      - name: Reproduce historical behavioral failure and verify its fix
         shell: bash
-        continue-on-error: true
         run: |
-          set -uo pipefail
-          python3 -m pip install -q -e "$PYTEST_REPO" 
-          git -C "$PYTEST_REPO" show "$HEAD_SHA:testing/test_nodes.py" > "$OUT/head-test-nodes.py"
+          set -euo pipefail
+          # This behavioral witness is independent of the static dependency oracle.
+          python3 -m pip install -q -e "$PYTEST_REPO"
+          cat > "$OUT/regression_probe.py" <<'PY'
+          from types import SimpleNamespace
+          from _pytest.nodes import Collector
+
+          collector = SimpleNamespace(
+              CollectError=Collector.CollectError,
+              config=SimpleNamespace(getoption=lambda name, default=False: False),
+          )
+          excinfo = SimpleNamespace(value=Collector.CollectError())
+          # On the parent this raises IndexError due to exc.args[0].
+          # On the fixed revision it returns the empty exception message.
+          assert Collector.repr_failure(collector, excinfo) == ""
+          PY
           BASE_SHA="$(cat "$OUT/base.txt")"
           git -C "$PYTEST_REPO" checkout -q --detach "$BASE_SHA"
-          cp "$OUT/head-test-nodes.py" "$PYTEST_REPO/testing/test_nodes.py"
-          (cd "$PYTEST_REPO" && PYTHONPATH=src python3 -m pytest testing/test_nodes.py -k test_collector_repr_failure_collect_error -q > "$OUT/base-test.log" 2>&1)
-          echo $? > "$OUT/base-test-exit.txt"
+          set +e
+          (cd "$PYTEST_REPO" && PYTHONPATH=src python3 "$OUT/regression_probe.py") \
+            > "$OUT/base-test.log" 2>&1
+          base_code=$?
+          set -e
+          printf '%s\n' "$base_code" > "$OUT/base-test-exit.txt"
           git -C "$PYTEST_REPO" checkout -q --detach "$HEAD_SHA"
-          (cd "$PYTEST_REPO" && PYTHONPATH=src python3 -m pytest testing/test_nodes.py -k test_collector_repr_failure_collect_error -q > "$OUT/head-test.log" 2>&1)
-          echo $? > "$OUT/head-test-exit.txt"
-          cat "$OUT/base-test-exit.txt" "$OUT/head-test-exit.txt"
+          set +e
+          (cd "$PYTEST_REPO" && PYTHONPATH=src python3 "$OUT/regression_probe.py") \
+            > "$OUT/head-test.log" 2>&1
+          head_code=$?
+          set -e
+          printf '%s\n' "$head_code" > "$OUT/head-test-exit.txt"
+          printf 'Historical regression: base_exit=%s head_exit=%s\n' "$base_code" "$head_code"
+          cat "$OUT/base-test.log"
+          cat "$OUT/head-test.log"
+          # A failed setup/import does not count as a reproduced regression.
+          test "$base_code" -ne 0
+          test "$head_code" -eq 0
+          grep -q 'IndexError: tuple index out of range' "$OUT/base-test.log"
       - name: Collect independently inspectable artifacts even after failure
         if: always()
         uses: actions/upload-artifact@v4

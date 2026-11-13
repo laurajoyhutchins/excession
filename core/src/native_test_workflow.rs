@@ -229,7 +229,11 @@ fn next_invocation(
     if let Some(focus) = focus {
         args.extend(["--focus".to_owned(), focus.to_owned()]);
     }
-    let command = args.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ");
+    let command = args
+        .iter()
+        .map(|a| shell_quote(a))
+        .collect::<Vec<_>>()
+        .join(" ");
     args.push("--json".to_owned());
     (command, args)
 }
@@ -408,10 +412,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             "blockers",
             Value::array(blockers.into_iter().map(Value::string)),
         ),
-        (
-            "next_command",
-            Value::string(next_command),
-        ),
+        ("next_command", Value::string(next_command)),
         (
             "next_argv",
             Value::array(next_argv.into_iter().map(Value::string)),

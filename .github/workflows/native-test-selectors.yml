@@ -55,12 +55,18 @@ jobs:
           p=json.load(open(sys.argv[1]))
           assert p['mode']=='PLAN' and p['status']=='READY' and p['provider']=='jest',p
           assert p['base_commit'] and p['candidate_commit']
+          assert p['next_argv'][-1]=='--json'
+          assert p['base_commit'] in p['next_argv']
+          assert p['candidate_commit'] in p['next_argv']
           PY
-          set +e
-          "$BIN" tests --repo "$ROOT" --run --json > "$RUNNER_TEMP/jest-test-workflow.json"
-          result=$?
-          set -e
-          test "$result" -eq 1
+          python3 - "$RUNNER_TEMP/jest-plan.json" "$BIN" "$RUNNER_TEMP/jest-test-workflow.json" <<'PY'
+          import json,subprocess,sys
+          p=json.load(open(sys.argv[1]))
+          result=subprocess.run([sys.argv[2],*p['next_argv'][1:]],capture_output=True,text=True)
+          with open(sys.argv[3],'w') as out:
+              out.write(result.stdout)
+          assert result.returncode==1,(result.returncode,result.stderr)
+          PY
           python3 - "$RUNNER_TEMP/jest-test-workflow.json" <<'PY'
           import json,sys
           r=json.load(open(sys.argv[1]))
@@ -80,6 +86,21 @@ jobs:
             --provider jest --trusted-local true >/dev/null 2>&1; then
             echo 'Dirty checkout was accepted' >&2; exit 1
           fi
+          # A subsequent fix should have a real green run and preserve open
+          # agent verification obligations rather than claiming merge safety.
+          echo 'module.exports = () => 41;' > src/value.js
+          git add src/value.js
+          git -c user.name=Test -c user.email=test@example.invalid commit -qm fix
+          "$BIN" tests --repo "$ROOT" --run --verify --json > "$RUNNER_TEMP/jest-pass-workflow.json"
+          python3 - "$RUNNER_TEMP/jest-pass-workflow.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r['status']=='PASS',r
+          assert r['executed_test_count']==1
+          assert r['native_execution']['execution_receipts']['receipts'][0]['status']=='PASS'
+          assert r['verification']['status']=='OPEN_OBLIGATIONS'
+          assert not r['verification']['ready_to_merge']
+          PY
       - name: Execute installed pytest-testmon against a seeded change
         shell: bash
         run: |
@@ -181,6 +202,7 @@ jobs:
             ${{ runner.temp }}/agent-native-verification.json
             ${{ runner.temp }}/jest-plan.json
             ${{ runner.temp }}/jest-test-workflow.json
+            ${{ runner.temp }}/jest-pass-workflow.json
             ${{ runner.temp }}/testmon-plan.json
             ${{ runner.temp }}/testmon-workflow.json
           if-no-files-found: warn

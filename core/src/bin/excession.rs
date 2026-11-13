@@ -81,8 +81,10 @@ fn test_summary(report: &excession::json::Value) -> Result<String> {
     let head = report.get("candidate_commit")?.str()?;
     let short = |oid: &str| oid.chars().take(12).collect::<String>();
     let changed = report.get("changed_sources")?.array_ref()?.len();
+    let repo_path = report.get("repo")?.str()?;
     let mut lines = vec![
         format!("Tests: {phase} ({mode}, {provider})"),
+        format!("Repository: {repo_path}"),
         format!(
             "Revision: {}..{} | {changed} changed file(s)",
             short(base),

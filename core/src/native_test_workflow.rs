@@ -70,6 +70,26 @@ fn has_jest_config(path: &str) -> bool {
     filename.starts_with("jest.config.")
 }
 
+fn declares_jest(bytes: &[u8]) -> bool {
+    let Ok(package) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return false;
+    };
+    for key in ["dependencies", "devDependencies"] {
+        if package
+            .get(key)
+            .and_then(serde_json::Value::as_object)
+            .is_some_and(|dependencies| dependencies.contains_key("jest"))
+        {
+            return true;
+        }
+    }
+    package
+        .get("scripts")
+        .and_then(|scripts| scripts.get("test"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|script| script.split_whitespace().any(|token| token == "jest"))
+}
+
 fn has_python_tests(path: &str) -> bool {
     let filename = path.rsplit('/').next().unwrap_or(path);
     path.ends_with(".py")
@@ -100,8 +120,18 @@ fn detect_provider(
         .filter(|entry| entry.kind == "blob")
         .map(|entry| entry.path)
         .collect::<BTreeSet<_>>();
+    let package_declares_jest = if paths.contains("package.json") {
+        let blob_ref = format!("{commit}:package.json");
+        git::command(root, &["show", &blob_ref])
+            .ok()
+            .filter(|bytes| bytes.len() <= 1024 * 1024)
+            .is_some_and(|bytes| declares_jest(&bytes))
+    } else {
+        false
+    };
     let jest = root.join("node_modules/.bin/jest").exists()
-        || paths.iter().any(|path| has_jest_config(path));
+        || paths.iter().any(|path| has_jest_config(path))
+        || package_declares_jest;
     let python = root.join(".testmondata").is_file()
         || paths.contains("pytest.ini")
         || paths.iter().any(|path| has_python_tests(path));
@@ -129,14 +159,34 @@ fn checkout_is_clean(root: &Path, commit: &str) -> Result<bool> {
     Ok(git::command(root, &["status", "--porcelain", "--untracked-files=no"])?.is_empty())
 }
 
-fn test_command(provider: &str) -> &'static str {
-    match provider {
-        "jest" => "npm install && excession tests --run",
-        "pytest-testmon" => {
-            "python3 -m pytest --testmon --testmon-noselect && excession tests --run"
-        }
-        _ => "excession tests --provider jest --run  # or --provider pytest-testmon",
+fn test_command(provider: &str, blockers: &BTreeSet<String>) -> &'static str {
+    if blockers.contains("CANDIDATE_NOT_CLEAN_HEAD") {
+        return "Commit tracked edits, then run excession tests --run";
     }
+    if blockers.contains("MULTIPLE_NATIVE_PROVIDERS") {
+        return "excession tests --provider jest --run  # or --provider pytest-testmon";
+    }
+    if blockers.contains("NO_NATIVE_PROVIDER_DETECTED") {
+        return "Install Jest or pytest-testmon; then run excession tests";
+    }
+    if blockers.contains("JEST_NOT_INSTALLED") {
+        return "npm install && excession tests --run";
+    }
+    if blockers.contains("TESTMON_BASELINE_MISSING") {
+        return "python3 -m pytest --testmon --testmon-noselect && excession tests --run";
+    }
+    if blockers.contains("NO_CHANGED_SOURCES") {
+        return "Commit a candidate change, or supply --base to compare older revisions";
+    }
+    if blockers.contains("DELETED_SOURCE_NOT_SUPPORTED")
+        || blockers.contains("RENAMED_SOURCE_NOT_SUPPORTED")
+    {
+        return "Use the full native test suite for deletions or renames";
+    }
+    if provider == "UNRESOLVED" {
+        return "excession tests --provider jest  # or --provider pytest-testmon";
+    }
+    "excession tests --run"
 }
 
 pub struct Request<'a> {
@@ -209,7 +259,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         return refuse(format!(
             "native test execution blocked: {}; next: {}",
             blockers.iter().cloned().collect::<Vec<_>>().join(", "),
-            test_command(&provider)
+            test_command(&provider, &blockers)
         ));
     }
 
@@ -304,7 +354,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             "blockers",
             Value::array(blockers.into_iter().map(Value::string)),
         ),
-        ("next_command", Value::string(test_command(&provider))),
+        ("next_command", Value::string(test_command(&provider, &blockers))),
         (
             "selected_test_files",
             Value::array(selected.into_iter().map(Value::string)),
@@ -472,5 +522,7 @@ mod tests {
         assert!(has_python_tests("src/module/tests/foo.py"));
         assert!(!has_python_tests("src/package/module.py"));
         assert!(has_jest_config("packages/web/jest.config.ts"));
+        assert!(declares_jest(br#"{"devDependencies":{"jest":"30.2.0"}}"#));
+        assert!(!declares_jest(br#"{"devDependencies":{"vitest":"3"}}"#));
     }
 }

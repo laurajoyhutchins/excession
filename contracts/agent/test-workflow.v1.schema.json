@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/agent/test-workflow.v1.schema.json",
+  "title": "Source-bound native test workflow plan and result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "mode",
+    "status",
+    "provider",
+    "detected_providers",
+    "repo",
+    "base_commit",
+    "base_strategy",
+    "candidate_commit",
+    "candidate_tree",
+    "changed_sources",
+    "blockers",
+    "next_command",
+    "selected_test_files",
+    "executed_test_count",
+    "failed_test_count_lower_bound",
+    "selection",
+    "native_execution",
+    "verification",
+    "safe_to_skip_unlisted_tests",
+    "report_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.test-workflow.v1"
+    },
+    "mode": {
+      "enum": [
+        "PLAN",
+        "RUN"
+      ]
+    },
+    "status": {
+      "enum": [
+        "READY",
+        "BLOCKED",
+        "PASS",
+        "FAIL",
+        "INCONCLUSIVE"
+      ]
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "enum": [
+            "jest",
+            "pytest-testmon"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "detected_providers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "jest",
+          "pytest-testmon"
+        ]
+      }
+    },
+    "repo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "base_strategy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "candidate_tree": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "changed_sources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "next_command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selected_test_files": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "executed_test_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_test_count_lower_bound": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "selection": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "native_execution": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "verification": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "safe_to_skip_unlisted_tests": {
+      "const": false
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

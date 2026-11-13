@@ -147,3 +147,10 @@ An accepted receipt is still unattested; merge readiness remains unproven.
 If both frameworks are present, pass \`--provider jest\` or
 \`--provider pytest-testmon\`. To analyze a non-HEAD candidate, use a
 checkout of that candidate; the CLI will not execute mismatched code.
+
+
+Provider detection also checks Jest declarations in a tracked root-level
+\`package.json\`, not only an installed binary or Jest config. Such a project
+can therefore produce a useful *blocked* plan before dependencies are installed.
+The displayed next action distinguishes an already-ready checkout from missing
+native prerequisites.

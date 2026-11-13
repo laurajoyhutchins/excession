@@ -872,9 +872,13 @@ fn execute(args: &[String]) -> Result<Response> {
                 "false" => false,
                 _ => return refuse("--trusted-local requires true or false"),
             };
-            let budget = opt.get_or("max-candidates", "64").parse::<usize>()
+            let budget = opt
+                .get_or("max-candidates", "64")
+                .parse::<usize>()
                 .map_err(|_| "invalid maximum reconstruction candidates")?;
-            let seconds = opt.get_or("time-budget-seconds", "30").parse::<u64>()
+            let seconds = opt
+                .get_or("time-budget-seconds", "30")
+                .parse::<u64>()
                 .map_err(|_| "invalid reconstruction time budget")?;
             Ok(json(excession::evidence::reconstruction::search(
                 &db,
@@ -893,10 +897,14 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub] if top == "reconstruct" && sub == "searches" => {
             let db = Db::open(opt.path("db"))?;
-            let limit = opt.get_or("limit", "16").parse::<usize>()
+            let limit = opt
+                .get_or("limit", "16")
+                .parse::<usize>()
                 .map_err(|_| "invalid reconstruction search history limit")?;
             Ok(json(excession::evidence::reconstruction::searches(
-                &db, opt.path("target"), limit,
+                &db,
+                opt.path("target"),
+                limit,
             )?))
         }
         [top, sub] if top == "reconstruct" && sub == "history" => {

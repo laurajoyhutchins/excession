@@ -73,7 +73,10 @@ fn one_function(nm: &str) -> Result<String> {
     }
     let name = names[0];
     if name.len() > 128
-        || !name.bytes().next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        || !name
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
         || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
     {
         return refuse("C reconstruction function symbol is not a supported identifier");
@@ -122,14 +125,19 @@ fn observed_constants(disassembly: &str) -> Vec<i32> {
     }
     values.extend([3, 5, 7, 2, 4, 8, 9, 1, -1, 0, 16, 31, 42]);
     let mut seen = BTreeSet::new();
-    values.into_iter().filter(|v| seen.insert(*v)).take(20).collect()
+    values
+        .into_iter()
+        .filter(|v| seen.insert(*v))
+        .take(20)
+        .collect()
 }
 
 fn hypotheses(name: &str, disassembly: &str) -> Vec<Hypothesis> {
     let values = observed_constants(disassembly);
     let scaled = disassembly.contains(",%rdi,");
     let offset = disassembly.contains("0x");
-    let bitwise = disassembly.contains("xor") || disassembly.contains("and") || disassembly.contains("or ");
+    let bitwise =
+        disassembly.contains("xor") || disassembly.contains("and") || disassembly.contains("or ");
     let mut expressions = Vec::new();
     if scaled && offset {
         // Compile the likely combined LEA form before exploring its factors.
@@ -213,7 +221,9 @@ fn audit_report(raw: &str, search_id: &str, target_id: &str) -> Result<Value> {
     if parsed.sha256() != search_id {
         return refuse("reconstruction search report digest mismatch");
     }
-    parsed.entries_mut()?.insert("search_id".into(), Value::string(search_id));
+    parsed
+        .entries_mut()?
+        .insert("search_id".into(), Value::string(search_id));
     Ok(parsed)
 }
 
@@ -225,10 +235,13 @@ pub fn searches(db: &Db, target: &Path, limit: usize) -> Result<Value> {
     let id = subject(&bytes)?;
     schema(db)?;
     db.read_transaction(|db| {
-        let total = db.scalar(
-            "SELECT count(*) FROM evidence_reconstruction_search_v1 WHERE target_subject_id=?",
-            &[Param::Text(&id)],
-        )?.parse::<usize>().map_err(|_| "bad search count")?;
+        let total = db
+            .scalar(
+                "SELECT count(*) FROM evidence_reconstruction_search_v1 WHERE target_subject_id=?",
+                &[Param::Text(&id)],
+            )?
+            .parse::<usize>()
+            .map_err(|_| "bad search count")?;
         let rows = db.query(
             "SELECT search_id,report FROM evidence_reconstruction_search_v1
              WHERE target_subject_id=? ORDER BY sequence DESC LIMIT ?",
@@ -243,7 +256,10 @@ pub fn searches(db: &Db, target: &Path, limit: usize) -> Result<Value> {
             )?);
         }
         Ok(obj(&[
-            ("schema", Value::string("excession.reconstruction-search-history.v1")),
+            (
+                "schema",
+                Value::string("excession.reconstruction-search-history.v1"),
+            ),
             ("target_artifact_subject_id", Value::string(id)),
             ("stored_search_count", Value::number(total)),
             ("truncated", Value::Bool(total > limit)),
@@ -255,13 +271,16 @@ pub fn searches(db: &Db, target: &Path, limit: usize) -> Result<Value> {
 
 pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
     if !opt.trusted_local {
-        return refuse("automatic reconstruction requires --trusted-local true; compiler is not sandboxed");
+        return refuse(
+            "automatic reconstruction requires --trusted-local true; compiler is not sandboxed",
+        );
     }
     if !(1..=MAX_SEARCH).contains(&opt.budget) || !(1..=120).contains(&opt.seconds) {
         return refuse("automatic reconstruction requires 1..128 candidates and 1..120 seconds");
     }
     if [opt.compiler, opt.objcopy, opt.objdump, opt.nm]
-        .iter().any(|value| value.is_empty())
+        .iter()
+        .any(|value| value.is_empty())
     {
         return refuse("reconstruction tool name cannot be empty");
     }
@@ -280,9 +299,28 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
     if text.len() > MAX_TEXT {
         return refuse("target function text exceeds bound");
     }
-    let nm = tool_output(opt.nm, &["-a", "--defined-only", "--format=posix", target.to_str().ok_or("invalid target path")?], &scratch.path("nm.txt"))?;
+    let nm = tool_output(
+        opt.nm,
+        &[
+            "-a",
+            "--defined-only",
+            "--format=posix",
+            target.to_str().ok_or("invalid target path")?,
+        ],
+        &scratch.path("nm.txt"),
+    )?;
     let function = one_function(&nm)?;
-    let disasm = tool_output(opt.objdump, &["-d", "-j", ".text", "--no-show-raw-insn", target.to_str().ok_or("invalid target path")?], &scratch.path("disasm.txt"))?;
+    let disasm = tool_output(
+        opt.objdump,
+        &[
+            "-d",
+            "-j",
+            ".text",
+            "--no-show-raw-insn",
+            target.to_str().ok_or("invalid target path")?,
+        ],
+        &scratch.path("disasm.txt"),
+    )?;
     let pool = hypotheses(&function, &disasm);
     let begin = Instant::now();
     let mut examined = Vec::new();
@@ -296,22 +334,35 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
             break;
         }
         fs::write(&source_file, &h.source).map_err(|e| e.to_string())?;
-        run(opt.compiler, &[FLAGS[0],FLAGS[1],FLAGS[2],FLAGS[3],FLAGS[4],
-            "-o",object_file.to_str().ok_or("bad candidate path")?,
-            source_file.to_str().ok_or("bad source path")?])?;
+        run(
+            opt.compiler,
+            &[
+                FLAGS[0],
+                FLAGS[1],
+                FLAGS[2],
+                FLAGS[3],
+                FLAGS[4],
+                "-o",
+                object_file.to_str().ok_or("bad candidate path")?,
+                source_file.to_str().ok_or("bad source path")?,
+            ],
+        )?;
         fs::remove_file(&section_file).ok();
         let candidate_text = code_region(opt.objcopy, &object_file, &section_file)?;
         let (difference, examples) = sample(&text, &candidate_text);
         let digest = digest::sha256(&candidate_text);
         examined.push(obj(&[
             ("expression", Value::string(&h.expression)),
-            ("source_sha256", Value::string(digest::sha256(h.source.as_bytes()))),
+            (
+                "source_sha256",
+                Value::string(digest::sha256(h.source.as_bytes())),
+            ),
             ("text_sha256", Value::string(&digest)),
             ("mismatch_count", Value::number(difference)),
             ("mismatch_examples", Value::array(examples)),
         ]));
         if best.as_ref().is_none_or(|old| difference < old.0) {
-            best = Some((difference,h.source.clone(),h.expression.clone(),digest));
+            best = Some((difference, h.source.clone(), h.expression.clone(), digest));
         }
         if difference == 0 {
             completed = true;
@@ -333,7 +384,10 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
         ("schema", Value::string(SCHEMA)),
         ("generator", Value::string(GENERATOR)),
         ("target_artifact_subject_id", Value::string(&original_id)),
-        ("target_artifact_sha256", Value::string(digest::sha256(&original))),
+        (
+            "target_artifact_sha256",
+            Value::string(digest::sha256(&original)),
+        ),
         ("target_text_sha256", Value::string(digest::sha256(&text))),
         ("target_function", Value::string(&function)),
         ("language", Value::string("C")),
@@ -347,20 +401,34 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
         ("search_status", Value::string(state)),
         ("best_expression", Value::string(expression)),
         ("best_source", Value::string(&source)),
-        ("best_source_sha256", Value::string(digest::sha256(source.as_bytes()))),
+        (
+            "best_source_sha256",
+            Value::string(digest::sha256(source.as_bytes())),
+        ),
         ("best_text_sha256", Value::string(candidate_text_digest)),
         ("best_mismatch_count", Value::number(distance)),
         ("attempts", Value::array(examined)),
-        ("target_rea_bundles", target_rea.get("rea_total_stored")?.clone()),
-        ("execution_boundary", Value::string("TRUSTED_LOCAL_UNSANDBOXED")),
-        ("comparison_scope", Value::string("ELF_TEXT_SECTION_BYTES_ONLY")),
+        (
+            "target_rea_bundles",
+            target_rea.get("rea_total_stored")?.clone(),
+        ),
+        (
+            "execution_boundary",
+            Value::string("TRUSTED_LOCAL_UNSANDBOXED"),
+        ),
+        (
+            "comparison_scope",
+            Value::string("ELF_TEXT_SECTION_BYTES_ONLY"),
+        ),
         ("source_recovery", Value::string("NOT_ESTABLISHED")),
         ("behavioral_equivalence", Value::string("NOT_ESTABLISHED")),
         ("build_execution_attested", Value::Bool(false)),
         ("search_exhaustive", Value::Bool(false)),
     ]);
     let search_id = report.sha256();
-    report.entries_mut()?.insert("search_id".into(), Value::string(&search_id));
+    report
+        .entries_mut()?
+        .insert("search_id".into(), Value::string(&search_id));
     schema(db)?;
     db.transaction(|db| {
         db.execute(
@@ -369,9 +437,13 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
             &[Param::Text(&search_id), Param::Text(&original_id), Param::Text(&report.canonical())],
         )
     })?;
-    let mut file = OpenOptions::new().write(true).create_new(true).open(opt.output)
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(opt.output)
         .map_err(|e| format!("output create: {e}"))?;
-    file.write_all(source.as_bytes()).map_err(|e| format!("output write: {e}"))?;
+    file.write_all(source.as_bytes())
+        .map_err(|e| format!("output write: {e}"))?;
     file.sync_all().map_err(|e| format!("output sync: {e}"))?;
     Ok(report)
 }

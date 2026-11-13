@@ -322,6 +322,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         selection = chosen;
     }
 
+    let next_command = test_command(&provider, &blockers);
     let mut report = obj(&[
         ("schema", Value::string("excession.test-workflow.v1")),
         (
@@ -354,7 +355,10 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             "blockers",
             Value::array(blockers.into_iter().map(Value::string)),
         ),
-        ("next_command", Value::string(test_command(&provider, &blockers))),
+        (
+            "next_command",
+            Value::string(next_command),
+        ),
         (
             "selected_test_files",
             Value::array(selected.into_iter().map(Value::string)),

@@ -62,9 +62,7 @@ impl Response {
                 }
                 Ok(())
             }
-            Self::CanonicalJson(s) | Self::Message(s) => {
-                writeln!(out, "{s}").map_err(write_error)
-            }
+            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}").map_err(write_error),
             Self::Bytes(bytes) => out.write_all(&bytes).map_err(write_error),
         }
     }

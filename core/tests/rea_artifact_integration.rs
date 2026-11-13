@@ -416,3 +416,72 @@ fn sqlite_immutability_and_metadata_corruption_are_auditable() {
     reject(f.audit(id));
     reject(f.import());
 }
+
+
+#[test]
+fn artifact_dossier_replays_rea_and_build_facts_without_upgrading_semantics() {
+    let f = Fixture::new();
+    let view = |link: Option<&str>, limit: &str| {
+        let mut args = vec![
+            "inspect", "artifact-evidence", "--db", f.db(),
+            "--artifact", f.artifact(), "--limit", limit,
+        ];
+        if let Some(snapshot) = link {
+            args.extend([
+                "--repo", f.repo(),
+                "--rev", &f.rev,
+                "--build-snapshot", snapshot,
+            ]);
+        }
+        cli(&args)
+    };
+    let empty = result(view(None, "16"));
+    assert_eq!(empty["rea_total_stored"], 0);
+    assert_eq!(empty["build_evidence"], Value::Null);
+    let build = f.build();
+    let source_free = result(f.import());
+    let source_linked = result(f.linked_import(&build));
+    let without_source = result(view(None, "16"));
+    assert_eq!(without_source["rea_total_stored"], 2);
+    assert_eq!(without_source["rea_results_truncated"], false);
+    assert_eq!(without_source["artifact_subject_id"], source_free["artifact_subject_id"]);
+    let records = without_source["rea_evidence"].as_array().unwrap();
+    assert_eq!(records.len(), 2);
+    let unlinked = records.iter()
+        .find(|item| item["bundle_id"] == source_free["bundle_id"]).unwrap();
+    assert_eq!(unlinked["state"], "ARTIFACT_AND_NATIVE_RECORDS_REPLAYED");
+    assert_eq!(unlinked["native_record_ids"][0], f.foreign_id);
+    let pending = records.iter()
+        .find(|item| item["bundle_id"] == source_linked["bundle_id"]).unwrap();
+    assert_eq!(pending["state"], "BUILD_REPLAY_REQUIRED");
+    assert_eq!(pending["semantic_correctness"], "NOT_ESTABLISHED");
+    let with_source = result(view(Some(&build), "16"));
+    assert_eq!(with_source["rea_total_stored"], 2);
+    assert_eq!(with_source["build_evidence"]["snapshot_id"], build);
+    assert_eq!(with_source["build_evidence"]["artifact_subject_id"],
+        source_free["artifact_subject_id"]);
+    assert_eq!(with_source["build_evidence"]["build_execution_verified"], false);
+    assert_eq!(with_source["source_artifact_relation"], "NOT_ESTABLISHED");
+    assert_eq!(with_source["behavioral_equivalence"], "NOT_ESTABLISHED");
+    assert!(with_source["rea_evidence"].as_array().unwrap().iter()
+        .all(|item| item["state"] == "ARTIFACT_AND_NATIVE_RECORDS_REPLAYED"));
+    assert_eq!(result(view(Some(&build), "16")), with_source);
+
+    let one = result(view(None, "1"));
+    assert_eq!(one["rea_evidence"].as_array().unwrap().len(), 1);
+    assert_eq!(one["rea_total_stored"], 2);
+    assert_eq!(one["rea_results_truncated"], true);
+    reject(view(None, "0"));
+    reject(view(None, "17"));
+    reject(cli(&[
+        "inspect", "artifact-evidence",
+        "--db", f.db(), "--artifact", f.artifact(),
+        "--repo", f.repo(),
+    ]));
+
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../contracts/evidence-core/artifact-evidence.v1.schema.json"
+    )).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    assert!(validator.is_valid(&with_source), "artifact dossier violates public schema");
+}

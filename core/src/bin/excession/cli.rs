@@ -163,6 +163,11 @@ pub(super) fn command() -> Command {
                 &[],
             ),
             leaf(
+                "artifact-evidence",
+                &["db", "artifact"],
+                &["repo", "rev", "build-snapshot", "limit"],
+            ),
+            leaf(
                 "rea-evidence",
                 &["db", "artifact", "id"],
                 &["repo", "rev", "build-snapshot"],

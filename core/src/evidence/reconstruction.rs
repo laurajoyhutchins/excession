@@ -1,6 +1,6 @@
 //! A bounded compiler-in-the-loop comparison for a single C object-code region.
 //! Code-byte equality is not source recovery, behavioral equivalence or build attestation.
-use crate::evidence::{artifact, build, identity::Subject};
+use crate::evidence::{artifact, identity::Subject};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, refuse};
@@ -185,7 +185,7 @@ pub fn evaluate(
         ("candidate_source_sha256", Value::string(digest::sha256(&source))),
         ("compiler", Value::string(compiler)),
         ("objcopy", Value::string(objcopy)),
-        ("compiler_arguments", Value::array(args.iter().map(|arg| Value::string(*arg)))),
+        ("compiler_arguments", Value::array(FLAGS.iter().copied().chain(["-o", "<candidate-object>", "<candidate-source>"]).map(Value::string))),
         ("comparison_scope", Value::string("ELF_TEXT_SECTION_BYTES_ONLY")),
         ("target_text_sha256", Value::string(digest::sha256(&target_text))),
         ("candidate_text_sha256", Value::string(digest::sha256(&candidate_text))),
@@ -202,8 +202,7 @@ pub fn evaluate(
         ("build_execution_attested", Value::Bool(false)),
         ("execution_boundary", Value::string("TRUSTED_LOCAL_UNSANDBOXED")),
     ]);
-    // Do not identify scratch paths as inputs to the evidence. Compiler args
-    // expose paths only as invocation details, not as reproducible recipe IDs.
+    // Scratch path names are never part of the content-addressed attempt.
     let id = report.sha256();
     report.entries_mut()?.insert("attempt_id".into(), Value::string(&id));
     schema(db)?;

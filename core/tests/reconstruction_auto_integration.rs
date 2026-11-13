@@ -258,3 +258,131 @@ fn refuses_unsafe_invocation_and_ambiguous_functions() {
     fs::write(&invalid.target, b"not ELF").unwrap();
     refused(invalid.search("8", "true"));
 }
+
+#[test]
+fn reuses_prior_verified_text_hypothesis_across_independent_object_identities() {
+    let known = Fixture::new("int original_name(int x) { return x * 3; }\n");
+    let initial = parsed(known.search("16", "true"));
+    assert_eq!(field(&initial, "search_status"), "EXACT_TEXT_MATCH");
+    assert_eq!(field(&initial, "candidate_selection"), "GENERATED_GRAMMAR");
+    assert_eq!(initial.get("reused_from_search_id").unwrap(), &Value::Null);
+    assert!(initial.get("attempt_count").unwrap().integer().unwrap() > 1);
+
+    let another_source = known.home.join("another-original.c");
+    let another_target = known.home.join("another.o");
+    let another_output = known.home.join("second-reconstruction.c");
+    fs::write(
+        &another_source,
+        "int completely_different_name(int x) { return x + x + x; }\n",
+    )
+    .unwrap();
+    compile(&another_source, &another_target);
+    // Function symbol and full ELF object identity differ, but machine-code
+    // bytes are the same under this controlled compiler configuration.
+    let second = parsed(cli(&[
+        "reconstruct",
+        "auto",
+        "--db",
+        known.db(),
+        "--target",
+        another_target.to_str().unwrap(),
+        "--out",
+        another_output.to_str().unwrap(),
+        "--trusted-local",
+        "true",
+        "--max-candidates",
+        "1",
+    ]));
+    assert_ne!(
+        field(&initial, "target_artifact_subject_id"),
+        field(&second, "target_artifact_subject_id")
+    );
+    assert_eq!(
+        field(&initial, "target_text_sha256"),
+        field(&second, "target_text_sha256")
+    );
+    assert_eq!(field(&second, "candidate_selection"), "REUSED_EXACT_TEXT");
+    assert_eq!(
+        field(&second, "reused_from_search_id"),
+        field(&initial, "search_id")
+    );
+    assert_eq!(field(&second, "search_status"), "EXACT_TEXT_MATCH");
+    assert_eq!(second.get("attempt_count").unwrap().integer().unwrap(), 1);
+    assert_eq!(
+        second
+            .get("best_mismatch_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        0
+    );
+    assert!(
+        fs::read_to_string(&another_output)
+            .unwrap()
+            .contains("int completely_different_name(int x)")
+    );
+    assert!(
+        !second
+            .get("build_execution_attested")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
+    assert_eq!(field(&second, "behavioral_equivalence"), "NOT_ESTABLISHED");
+    let history = parsed(known.searches());
+    assert_eq!(
+        history
+            .get("stored_search_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
+    let other_history = parsed(cli(&[
+        "reconstruct",
+        "searches",
+        "--db",
+        known.db(),
+        "--target",
+        another_target.to_str().unwrap(),
+    ]));
+    assert_eq!(
+        other_history
+            .get("stored_search_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn changed_code_does_not_borrow_unrelated_exact_text_matches() {
+    let known = Fixture::new("int source_one(int x) { return x * 3; }\n");
+    parsed(known.search("16", "true"));
+    let new_source = known.home.join("changed.c");
+    let new_target = known.home.join("changed.o");
+    let new_output = known.home.join("changed-reconstruction.c");
+    fs::write(&new_source, "int source_two(int x) { return x * 11; }\n").unwrap();
+    compile(&new_source, &new_target);
+    let result = parsed(cli(&[
+        "reconstruct",
+        "auto",
+        "--db",
+        known.db(),
+        "--target",
+        new_target.to_str().unwrap(),
+        "--out",
+        new_output.to_str().unwrap(),
+        "--trusted-local",
+        "true",
+        "--max-candidates",
+        "1",
+    ]));
+    assert_eq!(field(&result, "candidate_selection"), "GENERATED_GRAMMAR");
+    assert_eq!(result.get("reused_from_search_id").unwrap(), &Value::Null);
+    assert_eq!(
+        field(&result, "search_status"),
+        "CANDIDATE_BUDGET_EXHAUSTED"
+    );
+}

@@ -45,3 +45,24 @@ Efficiencies: one-time target extraction; one-time disassembly; observed-constan
 and operation prioritization; deduplication before compilation; per-run bounded
 results; earliest possible exact-match termination. This does **not** yet cache
 compiler results across runs or infer arbitrary control flow, types, or data.
+
+## Reuse before synthesis
+
+The search now uses an indexed, immutable SQLite catalog of previously successful
+`EXACT_TEXT_MATCH` receipts. If a new object file has the same
+`.text` digest, Excession retrieves the prior grammar expression and places
+it at the front of the candidate queue. The target function may have a different
+name or a different complete object-file identity. The proposed source is
+regenerated with the **current** target name, and Excession compiles and
+compares it again; previously stored evidence is never treated as proof
+that the new source compiled correctly.
+
+The report distinguishes `candidate_selection=REUSED_EXACT_TEXT` and
+`GENERATED_GRAMMAR` and includes the content-audited originating
+`reused_from_search_id` when applicable. Retrieval refuses modified
+or inconsistent saved source receipts. An exact code-section match alone
+is not a claim about relocation semantics, ABI, types, or program behavior.
+
+This first indexed retrieval works across existing search reports in the same
+SQLite store. Future function recognition should use upstream Ghidra Function ID,
+BSim, and BinDiff producers, not another homegrown fuzzy signature engine.

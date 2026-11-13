@@ -473,8 +473,11 @@ fn prepare_snapshot(
     let checkout = clone_into(original, directory)?;
     git_sanitized(&checkout, &["checkout", "--force", "--detach", &state.head])?;
     let exclusion = checkout.join(".git/info/exclude");
+    fs::create_dir_all(checkout.join(".git/info"))
+        .map_err(|e| format!("create isolated Git info directory: {e}"))?;
     fs::OpenOptions::new()
         .append(true)
+        .create(true)
         .open(&exclusion)
         .and_then(|mut file| file.write_all(b"\n/.testmondata\n"))
         .map_err(|error| format!("exclude local coverage database from source commit: {error}"))?;

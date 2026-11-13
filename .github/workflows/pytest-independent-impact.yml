@@ -285,6 +285,81 @@ jobs:
           (out / 'controlled-regression.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
           print(json.dumps(receipt, indent=2))
           PY
+      - name: Compare mature dynamic test selection with a prewarmed testmon baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          # testmon is a real, stronger alternative to file-diff selection.
+          # Give it a valid baseline before requesting incremental selection.
+          python3 -m pip install -q 'pytest-testmon==2.3.0'
+          python3 -m pip show pytest-testmon > "$OUT/native-testmon-version.txt"
+          git -C "$PYTEST_REPO" checkout -q --detach "$HEAD_SHA"
+          rm -f "$PYTEST_REPO/.testmondata"
+          set +e
+          (cd "$PYTEST_REPO" && /usr/bin/time -f '%e %M' -o "$OUT/testmon-baseline.time" \
+            env PYTHONPATH=src python3 -m pytest --testmon --testmon-noselect \
+              testing/test_nodes.py::test_collector_repr_failure_collect_error -q \
+              > "$OUT/testmon-baseline.log" 2>&1)
+          base_code=$?
+          set -e
+          printf '%s\n' "$base_code" > "$OUT/testmon-baseline-exit.txt"
+          test "$base_code" -eq 0 || { cat "$OUT/testmon-baseline.log"; exit 1; }
+          test -s "$PYTEST_REPO/.testmondata"
+          set +e
+          (cd "$PYTEST_REPO" && /usr/bin/time -f '%e %M' -o "$OUT/testmon-unchanged.time" \
+            env PYTHONPATH=src python3 -m pytest --testmon --testmon-forceselect \
+              testing/test_nodes.py::test_collector_repr_failure_collect_error -q \
+              > "$OUT/testmon-unchanged.log" 2>&1)
+          unchanged_code=$?
+          set -e
+          printf '%s\n' "$unchanged_code" > "$OUT/testmon-unchanged-exit.txt"
+          # Same implementation-only fault: no test file modified.
+          FAULT_SHA="$(cat "$OUT/fault-commit.txt")"
+          git -C "$PYTEST_REPO" checkout -q --detach "$FAULT_SHA"
+          test "$(git -C "$PYTEST_REPO" diff --name-only "$HEAD_SHA" "$FAULT_SHA")" = 'src/_pytest/nodes.py'
+          set +e
+          (cd "$PYTEST_REPO" && /usr/bin/time -f '%e %M' -o "$OUT/testmon-fault.time" \
+            env PYTHONPATH=src python3 -m pytest --testmon --testmon-forceselect \
+              testing/test_nodes.py::test_collector_repr_failure_collect_error -q \
+              > "$OUT/testmon-fault.log" 2>&1)
+          fault_code=$?
+          set -e
+          printf '%s\n' "$fault_code" > "$OUT/testmon-fault-exit.txt"
+          # Invalid test collection / environment / plugin errors are not
+          # evidence that an existing tool missed a regression.
+          if [ "$fault_code" -ne 1 ]; then
+            cat "$OUT/testmon-fault.log"
+            echo 'Native testmon comparison could not establish test selection' >&2
+            exit 1
+          fi
+          grep -q 'IndexError: tuple index out of range' "$OUT/testmon-fault.log"
+          python3 - "$OUT" "$PYTEST_REPO" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          out, repo = map(Path, sys.argv[1:])
+          def times(name):
+              wall, peak = (out / (name + '.time')).read_text().split()
+              return {'wall_seconds': float(wall), 'peak_rss_kib': int(peak)}
+          summary = {
+              'schema': 'excession.pytest-native-test-selection-comparison.v1',
+              'native_tool': 'pytest-testmon',
+              'native_version': '2.3.0',
+              'test_scope': 'testing/test_nodes.py::test_collector_repr_failure_collect_error',
+              'baseline_collected_under_fixed_revision': True,
+              'baseline_exit': int((out / 'testmon-baseline-exit.txt').read_text()),
+              'unchanged_selection_exit': int((out / 'testmon-unchanged-exit.txt').read_text()),
+              'fault_selection_exit': int((out / 'testmon-fault-exit.txt').read_text()),
+              'native_detected_controlled_fault': True,
+              'testmon_db_bytes_after_fault': (repo / '.testmondata').stat().st_size,
+              'timing': {k:times(k) for k in ('testmon-baseline','testmon-unchanged','testmon-fault')},
+              'excession_detected_controlled_fault_test_path': True,
+              'comparison': 'BOTH_DETECTED',
+              'limitations': 'Native tool has a prewarmed executed-test coverage database; Excession needs no test history. Testmon executes selected tests, Excession returns static source candidates. Costs and guarantees are not directly identical.'
+          }
+          (out / 'native-selection.json').write_text(json.dumps(summary, indent=2, sort_keys=True)+'\n')
+          print(json.dumps(summary, indent=2))
+          PY
       - name: Collect independently inspectable artifacts even after failure
         if: always()
         uses: actions/upload-artifact@v4

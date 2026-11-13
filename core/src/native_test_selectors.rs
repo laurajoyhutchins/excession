@@ -6,9 +6,9 @@ use crate::json::{Value, obj};
 use crate::{Result, change_inventory, digest, discovery, git, refuse};
 use std::collections::BTreeSet;
 use std::fs;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MAX_SELECTION: usize = 4096;
 const MAX_LOG_BYTES: usize = 16 * 1024 * 1024;
@@ -40,7 +40,6 @@ impl Drop for NativeReport {
         let _ = fs::remove_dir_all(&self.directory);
     }
 }
-
 
 fn clean_checkout(root: &Path, commit: &str) -> Result<()> {
     if git::rev(root, "HEAD")? != commit {
@@ -200,7 +199,22 @@ fn reported_pytest_tests(
         files.insert(path.to_owned());
         node_ids.insert(node_id.to_owned());
     }
-    Ok((files.into_iter().collect(), node_ids.into_iter().collect(), total, passed))
+    Ok((
+        files.into_iter().collect(),
+        node_ids.into_iter().collect(),
+        total,
+        passed,
+    ))
+}
+
+fn pytest_execution_outcome(code: i32, total: usize, passed: usize) -> &'static str {
+    if total == 0 || (code == 0 && passed == 0) {
+        "EMPTY_UNPROVEN"
+    } else if code == 0 {
+        "EXECUTED_PASS"
+    } else {
+        "EXECUTED_FAIL"
+    }
 }
 
 fn require_native_execution(trusted_local: &str) -> Result<()> {
@@ -283,7 +297,9 @@ pub fn run(
             return refuse("pytest-testmon requires an existing .testmondata coverage baseline");
         }
         command.args(["-m", "pytest", "--testmon", "--testmon-forceselect", "-q"]);
-        let report = native_report.as_ref().ok_or("missing native pytest report path")?;
+        let report = native_report
+            .as_ref()
+            .ok_or("missing native pytest report path")?;
         command.arg("--json-report");
         command.arg(format!("--json-report-file={}", report.file.display()));
         command.args(&scope);
@@ -334,15 +350,14 @@ pub fn run(
         let native_json = fs::read(&native_report.file).map_err(|error| {
             format!("pytest-json-report is required for verifiable test execution: {error}")
         })?;
-        let (files, ids, total, passed) =
-            reported_pytest_tests(root, commit, &native_json, code)?;
+        let (files, ids, total, passed) = reported_pytest_tests(root, commit, &native_json, code)?;
         selected = files;
         selected_ids = ids;
         executed_count = total;
-        if total == 0 || (code == 0 && passed == 0) {
-            // pytest-testmon can exit successfully after deselecting every test.
-            // That is not a passing test execution and must not yield a PASS receipt.
-            "EMPTY_UNPROVEN"
+        // A zero-test run cannot produce a passing execution receipt.
+        let selected_outcome = pytest_execution_outcome(code, total, passed);
+        if selected_outcome == "EMPTY_UNPROVEN" {
+            selected_outcome
         } else {
             let mut log = output.stdout.clone();
             log.extend_from_slice(&output.stderr);
@@ -374,11 +389,7 @@ pub fn run(
                 ("log_sha256", Value::string(digest::sha256(&log))),
             ]);
             receipts.push(execution);
-            if code == 0 {
-                "EXECUTED_PASS"
-            } else {
-                "EXECUTED_FAIL"
-            }
+            selected_outcome
         }
     };
     let digest_value = obj(&[
@@ -466,6 +477,7 @@ mod tests {
         fs::create_dir_all(root.join("testing")).unwrap();
         fs::write(root.join("src/module.js"), "module.exports = 1;\n").unwrap();
         fs::write(root.join("testing/module.test.js"), "test('ok', ()=>{});\n").unwrap();
+        fs::write(root.join("testing/test_example.py"), "def test_ok(): pass\n").unwrap();
 
         let git_call = |args: &[&str]| {
             let result = Command::new("git")
@@ -508,6 +520,22 @@ mod tests {
         ])
         .unwrap();
         assert!(tracked_selection(&root, &commit, &untracked).is_err());
+        let native = br#"{"exitcode":0,"summary":{"total":1,"passed":1},"tests":[{"nodeid":"testing/test_example.py::test_ok","outcome":"passed"}]}"#;
+        let (files, ids, total, passed) =
+            reported_pytest_tests(&root, &commit, native, 0).unwrap();
+        assert_eq!(files, vec!["testing/test_example.py"]);
+        assert_eq!(ids, vec!["testing/test_example.py::test_ok"]);
+        assert_eq!((total, passed), (1, 1));
+
+        let empty = br#"{"exitcode":0,"summary":{"total":0},"tests":[]}"#;
+        let (_, _, total, passed) =
+            reported_pytest_tests(&root, &commit, empty, 0).unwrap();
+        assert_eq!(pytest_execution_outcome(0, total, passed), "EMPTY_UNPROVEN");
+        assert_eq!(pytest_execution_outcome(0, 1, 1), "EXECUTED_PASS");
+        assert_eq!(pytest_execution_outcome(1, 1, 0), "EXECUTED_FAIL");
+
+        let inconsistent = br#"{"exitcode":0,"summary":{"total":1},"tests":[]}"#;
+        assert!(reported_pytest_tests(&root, &commit, inconsistent, 0).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

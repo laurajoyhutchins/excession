@@ -332,9 +332,17 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
     let repo = root.join("repo");
     fs::create_dir_all(repo.join("pkg")).unwrap();
     let cmd = |args: &[&str]| -> String {
-        let output = Command::new("git").current_dir(&repo).args(args).output().unwrap();
-        assert!(output.status.success(), "git {:?}: {}", args,
-            String::from_utf8_lossy(&output.stderr));
+        let output = Command::new("git")
+            .current_dir(&repo)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {:?}: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
         String::from_utf8(output.stdout).unwrap().trim().to_owned()
     };
     cmd(&["init", "-q"]);
@@ -344,7 +352,8 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
     for depth in 1..=7 {
         let names = (0..3).map(|n| format!("l{depth}_{n}")).collect::<Vec<_>>();
         for source in &names {
-            let body = parents.iter()
+            let body = parents
+                .iter()
                 .map(|target| format!("import pkg.{target}\n"))
                 .collect::<String>();
             fs::write(repo.join(format!("pkg/{source}.py")), body).unwrap();
@@ -352,42 +361,109 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
         parents = names;
     }
     cmd(&["add", "."]);
-    cmd(&["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-        "commit", "-qm", "base"]);
+    cmd(&[
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-qm",
+        "base",
+    ]);
     let base = cmd(&["rev-parse", "HEAD"]);
     fs::write(repo.join("pkg/changed.py"), "VALUE = 2\n").unwrap();
     cmd(&["add", "-A"]);
-    cmd(&["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-        "commit", "-qm", "change root"]);
+    cmd(&[
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-qm",
+        "change root",
+    ]);
     let head = cmd(&["rev-parse", "HEAD"]);
     let database = root.join("index.sqlite");
     let output = Command::new(env!("CARGO_BIN_EXE_excession"))
-        .args(["impact", repo.to_str().unwrap(), "--base", &base,
-            "--head", &head, "--roots", "pkg", "--db",
-            database.to_str().unwrap(), "--json"])
-        .output().unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        .args([
+            "impact",
+            repo.to_str().unwrap(),
+            "--base",
+            &base,
+            "--head",
+            &head,
+            "--roots",
+            "pkg",
+            "--db",
+            database.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let result = json::parse(&output.stdout).unwrap();
-    assert_eq!(result.get("candidate_source_count").unwrap().integer().unwrap(), 42);
-    assert!(result.get("candidate_source_enumeration_complete").unwrap().bool().unwrap());
+    assert_eq!(
+        result
+            .get("candidate_source_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        42
+    );
+    assert!(
+        result
+            .get("candidate_source_enumeration_complete")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
     // Existing path enumerator is bounded at 512, while the new source
     // inventory carries all 21 distinct importers in each revision.
-    assert_eq!(result.get("effects").unwrap().array_ref().unwrap().len(), 512);
-    assert!(result.get("unknown").unwrap().array_ref().unwrap().iter().any(
-        |g| g.get("reason").unwrap().str().unwrap() == "TRUNCATED"
-    ));
-    let witnesses = result.get("candidate_source_impacts").unwrap().array_ref().unwrap();
+    assert_eq!(
+        result.get("effects").unwrap().array_ref().unwrap().len(),
+        512
+    );
+    assert!(
+        result
+            .get("unknown")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|g| g.get("reason").unwrap().str().unwrap() == "TRUNCATED")
+    );
+    let witnesses = result
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert_eq!(witnesses.len(), 42);
     let mut ranks = BTreeMap::new();
     for witness in witnesses {
         let entity = witness.get("entity").unwrap();
         let key = (
-            entity.get("source_commit").unwrap().str().unwrap().to_owned(),
+            entity
+                .get("source_commit")
+                .unwrap()
+                .str()
+                .unwrap()
+                .to_owned(),
             entity.get("path").unwrap().str().unwrap().to_owned(),
         );
         assert!(BTreeSet::from([base.as_str(), head.as_str()]).contains(key.0.as_str()));
-        assert_eq!(witness.get("assessment").unwrap().str().unwrap(), "CANDIDATE_PATH");
-        let rank = witness.get("distance_to_change").unwrap().integer().unwrap();
+        assert_eq!(
+            witness.get("assessment").unwrap().str().unwrap(),
+            "CANDIDATE_PATH"
+        );
+        let rank = witness
+            .get("distance_to_change")
+            .unwrap()
+            .integer()
+            .unwrap();
         assert!((1..=7).contains(&rank));
         assert!(ranks.insert(key, rank).is_none());
     }
@@ -395,20 +471,39 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
         let entity = witness.get("entity").unwrap();
         let revision = entity.get("source_commit").unwrap().str().unwrap();
         let target = witness.get("next_hop").unwrap().get("target").unwrap();
-        assert_eq!(target.get("source_commit").unwrap().str().unwrap(), revision);
+        assert_eq!(
+            target.get("source_commit").unwrap().str().unwrap(),
+            revision
+        );
         let target_path = target.get("path").unwrap().str().unwrap();
-        let rank = witness.get("distance_to_change").unwrap().integer().unwrap();
+        let rank = witness
+            .get("distance_to_change")
+            .unwrap()
+            .integer()
+            .unwrap();
         if rank == 1 {
             assert_eq!(target_path, "pkg/changed.py");
         } else {
-            assert_eq!(ranks.get(&(revision.to_owned(), target_path.to_owned())), Some(&(rank - 1)));
+            assert_eq!(
+                ranks.get(&(revision.to_owned(), target_path.to_owned())),
+                Some(&(rank - 1))
+            );
         }
     }
     for revision in [&base, &head] {
         for leaf in &parents {
-            assert_eq!(ranks.get(&(revision.clone(), format!("pkg/{leaf}.py"))), Some(&7));
+            assert_eq!(
+                ranks.get(&(revision.clone(), format!("pkg/{leaf}.py"))),
+                Some(&7)
+            );
         }
     }
-    assert!(!result.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+    assert!(
+        !result
+            .get("safe_to_skip_unlisted_tests")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
     fs::remove_dir_all(root).unwrap();
 }

@@ -420,7 +420,9 @@ fn corrupted_provider_receipts_and_artifact_identities_refuse_closed() {
         .unwrap()
         .write_all(b"tampered")
         .unwrap();
-    bad(f.candidates(&f.first, "ram:1000", "1"));
+    let changed = read(f.candidates(&f.first, "ram:1000", "1"));
+    assert_eq!(changed.get("total_matches").unwrap().integer().unwrap(), 0);
+    assert!(changed.get("matches").unwrap().array_ref().unwrap().is_empty());
 }
 #[test]
 fn source_associations_reject_forged_git_sources_and_constrain_output() {

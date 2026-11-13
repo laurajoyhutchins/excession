@@ -308,6 +308,7 @@ pub struct Request<'a> {
     pub diagnostics: &'a Path,
     pub source_prefix: Option<&'a str>,
     pub analyzer: &'a Path,
+    pub ast_grep: &'a Path,
     pub output: Option<&'a Path>,
 }
 
@@ -398,57 +399,69 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
             ),
         ]));
     }
-    let (file, title, edits, outputs, repair_kind, helpers) = if candidate_count == 1 {
-        let (file, title, action) = actions.remove(0);
-        let workspace_edit = action.get("edit").ok_or("native quickfix has no edit")?;
-        let (edits, outputs) =
-            refactor_rust_analyzer::collect_edits(repo, &revision, workspace_edit)?;
-        if !outputs.contains_key(&file) {
-            return refuse("native quickfix does not edit the diagnostic source file");
-        }
-        (
-            file,
-            title,
-            edits,
-            outputs,
-            "native-import-quickfix",
-            Vec::new(),
-        )
-    } else {
-        let missing = errors
-            .iter()
-            .map(|error| refactor_module_api::Missing {
-                path: &error.path,
-                line: error.line,
-                column: error.column,
-                code: &error.code,
-                message: &error.message,
-            })
-            .collect::<Vec<_>>();
-        let Some(proposal) = refactor_module_api::propose(repo, &base, &plan, &missing)? else {
-            return Ok(obj(&[
-                ("schema", Value::string("excession.rust-repair.v1")),
-                ("status", Value::string("NO_SUPPORTED_NATIVE_REPAIR")),
-                ("source_commit", Value::string(revision)),
-                ("parent_plan_id", Value::string(parent_id)),
-                ("supported_action_count", Value::number(0)),
-                (
-                    "verification",
-                    Value::string(
-                        "OPEN_OBLIGATIONS: no supported native fix or exact-body API preservation recipe.",
+    let (file, title, edits, outputs, repair_kind, helpers, preserved_functions) =
+        if candidate_count == 1 {
+            let (file, title, action) = actions.remove(0);
+            let workspace_edit = action.get("edit").ok_or("native quickfix has no edit")?;
+            let (edits, outputs) =
+                refactor_rust_analyzer::collect_edits(repo, &revision, workspace_edit)?;
+            if !outputs.contains_key(&file) {
+                return refuse("native quickfix does not edit the diagnostic source file");
+            }
+            (
+                file,
+                title,
+                edits,
+                outputs,
+                "native-import-quickfix",
+                Vec::new(),
+                Vec::new(),
+            )
+        } else {
+            let missing = errors
+                .iter()
+                .map(|error| refactor_module_api::Missing {
+                    path: &error.path,
+                    line: error.line,
+                    column: error.column,
+                    code: &error.code,
+                    message: &error.message,
+                })
+                .collect::<Vec<_>>();
+            let Some(proposal) =
+                refactor_module_api::propose(repo, &base, &plan, request.ast_grep, &missing)?
+            else {
+                return Ok(obj(&[
+                    ("schema", Value::string("excession.rust-repair.v1")),
+                    ("status", Value::string("NO_SUPPORTED_NATIVE_REPAIR")),
+                    ("source_commit", Value::string(revision)),
+                    ("parent_plan_id", Value::string(parent_id)),
+                    ("supported_action_count", Value::number(0)),
+                    (
+                        "verification",
+                        Value::string(
+                            "OPEN_OBLIGATIONS: no supported native fix or exact-body API preservation recipe.",
+                        ),
                     ),
-                ),
-            ]));
+                ]));
+            };
+            (
+                proposal.path,
+                if proposal.public_functions.len() == 1 {
+                    format!("Preserve public path of {}", proposal.public_functions[0])
+                } else {
+                    format!(
+                        "Preserve public paths of {}",
+                        proposal.public_functions.join(", ")
+                    )
+                },
+                proposal.edits,
+                proposal.outputs,
+                "byte-conservative-extract-module-api",
+                proposal.helpers,
+                proposal.public_functions,
+            )
         };
-        (
-            proposal.path,
-            format!("Preserve public path of {}", proposal.moved_function),
-            proposal.edits,
-            proposal.outputs,
-            "byte-conservative-extract-module-api",
-            proposal.helpers,
-        )
-    };
     let plan_identity = obj(&[
         ("parent_plan_id", Value::string(&parent_id)),
         ("source_commit", Value::string(&revision)),
@@ -545,6 +558,10 @@ pub fn repair(request: &Request<'_>) -> Result<Value> {
         ("action_title", Value::string(title)),
         ("action_source", Value::string(file)),
         ("repair_kind", Value::string(repair_kind)),
+        (
+            "preserved_public_functions",
+            Value::array(preserved_functions.iter().map(Value::string)),
+        ),
         (
             "parent_helpers",
             Value::array(helpers.iter().map(Value::string)),

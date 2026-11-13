@@ -282,7 +282,7 @@ pub(super) fn command() -> Command {
                     "repo", "source-repo", "base", "plan", "index",
                     "report", "diagnostics",
                 ],
-                &["source-prefix", "rust-analyzer", "output"],
+                &["source-prefix", "rust-analyzer", "ast-grep", "output"],
             )
             .about(
                 "Select an unambiguous native import repair from independent compiler diagnostics",

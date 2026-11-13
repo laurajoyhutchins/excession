@@ -60,7 +60,7 @@ fn read_blob(repo: &Path, oid: &str) -> Result<String> {
 
 /// Use ast-grep's outline, not an Excession implementation of Rust syntax.
 /// Stdin contains *Git blob bytes*, never an unverified working-tree file.
-fn outline(ast_grep: &Path, source: &str) -> Result<Value> {
+pub(crate) fn outline(ast_grep: &Path, source: &str) -> Result<Value> {
     let mut child = Command::new(ast_grep)
         .args([
             "outline",

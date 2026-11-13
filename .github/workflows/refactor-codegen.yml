@@ -6,6 +6,7 @@ on:
       - 'core/src/refactor_rust_analyzer.rs'
       - 'core/src/refactor_rust_repair.rs'
       - 'core/src/refactor_module_api.rs'
+      - 'tests/fixtures/rust-api/**'
       - 'core/src/agent.rs'
       - 'contracts/agent/**'
       - 'core/src/bin/excession.rs'
@@ -47,6 +48,12 @@ jobs:
         run: |
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Stress pinned upstream Rust source with native ast-grep and rustc
+        env:
+          EXCESSION_AST_GREP: ${{ runner.temp }}/ast-grep/node_modules/.bin/ast-grep
+        run: |
+          cargo +1.99.1 test --locked --offline --manifest-path core/Cargo.toml --lib \
+            refactor_module_api::tests::external_pinned_corpus_stress -- --ignored --exact
       - name: Replay historical Excession through real tools
         run: |
           bash tests/refactor_codegen_replay.sh "$GITHUB_WORKSPACE/core/target/debug/excession" \

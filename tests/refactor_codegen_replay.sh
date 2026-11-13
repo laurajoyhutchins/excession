@@ -147,12 +147,14 @@ run_repair() {
     --index "$TMP/index.scip.json" --report "$TMP/scip-report.json" \
     --diagnostics "$TMP/assist-compiler.jsonl" \
     --source-prefix core \
-    --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" "$@"
+    --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" \
+    --ast-grep "$AST_GREP" "$@"
 }
 run_repair > "$TMP/repair-preview.json"
 jq -e '
   .status == "REPAIR_PREVIEW_UNVERIFIED"
   and .repair_kind == "byte-conservative-extract-module-api"
+  and .preserved_public_functions == ["module_name_with_import_base"]
   and .parent_helpers == ["module_name"]
   and .action_title == "Preserve public path of module_name_with_import_base"
   and (.edits | length) == 2

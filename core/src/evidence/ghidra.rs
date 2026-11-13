@@ -472,7 +472,7 @@ pub fn candidates(db: &Db, artifact: &Path, entry: &str, limit: usize) -> Result
         let mut output = Vec::new();
         // Each producer receipt and candidate binding is audited once per query.
         let mut report_cache = BTreeMap::new();
-        let mut binding_cache = BTreeMap::new();
+        let mut binding_cache: BTreeMap<String, Vec<Value>> = BTreeMap::new();
         for row in matches {
             let mid = row[0].as_deref().ok_or("missing Ghidra match ID")?;
             let report_id_ref = row[1].as_deref().ok_or("missing Ghidra report ID")?;

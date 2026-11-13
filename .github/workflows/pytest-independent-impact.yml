@@ -342,7 +342,8 @@ jobs:
           import sys
           out, repo = map(Path, sys.argv[1:])
           def times(name):
-              wall, peak = (out / (name + '.time')).read_text().split()
+              # GNU time prepends a diagnostic line when the selected test fails.
+              wall, peak = (out / (name + '.time')).read_text().strip().splitlines()[-1].split()
               return {'wall_seconds': float(wall), 'peak_rss_kib': int(peak)}
           summary = {
               'schema': 'excession.pytest-native-test-selection-comparison.v1',

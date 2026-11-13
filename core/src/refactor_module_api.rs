@@ -87,7 +87,7 @@ fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, u
     Ok(Some((name.to_owned(), header.len() + 1)))
 }
 
-fn declared<'a>(source: &'a str, name: &str, prefixes: &[&str]) -> bool {
+fn declared(source: &str, name: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| {
         source
             .strip_prefix(prefix)

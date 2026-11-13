@@ -52,9 +52,7 @@ fn json(v: excession::json::Value) -> Response {
 
 /// REA is artifact-first. Build provenance is a separately verified link, not
 /// a fabricated source identity for binaries with unavailable source.
-fn rea_build_link<'a>(
-    opt: &'a Options,
-) -> Result<Option<excession::evidence::rea::BuildLink<'a>>> {
+fn rea_build_link<'a>(opt: &'a Options) -> Result<Option<excession::evidence::rea::BuildLink<'a>>> {
     match (
         opt.0.get("repo"),
         opt.0.get("rev"),

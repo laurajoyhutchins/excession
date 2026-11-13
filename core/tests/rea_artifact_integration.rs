@@ -13,7 +13,11 @@ fn run(program: &str, args: &[&str]) -> Output {
     Command::new(program).args(args).output().expect("launch")
 }
 fn okay(out: Output) -> Vec<u8> {
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     out.stdout
 }
 fn reject(out: Output) {
@@ -21,8 +25,12 @@ fn reject(out: Output) {
     assert!(out.stdout.is_empty());
     assert!(String::from_utf8_lossy(&out.stderr).contains("REFUSED:"));
 }
-fn cli(args: &[&str]) -> Output { run(env!("CARGO_BIN_EXE_excession"), args) }
-fn result(out: Output) -> Value { serde_json::from_slice(&okay(out)).unwrap() }
+fn cli(args: &[&str]) -> Output {
+    run(env!("CARGO_BIN_EXE_excession"), args)
+}
+fn result(out: Output) -> Value {
+    serde_json::from_slice(&okay(out)).unwrap()
+}
 
 /// Independently hash the REA-documented semantic projection via Node's
 /// JSON.stringify and UTF-16-sorted object keys, not Excession's Rust path.
@@ -51,9 +59,19 @@ process.stdin.on('end', () => {
   process.stdout.write('ev_' + crypto.createHash('sha256').update(canonical).digest('hex'));
 });
 "#;
-    let mut child = Command::new("node").arg("-e").arg(script)
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
-    child.stdin.take().unwrap().write_all(record.to_string().as_bytes()).unwrap();
+    let mut child = Command::new("node")
+        .arg("-e")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(record.to_string().as_bytes())
+        .unwrap();
     let output = child.wait_with_output().unwrap();
     String::from_utf8(okay(output)).unwrap()
 }
@@ -69,26 +87,52 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "excession-rea-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)
+            "excession-rea-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let repo = root.join("repo");
         fs::create_dir_all(repo.join("src")).unwrap();
         okay(run("git", &["-C", repo.to_str().unwrap(), "init", "-q"]));
-        fs::write(repo.join("src/main.rs"), "fn main() { println!(\"REA\"); }\n").unwrap();
+        fs::write(
+            repo.join("src/main.rs"),
+            "fn main() { println!(\"REA\"); }\n",
+        )
+        .unwrap();
         okay(run("git", &["-C", repo.to_str().unwrap(), "add", "."]));
-        okay(run("git", &[
-            "-C", repo.to_str().unwrap(), "-c", "user.name=Fixture",
-            "-c", "user.email=fixture@example.invalid", "commit", "-qm", "pinned",
-        ]));
+        okay(run(
+            "git",
+            &[
+                "-C",
+                repo.to_str().unwrap(),
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "pinned",
+            ],
+        ));
         let rev = String::from_utf8(okay(run(
-            "git", &["-C", repo.to_str().unwrap(), "rev-parse", "HEAD"]
-        ))).unwrap().trim().to_owned();
+            "git",
+            &["-C", repo.to_str().unwrap(), "rev-parse", "HEAD"],
+        )))
+        .unwrap()
+        .trim()
+        .to_owned();
         let artifact = root.join("application");
-        okay(run("rustc", &[
-            "--edition=2024", "-C", "debuginfo=0",
-            repo.join("src/main.rs").to_str().unwrap(),
-            "-o", artifact.to_str().unwrap(),
-        ]));
+        okay(run(
+            "rustc",
+            &[
+                "--edition=2024",
+                "-C",
+                "debuginfo=0",
+                repo.join("src/main.rs").to_str().unwrap(),
+                "-o",
+                artifact.to_str().unwrap(),
+            ],
+        ));
         let sha = digest::sha256(&fs::read(&artifact).unwrap());
         let mut observation = json!({
             "subject": {
@@ -124,49 +168,118 @@ impl Fixture {
         });
         fs::write(&bundle, serde_json::to_vec_pretty(&payload).unwrap()).unwrap();
         let db = root.join("records.sqlite");
-        Self { root, repo, artifact, bundle, db, rev, foreign_id }
+        Self {
+            root,
+            repo,
+            artifact,
+            bundle,
+            db,
+            rev,
+            foreign_id,
+        }
     }
-    fn artifact(&self) -> &str { self.artifact.to_str().unwrap() }
-    fn repo(&self) -> &str { self.repo.to_str().unwrap() }
-    fn db(&self) -> &str { self.db.to_str().unwrap() }
-    fn bundle(&self) -> &str { self.bundle.to_str().unwrap() }
+    fn artifact(&self) -> &str {
+        self.artifact.to_str().unwrap()
+    }
+    fn repo(&self) -> &str {
+        self.repo.to_str().unwrap()
+    }
+    fn db(&self) -> &str {
+        self.db.to_str().unwrap()
+    }
+    fn bundle(&self) -> &str {
+        self.bundle.to_str().unwrap()
+    }
     fn import(&self) -> Output {
-        cli(&["evidence","rea-import","--db",self.db(),
-            "--artifact",self.artifact(),"--bundle",self.bundle()])
+        cli(&[
+            "evidence",
+            "rea-import",
+            "--db",
+            self.db(),
+            "--artifact",
+            self.artifact(),
+            "--bundle",
+            self.bundle(),
+        ])
     }
     fn audit(&self, id: &str) -> Output {
-        cli(&["inspect","rea-evidence","--db",self.db(),
-            "--artifact",self.artifact(),"--id",id])
+        cli(&[
+            "inspect",
+            "rea-evidence",
+            "--db",
+            self.db(),
+            "--artifact",
+            self.artifact(),
+            "--id",
+            id,
+        ])
     }
     fn build(&self) -> String {
         let toolchain = digest::sha256(b"toolchain-under-test");
         let config = digest::sha256(b"test-edition=2024");
         let report = result(cli(&[
-            "evidence","build-record","--db",self.db(),
-            "--repo",self.repo(),"--rev",&self.rev,
-            "--artifact",self.artifact(),"--sources","src/main.rs",
-            "--toolchain",&toolchain,"--configuration",&config,
-            "--representation","EXECUTABLE",
+            "evidence",
+            "build-record",
+            "--db",
+            self.db(),
+            "--repo",
+            self.repo(),
+            "--rev",
+            &self.rev,
+            "--artifact",
+            self.artifact(),
+            "--sources",
+            "src/main.rs",
+            "--toolchain",
+            &toolchain,
+            "--configuration",
+            &config,
+            "--representation",
+            "EXECUTABLE",
         ]));
         report["snapshot_id"].as_str().unwrap().to_owned()
     }
     fn linked_import(&self, build_id: &str) -> Output {
         cli(&[
-            "evidence","rea-import","--db",self.db(),
-            "--artifact",self.artifact(),"--bundle",self.bundle(),
-            "--repo",self.repo(),"--rev",&self.rev,"--build-snapshot",build_id
+            "evidence",
+            "rea-import",
+            "--db",
+            self.db(),
+            "--artifact",
+            self.artifact(),
+            "--bundle",
+            self.bundle(),
+            "--repo",
+            self.repo(),
+            "--rev",
+            &self.rev,
+            "--build-snapshot",
+            build_id,
         ])
     }
     fn linked_audit(&self, id: &str, build_id: &str) -> Output {
         cli(&[
-            "inspect","rea-evidence","--db",self.db(),
-            "--artifact",self.artifact(),"--id",id,
-            "--repo",self.repo(),"--rev",&self.rev,"--build-snapshot",build_id
+            "inspect",
+            "rea-evidence",
+            "--db",
+            self.db(),
+            "--artifact",
+            self.artifact(),
+            "--id",
+            id,
+            "--repo",
+            self.repo(),
+            "--rev",
+            &self.rev,
+            "--build-snapshot",
+            build_id,
         ])
     }
 }
 impl Drop for Fixture {
-    fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
 }
 #[test]
 fn rea_artifact_import_roundtrips_native_id_and_source_free_evidence() {
@@ -175,7 +288,10 @@ fn rea_artifact_import_roundtrips_native_id_and_source_free_evidence() {
     assert_eq!(first["producer"], "REA");
     assert_eq!(first["format"], "EVIDENCE_V2_EXPORT");
     assert_eq!(first["native_record_ids"][0], f.foreign_id);
-    assert_eq!(first["native_identity"], "REHASHED_SUPPORTED_RFC8785_INTEGER_DOMAIN");
+    assert_eq!(
+        first["native_identity"],
+        "REHASHED_SUPPORTED_RFC8785_INTEGER_DOMAIN"
+    );
     assert_eq!(first["build_snapshot_id"], Value::Null);
     assert_eq!(first["semantic_correctness"], "NOT_ESTABLISHED");
     assert_eq!(first["source_artifact_relation"], "NOT_ESTABLISHED");
@@ -184,21 +300,40 @@ fn rea_artifact_import_roundtrips_native_id_and_source_free_evidence() {
     let id = first["bundle_id"].as_str().unwrap();
     let audited = result(f.audit(id));
     assert_eq!(audited, first);
-    assert_eq!(result(f.import()), first, "repeat import must preserve exact identity");
+    assert_eq!(
+        result(f.import()),
+        first,
+        "repeat import must preserve exact identity"
+    );
     let native = result(cli(&[
-        "inspect","rea-record","--db",f.db(),
-        "--artifact",f.artifact(),"--id",id,"--record",&f.foreign_id
+        "inspect",
+        "rea-record",
+        "--db",
+        f.db(),
+        "--artifact",
+        f.artifact(),
+        "--id",
+        id,
+        "--record",
+        &f.foreign_id,
     ]));
     assert_eq!(native["native_evidence_id"], f.foreign_id);
     assert_eq!(native["original_record"]["predicate_type"], "rea.analysis");
-    assert_eq!(native["original_record"]["normalized_result"]["functions"], 1);
+    assert_eq!(
+        native["original_record"]["normalized_result"]["functions"],
+        1
+    );
     assert_eq!(native["semantic_correctness"], "NOT_ESTABLISHED");
 
     let schema: Value = serde_json::from_str(include_str!(
         "../../contracts/evidence-core/rea-import.v1.schema.json"
-    )).unwrap();
+    ))
+    .unwrap();
     let validator = jsonschema::draft202012::new(&schema).unwrap();
-    assert!(validator.is_valid(&first), "actual REA CLI report violates JSON Schema");
+    assert!(
+        validator.is_valid(&first),
+        "actual REA CLI report violates JSON Schema"
+    );
 }
 #[test]
 fn declared_build_link_joins_exact_artifact_without_semantic_promotion() {
@@ -207,21 +342,42 @@ fn declared_build_link_joins_exact_artifact_without_semantic_promotion() {
     let original = result(f.import());
     let linked = result(f.linked_import(&build));
     assert_eq!(linked["build_snapshot_id"], build);
-    assert_eq!(original["artifact_subject_id"], linked["artifact_subject_id"]);
+    assert_eq!(
+        original["artifact_subject_id"],
+        linked["artifact_subject_id"]
+    );
     assert_ne!(original["bundle_id"], linked["bundle_id"]);
     assert_eq!(linked["source_artifact_relation"], "NOT_ESTABLISHED");
     let id = linked["bundle_id"].as_str().unwrap();
     reject(f.audit(id)); // Must replay the originally recorded build link.
     assert_eq!(result(f.linked_audit(id, &build)), linked);
     reject(cli(&[
-        "inspect","rea-evidence","--db",f.db(),
-        "--artifact",f.artifact(),"--id",id,
-        "--repo",f.repo(),"--rev",&"a".repeat(40),"--build-snapshot",&build
+        "inspect",
+        "rea-evidence",
+        "--db",
+        f.db(),
+        "--artifact",
+        f.artifact(),
+        "--id",
+        id,
+        "--repo",
+        f.repo(),
+        "--rev",
+        &"a".repeat(40),
+        "--build-snapshot",
+        &build,
     ]));
     reject(cli(&[
-        "evidence","rea-import","--db",f.db(),
-        "--artifact",f.artifact(),"--bundle",f.bundle(),
-        "--repo",f.repo()
+        "evidence",
+        "rea-import",
+        "--db",
+        f.db(),
+        "--artifact",
+        f.artifact(),
+        "--bundle",
+        f.bundle(),
+        "--repo",
+        f.repo(),
     ]));
 }
 #[test]
@@ -235,8 +391,12 @@ fn forged_native_id_and_changed_binary_and_tampered_sql_fail_closed() {
     fs::write(&f.bundle, modified.to_string()).unwrap();
     reject(f.import());
     fs::write(&f.bundle, original_bytes).unwrap();
-    fs::OpenOptions::new().append(true).open(&f.artifact).unwrap()
-        .write_all(b"repacked").unwrap();
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&f.artifact)
+        .unwrap()
+        .write_all(b"repacked")
+        .unwrap();
     reject(f.audit(id));
 }
 #[test]
@@ -245,9 +405,13 @@ fn sqlite_immutability_and_metadata_corruption_are_auditable() {
     let first = result(f.import());
     let id = first["bundle_id"].as_str().unwrap();
     let db = Db::open(&f.db).unwrap();
-    assert!(db.exec("UPDATE evidence_rea_bundle_v1 SET raw_json='{}'").is_err());
+    assert!(
+        db.exec("UPDATE evidence_rea_bundle_v1 SET raw_json='{}'")
+            .is_err()
+    );
     assert!(db.exec("DELETE FROM evidence_rea_bundle_v1").is_err());
-    db.exec("DROP TRIGGER evidence_rea_bundle_no_update_v1").unwrap();
+    db.exec("DROP TRIGGER evidence_rea_bundle_no_update_v1")
+        .unwrap();
     db.exec("UPDATE evidence_rea_bundle_v1 SET artifact_sha256='ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'").unwrap();
     reject(f.audit(id));
     reject(f.import());

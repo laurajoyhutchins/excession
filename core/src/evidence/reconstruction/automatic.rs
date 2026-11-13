@@ -200,6 +200,9 @@ fn schema(db: &Db) -> Result<()> {
          );
          CREATE INDEX IF NOT EXISTS evidence_reconstruction_search_target_idx
             ON evidence_reconstruction_search_v1(target_subject_id,sequence);
+         CREATE INDEX IF NOT EXISTS evidence_reconstruction_text_lookup_v1
+            ON evidence_reconstruction_search_v1(json_extract(report,'$.target_text_sha256'))
+            WHERE json_extract(report,'$.search_status')='EXACT_TEXT_MATCH';
          CREATE TRIGGER IF NOT EXISTS evidence_reconstruction_search_no_update
            BEFORE UPDATE ON evidence_reconstruction_search_v1
            BEGIN SELECT RAISE(ABORT,'immutable reconstruction search'); END;
@@ -270,6 +273,53 @@ pub fn searches(db: &Db, target: &Path, limit: usize) -> Result<Value> {
     })
 }
 
+/// Retrieve earlier successful source hypotheses for precisely the same .text
+/// bytes, but never promote their prior compiler result to evidence for this
+/// artifact. Only the current grammar's generated expressions may be reused.
+/// Each borrowed hypothesis must compile and match against the new target.
+fn reusable_hypothesis(
+    db: &Db,
+    text_sha256: &str,
+    generated: &[Hypothesis],
+) -> Result<Option<(usize, String)>> {
+    schema(db)?;
+    let rows = db.query(
+        "SELECT search_id,target_subject_id,report
+         FROM evidence_reconstruction_search_v1
+         WHERE json_extract(report,'$.target_text_sha256')=?
+           AND json_extract(report,'$.search_status')='EXACT_TEXT_MATCH'
+         ORDER BY sequence DESC LIMIT 16",
+        &[Param::Text(text_sha256)],
+    )?;
+    for row in rows {
+        let id = row[0].as_deref().ok_or("missing reusable search id")?;
+        let subject = row[1].as_deref().ok_or("missing reusable target identity")?;
+        let raw = row[2].as_deref().ok_or("missing reusable search receipt")?;
+        let receipt = audit_report(raw, id, subject)?;
+        if receipt.get("generator")?.str()? != GENERATOR
+            || receipt.get("comparison_scope")?.str()? != "ELF_TEXT_SECTION_BYTES_ONLY"
+            || receipt.get("target_text_sha256")?.str()? != text_sha256
+            || receipt.get("best_text_sha256")?.str()? != text_sha256
+            || receipt.get("best_mismatch_count")?.integer()? != 0
+        {
+            return refuse("inconsistent reusable function evidence");
+        }
+        let expr = receipt.get("best_expression")?.str()?;
+        let previous_name = receipt.get("target_function")?.str()?;
+        let saved_source = receipt.get("best_source")?.str()?;
+        let canonical = format!("int {previous_name}(int x) {{ return {expr}; }}\n");
+        if saved_source != canonical
+            || digest::sha256(canonical.as_bytes()) != receipt.get("best_source_sha256")?.str()?
+        {
+            return refuse("reusable function source no longer has canonical grammar identity");
+        }
+        if let Some(index) = generated.iter().position(|h| h.expression == expr) {
+            return Ok(Some((index, id.to_owned())));
+        }
+    }
+    Ok(None)
+}
+
 pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
     if !opt.trusted_local {
         return refuse(
@@ -322,7 +372,12 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
         ],
         &scratch.path("disasm.txt"),
     )?;
-    let pool = hypotheses(&function, &disasm);
+    let mut pool = hypotheses(&function, &disasm);
+    let reuse = reusable_hypothesis(db, &digest::sha256(&text), &pool)?;
+    if let Some((index, _)) = &reuse {
+        let item = pool.remove(*index);
+        pool.insert(0, item);
+    }
     let begin = Instant::now();
     let mut examined = Vec::new();
     let mut best: Option<(usize, String, String, String)> = None;
@@ -384,6 +439,18 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
     let mut report = obj(&[
         ("schema", Value::string(SCHEMA)),
         ("generator", Value::string(GENERATOR)),
+        (
+            "candidate_selection",
+            Value::string(if reuse.is_some() {
+                "REUSED_EXACT_TEXT"
+            } else {
+                "GENERATED_GRAMMAR"
+            }),
+        ),
+        (
+            "reused_from_search_id",
+            reuse.as_ref().map_or(Value::Null, |(_, id)| Value::string(id)),
+        ),
         ("target_artifact_subject_id", Value::string(&original_id)),
         (
             "target_artifact_sha256",

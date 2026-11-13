@@ -32,7 +32,9 @@
     "source_recovery",
     "behavioral_equivalence",
     "build_execution_attested",
-    "search_exhaustive"
+    "search_exhaustive",
+    "candidate_selection",
+    "reused_from_search_id"
   ],
   "properties": {
     "schema": {
@@ -215,6 +217,20 @@
     },
     "search_exhaustive": {
       "const": false
+    },
+    "candidate_selection": {
+      "type": "string",
+      "enum": [
+        "REUSED_EXACT_TEXT",
+        "GENERATED_GRAMMAR"
+      ]
+    },
+    "reused_from_search_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
     }
   }
 }

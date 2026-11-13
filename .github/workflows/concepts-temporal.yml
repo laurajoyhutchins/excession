@@ -46,7 +46,7 @@ jobs:
           assert r["baseline_matches"] <= r["exposures"]
           print(json.dumps({k:r[k] for k in (
               "candidate_count","omitted_candidates","exposures",
-              "model_matches","baseline_matches","training","holdout"
+              "model_matches","baseline_matches","model_only_hits","baseline_only_hits","training","holdout"
           )}, sort_keys=True))
           PY
       - name: Retain model and negative results

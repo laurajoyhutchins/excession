@@ -23,6 +23,8 @@
     "exposures",
     "model_matches",
     "baseline_matches",
+    "model_only_hits",
+    "baseline_only_hits",
     "observations",
     "model_precision",
     "baseline_precision",
@@ -203,6 +205,14 @@
     },
     "report_id": {
       "$ref": "#/$defs/digest"
+    },
+    "model_only_hits": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "baseline_only_hits": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "$defs": {

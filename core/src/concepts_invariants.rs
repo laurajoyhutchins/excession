@@ -337,6 +337,8 @@ fn report(
     let mut exposed = 0_usize;
     let mut matches = 0_usize;
     let mut base_matches = 0_usize;
+    let mut model_only_hits = 0_usize;
+    let mut baseline_only_hits = 0_usize;
     let mut observations = Vec::new();
     for event in score_events {
         for rule in &rules {
@@ -349,6 +351,8 @@ fn report(
             exposed += 1;
             matches += usize::from(found);
             base_matches += usize::from(base_found);
+            model_only_hits += usize::from(found && !base_found);
+            baseline_only_hits += usize::from(!found && base_found);
             observations.push(obj(&[
                 ("commit", Value::string(&event.commit)),
                 ("trigger_path", Value::string(&rule.trigger)),
@@ -415,6 +419,8 @@ fn report(
         ("exposures", Value::number(exposed)),
         ("model_matches", Value::number(matches)),
         ("baseline_matches", Value::number(base_matches)),
+        ("model_only_hits", Value::number(model_only_hits)),
+        ("baseline_only_hits", Value::number(baseline_only_hits)),
         ("observations", Value::array(observations)),
         (
             "model_precision",
@@ -540,6 +546,11 @@ mod tests {
             answer.get("behavioral_validity").unwrap().str().unwrap(),
             "NOT_EVALUATED"
         );
+        assert_eq!(answer.get("model_only_hits").unwrap().integer().unwrap(), 2);
+        assert_eq!(answer.get("baseline_only_hits").unwrap().integer().unwrap(), 0);
+        assert!(answer.get("observations").unwrap().array_ref().unwrap()
+            .iter().any(|item| item.get("status").unwrap().str().unwrap()
+                == "NOT_OBSERVED_NOT_A_PROVEN_BUG"));
         let prospect = Settings {
             holdout: 0,
             ..config

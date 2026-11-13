@@ -107,3 +107,66 @@ Native stdout/stderr SHA-256 digests and native exit status are retained.
 Excession checks that tracked source still matches the requested Git commit
 **after** the selector exits, since installed project tools may mutate the tree.
 A testmon --focus file must itself belong to the pinned Git revision.
+
+
+## Everyday programmer and agent workflow
+
+From a checkout with committed changes, use **\`excession tests\`**.
+It plans without running project code, finds a Git base using a merge base
+against a local main branch where available (falling back to the first parent),
+and detects installed Jest or Python pytest-testmon. It shows missing setup,
+a dirty checkout, unsupported change kinds, or ambiguous frameworks explicitly.
+
+~~~sh
+excession tests
+excession tests --run
+excession tests --run --verify --json
+excession tests --base origin/main --provider jest --run
+~~~
+
+\`--run\` is explicit authorization to execute locally installed project
+tools. For untrusted coding-agent revisions, use a disposable isolated worker
+first. A dirty tracked checkout cannot be passed off as a committed revision.
+The existing \`agent select-tests\` keeps the stricter explicit
+\`--trusted-local true\` interface and its v1 JSON contract.
+
+The ordinary workflow reports a concise summary, with \`--json\` for agents
+and automation. Exit codes: 0 for a completed passing run or successful plan,
+1 for genuine test failures, 2 for refusals or tool errors, and 3 for an
+inconclusive executed selection. A plan marked BLOCKED has no test execution
+and is not a successful verification claim.
+
+For Jest, the workflow invokes native related-test selection and then runs
+those files using Jest's native \`--runTestsByPath\` execution. Test counts,
+native digests, and a source-bound execution receipt are recorded. For
+pytest-testmon, the native execution report and receipt already come from the
+selector. \`--verify\` transfers these receipts to Excession automatically:
+no \`jq\` script, manual hash lookup, or temporary file management is needed.
+An accepted receipt is still unattested; merge readiness remains unproven.
+
+If both frameworks are present, pass \`--provider jest\` or
+\`--provider pytest-testmon\`. To analyze a non-HEAD candidate, use a
+checkout of that candidate; the CLI will not execute mismatched code.
+
+
+Provider detection also checks Jest declarations in a tracked root-level
+\`package.json\`, not only an installed binary or Jest config. Such a project
+can therefore produce a useful *blocked* plan before dependencies are installed.
+The displayed next action distinguishes an already-ready checkout from missing
+native prerequisites.
+
+
+For programmatic agents, the test plan also supplies \`next_argv\`: a complete
+argument vector containing absolute source identities, exact base/candidate
+commits, provider and focus. Its final \`--json\` argument ensures the next
+execution produces machine-readable evidence. Unlike re-running automatic
+discovery, this preserves what the agent approved during planning. Human
+output includes the shell-quoted equivalent \`next_command\`.
+
+
+If \`--verify\` cannot initialize an optional Excession analyzer (for example,
+a standalone Rust binary without the JavaScript sidecar), the workflow keeps
+the native test report and returns \`verification.status=UNAVAILABLE\` with
+\`ready_to_merge=false\`. A native PASS then has overall status INCONCLUSIVE
+and exit code 3 rather than falsely claiming verification. A real native
+test failure remains FAIL with exit code 1.

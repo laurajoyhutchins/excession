@@ -10,6 +10,7 @@ use excession::evidence_query;
 use excession::explain;
 use excession::impact_query;
 use excession::native_test_selectors;
+use excession::native_test_workflow;
 use excession::observed_relations::{self, Plan, Selection};
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
@@ -33,6 +34,7 @@ use cli::{Options, ParseOutcome};
 
 enum Response {
     Json(excession::json::Value),
+    Test(excession::json::Value, bool),
     CanonicalJson(String),
     Message(String),
     Bytes(Vec<u8>),
@@ -40,14 +42,88 @@ enum Response {
 impl Response {
     fn emit(self) -> Result<()> {
         let mut out = io::stdout().lock();
+        let write_error = |error: io::Error| format!("stdout write failed: {error}");
         match self {
-            Self::Json(j) => writeln!(out, "{}", j.canonical()),
-            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}"),
-            Self::Bytes(bytes) => out.write_all(&bytes),
+            Self::Json(j) => writeln!(out, "{}", j.canonical()).map_err(write_error),
+            Self::Test(report, as_json) => {
+                let phase = report.get("status")?.str()?.to_owned();
+                let message = if as_json {
+                    report.canonical()
+                } else {
+                    test_summary(&report)?
+                };
+                writeln!(out, "{message}").map_err(write_error)?;
+                out.flush().map_err(write_error)?;
+                if phase == "FAIL" {
+                    std::process::exit(1);
+                }
+                if phase == "INCONCLUSIVE" {
+                    std::process::exit(3);
+                }
+                Ok(())
+            }
+            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}").map_err(write_error),
+            Self::Bytes(bytes) => out.write_all(&bytes).map_err(write_error),
         }
-        .map_err(|e| format!("stdout write failed: {e}"))
     }
 }
+fn test_summary(report: &excession::json::Value) -> Result<String> {
+    use excession::json::Value;
+    let provider = match report.get("provider")? {
+        Value::Null => "not resolved",
+        value => value.str()?,
+    };
+    let phase = report.get("status")?.str()?;
+    let mode = report.get("mode")?.str()?;
+    let base = report.get("base_commit")?.str()?;
+    let head = report.get("candidate_commit")?.str()?;
+    let short = |oid: &str| oid.chars().take(12).collect::<String>();
+    let changed = report.get("changed_sources")?.array_ref()?.len();
+    let repo_path = report.get("repo")?.str()?;
+    let mut lines = vec![
+        format!("Tests: {phase} ({mode}, {provider})"),
+        format!("Repository: {repo_path}"),
+        format!(
+            "Revision: {}..{} | {changed} changed file(s)",
+            short(base),
+            short(head)
+        ),
+    ];
+    for reason in report.get("blockers")?.array_ref()? {
+        lines.push(format!("  Blocked: {}", reason.str()?));
+    }
+    if mode == "PLAN" {
+        if phase == "BLOCKED" {
+            lines.push(format!("Fix: {}", report.get("guidance")?.str()?));
+        }
+        lines.push(format!("Next: {}", report.get("next_command")?.str()?));
+        if phase == "READY" {
+            lines.push("This is a read-only plan. --run executes native project tools.".to_owned());
+        }
+    } else {
+        let selected = report.get("selected_test_files")?.array_ref()?;
+        lines.push(format!(
+            "Selected: {} test file(s) | Executed: {} test(s)",
+            selected.len(),
+            report.get("executed_test_count")?.integer()?
+        ));
+        for path in selected.iter().take(8) {
+            lines.push(format!("  {}", path.str()?));
+        }
+        if selected.len() > 8 {
+            lines.push(format!("  ... and {} more", selected.len() - 8));
+        }
+        if report.get("verification")? != &Value::Null {
+            lines.push(format!(
+                "Excession verification: {}",
+                report.get("verification")?.get("status")?.str()?
+            ));
+        }
+    }
+    lines.push("Coverage remains partial; unlisted tests are not proven safe to skip.".to_owned());
+    Ok(lines.join("\n"))
+}
+
 fn json(v: excession::json::Value) -> Response {
     Response::Json(v)
 }
@@ -479,6 +555,22 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown graph command: {sub}")),
         },
+        [top] if top == "tests" || top == "test" => {
+            let report = native_test_workflow::execute(native_test_workflow::Request {
+                repo: Path::new(opt.get_or("repo", ".")),
+                base: opt.0.get("base").map(String::as_str),
+                candidate: opt.0.get("candidate").map(String::as_str),
+                provider: opt.0.get("provider").map(String::as_str),
+                tool: opt.0.get("tool").map(String::as_str),
+                focus: opt.0.get("focus").map(String::as_str),
+                run: opt.get_or("run", "false") == "true",
+                verify: opt.get_or("verify", "false") == "true",
+            })?;
+            Ok(Response::Test(
+                report,
+                opt.get_or("json", "false") == "true",
+            ))
+        }
         [top, sub] if top == "agent" => {
             let limit = opt
                 .get_or("limit", "32")

@@ -445,6 +445,31 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Bounded, Git-bound Linux source observations and coverage");
+    let tests = leaf(
+        "tests",
+        &[],
+        &["repo", "base", "candidate", "provider", "tool", "focus"],
+    )
+    .visible_alias("test")
+    .about("Plan native test selection or run selected tests on a committed candidate")
+    .arg(
+        Arg::new("run")
+            .long("run")
+            .action(clap::ArgAction::SetTrue)
+            .help("Execute native project tooling in this trusted checkout"),
+    )
+    .arg(
+        Arg::new("verify")
+            .long("verify")
+            .action(clap::ArgAction::SetTrue)
+            .help("Carry native test receipts into agent verification (requires --run)"),
+    )
+    .arg(
+        Arg::new("json")
+            .long("json")
+            .action(clap::ArgAction::SetTrue)
+            .help("Emit canonical JSON for an agent or script"),
+    );
     let agent = group(
         "agent",
         vec![
@@ -644,6 +669,7 @@ pub(super) fn command() -> Command {
         .subcommand(analyze)
         .subcommand(kernel)
         .subcommand(agent)
+        .subcommand(tests)
         .subcommand(
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
                 .about("Read-only virtual source browser"),
@@ -787,6 +813,14 @@ mod tests {
             ]))
             .is_ok()
         );
+    }
+
+    #[test]
+    fn test_workflow_is_short_and_explicit_about_execution() {
+        assert!(parse(&strings(&["tests"])).is_ok());
+        assert!(parse(&strings(&["test", "--json"])).is_ok());
+        assert!(parse(&strings(&["tests", "--run", "--verify", "--json"])).is_ok());
+        assert!(parse(&strings(&["tests", "--unknown"])).is_err());
     }
 
     #[test]

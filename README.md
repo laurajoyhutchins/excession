@@ -63,7 +63,30 @@ objects even when the working tree is dirty; they do not include uncommitted
 edits. Default SQLite caches live outside the repository. Exact-output workflows
 also support `--json` and explicit revisions/roots.
 
-For advanced reproducible queries, the existing `index`, `inspect`,
+## Test what changed
+
+Run Excession inside a committed Git checkout. Its default is a read-only
+test plan, not an unexpected execution of project configuration:
+
+~~~sh
+excession tests
+excession tests --run
+excession tests --run --verify --json
+~~~
+
+Excession chooses the revision comparison and detects installed Jest or a
+Python pytest-testmon project. Jest discovers **and runs** related tests;
+pytest-testmon selects and runs tests from a previous coverage baseline.
+\`--run\` deliberately executes trusted project tools; in agent workflows
+use an isolated checkout. Failing tests return exit code 1, an inconclusive
+run returns 3, and setup refusals return 2. JSON includes source identity,
+executed test IDs, and optional verification obligations.
+
+Use \`--base\`, \`--candidate\`, \`--provider\`, or \`--focus\` to override
+discovery. Mixed frameworks require explicit provider choice.
+See [native test workflow](docs/NATIVE_TEST_SELECTORS.md).
+
+For advanced reproducible queries, the existing \`index\`, \`inspect\`,
 `view`, `browse`, `graph`, `refactor` and `security` commands remain
 available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md), [release procedure](docs/RELEASE.md),
 and [development setup](docs/DEVELOPMENT.md).

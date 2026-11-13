@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/agent/native-test-selector.v1.schema.json",
+  "title": "Native test selector observation bound to a candidate Git revision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider",
+    "tool",
+    "base_commit",
+    "candidate_commit",
+    "candidate_tree",
+    "changed_sources",
+    "selected_test_files",
+    "scope_files",
+    "outcome",
+    "native_exit_code",
+    "native_stdout_sha256",
+    "native_stderr_sha256",
+    "execution_receipts",
+    "receipt_trust",
+    "coverage",
+    "safe_to_skip_unlisted_tests",
+    "selector_policy",
+    "report_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.native-test-selector.v1"
+    },
+    "provider": {
+      "enum": [
+        "jest",
+        "pytest-testmon"
+      ]
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "candidate_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "candidate_tree": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "changed_sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "selected_test_files": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "scope_files": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "outcome": {
+      "enum": [
+        "SELECTED",
+        "EMPTY_UNPROVEN",
+        "EXECUTED_PASS",
+        "EXECUTED_FAIL"
+      ]
+    },
+    "native_exit_code": {
+      "type": "integer",
+      "minimum": -1
+    },
+    "native_stdout_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "native_stderr_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "execution_receipts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "receipts"
+      ],
+      "properties": {
+        "schema": {
+          "const": "excession.execution-receipts.v1"
+        },
+        "receipts": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "description": "Validated separately against execution-receipts.v1.schema.json"
+          }
+        }
+      }
+    },
+    "receipt_trust": {
+      "const": "LOCAL_COMMAND_UNATTESTED"
+    },
+    "coverage": {
+      "const": "PARTIAL"
+    },
+    "safe_to_skip_unlisted_tests": {
+      "const": false
+    },
+    "selector_policy": {
+      "const": "NATIVE_TOOL_AUTHORITATIVE_FOR_REPORTED_SELECTION; NO_COMPLETENESS_GUARANTEE"
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "$defs": {
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

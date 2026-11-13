@@ -53,7 +53,9 @@ pub fn dossier(
             "SELECT count(*) FROM evidence_rea_bundle_v1 WHERE artifact_subject_id=?",
             &[Param::Text(&subject_id)],
         )?;
-        let count = total.parse::<usize>().map_err(|_| "invalid REA evidence count")?;
+        let count = total
+            .parse::<usize>()
+            .map_err(|_| "invalid REA evidence count")?;
         let rows = db.query(
             "SELECT bundle_id,build_snapshot_id FROM evidence_rea_bundle_v1
              WHERE artifact_subject_id=? ORDER BY bundle_id LIMIT ?",
@@ -87,9 +89,18 @@ pub fn dossier(
                 )?;
                 evidence.push(obj(&[
                     ("bundle_id", Value::string(id)),
-                    ("build_snapshot_id", checked.get("build_snapshot_id")?.clone()),
-                    ("state", Value::string("ARTIFACT_AND_NATIVE_RECORDS_REPLAYED")),
-                    ("native_record_ids", checked.get("native_record_ids")?.clone()),
+                    (
+                        "build_snapshot_id",
+                        checked.get("build_snapshot_id")?.clone(),
+                    ),
+                    (
+                        "state",
+                        Value::string("ARTIFACT_AND_NATIVE_RECORDS_REPLAYED"),
+                    ),
+                    (
+                        "native_record_ids",
+                        checked.get("native_record_ids")?.clone(),
+                    ),
                     ("semantic_correctness", Value::string("NOT_ESTABLISHED")),
                 ]));
             }
@@ -109,6 +120,8 @@ pub fn dossier(
         ("coverage_completeness", Value::string("NOT_ESTABLISHED")),
     ]);
     let id = report.sha256();
-    report.entries_mut()?.insert("report_id".into(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(id));
     Ok(report)
 }

@@ -340,25 +340,6 @@ pub fn read(db: &Db, repo: &Path, revision: &str, selection: Selection<'_>) -> R
 
 const MAX_DISCOVERY_ROWS: usize = 128;
 
-/// An automatic choice is only a specific, Git-scoped producer identity.
-/// Owning the strings permits safe borrowing after the discovery transaction.
-#[derive(Default)]
-pub struct AutoSelection {
-    pub scip_snapshot: Option<String>,
-    pub graph_id: Option<String>,
-    pub source_prefix: Option<String>,
-}
-
-impl AutoSelection {
-    pub fn selection(&self) -> Selection<'_> {
-        Selection {
-            scip_snapshot: self.scip_snapshot.as_deref(),
-            graph_id: self.graph_id.as_deref(),
-            source_prefix: self.source_prefix.as_deref(),
-        }
-    }
-}
-
 fn has_table(db: &Db, name: &str) -> Result<bool> {
     Ok(!db
         .query(
@@ -514,7 +495,7 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
                 ("graph_id", chosen_graph),
                 ("source_prefix", chosen_prefix),
             ])),
-            ("selection_policy", Value::string("EXACTLY_ONE_PER_PRODUCER_FACET_OR_REFUSE")),
+            ("selection_policy", Value::string("UNIQUE_ID_HINTS_WITH_CONFLICT_ISOLATED_COMPOSITION")),
             ("source_authentication", Value::string("REQUIRES_GIT_REPLAY_ON_USE")),
             ("complete_semantics", Value::Bool(false)),
         ]);
@@ -522,25 +503,298 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
     })
 }
 
-/// Auto selection refuses ambiguity; callers can inspect the candidate report
-/// and provide explicit IDs rather than mixing incompatible configurations.
-pub fn choose_auto(db: &Db, repo: &Path, revision: &str) -> Result<AutoSelection> {
-    let report = discover(db, repo, revision)?;
-    if report.get("status")?.str()? == "AMBIGUOUS" {
+const MAX_PLAN_ITEMS: usize = 24;
+const MAX_COMPOSED_EDGES: usize = 20_000;
+
+/// One independently sourced SCIP index. The prefix is declared by the
+/// producer, never inferred from a file suffix or checkout convention.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScipInput {
+    pub snapshot_id: String,
+    pub source_prefix: Option<String>,
+}
+
+#[derive(Clone, Default)]
+pub struct Plan {
+    pub scip: Vec<ScipInput>,
+    pub graphs: Vec<String>,
+    pub blocked_paths: BTreeSet<String>,
+    pub gaps: Vec<Value>,
+}
+
+impl Plan {
+    pub fn is_empty(&self) -> bool {
+        self.scip.is_empty() && self.graphs.is_empty()
+    }
+
+    pub fn document(&self) -> Value {
+        obj(&[
+            (
+                "scip",
+                Value::array(self.scip.iter().map(|x| {
+                    obj(&[
+                        ("snapshot_id", Value::string(&x.snapshot_id)),
+                        (
+                            "source_prefix",
+                            x.source_prefix
+                                .as_deref()
+                                .map_or(Value::Null, Value::string),
+                        ),
+                    ])
+                })),
+            ),
+            (
+                "graphs",
+                Value::array(self.graphs.iter().map(Value::string)),
+            ),
+            (
+                "blocked_paths",
+                Value::array(self.blocked_paths.iter().map(Value::string)),
+            ),
+            ("gaps", Value::array(self.gaps.clone())),
+        ])
+    }
+}
+
+/// Construct a pinned plan from supplied identities, recomputing the precise
+/// conflicting source set from independently retained native SCIP documents.
+/// Overlapping sources are quarantined from impact traversal, while unrelated
+/// source references and separately scoped build membership can still be used.
+fn plan_from_ids(
+    db: &Db,
+    repo: &Path,
+    revision: &str,
+    scip: Vec<ScipInput>,
+    graphs: Vec<String>,
+) -> Result<Plan> {
+    if scip.len() > MAX_PLAN_ITEMS || graphs.len() > MAX_PLAN_ITEMS {
+        return refuse("more than 24 source evidence producers for one revision");
+    }
+    let commit = git::rev(repo, revision)?;
+    let mut seen_scip = BTreeSet::new();
+    let mut seen_graphs = BTreeSet::new();
+    let mut by_path = BTreeMap::<String, BTreeSet<String>>::new();
+    for choice in &scip {
+        digest_id(&choice.snapshot_id)?;
+        if !seen_scip.insert(choice.snapshot_id.clone()) {
+            return refuse("duplicate SCIP snapshot identity in source evidence plan");
+        }
+        if let Some(prefix) = &choice.source_prefix {
+            git::validate_path(prefix)?;
+        }
+        let manifest = crate::evidence_store::audit(db, &choice.snapshot_id)?;
+        if manifest.get("source_commit")?.str()? != commit {
+            return refuse("SCIP plan references evidence from a different Git revision");
+        }
+        let rows = db.query(
+            "SELECT document FROM evidence_receipt_v1 WHERE snapshot_id=?",
+            &[Param::Text(&choice.snapshot_id)],
+        )?;
+        if rows.len() != 1 {
+            return refuse("SCIP plan needs exactly one retained native receipt");
+        }
+        let receipt = json::parse(
+            rows[0][0]
+                .as_deref()
+                .ok_or("missing native receipt")?
+                .as_bytes(),
+        )?;
+        if !receipt.get("producer")?.str()?.starts_with("scip:") {
+            return refuse("non-SCIP receipt was supplied as a SCIP source index");
+        }
+        let raw = receipt.get("raw_json")?.str()?;
+        if scip_prefix(repo, raw)? != choice.source_prefix {
+            return refuse("SCIP source prefix differs from its producer declaration");
+        }
+        let parsed = json::parse(raw.as_bytes())?;
+        let documents = parsed.get("documents")?.array_ref()?;
+        for item in documents {
+            let relative = item
+                .entries()?
+                .get("relative_path")
+                .or_else(|| item.entries().ok()?.get("relativePath"))
+                .ok_or("SCIP document lacks a source path")?
+                .str()?;
+            git::validate_path(relative)?;
+            let path = choice.source_prefix.as_ref().map_or_else(
+                || relative.to_owned(),
+                |prefix| format!("{prefix}/{relative}"),
+            );
+            git::validate_path(&path)?;
+            by_path
+                .entry(path)
+                .or_default()
+                .insert(choice.snapshot_id.clone());
+        }
+    }
+    let mut blocked_paths = BTreeSet::new();
+    let mut gaps = Vec::new();
+    for (path, index_ids) in &by_path {
+        if index_ids.len() > 1 {
+            blocked_paths.insert(path.to_owned());
+            gaps.push(obj(&[
+                ("reason", Value::string("UNRESOLVED_RELATIONSHIP")),
+                ("path", Value::string(path)),
+                ("detail", Value::string(
+                    "Overlapping native SCIP indexes; paths touching this source are excluded from composed impact traversal",
+                )),
+            ]));
+        }
+    }
+    let mut by_target = BTreeMap::<(String, String), BTreeSet<String>>::new();
+    for id in &graphs {
+        digest_id(id)?;
+        if !seen_graphs.insert(id.clone()) {
+            return refuse("duplicate configured graph identity in source evidence plan");
+        }
+        let rows = db.query(
+            "SELECT document FROM configured_graph WHERE graph_id=?",
+            &[Param::Text(id)],
+        )?;
+        if rows.len() != 1 {
+            return refuse("configured graph plan identity is not in SQLite");
+        }
+        let document = json::parse(
+            rows[0][0]
+                .as_deref()
+                .ok_or("configured graph document missing")?
+                .as_bytes(),
+        )?;
+        if document.sha256() != *id || document.get("source_commit")?.str()? != commit {
+            return refuse("configured graph plan identity or Git revision differs");
+        }
+        let schema = document.get("schema")?.str()?;
+        let target = match schema {
+            "excession.configured-graph.v1" => document.get("target")?.str()?,
+            "excession.kbuild-graph.v1" => document.get("archive")?.str()?,
+            _ => return refuse("unsupported configured graph producer in plan"),
+        };
+        by_target
+            .entry((schema.to_owned(), target.to_owned()))
+            .or_default()
+            .insert(id.to_owned());
+    }
+    for ((producer, target), ids) in by_target {
+        if ids.len() > 1 {
+            gaps.push(obj(&[
+                ("reason", Value::string("MISSING_CONFIGURATION")),
+                ("detail", Value::string(format!(
+                    "Multiple {producer} snapshots of target {} retain separate configuration-scoped observations",
+                    target.chars().take(180).collect::<String>()
+                ))),
+            ]));
+        }
+    }
+    if gaps.len() > 9999 {
+        return refuse("native evidence conflicts exceed coverage budget");
+    }
+    Ok(Plan {
+        scip,
+        graphs,
+        blocked_paths,
+        gaps,
+    })
+}
+
+/// Discover every source-compatible index and every independently labeled
+/// configured graph. Only colliding SCIP source paths are excluded; build
+/// configurations remain distinct rather than being silently unioned.
+pub fn default_plan(db: &Db, repo: &Path, revision: &str) -> Result<Plan> {
+    let candidates = discover(db, repo, revision)?;
+    let scip = candidates
+        .get("scip_candidates")?
+        .array_ref()?
+        .iter()
+        .map(|entry| {
+            let source_prefix = match entry.get("source_prefix")? {
+                Value::Null => None,
+                value => Some(value.str()?.to_owned()),
+            };
+            Ok(ScipInput {
+                snapshot_id: entry.get("snapshot_id")?.str()?.to_owned(),
+                source_prefix,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let graphs = candidates
+        .get("graph_candidates")?
+        .array_ref()?
+        .iter()
+        .map(|entry| Ok(entry.get("graph_id")?.str()?.to_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    plan_from_ids(db, repo, revision, scip, graphs)
+}
+
+/// Replay only the identities sealed in a saved report. Newly imported
+/// indexes or graphs must not silently change an existing impact claim.
+pub fn pinned_plan(db: &Db, repo: &Path, revision: &str, record: &Value) -> Result<Plan> {
+    let scip = record
+        .get("scip")?
+        .array_ref()?
+        .iter()
+        .map(|entry| {
+            let source_prefix = match entry.get("source_prefix")? {
+                Value::Null => None,
+                value => Some(value.str()?.to_owned()),
+            };
+            Ok(ScipInput {
+                snapshot_id: entry.get("snapshot_id")?.str()?.to_owned(),
+                source_prefix,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let graphs = record
+        .get("graphs")?
+        .array_ref()?
+        .iter()
+        .map(|item| Ok(item.str()?.to_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    let reconstructed = plan_from_ids(db, repo, revision, scip, graphs)?;
+    if reconstructed.document() != *record {
         return refuse(
-            "multiple native evidence snapshots or configured graphs for revision; use 'excession inspect producer-candidates' then explicit --scip-snapshot/--graph-id flags",
+            "recorded native evidence conflicts or selection identities differ on replay",
         );
     }
-    let selected = report.get("selection")?;
-    let value = |key: &str| -> Result<Option<String>> {
-        match selected.get(key)? {
-            Value::Null => Ok(None),
-            record => Ok(Some(record.str()?.to_owned())),
+    Ok(reconstructed)
+}
+
+/// Reauthenticate all selected sources and build graphs. Cross-index overlap
+/// is quarantined by source path before any impact traversal sees it.
+pub fn read_plan(db: &Db, repo: &Path, revision: &str, plan: &Plan) -> Result<Observed> {
+    let commit = git::rev(repo, revision)?;
+    let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
+    db.read_transaction(|db| {
+        let mut out = Observed::default();
+        for choice in &plan.scip {
+            let mut native = Observed::default();
+            select_scip(
+                db,
+                repo,
+                &commit,
+                &tree,
+                &choice.snapshot_id,
+                choice.source_prefix.as_deref(),
+                &mut native,
+            )?;
+            for relation in native.relationships {
+                let from = relation.get("source")?.get("path")?.str()?;
+                let to = relation.get("target")?.get("path")?.str()?;
+                if !plan.blocked_paths.contains(from) && !plan.blocked_paths.contains(to) {
+                    out.relationships.push(relation);
+                }
+            }
+            out.receipt_ids.extend(native.receipt_ids);
+            out.source_paths.extend(native.source_paths);
+            out.coverage.extend(native.coverage);
         }
-    };
-    Ok(AutoSelection {
-        scip_snapshot: value("scip_snapshot")?,
-        graph_id: value("graph_id")?,
-        source_prefix: value("source_prefix")?,
+        for id in &plan.graphs {
+            select_graph(db, repo, &commit, &tree, id, &mut out)?;
+        }
+        if out.relationships.len() > MAX_COMPOSED_EDGES
+            || out.configured_observations.len() > MAX_COMPOSED_EDGES
+        {
+            return refuse("composed native source observations exceed evidence budget");
+        }
+        Ok(out)
     })
 }

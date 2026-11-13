@@ -92,6 +92,7 @@
     "coverage": {
       "$ref": "common.v1.schema.json#/$defs/coverage"
     },
+    "producer_selection_plan": { "$ref": "#/$defs/producer_plan" },
     "producer_selections": {
       "type": "object",
       "additionalProperties": false,
@@ -112,6 +113,29 @@
     }
   },
   "$defs": {
+    "producer_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scip", "graphs", "blocked_paths", "gaps"],
+      "properties": {
+        "scip": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["snapshot_id", "source_prefix"],
+            "properties": {
+              "snapshot_id": { "$ref": "common.v1.schema.json#/$defs/sha256" },
+              "source_prefix": { "oneOf": [{ "$ref": "common.v1.schema.json#/$defs/path" }, { "type": "null" }] }
+            }
+          }
+        },
+        "graphs": { "type": "array", "maxItems": 24, "uniqueItems": true, "items": { "$ref": "common.v1.schema.json#/$defs/sha256" } },
+        "blocked_paths": { "type": "array", "uniqueItems": true, "items": { "$ref": "common.v1.schema.json#/$defs/path" } },
+        "gaps": { "type": "array", "maxItems": 10000, "items": { "$ref": "common.v1.schema.json#/$defs/coverage_gap" } }
+      }
+    },
     "configured_observation": {
       "type": "object",
       "additionalProperties": false,

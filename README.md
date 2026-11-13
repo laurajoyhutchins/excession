@@ -68,11 +68,13 @@ For advanced reproducible queries, the existing `index`, `inspect`,
 available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md), [release procedure](docs/RELEASE.md),
 and [development setup](docs/DEVELOPMENT.md).
 
-**Combining native evidence:** The ordinary `analyze` and `impact` commands
-can consume explicitly selected SCIP symbol references and configured-build
-graph observations from an existing SQLite store. See
+**Combining native evidence:** `analyze` and `impact` automatically
+discover and compose existing SCIP symbol-reference and configured-build
+observations in the selected SQLite store. Overlapping SCIP sources are
+quarantined and build configurations remain independent. Explicit producer
+selection still narrows scope. See
 [observed relationship analysis](docs/OBSERVED_RELATIONSHIP_ANALYSIS.md).
-Build membership remains separate from source dependencies.
+Build membership is never silently promoted to a source dependency.
 
 ## Coding-agent interface
 

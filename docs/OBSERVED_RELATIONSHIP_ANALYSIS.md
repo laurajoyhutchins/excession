@@ -5,9 +5,9 @@ producer evidence. No parser, compiler or build tool is run by the aggregate
 query. Each source relationship retains its native predicate, producer receipt,
 observation identity and exact Git revision.
 
-The user must select the evidence explicitly. The SQLite database must exist
-outside the repository. This avoids accidentally mixing unrelated native
-compiler configurations and stale source indexes.
+Excession discovers imported native evidence by default from the selected
+SQLite store, without running the original indexers. The store must be outside
+the repository. Explicit snapshot and graph IDs are an optional scope override.
 
 ## Native SCIP reference
 
@@ -17,21 +17,18 @@ For an index prepared using a language-native SCIP indexer, import its
 ```sh
 excession refactor scip-ingest --repo "$REPO" --rev "$REV" \
   --index "$SCIP_JSON" --db "$DB"
-# Copy the returned snapshot_id.
-excession analyze "$REPO" --rev "$REV" --db "$DB" \
-  --scip-snapshot "$SCIP_SNAPSHOT" --json
+# No snapshot ID needed for normal analysis.
+excession analyze "$REPO" --rev "$REV" --db "$DB" --json
 ```
 
-Use `--source-prefix core` when the index is rooted inside a pinned
-subproject. Excession independently replays the stored original SCIP bytes
+For nested indexes, supply `--source-prefix core` when importing them.
+Later discovery recovers that prefix from the indexer's project_root declaration. Excession independently replays the stored original SCIP bytes
 against the selected Git commit and refuses a mismatched tree or observation.
 
 For revision impact, independently import indexes from **each** revision:
 
 ```sh
-excession impact "$REPO" --base "$BASE" --head "$HEAD" --db "$DB" \
-  --base-scip-snapshot "$BASE_SCIP" \
-  --head-scip-snapshot "$HEAD_SCIP" --json
+excession impact "$REPO" --base "$BASE" --head "$HEAD" --db "$DB" --json
 ```
 
 `SCIP_REFERENCE` is an observed source-level symbol reference. Its reverse
@@ -42,15 +39,15 @@ available in the relationship's `native_observation` and retained snapshot.
 
 ## Configured-build graph
 
-Import a graph through the existing `graph import`, `graph assemble` or
-`graph kbuild` commands. Select its exact graph ID:
+Import graphs through the existing `graph import`, `graph assemble` or
+`graph kbuild` commands. All imported graph configurations for the selected
+revision remain independently labeled:
 
 ```sh
-excession analyze "$REPO" --rev "$REV" --db "$DB" \
-  --graph-id "$GRAPH_ID" --json
+excession analyze "$REPO" --rev "$REV" --db "$DB" --json
 ```
 
-For impact use `--base-graph-id` and/or `--head-graph-id`. The aggregate
+For narrowed impact use explicit `--base-graph-id` and/or `--head-graph-id`. The aggregate
 returns authenticated `configured_observations` containing graph identity,
 source path/blob, related target/entity, native relation, status and evidence.
 These relations are **not converted into source-to-source dependencies**.
@@ -67,40 +64,48 @@ discarding evidence.
 `excession explain --report FILE --id CLAIM --db DB` recomputes source
 evidence and refuses stale, missing, corrupted or mismatched receipts.
 
-Current scope: one SCIP snapshot and one configured graph per revision,
-explicit selection, Git SHA-1 checkout support, bounded observations, and
-read-only integration. It does not execute language indexers, join cross-language
-symbol semantics, independently verify compiler correctness, or establish
-complete build closure. No new graph store was introduced.
+Current scope: up to 24 SCIP snapshots and 24 configured graphs per revision,
+bounded observation counts, Git SHA-1 checkout support, and read-only
+composition. No native indexers or build tools are executed during analysis.
+No new graph store or alternate authority was introduced.
 
-## Deterministic producer discovery
+## Discovery, composition, and conflicts
 
-An existing SQLite evidence store can be inspected without running parsers,
-compilers or creating another index:
+An existing SQLite evidence store can be inspected without running a parser:
 
 ```sh
 excession inspect producer-candidates --repo "$REPO" --rev "$REV" --db "$DB"
-excession analyze "$REPO" --rev "$REV" --db "$DB" --auto-evidence --json
-excession impact "$REPO" --base "$BASE" --head "$HEAD" --db "$DB" --auto-evidence --json
+excession analyze "$REPO" --rev "$REV" --db "$DB" --json
+excession impact "$REPO" --base "$BASE" --head "$HEAD" --db "$DB" --json
 ```
 
-Discovery lists the revision's persisted SCIP and configured-build candidates
-with the original producer identity, target, configuration and source prefix.
-It selects a facet **only when there is exactly one candidate for that facet**.
-Different target/configuration graphs are deliberately not coalesced. Multiple
-SCIP indexes, including duplicate-language indexes with distinct source scopes,
-are ambiguous, not ranked by recency. Use explicit producer IDs after reviewing
-`inspect producer-candidates` to resolve conflicts.
+`analyze` and `impact` discover evidence **by default**, including the
+default Excession cache database when no `--db` is given. A missing database
+is not created just to search for observations. Without native evidence,
+supported static analysis still runs, and other languages retain explicit
+coverage gaps rather than disappearing.
 
-A native index's nested source prefix is derived only from its original
-`metadata.project_root` declaration within the selected Git checkout.
-Selected evidence is subsequently replayed against Git; discovery alone does
-not certify semantic correctness. The database must already exist and be outside
-the source checkout. A repository without imported evidence retains its
-ordinary static-index behavior; unsupported languages are not silently treated
-as semantically indexed.
+Multiple SCIP indexes are composed only where they cover disjoint Git paths.
+If indexes overlap, source-reference impact edges touching the overlapping
+paths are excluded. The conflicting paths are reported under
+`producer_selection_plan.blocked_paths` and the coverage gaps. Unaffected
+source references from those indexes remain usable.
 
-Automatically selected IDs are written to the resulting analysis and impact
-reports. Saved impact reports replay the *exact selected IDs*, not a future
-reinterpretation of whatever happens to be the newest evidence in SQLite.
-`--auto-evidence` and explicit producer IDs cannot be mixed in one invocation.
+All imported configured-build graphs remain independently represented with
+their exact graph IDs, target and configuration. Multiple observations of the
+same target produce a `MISSING_CONFIGURATION` coverage gap, but do not block
+independent SCIP and static analysis. Configured source-to-target membership
+is never promoted into a source-to-source dependency.
+
+Explicit `--scip-snapshot` / `--graph-id` (and revision-specific impact
+variants) narrow the selection intentionally; they do not silently union with
+other database observations. Unknown, corrupted and stale selected evidence is
+refused. The removed `--auto-evidence` switch is no longer needed.
+
+`producer_selection_plan` records the exact selected identities, derived
+conflict paths and coverage gaps. Saved impact reports replay **only those
+recorded identities**. Adding new evidence to SQLite cannot retroactively
+change a previously saved impact explanation.
+
+Semantic correctness, full dynamic dependency coverage and build execution
+are **not** inferred from these producer observations.

@@ -8,7 +8,7 @@ trusted-local compiler comparison.
 
 A plan contains a pinned `target_commit`, explicitly declared
 `source_dependencies`, source-bound `contracts`, and one or more named
-`histories`. Each history contains pinned Git commit OIDs with lists of contract
+`histories`, and an `integration_nodes` array (which may be empty). Each history contains pinned Git commit OIDs with lists of contract
 identities introduced at those checkpoints. An example for a simple system:
 
 ```json
@@ -26,7 +26,8 @@ identities introduced at those checkpoints. An example for a simple system:
       {"commit":"<pinned foundation commit>","introduces":[]},
       {"commit":"<pinned completed commit>","introduces":["read"]}
     ]}
-  ]
+  ],
+  "integration_nodes": []
 }
 ```
 
@@ -39,12 +40,15 @@ The verifier checks:
 - Complete contract source closures and prerequisite contracts at introduction.
 - Retention of introduced source closures at all subsequent stages.
 - Exact final Git tree identity for **every** history, even if commit IDs differ.
+- Optionally, actual two-parent Git merges, their exact parent identities, parent source union,
+  and preservation of separately complete declared contract closures. Every integration
+  must be reachable from at least one declared final history.
 
 It rejects extra paths, altered source blobs, missing dependencies, premature
 contract introductions, missing completion, and non-descendant checkpoints.
 Gitlink repositories are currently refused. Object format is SHA-1, matching
 Excession's existing Git adapter. The input is bounded to 1 MiB, eight
-histories, and 64 checkpoints per history.
+histories, 64 checkpoints per history, and 64 explicit integration nodes.
 
 ## Evidence boundary
 

@@ -14,8 +14,20 @@ const MAX_CONTRACTS: usize = 256;
 const MAX_EDGES: usize = 1024;
 const MAX_FILES: usize = 20000;
 
+fn exact_fields(value: &Value, fields: &[&str], context: &str) -> Result<()> {
+    let keys = value.entries()?;
+    if keys.len() != fields.len() || fields.iter().any(|key| !keys.contains_key(*key)) {
+        return refuse(format!("{context} has missing or unexpected fields"));
+    }
+    Ok(())
+}
+
 fn strings(value: &Value) -> Result<Vec<String>> {
-    value.array_ref()?.iter().map(|v| Ok(v.str()?.to_owned())).collect()
+    value
+        .array_ref()?
+        .iter()
+        .map(|v| Ok(v.str()?.to_owned()))
+        .collect()
 }
 
 fn bounded<T>(items: &[T], maximum: usize, name: &str) -> Result<()> {
@@ -93,6 +105,18 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
         return refuse("Git reconstruction plan must be a regular file <= 1 MiB");
     }
     let plan = json::parse(&fs::read(plan_path).map_err(|e| format!("plan read: {e}"))?)?;
+    exact_fields(
+        &plan,
+        &[
+            "schema",
+            "target_commit",
+            "source_dependencies",
+            "contracts",
+            "histories",
+            "integration_nodes",
+        ],
+        "plan",
+    )?;
     if plan.get("schema")?.str()? != "excession.git-reconstruction-plan.v1" {
         return refuse("unsupported Git reconstruction plan schema");
     }
@@ -107,6 +131,7 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
     }
     let mut dependencies: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for edge in edges {
+        exact_fields(edge, &["path", "requires"], "dependency edge")?;
         let path = edge.get("path")?.str()?.to_owned();
         git::validate_path(&path)?;
         if !target_paths.contains(&path) || dependencies.contains_key(&path) {
@@ -127,6 +152,11 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
     bounded(declarations, MAX_CONTRACTS, "contracts")?;
     let mut contracts = BTreeMap::new();
     for declaration in declarations {
+        exact_fields(
+            declaration,
+            &["id", "source_closure", "requires"],
+            "contract",
+        )?;
         let id = declaration.get("id")?.str()?.to_owned();
         if id.trim().is_empty() || id.len() > 128 || contracts.contains_key(&id) {
             return refuse("empty, oversized or duplicate contract identity");
@@ -141,14 +171,21 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
             }
         }
         check_sources(&id, &sources, &dependencies)?;
-        let requires = unique(&strings(declaration.get("requires")?)?, "contract prerequisites")?;
+        let requires = unique(
+            &strings(declaration.get("requires")?)?,
+            "contract prerequisites",
+        )?;
         if requires.contains(&id) {
             return refuse("self-dependent contract");
         }
         contracts.insert(id, Contract { sources, requires });
     }
     for contract in contracts.values() {
-        if !contract.requires.iter().all(|id| contracts.contains_key(id)) {
+        if !contract
+            .requires
+            .iter()
+            .all(|id| contracts.contains_key(id))
+        {
             return refuse("contract refers to unknown prerequisite");
         }
     }
@@ -158,6 +195,7 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
     let mut names = BTreeSet::new();
     let mut history_reports = Vec::new();
     for history in histories {
+        exact_fields(history, &["name", "checkpoints"], "history")?;
         let name = history.get("name")?.str()?.to_owned();
         if name.trim().is_empty() || name.len() > 128 || !names.insert(name.clone()) {
             return refuse("empty, oversized or duplicate history name");
@@ -169,6 +207,7 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
         let mut introduced = BTreeSet::new();
         let mut stage_reports = Vec::new();
         for (ordinal, checkpoint) in checkpoints.iter().enumerate() {
+            exact_fields(checkpoint, &["commit", "introduces"], "checkpoint")?;
             let commit = pinned_commit(repo, checkpoint.get("commit")?.str()?)?;
             if previous_commit.as_deref() == Some(&commit) {
                 return refuse("repeated checkpoint Git commit");
@@ -189,7 +228,10 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
                 let Some(reference) = target_entries.get(path) else {
                     return refuse(format!("checkpoint includes non-target path: {path}"));
                 };
-                if entry.kind != reference.kind || entry.mode != reference.mode || entry.oid != reference.oid {
+                if entry.kind != reference.kind
+                    || entry.mode != reference.mode
+                    || entry.oid != reference.oid
+                {
                     return refuse(format!("checkpoint changed target source identity: {path}"));
                 }
             }
@@ -204,10 +246,14 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
                     return refuse(format!("contract introduced twice: {id}"));
                 }
                 if !contract.sources.is_subset(&paths) {
-                    return refuse(format!("contract {id} introduced before source closure exists"));
+                    return refuse(format!(
+                        "contract {id} introduced before source closure exists"
+                    ));
                 }
                 if !contract.requires.is_subset(&introduced) {
-                    return refuse(format!("contract {id} introduced before prerequisite claims"));
+                    return refuse(format!(
+                        "contract {id} introduced before prerequisite claims"
+                    ));
                 }
             }
             introduced.extend(new_contracts_set.iter().cloned());
@@ -221,8 +267,14 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
                 ("commit", Value::string(&commit)),
                 ("tree", Value::string(tree)),
                 ("source_entries", Value::number(paths.len())),
-                ("new_entries", Value::number(paths.difference(&previous_paths).count())),
-                ("introduced_contracts", Value::array(new_contracts.into_iter().map(Value::string))),
+                (
+                    "new_entries",
+                    Value::number(paths.difference(&previous_paths).count()),
+                ),
+                (
+                    "introduced_contracts",
+                    Value::array(new_contracts.into_iter().map(Value::string)),
+                ),
                 ("retained_contract_count", Value::number(introduced.len())),
                 ("source_identity_preserved", Value::Bool(true)),
                 ("behavioral_preservation", Value::string("NOT_ESTABLISHED")),
@@ -231,37 +283,174 @@ pub fn verify(repo: &Path, plan_path: &Path) -> Result<Value> {
             previous_paths = paths;
         }
         if previous_paths != target_paths || introduced.len() != contracts.len() {
-            return refuse(format!("history {name} does not complete all target paths and contracts"));
+            return refuse(format!(
+                "history {name} does not complete all target paths and contracts"
+            ));
         }
-        if git::rev(repo, &format!("{}^{{tree}}", previous_commit.as_deref().ok_or("missing final commit")?))? != target_tree {
+        if git::rev(
+            repo,
+            &format!(
+                "{}^{{tree}}",
+                previous_commit.as_deref().ok_or("missing final commit")?
+            ),
+        )? != target_tree
+        {
             return refuse(format!("history {name} final tree differs from target"));
         }
         history_reports.push(obj(&[
             ("name", Value::string(name)),
-            ("final_commit", Value::string(previous_commit.ok_or("missing final commit")?)),
+            (
+                "final_commit",
+                Value::string(previous_commit.ok_or("missing final commit")?),
+            ),
             ("final_tree", Value::string(&target_tree)),
             ("checkpoints", Value::array(stage_reports)),
-            ("structural_status", Value::string("EXACT_TARGET_TREE_AND_DECLARED_CLOSURES")),
+            (
+                "structural_status",
+                Value::string("EXACT_TARGET_TREE_AND_DECLARED_CLOSURES"),
+            ),
+        ]));
+    }
+    let integrations = plan.get("integration_nodes")?.array_ref()?;
+    if integrations.len() > MAX_STAGES {
+        return refuse("too many integration nodes");
+    }
+    let mut integration_commits = BTreeSet::new();
+    let mut integration_reports = Vec::new();
+    for integration in integrations {
+        exact_fields(
+            integration,
+            &["commit", "parents", "preserves"],
+            "integration node",
+        )?;
+        let commit = pinned_commit(repo, integration.get("commit")?.str()?)?;
+        if !integration_commits.insert(commit.clone()) {
+            return refuse("duplicate integration commit");
+        }
+        let raw_parents = strings(integration.get("parents")?)?;
+        if raw_parents.len() != 2 || raw_parents[0] == raw_parents[1] {
+            return refuse("integration needs two distinct parent commits");
+        }
+        for parent in &raw_parents {
+            pinned_commit(repo, parent)?;
+        }
+        let observed = git::text(repo, &["rev-list", "--parents", "-n", "1", &commit])?;
+        if observed != format!("{commit} {} {}", raw_parents[0], raw_parents[1]) {
+            return refuse("integration commit does not have the declared exact parents");
+        }
+        let mut parents = Vec::new();
+        let mut union = BTreeSet::new();
+        for parent in &raw_parents {
+            let entries = tracked(repo, parent)?;
+            for (path, entry) in &entries {
+                let Some(reference) = target_entries.get(path) else {
+                    return refuse("integration parent contains a non-target path");
+                };
+                if entry.mode != reference.mode
+                    || entry.oid != reference.oid
+                    || entry.kind != reference.kind
+                {
+                    return refuse("integration parent changes pinned source identity");
+                }
+                union.insert(path.clone());
+            }
+            let paths = entries.keys().cloned().collect::<BTreeSet<_>>();
+            check_sources("integration parent", &paths, &dependencies)?;
+            parents.push(paths);
+        }
+        let merged = tracked(repo, &commit)?;
+        let merged_paths = merged.keys().cloned().collect::<BTreeSet<_>>();
+        if !union.is_subset(&merged_paths) {
+            return refuse("integration dropped source from a parent");
+        }
+        check_sources("integration", &merged_paths, &dependencies)?;
+        for (path, entry) in &merged {
+            let Some(reference) = target_entries.get(path) else {
+                return refuse("integration introduced non-target path");
+            };
+            if entry.mode != reference.mode
+                || entry.oid != reference.oid
+                || entry.kind != reference.kind
+            {
+                return refuse("integration changed pinned source identity");
+            }
+        }
+        let preserves = strings(integration.get("preserves")?)?;
+        bounded(&preserves, MAX_CONTRACTS, "integration preserved contracts")?;
+        let preserved = unique(&preserves, "integration preserved contracts")?;
+        for claim in &preserved {
+            let Some(contract) = contracts.get(claim) else {
+                return refuse("integration references an unknown contract");
+            };
+            if !parents
+                .iter()
+                .any(|paths| contract.sources.is_subset(paths))
+                || !contract.sources.is_subset(&merged_paths)
+            {
+                return refuse(format!(
+                    "integration does not preserve contract source closure: {claim}"
+                ));
+            }
+        }
+        let reachable = history_reports.iter().any(|history| {
+            let final_commit = history.get("final_commit").ok().and_then(|v| v.str().ok());
+            final_commit.is_some_and(|end| {
+                git::command(repo, &["merge-base", "--is-ancestor", &commit, end]).is_ok()
+            })
+        });
+        if !reachable {
+            return refuse("integration is not reachable from any declared final history");
+        }
+        integration_reports.push(obj(&[
+            ("commit", Value::string(&commit)),
+            (
+                "tree",
+                Value::string(git::rev(repo, &format!("{commit}^{{tree}}"))?),
+            ),
+            (
+                "parents",
+                Value::array(raw_parents.into_iter().map(Value::string)),
+            ),
+            ("source_union_size", Value::number(union.len())),
+            ("merged_source_entries", Value::number(merged_paths.len())),
+            (
+                "retained_contracts",
+                Value::array(preserves.into_iter().map(Value::string)),
+            ),
+            ("source_identity_preserved", Value::Bool(true)),
+            ("joint_behavior", Value::string("NOT_ESTABLISHED")),
         ]));
     }
     let mut report = obj(&[
-        ("schema", Value::string("excession.git-reconstruction-report.v1")),
+        (
+            "schema",
+            Value::string("excession.git-reconstruction-report.v1"),
+        ),
         ("target_commit", Value::string(target)),
         ("target_tree", Value::string(target_tree)),
         ("plan_sha256", Value::string(plan.sha256())),
         ("target_entry_count", Value::number(target_paths.len())),
-        ("declared_dependency_source_count", Value::number(dependencies.len())),
+        (
+            "declared_dependency_source_count",
+            Value::number(dependencies.len()),
+        ),
         ("contract_count", Value::number(contracts.len())),
         ("histories", Value::array(history_reports)),
+        ("integration_nodes", Value::array(integration_reports)),
         ("observed", Value::string("EXACT_GIT_SOURCE_IDENTITY")),
         ("dependency_coverage", Value::string("DECLARED_EDGES_ONLY")),
         ("original_history_recovered", Value::Bool(false)),
         ("build_provenance", Value::string("NOT_ESTABLISHED")),
         ("rea_evidence", Value::string("NOT_ESTABLISHED")),
-        ("independent_contract_oracles", Value::string("NOT_ESTABLISHED")),
+        (
+            "independent_contract_oracles",
+            Value::string("NOT_ESTABLISHED"),
+        ),
         ("integration_behavior", Value::string("NOT_ESTABLISHED")),
     ]);
     let id = report.sha256();
-    report.entries_mut()?.insert("report_id".into(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(id));
     Ok(report)
 }

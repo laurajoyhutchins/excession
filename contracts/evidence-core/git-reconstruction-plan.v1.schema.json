@@ -3,49 +3,154 @@
   "title": "Excession Git reconstruction plan v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "target_commit", "source_dependencies", "contracts", "histories"],
+  "required": [
+    "schema",
+    "target_commit",
+    "source_dependencies",
+    "contracts",
+    "histories",
+    "integration_nodes"
+  ],
   "properties": {
-    "schema": {"const": "excession.git-reconstruction-plan.v1"},
-    "target_commit": {"$ref": "#/$defs/oid"},
+    "schema": {
+      "const": "excession.git-reconstruction-plan.v1"
+    },
+    "target_commit": {
+      "$ref": "#/$defs/oid"
+    },
     "source_dependencies": {
-      "type": "array", "maxItems": 1024,
+      "type": "array",
+      "maxItems": 1024,
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["path", "requires"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "requires"
+        ],
         "properties": {
-          "path": {"$ref": "#/$defs/path"},
-          "requires": {"$ref": "#/$defs/paths"}
+          "path": {
+            "$ref": "#/$defs/path"
+          },
+          "requires": {
+            "$ref": "#/$defs/paths"
+          }
         }
       }
     },
     "contracts": {
-      "type": "array", "minItems": 1, "maxItems": 256,
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["id", "source_closure", "requires"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "source_closure",
+          "requires"
+        ],
         "properties": {
-          "id": {"type": "string", "minLength": 1, "maxLength": 128},
-          "source_closure": {"$ref": "#/$defs/nonemptyPaths"},
-          "requires": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128}}
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "source_closure": {
+            "$ref": "#/$defs/nonemptyPaths"
+          },
+          "requires": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
         }
       }
     },
     "histories": {
-      "type": "array", "minItems": 1, "maxItems": 8,
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["name", "checkpoints"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "checkpoints"
+        ],
         "properties": {
-          "name": {"type": "string", "minLength": 1, "maxLength": 128},
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "checkpoints": {
-            "type": "array", "minItems": 1, "maxItems": 64,
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
             "items": {
-              "type": "object", "additionalProperties": false,
-              "required": ["commit", "introduces"],
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "commit",
+                "introduces"
+              ],
               "properties": {
-                "commit": {"$ref": "#/$defs/oid"},
-                "introduces": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128}}
+                "commit": {
+                  "$ref": "#/$defs/oid"
+                },
+                "introduces": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
               }
+            }
+          }
+        }
+      }
+    },
+    "integration_nodes": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "commit",
+          "parents",
+          "preserves"
+        ],
+        "properties": {
+          "commit": {
+            "$ref": "#/$defs/oid"
+          },
+          "parents": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/oid"
+            }
+          },
+          "preserves": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           }
         }
@@ -53,9 +158,29 @@
     }
   },
   "$defs": {
-    "oid": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
-    "path": {"type": "string", "minLength": 1},
-    "paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
-    "nonemptyPaths": {"type": "array", "minItems": 1, "maxItems": 20000, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}}
+    "oid": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/path"
+      }
+    },
+    "nonemptyPaths": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/path"
+      }
+    }
   }
 }

@@ -779,35 +779,46 @@ mod tests {
     }
     #[test]
     fn accepts_exactly_eight_public_functions_including_async_and_unsafe() {
-        let mut source=String::new();
-        let mut specs=Vec::new();
+        let mut source = String::new();
+        let mut specs = Vec::new();
         for number in 0..8 {
-            let name=format!("function_{number}");
-            let item=match number {
+            let name = format!("function_{number}");
+            let item = match number {
                 0 => format!("pub async fn {name}<T: Copy>(value: T) -> T {{ value }}"),
                 1 => format!("pub unsafe fn {name}() -> usize {{ 1 }}"),
                 _ => format!("pub fn {name}() -> usize {{ {number} }}"),
             };
-            let start=source.len();
+            let start = source.len();
             source.push_str(&item);
-            specs.push((name,start,source.len()));
+            specs.push((name, start, source.len()));
             source.push('\n');
         }
-        let syntax=Value::array([obj(&[("items",Value::array(specs.iter().map(
-            |(name,start,end)|obj(&[
-                ("name",Value::string(name)),
-                ("astKind",Value::string("function_item")),
-                ("symbolType",Value::string("function")),
-                ("range",obj(&[("byteOffset",obj(&[
-                    ("start",Value::number(*start)),
-                    ("end",Value::number(*end)),
-                ]))])),
-            ])
-        )))])]);
-        let accepted=moved_items(&source,0,source.len(),&syntax).unwrap().unwrap();
-        assert_eq!(accepted.public_functions.len(),8);
-        assert_eq!(accepted.public_functions[0],"function_0");
-        assert_eq!(accepted.public_functions[7],"function_7");
+        let syntax = Value::array([obj(&[(
+            "items",
+            Value::array(specs.iter().map(|(name, start, end)| {
+                obj(&[
+                    ("name", Value::string(name)),
+                    ("astKind", Value::string("function_item")),
+                    ("symbolType", Value::string("function")),
+                    (
+                        "range",
+                        obj(&[(
+                            "byteOffset",
+                            obj(&[
+                                ("start", Value::number(*start)),
+                                ("end", Value::number(*end)),
+                            ]),
+                        )]),
+                    ),
+                ])
+            })),
+        )])]);
+        let accepted = moved_items(&source, 0, source.len(), &syntax)
+            .unwrap()
+            .unwrap();
+        assert_eq!(accepted.public_functions.len(), 8);
+        assert_eq!(accepted.public_functions[0], "function_0");
+        assert_eq!(accepted.public_functions[7], "function_7");
     }
 
     #[test]

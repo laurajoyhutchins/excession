@@ -1,0 +1,58 @@
+name: Concepts temporal heldout evidence
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/concepts-temporal.yml
+      - core/src/concepts_invariants.rs
+      - core/src/bin/excession/cli.rs
+      - core/src/bin/excession.rs
+      - contracts/concepts/temporal-obligations.v1.schema.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  temporal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Rust 1.99.1
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Prepare locked dependencies
+        run: cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+      - name: Run targeted historical Git fixture tests
+        run: cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --lib concepts_invariants::tests
+      - name: Build actual Excession CLI
+        run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Backtest on the repository's real history, without model usage
+        run: |
+          set -euo pipefail
+          core/target/debug/excession concepts invariant-backtest             --repo . --rev HEAD --prefix core/src --train 48             --holdout 16 --support 3 --confidence 70 > "$RUNNER_TEMP/temporal.json"
+          python3 - "$RUNNER_TEMP/temporal.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as f:
+              r = json.load(f)
+          assert r["schema"] == "excession.concepts-temporal-obligations.v1"
+          assert r["mode"] == "BACKTEST"
+          assert r["training_cutoff"] != r["requested_commit"]
+          assert r["behavioral_validity"] == "NOT_EVALUATED"
+          assert not r["safe_to_skip_unlisted_tests"]
+          assert r["model_matches"] <= r["exposures"]
+          assert r["baseline_matches"] <= r["exposures"]
+          print(json.dumps({k:r[k] for k in (
+              "candidate_count","omitted_candidates","exposures",
+              "model_matches","baseline_matches","training","holdout"
+          )}, sort_keys=True))
+          PY
+      - name: Retain model and negative results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: temporal-ontology-heldout
+          path: ${{ runner.temp }}/temporal.json
+          if-no-files-found: warn

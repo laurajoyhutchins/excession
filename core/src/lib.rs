@@ -8,6 +8,7 @@ pub mod compiler_clang;
 pub mod concepts;
 pub mod concepts_analysis;
 pub mod concepts_author;
+pub mod concepts_invariants;
 pub mod concepts_compile;
 pub mod concepts_mcp;
 pub mod concepts_normalize;

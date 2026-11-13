@@ -357,6 +357,7 @@ mod tests {
         let prospective = propose(&root, &cutoff, &prospect, Some(&latest)).unwrap();
         assert_eq!(prospective.get("training_cutoff").unwrap().str().unwrap(), cutoff);
         assert_eq!(prospective.get("mode").unwrap().str().unwrap(), "PROSPECTIVE");
+        assert_eq!(answer.get("candidates").unwrap(), prospective.get("candidates").unwrap());
         assert!(!prospective.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
         fs::remove_dir_all(root).unwrap();
     }

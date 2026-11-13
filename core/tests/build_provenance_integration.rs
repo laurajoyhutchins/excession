@@ -4,7 +4,7 @@ use excession::json::Value;
 use excession::sqlite::Db;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -186,7 +186,7 @@ fn compiled_rust_artifact_has_replayable_provenance_but_no_execution_proof() {
             .unwrap()
     );
     assert_eq!(
-        text(&record.get("artifact").unwrap(), "sha256"),
+        text(record.get("artifact").unwrap(), "sha256"),
         digest::sha256(&fs::read(&f.artifact).unwrap())
     );
     let snapshot = text(&record, "snapshot_id");

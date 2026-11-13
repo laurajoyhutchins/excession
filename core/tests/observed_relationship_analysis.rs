@@ -141,6 +141,10 @@ impl Fixture {
     }
 
     fn graph_for_changed_source(&self) -> String {
+        self.graph_for_target("demo")
+    }
+
+    fn graph_for_target(&self, target: &str) -> String {
         let store = Db::open(&self.db).unwrap();
         let blob = git::blob(&self.repo, &self.head, "src/b.rs").unwrap();
         let tree = git::rev(&self.repo, &format!("{}^{{tree}}", self.head)).unwrap();
@@ -148,9 +152,9 @@ impl Fixture {
         let mut edges = BTreeMap::new();
         configured_store::push_node(
             &mut nodes,
-            "target:demo".into(),
+            format!("target:{target}"),
             "configured-target",
-            obj(&[("name", Value::string("demo"))]),
+            obj(&[("name", Value::string(target))]),
         )
         .unwrap();
         configured_store::push_node(
@@ -165,7 +169,7 @@ impl Fixture {
         .unwrap();
         configured_store::push_edge(
             &mut edges,
-            "target:demo",
+            &format!("target:{target}"),
             "source:src/b.rs",
             "TARGET_SOURCE",
             "CMAKE_CONFIGURED_GIT_VERIFIED",
@@ -176,7 +180,7 @@ impl Fixture {
             ("schema", Value::string("excession.configured-graph.v1")),
             ("source_commit", Value::string(&self.head)),
             ("source_tree", Value::string(tree)),
-            ("target", Value::string("demo")),
+            ("target", Value::string(target)),
             ("configuration", Value::string("test")),
             ("status", Value::string("CONFIGURED_MEMBERSHIP_ONLY")),
             (
@@ -191,7 +195,7 @@ impl Fixture {
             db: &store,
             id: &id,
             commit: &self.head,
-            target: "demo",
+            target,
             configuration: "test",
             graph: &graph,
             nodes: &nodes,
@@ -535,5 +539,134 @@ fn stale_wrong_scope_and_sql_tampering_are_refused() {
         "--db",
         f.db(),
         "--json",
+    ]));
+}
+
+#[test]
+fn auto_discovery_picks_unique_revision_bound_producers_and_replays_ids() {
+    let f = Fixture::new();
+    let graph = f.graph_for_changed_source();
+
+    let discovered = json::parse(success(f.cli(&[
+        "inspect", "producer-candidates", "--repo", f.repo(), "--rev", &f.head,
+        "--db", f.db(),
+    ])).as_bytes()).unwrap();
+    assert_eq!(discovered.get("status").unwrap().str().unwrap(), "UNAMBIGUOUS");
+    let selected = discovered.get("selection").unwrap();
+    assert_eq!(selected.get("scip_snapshot").unwrap().str().unwrap(), f.head_snapshot);
+    assert_eq!(selected.get("graph_id").unwrap().str().unwrap(), graph);
+    assert!(selected.get("source_prefix").unwrap() == &Value::Null);
+    assert_eq!(discovered.get("scip_candidates").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(discovered.get("graph_candidates").unwrap().array_ref().unwrap().len(), 1);
+
+    let analysis = json::parse(success(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
+        "--auto-evidence", "--json",
+    ])).as_bytes()).unwrap();
+    assert_eq!(analysis.get("relationships").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(analysis.get("configured_observations").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(analysis.get("producer_selections").unwrap().get("scip_snapshot").unwrap()
+        .str().unwrap(), f.head_snapshot);
+
+    let saved = f.root.join("auto-impact.json");
+    let impact = json::parse(success(f.cli(&[
+        "impact", f.repo(), "--base", &f.base, "--head", &f.head,
+        "--db", f.db(), "--auto-evidence", "--output", saved.to_str().unwrap(),
+        "--json",
+    ])).as_bytes()).unwrap();
+    let selections = impact.get("producer_selections").unwrap();
+    assert_eq!(selections.get("base_scip_snapshot").unwrap().str().unwrap(), f.base_snapshot);
+    assert_eq!(selections.get("head_scip_snapshot").unwrap().str().unwrap(), f.head_snapshot);
+    assert_eq!(selections.get("head_graph_id").unwrap().str().unwrap(), graph);
+    let effect = impact.get("effects").unwrap().array_ref().unwrap().iter().find(
+        |x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs"
+    ).unwrap();
+    let claim_id = effect.get("claim_id").unwrap().str().unwrap();
+    let explained = json::parse(success(f.cli(&[
+        "explain", f.repo(), "--report", saved.to_str().unwrap(),
+        "--id", claim_id, "--db", f.db(), "--json",
+    ])).as_bytes()).unwrap();
+    assert_eq!(explained.get("claim_id").unwrap().str().unwrap(), claim_id);
+}
+
+#[test]
+fn auto_discovery_refuses_competing_scip_indexes_and_configurations() {
+    let f = Fixture::new();
+    let db = Db::open(&f.db).unwrap();
+    let alternate = native_index().canonical().replace(
+        r#""version":"1.0""#, r#""version":"2.0""#
+    );
+    assert_ne!(alternate, native_index().canonical());
+    let index = f.root.join("alternate-scip.json");
+    fs::write(&index, alternate).unwrap();
+    let imported = scip_evidence::import(&f.repo, &f.head, &index, None, &db).unwrap();
+    assert_ne!(imported.get("snapshot_id").unwrap().str().unwrap(), f.head_snapshot);
+
+    let ambiguous = json::parse(success(f.cli(&[
+        "inspect", "producer-candidates", "--repo", f.repo(), "--rev", &f.head,
+        "--db", f.db(),
+    ])).as_bytes()).unwrap();
+    assert_eq!(ambiguous.get("status").unwrap().str().unwrap(), "AMBIGUOUS");
+    assert_eq!(ambiguous.get("scip_candidates").unwrap().array_ref().unwrap().len(), 2);
+    refuse(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
+        "--auto-evidence", "--json",
+    ]));
+    // Explicit identity remains usable when ambiguity is intentionally resolved.
+    let chosen = json::parse(success(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
+        "--scip-snapshot", &f.head_snapshot, "--json",
+    ])).as_bytes()).unwrap();
+    assert_eq!(chosen.get("relationships").unwrap().array_ref().unwrap().len(), 1);
+
+    // Configuration ambiguity must not be resolved by unrelated snapshot order.
+    let f2 = Fixture::new();
+    let first = f2.graph_for_target("demo");
+    let second = f2.graph_for_target("other");
+    assert_ne!(first, second);
+    let candidates = json::parse(success(f2.cli(&[
+        "inspect", "producer-candidates", "--repo", f2.repo(), "--rev", &f2.head,
+        "--db", f2.db(),
+    ])).as_bytes()).unwrap();
+    assert_eq!(candidates.get("graph_candidates").unwrap().array_ref().unwrap().len(), 2);
+    assert_eq!(candidates.get("status").unwrap().str().unwrap(), "AMBIGUOUS");
+    refuse(f2.cli(&[
+        "impact", f2.repo(), "--base", &f2.base, "--head", &f2.head,
+        "--db", f2.db(), "--auto-evidence", "--json",
+    ]));
+    refuse(f2.cli(&[
+        "analyze", f2.repo(), "--rev", &f2.head, "--db", f2.db(),
+        "--auto-evidence", "--graph-id", &first, "--json",
+    ]));
+}
+
+#[test]
+fn discovery_does_not_create_missing_store_or_assume_source_completeness() {
+    let f = Fixture::new();
+    let missing = f.root.join("not-an-evidence-db.sqlite");
+    refuse(f.cli(&[
+        "inspect", "producer-candidates", "--repo", f.repo(), "--rev", &f.head,
+        "--db", missing.to_str().unwrap(),
+    ]));
+    assert!(!missing.exists());
+    let blank = f.root.join("empty.sqlite");
+    let _db = Db::open(&blank).unwrap();
+    let found = json::parse(success(f.cli(&[
+        "inspect", "producer-candidates", "--repo", f.repo(), "--rev", &f.head,
+        "--db", blank.to_str().unwrap(),
+    ])).as_bytes()).unwrap();
+    assert_eq!(found.get("status").unwrap().str().unwrap(), "NO_IMPORTED_EVIDENCE");
+    refuse(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", blank.to_str().unwrap(),
+        "--auto-evidence", "--json",
+    ]));
+    let store = Db::open(&f.db).unwrap();
+    store.execute(
+        "UPDATE evidence_receipt_v1 SET document='{}' WHERE snapshot_id=?",
+        &[Param::Text(&f.head_snapshot)],
+    ).unwrap();
+    refuse(f.cli(&[
+        "inspect", "producer-candidates", "--repo", f.repo(), "--rev", &f.head,
+        "--db", f.db(),
     ]));
 }

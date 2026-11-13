@@ -717,6 +717,7 @@ fn execute(args: &[String]) -> Result<Response> {
                 diagnostics: opt.path("diagnostics"),
                 source_prefix: opt.0.get("source-prefix").map(String::as_str),
                 analyzer: Path::new(opt.get_or("rust-analyzer", "rust-analyzer")),
+                ast_grep: Path::new(opt.get_or("ast-grep", "ast-grep")),
                 output: opt.0.get("output").map(Path::new),
             })?,
         )),

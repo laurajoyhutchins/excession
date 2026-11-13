@@ -145,6 +145,10 @@ impl Fixture {
     }
 
     fn graph_for_target(&self, target: &str) -> String {
+        self.graph_for_target_configuration(target, "test")
+    }
+
+    fn graph_for_target_configuration(&self, target: &str, configuration: &str) -> String {
         let store = Db::open(&self.db).unwrap();
         let blob = git::blob(&self.repo, &self.head, "src/b.rs").unwrap();
         let tree = git::rev(&self.repo, &format!("{}^{{tree}}", self.head)).unwrap();
@@ -181,7 +185,7 @@ impl Fixture {
             ("source_commit", Value::string(&self.head)),
             ("source_tree", Value::string(tree)),
             ("target", Value::string(target)),
-            ("configuration", Value::string("test")),
+            ("configuration", Value::string(configuration)),
             ("status", Value::string("CONFIGURED_MEMBERSHIP_ONLY")),
             (
                 "limitations",
@@ -196,7 +200,7 @@ impl Fixture {
             id: &id,
             commit: &self.head,
             target,
-            configuration: "test",
+            configuration,
             graph: &graph,
             nodes: &nodes,
             edges: &edges,
@@ -691,6 +695,34 @@ fn disjoint_scip_indexes_compose_and_build_targets_remain_independent() {
 }
 
 #[test]
+fn conflicting_configurations_remain_separate_without_blocking_scip() {
+    let f = Fixture::new();
+    let debug = f.graph_for_target_configuration("app", "debug");
+    let release = f.graph_for_target_configuration("app", "release");
+    assert_ne!(debug, release);
+    let analysis = json::parse(success(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(), "--json",
+    ])).as_bytes()).unwrap();
+    assert_eq!(analysis.get("relationships").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(analysis.get("configured_observations").unwrap().array_ref().unwrap().len(), 2);
+    let graphs = analysis.get("producer_selection_plan").unwrap().get("graphs").unwrap()
+        .array_ref().unwrap();
+    assert_eq!(graphs.len(), 2);
+    assert!(graphs.iter().any(|x| x.str().unwrap() == debug));
+    assert!(graphs.iter().any(|x| x.str().unwrap() == release));
+    let gaps = analysis.get("coverage").unwrap().get("gaps").unwrap().array_ref().unwrap();
+    assert!(gaps.iter().any(|x| x.get("reason").unwrap().str().unwrap() == "MISSING_CONFIGURATION"));
+    let impact = json::parse(success(f.cli(&[
+        "impact", f.repo(), "--base", &f.base, "--head", &f.head,
+        "--db", f.db(), "--json",
+    ])).as_bytes()).unwrap();
+    assert!(impact.get("effects").unwrap().array_ref().unwrap().iter().any(
+        |x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs"
+    ));
+    assert!(!impact.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+}
+
+#[test]
 fn discovery_does_not_create_missing_store_or_assume_source_completeness() {
     let f = Fixture::new();
     let missing = f.root.join("not-an-evidence-db.sqlite");
@@ -749,6 +781,10 @@ fn discovery_does_not_create_missing_store_or_assume_source_completeness() {
         &f.head,
         "--db",
         f.db(),
+    ]));
+    // Corrupt receipts are never ignored by default analysis.
+    refuse(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(), "--json",
     ]));
 }
 
@@ -823,4 +859,24 @@ fn auto_detects_native_scip_subproject_only_from_declared_project_root() {
             .unwrap(),
         "packages/native/src/a.rs"
     );
+}
+
+#[test]
+fn removed_opt_in_flag_is_rejected_and_explicit_scope_remains_supported() {
+    let f = Fixture::new();
+    refuse(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
+        "--auto-evidence", "--json",
+    ]));
+    refuse(f.cli(&[
+        "impact", f.repo(), "--base", &f.base, "--head", &f.head,
+        "--db", f.db(), "--auto-evidence", "--json",
+    ]));
+    let scoped = json::parse(success(f.cli(&[
+        "analyze", f.repo(), "--rev", &f.head, "--db", f.db(),
+        "--scip-snapshot", &f.head_snapshot, "--json",
+    ])).as_bytes()).unwrap();
+    assert_eq!(scoped.get("relationships").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(scoped.get("producer_selections").unwrap()
+        .get("scip_snapshot").unwrap().str().unwrap(), f.head_snapshot);
 }

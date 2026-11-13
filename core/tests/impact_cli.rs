@@ -250,13 +250,17 @@ fn revisions_without_supported_sources_are_explicitly_out_of_scope() {
         "head",
     ]);
     let bin = env!("CARGO_BIN_EXE_excession");
-    // Ordinary analysis remains an actionable error, never fake success.
+    // Unsupported-only repositories now produce an explicit partial census,
+    // not an error that prevents using unrelated evidence.
     let analyze = Command::new(bin)
         .current_dir(&repo)
         .args(["analyze", ".", "--json"])
         .output()
         .unwrap();
-    assert!(!analyze.status.success());
+    assert!(analyze.status.success(), "{}", String::from_utf8_lossy(&analyze.stderr));
+    let coverage = json::parse(&analyze.stdout).unwrap();
+    assert_eq!(coverage.get("coverage").unwrap().get("status").unwrap().str().unwrap(), "PARTIAL");
+    assert!(coverage.get("relationships").unwrap().array_ref().unwrap().is_empty());
     let report = Command::new(bin)
         .current_dir(&repo)
         .args(["impact", ".", "--base", &base, "--json"])

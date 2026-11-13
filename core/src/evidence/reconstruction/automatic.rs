@@ -46,7 +46,9 @@ fn tool_output(program: &str, args: &[&str], path: &Path) -> Result<String> {
         match child.try_wait().map_err(|e| e.to_string())? {
             Some(status) if status.success() => break,
             Some(status) => return refuse(format!("trusted-local {program:?} failed: {status}")),
-            None if begin.elapsed() >= Duration::from_secs(10) => {
+            // Busy CI workers can delay scheduling even tiny binutils processes.
+            // A bounded 30-second guard avoids false evidence refusals under load.
+            None if begin.elapsed() >= Duration::from_secs(30) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return refuse(format!("trusted-local {program:?} timed out"));

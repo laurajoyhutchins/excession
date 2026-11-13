@@ -474,7 +474,11 @@ pub fn human(report: &Value) -> Result<String> {
         ),
         format!(
             "Distinct dependent sources: {source_count} (observed-graph inventory {}).",
-            if source_complete { "complete" } else { "truncated" }
+            if source_complete {
+                "complete"
+            } else {
+                "truncated"
+            }
         ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),

@@ -89,6 +89,18 @@ Both emit versioned JSON and unresolved obligations. See
 | What syntax and imports can be observed? | `syntax scan`, `syntax resolve`, `semantic scan` | Tree-sitter and language-aware source observations |
 | How do those observations compare with native tools? | `syntax native-run`, `syntax native-compare` | Compiler-declared inputs and source-bound differences |
 | What source supports a scanner result? | `security ingest`, `security audit` | CodeQL SARIF or Semgrep findings tied to Git blobs |
+| What Git inputs and artifact bytes can I replay? | `evidence build-record`, `inspect build-provenance` | Pinned source identities, declared toolchain/configuration and independently hashed artifact bytes; no invented build-execution proof |
+| What does REA observe about a binary? | `evidence rea-import`, `inspect rea-record` | Original REA Evidence v2 predicates, raw results, limitations and native IDs bound to artifact SHA-256 |
+| What evidence belongs to this exact artifact? | `inspect artifact-evidence` | A shared artifact subject joining replayed build records with source-free or source-linked REA observations |
+
+Build provenance and REA are **core evidence capabilities**, not optional
+standalone tools. A binary's typed artifact subject joins build-source evidence
+to REA-native observations without asserting causal build execution or
+semantic correctness. Use `inspect artifact-evidence --db /tmp/evidence.sqlite
+--artifact /path/binary` to see both sides, adding an independently audited
+`--repo --rev --build-snapshot` triple when source provenance is available.
+See [build provenance](docs/evidence-core/build-provenance.md) and
+[REA evidence](docs/evidence-core/rea.md).
 
 These are different evidence layers, not interchangeable dependency graphs.
 The built-in dependency index currently covers bounded Python/JavaScript

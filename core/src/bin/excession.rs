@@ -861,6 +861,20 @@ fn execute(args: &[String]) -> Result<Response> {
                 },
             )?))
         }
+        [top, sub] if top == "inspect" && sub == "artifact-evidence" => {
+            let db = Db::open(opt.path("db"))?;
+            let link = rea_build_link(opt)?;
+            let limit = opt
+                .get_or("limit", "16")
+                .parse::<usize>()
+                .map_err(|_| "invalid artifact evidence limit")?;
+            Ok(json(excession::evidence::artifact::dossier(
+                &db,
+                opt.path("artifact"),
+                link.as_ref(),
+                limit,
+            )?))
+        }
         [top, sub] if top == "inspect" && sub == "rea-evidence" => {
             let db = Db::open(opt.path("db"))?;
             let link = rea_build_link(opt)?;

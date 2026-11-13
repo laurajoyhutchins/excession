@@ -53,6 +53,7 @@ pub mod refactor_rust_repair;
 pub mod scip_evidence;
 pub mod scip_refactor;
 pub mod scoped;
+pub mod source_capabilities;
 pub mod security;
 pub mod security_discovery;
 pub mod security_ingest;

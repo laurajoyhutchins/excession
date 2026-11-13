@@ -692,7 +692,7 @@ fn execute_isolated(
     base: &str,
     candidate: &str,
     provider: &str,
-    tool: &str,
+    tool: Option<&str>,
     focus: Option<&str>,
     verify: bool,
     timeout_seconds: u64,
@@ -743,8 +743,10 @@ fn execute_isolated(
         "mkdir -p /work/repo && cp -a /input/. /work/repo/ && cd /work/repo && exec /usr/local/bin/excession \"$@\"",
         "sh", "tests", "--run", "--json", "--repo", "/work/repo",
         "--base", base, "--candidate", candidate, "--provider", provider,
-        "--tool", tool,
     ]);
+    if let Some(tool) = tool {
+        command.args(["--tool", tool]);
+    }
     if let Some(focus) = focus {
         command.args(["--focus", focus]);
     }
@@ -868,13 +870,18 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     } else {
         state.head.clone()
     };
-    let tool = tool_in_image(request.tool, request.provider.unwrap_or("jest"))?;
+    // Python uses the image interpreter on PATH; Jest uses the image-global bin.
+    let plan_tool = if request.provider == Some("pytest-testmon") && request.tool.is_none() {
+        None
+    } else {
+        Some(tool_in_image(request.tool, request.provider.unwrap_or("jest"))?)
+    };
     let mut plan = native_test_workflow::execute(native_test_workflow::Request {
         repo: &checkout,
         base: Some(&base),
         candidate: Some(&commit),
         provider: request.provider,
-        tool: Some(&tool),
+        tool: plan_tool.as_deref(),
         focus: request.focus,
         run: false,
         verify: false,
@@ -892,10 +899,10 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             blockers.insert(name.to_owned());
         }
     }
-    let tool = if let Some(ref selected) = provider {
-        tool_in_image(request.tool, selected)?
-    } else {
-        tool
+    let tool = match provider.as_deref() {
+        Some("pytest-testmon") if request.tool.is_none() => None,
+        Some(selected) => Some(tool_in_image(request.tool, selected)?),
+        None => plan_tool,
     };
     let mut argv = vec![
         "excession".to_owned(),
@@ -976,7 +983,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             &base,
             &commit,
             &provider,
-            &tool,
+            tool.as_deref(),
             request.focus,
             request.verify,
             request.timeout_seconds,

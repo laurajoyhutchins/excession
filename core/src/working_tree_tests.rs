@@ -96,16 +96,35 @@ fn nul_paths(data: &[u8]) -> Result<Vec<String>> {
     Ok(out)
 }
 
+fn trusted_git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let output = Command::new("/usr/bin/git")
+        .arg("-c").arg("core.fsmonitor=false")
+        .arg("-c").arg("core.hooksPath=/dev/null")
+        .arg("-c").arg("core.sparseCheckout=false")
+        .arg("-C").arg(root).args(args)
+        .env_clear().env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .output().map_err(|error| format!("Git inventory: {error}"))?;
+    if !output.status.success() {
+        return refuse(format!("Git inventory failed: {}", String::from_utf8_lossy(&output.stderr)
+            .chars().take(300).collect::<String>()));
+    }
+    Ok(output.stdout)
+}
+
 fn source_paths(root: &Path) -> Result<(Vec<String>, BTreeSet<String>)> {
-    let unmerged = git::command(root, &["ls-files", "--unmerged", "-z"])?;
+    let unmerged = trusted_git(root, &["ls-files", "--unmerged", "-z"])?;
     if !unmerged.is_empty() {
         return refuse("cannot snapshot unresolved merge conflicts");
     }
-    let changed = nul_paths(&git::command(root, &[
+    let changed = nul_paths(&trusted_git(root, &[
         "diff", "HEAD", "--no-renames", "--no-ext-diff", "--no-textconv",
         "--name-only", "-z", "--",
     ])?)?;
-    let untracked = nul_paths(&git::command(root, &[
+    let untracked = nul_paths(&trusted_git(root, &[
         "ls-files", "--others", "--exclude-standard", "-z", "--",
     ])?)?;
     let untracked = untracked.into_iter().filter(|p| p != ".testmondata")
@@ -195,7 +214,7 @@ fn capture(root: &Path, expected_head: &str) -> Result<Capture> {
         }
     }
     // Refuse new symlinks and non-stage-zero entries even before inspecting bytes.
-    for entry in git::command(root, &["ls-files", "--stage", "-z"])?
+    for entry in trusted_git(root, &["ls-files", "--stage", "-z"])?
         .split(|b| *b == 0).filter(|b| !b.is_empty())
     {
         let header = entry.split(|b| *b == b'\t').next().unwrap_or(&[]);
@@ -247,9 +266,12 @@ fn capture(root: &Path, expected_head: &str) -> Result<Capture> {
             untracked: is_untracked,
         });
     }
-    let baseline = match read_file(root, ".testmondata") {
-        Ok((bytes, _)) => Some(bytes),
-        Err(_) => None,
+    let baseline = match open_source(root, ".testmondata") {
+        Ok(_) => Some(read_file(root, ".testmondata")?.0),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return refuse(format!("unsafe testmon baseline: {error}"));
+        }
     };
     let id = obj(&[
         ("head", Value::string(expected_head)),
@@ -269,12 +291,14 @@ pub fn has_source_changes(repo: &Path) -> Result<bool> {
 }
 
 fn git_sanitized(root: &Path, args: &[&str]) -> Result<()> {
-    let output = Command::new("git")
-        .args(["-c", "core.hooksPath=/dev/null", "-C"])
+    let output = Command::new("/usr/bin/git")
+        .args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C"])
         .arg(root).args(args)
+        .env_clear().env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("GIT_CONFIG_COUNT")
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .output().map_err(|error| format!("spawn isolated Git: {error}"))?;
     if !output.status.success() {
         return refuse(format!("isolated Git command failed: {}",
@@ -285,12 +309,20 @@ fn git_sanitized(root: &Path, args: &[&str]) -> Result<()> {
 
 fn clone_into(root: &Path, directory: &Path) -> Result<PathBuf> {
     let checkout = directory.join("repo");
-    let output = Command::new("git")
-        .args(["-c", "core.hooksPath=/dev/null", "clone", "-q", "--no-local", "--no-checkout"])
+    fs::create_dir(directory.join("empty-git-template"))
+        .map_err(|e| format!("create empty Git template: {e}"))?;
+    // Local copy without hard links avoids upload-pack, fetch helpers, filters
+    // and credential access from the original repository's configuration.
+    let output = Command::new("/usr/bin/git")
+        .args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+            "clone", "-q", "--local", "--no-hardlinks", "--no-checkout"])
         .arg("--").arg(root).arg(&checkout)
+        .env_clear().env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("GIT_CONFIG_COUNT")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TEMPLATE_DIR", directory.join("empty-git-template"))
         .output().map_err(|error| format!("create independent Git clone: {error}"))?;
     if !output.status.success() {
         return refuse(format!("independent clone failed: {}",
@@ -299,7 +331,28 @@ fn clone_into(root: &Path, directory: &Path) -> Result<PathBuf> {
     Ok(checkout)
 }
 
+fn check_git_storage(root: &Path) -> Result<()> {
+    let output = trusted_git(root, &["count-objects", "-v"])?;
+    let stats = std::str::from_utf8(&output).map_err(|_| "invalid Git object statistics")?;
+    let size = stats.lines().filter_map(|line| {
+        let (key, value) = line.split_once(": ")?;
+        if matches!(key, "size" | "size-pack") {
+            Some(value.parse::<u64>().ok())
+        } else {
+            None
+        }
+    }).collect::<Option<Vec<_>>>().ok_or("invalid Git object size")?;
+    if size.len() != 2 || size.iter().sum::<u64>() > MAX_GIT_DB_KIB {
+        return refuse("Git object database exceeds 256 MiB safe snapshot limit");
+    }
+    if root.join(".git/objects/info/alternates").exists() {
+        return refuse("Git alternates are unsupported for isolated working-tree snapshots");
+    }
+    Ok(())
+}
+
 fn prepare_snapshot(original: &Path, state: &Capture, directory: &Path) -> Result<(PathBuf, String, String)> {
+    check_git_storage(original)?;
     let checkout = clone_into(original, directory)?;
     git_sanitized(&checkout, &["checkout", "--force", "--detach", &state.head])?;
     let exclusion = checkout.join(".git/info/exclude");
@@ -330,15 +383,17 @@ fn prepare_snapshot(original: &Path, state: &Capture, directory: &Path) -> Resul
             git_sanitized(&checkout, &["add", "-f", "--", &input.path])?;
         }
     }
-    let output = Command::new("git")
+    let output = Command::new("/usr/bin/git")
         .arg("-C").arg(&checkout)
-        .args(["-c", "core.hooksPath=/dev/null",
+        .args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
             "-c", "user.name=Excession Ephemeral",
             "-c", "user.email=ephemeral@invalid.example",
             "commit", "--allow-empty", "-q", "-m", "Excession working-tree snapshot"])
+        .env_clear().env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("GIT_CONFIG_COUNT")
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .output().map_err(|e| format!("commit ephemeral snapshot: {e}"))?;
     if !output.status.success() {
         return refuse(format!("commit snapshot failed: {}",
@@ -357,10 +412,16 @@ fn prepare_snapshot(original: &Path, state: &Capture, directory: &Path) -> Resul
 }
 
 fn valid_image(value: &str) -> bool {
-    let Some((name, digest)) = value.rsplit_once("@sha256:") else { return false };
-    !name.is_empty() && !name.starts_with('-')
+    let (name, digest) = if let Some(parts) = value.rsplit_once("@sha256:") {
+        parts
+    } else if let Some(digest) = value.strip_prefix("sha256:") {
+        ("sha256", digest)
+    } else {
+        return false;
+    };
+    (name == "sha256" || (!name.is_empty() && !name.starts_with('-')
         && name.bytes().all(|c| c.is_ascii_alphanumeric() ||
-            matches!(c, b'/' | b'.' | b'_' | b'-' | b':'))
+            matches!(c, b'/' | b'.' | b'_' | b'-' | b':'))))
         && digest.len() == 64 && digest.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
@@ -683,10 +744,80 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_preserves_mixed_git_changes_without_touching_original() {
+        let base = Temporary::new().unwrap();
+        let source = base.path.join("source");
+        fs::create_dir(&source).unwrap();
+        let cmd = |args: &[&str]| {
+            let out = Command::new("/usr/bin/git").arg("-C").arg(&source)
+                .args(args).output().unwrap();
+            assert!(out.status.success(), "Git {:?}: {}", args,
+                String::from_utf8_lossy(&out.stderr));
+        };
+        cmd(&["init", "-q"]);
+        fs::write(source.join("staged.py"), b"old staged\n").unwrap();
+        fs::write(source.join("unstaged.py"), b"old unstaged\n").unwrap();
+        fs::write(source.join("deleted.py"), b"to delete\n").unwrap();
+        cmd(&["add", "."]);
+        cmd(&["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "commit", "-qm", "initial"]);
+        let head = git::rev(&source, "HEAD").unwrap();
+        fs::write(source.join("staged.py"), b"new staged\n").unwrap();
+        cmd(&["add", "staged.py"]);
+        fs::write(source.join("unstaged.py"), b"new unstaged\n").unwrap();
+        fs::remove_file(source.join("deleted.py")).unwrap();
+        fs::write(source.join("new_test.py"), b"def test_untracked(): pass\n").unwrap();
+        fs::write(source.join(".testmondata"), b"coverage baseline\n").unwrap();
+        let index_before = fs::read(source.join(".git/index")).unwrap();
+        let captured = capture(&source, &head).unwrap();
+        assert_eq!(captured.files.len(), 4);
+        assert_eq!(captured.baseline.as_deref(), Some(&b"coverage baseline\n"[..]));
+        let work = Temporary::new().unwrap();
+        let (snapshot, commit, _tree) = prepare_snapshot(&source, &captured, &work.path).unwrap();
+        assert_eq!(git::rev(&snapshot, "HEAD^").unwrap(), head);
+        assert_ne!(git::rev(&snapshot, "HEAD").unwrap(), head);
+        assert_eq!(fs::read(snapshot.join("staged.py")).unwrap(), b"new staged\n");
+        assert_eq!(fs::read(snapshot.join("unstaged.py")).unwrap(), b"new unstaged\n");
+        assert_eq!(fs::read(snapshot.join("new_test.py")).unwrap(), b"def test_untracked(): pass\n");
+        assert!(!snapshot.join("deleted.py").exists());
+        assert_eq!(fs::read(snapshot.join(".testmondata")).unwrap(), b"coverage baseline\n");
+        assert_eq!(fs::read(source.join(".git/index")).unwrap(), index_before);
+        assert_eq!(git::rev(&source, "HEAD").unwrap(), head);
+        assert_eq!(fs::read(source.join("staged.py")).unwrap(), b"new staged\n");
+        assert!(git::command(&snapshot, &["status", "--porcelain", "--untracked-files=no"])
+            .unwrap().is_empty());
+        assert_eq!(commit, git::rev(&snapshot, "HEAD").unwrap());
+        fs::write(source.join("new_test.py"), b"changed again\n").unwrap();
+        assert_ne!(capture(&source, &head).unwrap().fingerprint, captured.fingerprint);
+    }
+
+    #[test]
+    fn source_symlinks_cannot_escape_snapshot() {
+        let source = Temporary::new().unwrap();
+        fs::create_dir(source.path.join("repo")).unwrap();
+        let root = source.path.join("repo");
+        let call = |args: &[&str]| {
+            let output = Command::new("/usr/bin/git").arg("-C").arg(&root)
+                .args(args).output().unwrap();
+            assert!(output.status.success());
+        };
+        call(&["init", "-q"]);
+        fs::write(root.join("ok.py"), b"x=1\n").unwrap();
+        call(&["add", "."]);
+        call(&["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+            "commit", "-qm", "init"]);
+        let head = git::rev(&root, "HEAD").unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", root.join("evil.py")).unwrap();
+        assert!(capture(&root, &head).is_err());
+    }
+
     #[test]
     fn digest_pins_sandbox_images_and_rejects_tags() {
         assert!(valid_image(&format!("docker.io/library/debian@sha256:{}", "a".repeat(64))));
         assert!(!valid_image("docker.io/library/debian:latest"));
+        assert!(valid_image(&format!("sha256:{}", "b".repeat(64))));
         assert!(!valid_image(&format!("-image@sha256:{}", "a".repeat(64))));
     }
     #[test]

@@ -664,18 +664,19 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
     }
     let info = Command::new("podman")
         .args([
+            "--remote=false",
             "info",
             "--format",
-            "{{.Host.Security.Rootless}} {{.Host.Security.SeccompEnabled}}",
+            "{{.Host.Security.Rootless}} {{.Host.Security.SeccompEnabled}} {{.Host.CgroupVersion}}",
         ])
         .output();
     if !matches!(info, Ok(ref output) if output.status.success()
-        && String::from_utf8_lossy(&output.stdout).trim() == "true true")
+        && String::from_utf8_lossy(&output.stdout).trim() == "true true v2")
     {
         blocked.push("ROOTLESS_PODMAN_WITH_SECCOMP_REQUIRED".to_owned());
     }
     let image_found = Command::new("podman")
-        .args(["image", "exists", image])
+        .args(["--remote=false", "image", "exists", image])
         .output()
         .is_ok_and(|output| output.status.success());
     if !image_found {
@@ -720,7 +721,7 @@ fn podman_stop(cidfile: &Path) {
         let id = id.trim();
         if id.len() == 64 && id.bytes().all(|c| c.is_ascii_hexdigit()) {
             let _ = Command::new("podman")
-                .args(["rm", "--force", "--ignore", id])
+                .args(["--remote=false", "rm", "--force", "--ignore", id])
                 .output();
         }
     }
@@ -782,10 +783,15 @@ fn execute_isolated(args: SandboxExecution<'_>) -> Result<Value> {
     }
     let cidfile = directory.join("sandbox.cid");
     let mut command = Command::new("podman");
+    command.env("CONTAINERS_MOUNTS_CONF", "/dev/null");
     command.args([
+        "--remote=false",
         "run",
         "--rm",
         "--pull=never",
+        "--http-proxy=false",
+        "--env-host=false",
+        "--no-hosts",
         "--network=none",
         "--pid=private",
         "--ipc=private",

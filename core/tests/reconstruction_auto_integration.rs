@@ -308,16 +308,36 @@ fn reuses_prior_verified_text_hypothesis_across_independent_object_identities() 
     );
     assert_eq!(field(&second, "search_status"), "EXACT_TEXT_MATCH");
     assert_eq!(second.get("attempt_count").unwrap().integer().unwrap(), 1);
-    assert_eq!(second.get("best_mismatch_count").unwrap().integer().unwrap(), 0);
+    assert_eq!(
+        second
+            .get("best_mismatch_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        0
+    );
     assert!(
         fs::read_to_string(&another_output)
             .unwrap()
             .contains("int completely_different_name(int x)")
     );
-    assert!(!second.get("build_execution_attested").unwrap().bool().unwrap());
+    assert!(
+        !second
+            .get("build_execution_attested")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
     assert_eq!(field(&second, "behavioral_equivalence"), "NOT_ESTABLISHED");
     let history = parsed(known.searches());
-    assert_eq!(history.get("stored_search_count").unwrap().integer().unwrap(), 1);
+    assert_eq!(
+        history
+            .get("stored_search_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
     let other_history = parsed(cli(&[
         "reconstruct",
         "searches",

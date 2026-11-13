@@ -293,7 +293,9 @@ fn reusable_hypothesis(
     )?;
     for row in rows {
         let id = row[0].as_deref().ok_or("missing reusable search id")?;
-        let subject = row[1].as_deref().ok_or("missing reusable target identity")?;
+        let subject = row[1]
+            .as_deref()
+            .ok_or("missing reusable target identity")?;
         let raw = row[2].as_deref().ok_or("missing reusable search receipt")?;
         let receipt = audit_report(raw, id, subject)?;
         if receipt.get("generator")?.str()? != GENERATOR
@@ -449,7 +451,9 @@ pub fn search(db: &Db, opt: &SearchOptions<'_>) -> Result<Value> {
         ),
         (
             "reused_from_search_id",
-            reuse.as_ref().map_or(Value::Null, |(_, id)| Value::string(id)),
+            reuse
+                .as_ref()
+                .map_or(Value::Null, |(_, id)| Value::string(id)),
         ),
         ("target_artifact_subject_id", Value::string(&original_id)),
         (

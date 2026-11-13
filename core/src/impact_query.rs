@@ -631,6 +631,56 @@ mod tests {
     }
 
     #[test]
+    fn distinct_paths_survive_alternative_path_budget_exhaustion() {
+        // A realistic import fan-in can create far more path witnesses than
+        // distinct affected files. An alternative-path-first budget misses
+        // entire revisions even though the distinct reachable set is small.
+        let edge = |source: &str, target: &str| {
+            obj(&[
+                ("kind", Value::string("STATIC_IMPORT")),
+                ("source", obj(&[("path", Value::string(source))])),
+                ("target", obj(&[("path", Value::string(target))])),
+                (
+                    "evidence",
+                    Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])]),
+                ),
+            ])
+        };
+        let mut relations = Vec::new();
+        for index in 0..300 {
+            let intermediate = format!("pkg/importer_{index:03}.py");
+            relations.push(edge(&intermediate, "pkg/changed.py"));
+            relations.push(edge("pkg/aggregator.py", &intermediate));
+        }
+        let input = obj(&[("relationships", Value::array(relations))]);
+        let graph = incoming(&input).unwrap();
+        let changed = BTreeSet::from(["pkg/changed.py".to_owned()]);
+
+        let mut path_first = Vec::new();
+        assert!(walk(&graph, &changed, &mut path_first).unwrap());
+        assert_eq!(path_first.len(), MAX_EFFECTS);
+
+        let (distinct, truncated) = walk_first_paths(&graph, &changed).unwrap();
+        assert!(!truncated);
+        assert_eq!(distinct.len(), 301);
+        let paths = distinct
+            .iter()
+            .map(|effect| {
+                effect
+                    .get("entity")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(paths.len(), 301);
+        assert!(paths.contains("pkg/aggregator.py"));
+    }
+
+    #[test]
     fn traverses_reverse_import_with_original_evidence() {
         let input = obj(&[(
             "relationships",

@@ -2,7 +2,10 @@
 //! Does not promote candidate dependencies to verified behavior.
 use crate::impact_query::{self, EvidenceByRevision};
 use crate::json::{self, Value, obj};
-use crate::observed_relations::Selection;
+use crate::observed_relations::{self, Plan, Selection};
+use crate::analyze;
+use crate::discovery;
+use crate::sqlite::Db;
 use crate::{Result, refuse};
 use std::fs;
 use std::path::Path;
@@ -60,7 +63,32 @@ fn checked_claim(
     let reported = supported_report(saved_report)?;
     let base = reported.get("base_commit")?.str()?;
     let head = reported.get("head_commit")?.str()?;
-    let fresh = if let Some(choices) = reported.entries()?.get("producer_selections") {
+    let fresh = if let Some(chosen) = reported.entries()?.get("producer_selection_plan") {
+        let discovered = discovery::inspect(repo, head)?;
+        let db_path = analyze::checked_external_destination(
+            &discovered.root,
+            db.map(Path::new).unwrap_or(&discovered.index_path),
+            "SQLite",
+        )?;
+        let before = chosen.get("base")?;
+        let after = chosen.get("head")?;
+        let (base_plan, head_plan) = if db_path.is_file() {
+            let store = Db::open(&db_path)?;
+            (
+                observed_relations::pinned_plan(&store, &discovered.root, base, before)?,
+                observed_relations::pinned_plan(&store, &discovered.root, head, after)?,
+            )
+        } else {
+            let empty = Plan::default();
+            if before != &empty.document() || after != &empty.document() {
+                return refuse("saved impact needs an existing native evidence store");
+            }
+            (Plan::default(), Plan::default())
+        };
+        impact_query::run_with_plans(
+            repo, base, head, roots, db, &base_plan, &head_plan,
+        )?
+    } else if let Some(choices) = reported.entries()?.get("producer_selections") {
         let selected = |key: &str| -> Result<Option<&str>> {
             match choices.get(key)? {
                 Value::Null => Ok(None),

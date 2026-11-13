@@ -9,7 +9,7 @@ use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
 use excession::impact_query;
-use excession::observed_relations::{self, AutoSelection, Selection};
+use excession::observed_relations::{self, Plan, Selection};
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
@@ -511,49 +511,22 @@ fn execute(args: &[String]) -> Result<Response> {
         [top] if top == "analyze" => {
             let repo = Path::new(opt.get_or("path", "."));
             let rev = opt.get_or("rev", "HEAD");
-            let automatic = opt.get_or("auto-evidence", "false") == "true";
-            if automatic
-                && ["scip-snapshot", "graph-id", "source-prefix"]
-                    .iter()
-                    .any(|key| opt.0.contains_key(*key))
-            {
-                return refuse("--auto-evidence cannot be combined with explicit producer IDs");
-            }
-            let auto = if automatic {
-                let database = opt.0.get("db").ok_or("--auto-evidence requires --db")?;
-                let discovered = discovery::inspect(repo, rev)?;
-                let checked = analyze::checked_external_destination(
-                    &discovered.root,
-                    Path::new(database),
-                    "SQLite",
-                )?;
-                if !checked.is_file() {
-                    return refuse("--auto-evidence requires an existing SQLite evidence database");
-                }
-                observed_relations::choose_auto(
-                    &Db::open(&checked)?,
-                    &discovered.root,
-                    &discovered.commit,
+            let roots = opt.0.get("roots").map(String::as_str);
+            let db = opt.0.get("db").map(String::as_str);
+            let explicit = ["scip-snapshot", "graph-id", "source-prefix"]
+                .iter().any(|key| opt.0.contains_key(*key));
+            let (report, db_path) = if explicit {
+                analyze::run_with_evidence(
+                    repo, rev, roots, db,
+                    Selection {
+                        scip_snapshot: opt.0.get("scip-snapshot").map(String::as_str),
+                        graph_id: opt.0.get("graph-id").map(String::as_str),
+                        source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                    },
                 )?
             } else {
-                AutoSelection::default()
+                analyze::run_default(repo, rev, roots, db)?
             };
-            let selection = if automatic {
-                auto.selection()
-            } else {
-                Selection {
-                    scip_snapshot: opt.0.get("scip-snapshot").map(String::as_str),
-                    graph_id: opt.0.get("graph-id").map(String::as_str),
-                    source_prefix: opt.0.get("source-prefix").map(String::as_str),
-                }
-            };
-            let (report, db_path) = analyze::run_with_evidence(
-                repo,
-                rev,
-                opt.0.get("roots").map(String::as_str),
-                opt.0.get("db").map(String::as_str),
-                selection,
-            )?;
             if opt.get_or("json", "false") == "true" {
                 Ok(json(report))
             } else {
@@ -624,67 +597,49 @@ fn execute(args: &[String]) -> Result<Response> {
             let repo = Path::new(opt.get_or("path", "."));
             let base = opt.get("base");
             let head = opt.get_or("head", "HEAD");
-            let automatic = opt.get_or("auto-evidence", "false") == "true";
-            if automatic
-                && [
-                    "base-scip-snapshot",
-                    "head-scip-snapshot",
-                    "base-graph-id",
-                    "head-graph-id",
-                    "base-source-prefix",
-                    "head-source-prefix",
-                ]
-                .iter()
-                .any(|key| opt.0.contains_key(*key))
-            {
-                return refuse("--auto-evidence cannot be combined with explicit producer IDs");
-            }
-            let (auto_base, auto_head) = if automatic {
-                let database = opt.0.get("db").ok_or("--auto-evidence requires --db")?;
+            let roots = opt.0.get("roots").map(String::as_str);
+            let db_arg = opt.0.get("db").map(String::as_str);
+            let explicit = [
+                "base-scip-snapshot", "head-scip-snapshot",
+                "base-graph-id", "head-graph-id",
+                "base-source-prefix", "head-source-prefix",
+            ].iter().any(|key| opt.0.contains_key(*key));
+            let result = if explicit {
+                impact_query::run_with_evidence(
+                    repo, base, head, roots, db_arg,
+                    impact_query::EvidenceByRevision {
+                        base: Selection {
+                            scip_snapshot: opt.0.get("base-scip-snapshot").map(String::as_str),
+                            graph_id: opt.0.get("base-graph-id").map(String::as_str),
+                            source_prefix: opt.0.get("base-source-prefix").map(String::as_str),
+                        },
+                        head: Selection {
+                            scip_snapshot: opt.0.get("head-scip-snapshot").map(String::as_str),
+                            graph_id: opt.0.get("head-graph-id").map(String::as_str),
+                            source_prefix: opt.0.get("head-source-prefix").map(String::as_str),
+                        },
+                    },
+                )?
+            } else {
                 let discovered = discovery::inspect(repo, head)?;
-                let checked = analyze::checked_external_destination(
+                let destination = analyze::checked_external_destination(
                     &discovered.root,
-                    Path::new(database),
+                    db_arg.map(Path::new).unwrap_or(&discovered.index_path),
                     "SQLite",
                 )?;
-                if !checked.is_file() {
-                    return refuse("--auto-evidence requires an existing SQLite evidence database");
-                }
-                let db = Db::open(&checked)?;
-                (
-                    observed_relations::choose_auto(&db, &discovered.root, base)?,
-                    observed_relations::choose_auto(&db, &discovered.root, head)?,
-                )
-            } else {
-                (AutoSelection::default(), AutoSelection::default())
+                let (base_plan, head_plan) = if destination.is_file() {
+                    let store = Db::open(&destination)?;
+                    (
+                        observed_relations::default_plan(&store, &discovered.root, base)?,
+                        observed_relations::default_plan(&store, &discovered.root, head)?,
+                    )
+                } else {
+                    (Plan::default(), Plan::default())
+                };
+                impact_query::run_with_plans(
+                    repo, base, head, roots, db_arg, &base_plan, &head_plan,
+                )?
             };
-            let selection = if automatic {
-                impact_query::EvidenceByRevision {
-                    base: auto_base.selection(),
-                    head: auto_head.selection(),
-                }
-            } else {
-                impact_query::EvidenceByRevision {
-                    base: Selection {
-                        scip_snapshot: opt.0.get("base-scip-snapshot").map(String::as_str),
-                        graph_id: opt.0.get("base-graph-id").map(String::as_str),
-                        source_prefix: opt.0.get("base-source-prefix").map(String::as_str),
-                    },
-                    head: Selection {
-                        scip_snapshot: opt.0.get("head-scip-snapshot").map(String::as_str),
-                        graph_id: opt.0.get("head-graph-id").map(String::as_str),
-                        source_prefix: opt.0.get("head-source-prefix").map(String::as_str),
-                    },
-                }
-            };
-            let result = impact_query::run_with_evidence(
-                repo,
-                base,
-                head,
-                opt.0.get("roots").map(String::as_str),
-                opt.0.get("db").map(String::as_str),
-                selection,
-            )?;
             if let Some(path) = opt.0.get("output") {
                 let checkout = discovery::inspect(
                     Path::new(opt.get_or("path", ".")),

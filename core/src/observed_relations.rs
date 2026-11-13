@@ -340,25 +340,6 @@ pub fn read(db: &Db, repo: &Path, revision: &str, selection: Selection<'_>) -> R
 
 const MAX_DISCOVERY_ROWS: usize = 128;
 
-/// An automatic choice is only a specific, Git-scoped producer identity.
-/// Owning the strings permits safe borrowing after the discovery transaction.
-#[derive(Default)]
-pub struct AutoSelection {
-    pub scip_snapshot: Option<String>,
-    pub graph_id: Option<String>,
-    pub source_prefix: Option<String>,
-}
-
-impl AutoSelection {
-    pub fn selection(&self) -> Selection<'_> {
-        Selection {
-            scip_snapshot: self.scip_snapshot.as_deref(),
-            graph_id: self.graph_id.as_deref(),
-            source_prefix: self.source_prefix.as_deref(),
-        }
-    }
-}
-
 fn has_table(db: &Db, name: &str) -> Result<bool> {
     Ok(!db
         .query(
@@ -519,29 +500,6 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
             ("complete_semantics", Value::Bool(false)),
         ]);
         Ok(result)
-    })
-}
-
-/// Auto selection refuses ambiguity; callers can inspect the candidate report
-/// and provide explicit IDs rather than mixing incompatible configurations.
-pub fn choose_auto(db: &Db, repo: &Path, revision: &str) -> Result<AutoSelection> {
-    let report = discover(db, repo, revision)?;
-    if report.get("status")?.str()? == "AMBIGUOUS" {
-        return refuse(
-            "multiple native evidence snapshots or configured graphs for revision; use 'excession inspect producer-candidates' then explicit --scip-snapshot/--graph-id flags",
-        );
-    }
-    let selected = report.get("selection")?;
-    let value = |key: &str| -> Result<Option<String>> {
-        match selected.get(key)? {
-            Value::Null => Ok(None),
-            record => Ok(Some(record.str()?.to_owned())),
-        }
-    };
-    Ok(AutoSelection {
-        scip_snapshot: value("scip_snapshot")?,
-        graph_id: value("graph_id")?,
-        source_prefix: value("source_prefix")?,
     })
 }
 

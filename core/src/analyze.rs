@@ -392,7 +392,9 @@ pub fn run_with_evidence(
     let covered = usize::try_from(report.get("coverage")?.get("analyzed_sources")?.integer()?)
         .map_err(|_| "invalid indexed source count")?;
     let count = covered.max(selected.source_paths.len());
-    report.get_mut("coverage")?.entries_mut()?
+    report.entries_mut()?.get_mut("coverage")
+        .ok_or("analysis report missing coverage")?
+        .entries_mut()?
         .insert("analyzed_sources".into(), Value::number(count));
     let body = report.entries_mut()?;
     body.insert("relationships".into(), Value::array(relations));

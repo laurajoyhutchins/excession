@@ -68,6 +68,12 @@ For advanced reproducible queries, the existing `index`, `inspect`,
 available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md), [release procedure](docs/RELEASE.md),
 and [development setup](docs/DEVELOPMENT.md).
 
+**Combining native evidence:** The ordinary `analyze` and `impact` commands
+can consume explicitly selected SCIP symbol references and configured-build
+graph observations from an existing SQLite store. See
+[observed relationship analysis](docs/OBSERVED_RELATIONSHIP_ANALYSIS.md).
+Build membership remains separate from source dependencies.
+
 ## Coding-agent interface
 
 `excession agent context` returns bounded Git source identities, candidate

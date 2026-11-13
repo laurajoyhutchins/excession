@@ -151,6 +151,11 @@ pub fn run_with_evidence(
     database: Option<&str>,
     selected: EvidenceByRevision<'_>,
 ) -> Result<Value> {
+    if (selected.base.source_prefix.is_some() && selected.base.scip_snapshot.is_none())
+        || (selected.head.source_prefix.is_some() && selected.head.scip_snapshot.is_none())
+    {
+        return refuse("source-prefix selection requires the corresponding SCIP snapshot");
+    }
     let changes = change_inventory::inventory(path, base, head)?;
     let base_commit = changes.get("base_commit")?.str()?;
     let head_commit = changes.get("head_commit")?.str()?;
@@ -162,6 +167,7 @@ pub fn run_with_evidence(
     let mut truncated = false;
     for (revision, side) in [(base_commit, "before"), (head_commit, "after")] {
         let changed = changed_paths(&changes, side)?;
+        let scope = if side == "before" { selected.base } else { selected.head };
         for source in &changed {
             if !indexed_language(source) {
                 gaps.push(obj(&[
@@ -170,10 +176,9 @@ pub fn run_with_evidence(
                 ]));
             }
         }
-        if changed.is_empty() {
+        if changed.is_empty() && scope.is_empty() {
             continue;
         }
-        let scope = if side == "before" { selected.base } else { selected.head };
         let observation = if scope.is_empty() {
             observe(path, revision, roots, database)?
         } else {

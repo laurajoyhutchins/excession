@@ -6,7 +6,7 @@ use crate::{Result, git, git_reconstruction, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 const MAX_INPUT: u64 = 1024 * 1024;
@@ -47,7 +47,7 @@ fn string_set(v: &Value, empty_ok: bool) -> Result<BTreeSet<String>> {
     Ok(set)
 }
 fn json_array<'a>(s: impl Iterator<Item = &'a String>) -> Value {
-    Value::array(s.map(|s| Value::string(s)).collect::<Vec<_>>())
+    Value::array(s.map(Value::string).collect::<Vec<_>>())
 }
 fn git_run(
     repo: &Path,

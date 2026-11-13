@@ -235,10 +235,18 @@ pub fn run(
             ("producer", Value::string("pytest-testmon")),
             (
                 "command",
-                Value::string(format!(
-                    "{tool_name} -m pytest --testmon --testmon-forceselect -q {}",
-                    scope.iter().map(|path| format!("{path:?}")).collect::<Vec<_>>().join(" ")
-                ).trim_end().to_owned()),
+                Value::string(
+                    format!(
+                        "{tool_name} -m pytest --testmon --testmon-forceselect -q {}",
+                        scope
+                            .iter()
+                            .map(|path| format!("{path:?}"))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                    .trim_end()
+                    .to_owned(),
+                ),
             ),
             ("exit_code", Value::number(code as i64)),
             ("log_sha256", Value::string(digest::sha256(&log))),
@@ -270,10 +278,22 @@ pub fn run(
             Value::array(selected.into_iter().map(Value::string)),
         ),
         ("outcome", Value::string(outcome)),
-        ("scope_files", Value::array(scope.into_iter().map(Value::string))),
-        ("native_exit_code", Value::number(output.status.code().unwrap_or(-1))),
-        ("native_stdout_sha256", Value::string(digest::sha256(&output.stdout))),
-        ("native_stderr_sha256", Value::string(digest::sha256(&output.stderr))),
+        (
+            "scope_files",
+            Value::array(scope.into_iter().map(Value::string)),
+        ),
+        (
+            "native_exit_code",
+            Value::number(output.status.code().unwrap_or(-1)),
+        ),
+        (
+            "native_stdout_sha256",
+            Value::string(digest::sha256(&output.stdout)),
+        ),
+        (
+            "native_stderr_sha256",
+            Value::string(digest::sha256(&output.stderr)),
+        ),
         ("execution_receipts", digest_value),
         ("receipt_trust", Value::string("LOCAL_COMMAND_UNATTESTED")),
         ("coverage", Value::string("PARTIAL")),

@@ -94,6 +94,24 @@ jobs:
           assert d['execution_receipts']['receipts'][0]['status']=='FAIL'
           assert d['execution_receipts']['receipts'][0]['source_commit']==d['candidate_commit']
           PY
+          python3 - "$RUNNER_TEMP/testmon-selector.json" "$RUNNER_TEMP/testmon-receipts.json" <<'PY'
+          import json,sys
+          report=json.load(open(sys.argv[1]))
+          with open(sys.argv[2],'w') as stream:
+              json.dump(report['execution_receipts'],stream,sort_keys=True)
+          PY
+          "$GITHUB_WORKSPACE/core/target/release/excession" agent verify \
+            --repo "$ROOT" --base "$BASE" --candidate "$HEAD" --limit 64 \
+            --roots src,tests --receipts "$RUNNER_TEMP/testmon-receipts.json" \
+            > "$RUNNER_TEMP/agent-native-verification.json"
+          python3 - "$RUNNER_TEMP/agent-native-verification.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['status']=='REPORTED_FAILURE', d
+          assert not d['ready_to_merge']
+          assert 'REPORTED_TEST_OR_BUILD_FAILURE' in d['obligations']
+          assert 'RECEIPT_AUTHENTICITY_UNVERIFIED' in d['obligations']
+          PY
       - name: Keep native JSON evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -102,4 +120,6 @@ jobs:
           path: |
             ${{ runner.temp }}/jest-selector.json
             ${{ runner.temp }}/testmon-selector.json
+            ${{ runner.temp }}/testmon-receipts.json
+            ${{ runner.temp }}/agent-native-verification.json
           if-no-files-found: warn

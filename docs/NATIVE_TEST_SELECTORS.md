@@ -94,3 +94,10 @@ from a selector's subset, even when the native tool reports PASS.
 - A source-bound provider receipt is not a cryptographic attestation.
 - More providers can use the same native selection contract without adding
   homegrown dependency or language-specific test-selection heuristics.
+
+
+The output contract is [native-test-selector.v1.schema.json](../contracts/agent/native-test-selector.v1.schema.json).
+Native stdout/stderr SHA-256 digests and native exit status are retained.
+Excession checks that tracked source still matches the requested Git commit
+**after** the selector exits, since installed project tools may mutate the tree.
+A testmon --focus file must itself belong to the pinned Git revision.

@@ -685,18 +685,24 @@ fn read_capped(mut input: impl Read, limit: usize, exceeded: Arc<AtomicBool>) ->
     bytes
 }
 
-fn execute_isolated(
-    checkout: &Path,
-    directory: &Path,
-    image: &str,
-    base: &str,
-    candidate: &str,
-    provider: &str,
-    tool: Option<&str>,
-    focus: Option<&str>,
+struct SandboxExecution<'a> {
+    checkout: &'a Path,
+    directory: &'a Path,
+    image: &'a str,
+    base: &'a str,
+    candidate: &'a str,
+    provider: &'a str,
+    tool: Option<&'a str>,
+    focus: Option<&'a str>,
     verify: bool,
     timeout_seconds: u64,
-) -> Result<Value> {
+}
+
+fn execute_isolated(args: SandboxExecution<'_>) -> Result<Value> {
+    let SandboxExecution {
+        checkout, directory, image, base, candidate, provider,
+        tool, focus, verify, timeout_seconds
+    } = args;
     let binary = std::env::current_exe()
         .map_err(|e| format!("current executable: {e}"))?
         .canonicalize()
@@ -854,10 +860,10 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     if state.files.is_empty() {
         return refuse("no uncommitted tracked/untracked source changes to snapshot");
     }
-    if let Some(expected) = request.expected_snapshot {
-        if expected != state.fingerprint {
-            return refuse("working-tree fingerprint changed since the approved test plan");
-        }
+    if let Some(expected) = request.expected_snapshot
+        && expected != state.fingerprint
+    {
+        return refuse("working-tree fingerprint changed since the approved test plan");
     }
     let image = request.sandbox_image;
     let mut blockers = sandbox_preflight(image)
@@ -976,18 +982,18 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             return refuse("source changed while preparing the isolated snapshot");
         }
         let provider = provider.ok_or("no supported native provider selected")?;
-        let mut result = execute_isolated(
-            &checkout,
-            &temp.path,
-            image.ok_or("missing pinned image")?,
-            &base,
-            &commit,
-            &provider,
-            tool.as_deref(),
-            request.focus,
-            request.verify,
-            request.timeout_seconds,
-        )?;
+        let mut result = execute_isolated(SandboxExecution {
+            checkout: &checkout,
+            directory: &temp.path,
+            image: image.ok_or("missing pinned image")?,
+            base: &base,
+            candidate: &commit,
+            provider: &provider,
+            tool: tool.as_deref(),
+            focus: request.focus,
+            verify: request.verify,
+            timeout_seconds: request.timeout_seconds,
+        })?;
         result
             .entries_mut()?
             .insert("repo".to_owned(), Value::string(root.to_string_lossy()));

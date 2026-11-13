@@ -308,13 +308,12 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
         .as_bytes(),
     )
     .unwrap();
-    assert_eq!(
-        impacted
+    assert!(
+        !impacted
             .get("safe_to_skip_unlisted_tests")
             .unwrap()
             .bool()
-            .unwrap(),
-        false
+            .unwrap()
     );
     let effects = impacted.get("effects").unwrap().array_ref().unwrap();
     assert!(effects.iter().any(|item| {
@@ -436,13 +435,12 @@ fn configured_membership_is_visible_but_never_invents_a_dependency() {
             .len(),
         1
     );
-    assert_eq!(
-        impact
+    assert!(
+        !impact
             .get("safe_to_skip_unlisted_tests")
             .unwrap()
             .bool()
-            .unwrap(),
-        false
+            .unwrap()
     );
 
     // Both producers may contribute their distinct evidence at once.

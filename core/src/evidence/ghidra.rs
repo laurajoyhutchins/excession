@@ -7,7 +7,7 @@ use crate::evidence::{
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 use std::fs;
 use std::path::Path;
 
@@ -470,6 +470,9 @@ pub fn candidates(db: &Db, artifact: &Path, entry: &str, limit: usize) -> Result
             ],
         )?;
         let mut output = Vec::new();
+        // Each producer receipt and candidate binding is audited once per query.
+        let mut report_cache = BTreeMap::new();
+        let mut binding_cache = BTreeMap::new();
         for row in matches {
             let mid = row[0].as_deref().ok_or("missing Ghidra match ID")?;
             let report_id_ref = row[1].as_deref().ok_or("missing Ghidra report ID")?;
@@ -477,7 +480,12 @@ pub fn candidates(db: &Db, artifact: &Path, entry: &str, limit: usize) -> Result
                 .as_deref()
                 .ok_or("missing Ghidra candidate identity")?;
             let raw = row[3].as_deref().ok_or("missing Ghidra match record")?;
-            let native_report = checked_report(db, report_id_ref, &subject_id, &sha, size)?;
+            let native_report = match report_cache.entry(report_id_ref.to_owned()) {
+                Entry::Occupied(existing) => existing.into_mut(),
+                Entry::Vacant(empty) => empty.insert(
+                    checked_report(db, report_id_ref, &subject_id, &sha, size)?
+                ),
+            };
             let checked = json::parse(raw.as_bytes())?;
             let (actual_entry, actual_candidate) = match_record(&checked)?;
             let found = native_report
@@ -493,19 +501,25 @@ pub fn candidates(db: &Db, artifact: &Path, entry: &str, limit: usize) -> Result
             {
                 return refuse("Ghidra match index disagrees with immutable native report");
             }
-            let sources = db.query(
-                "SELECT binding_id,raw_binding FROM evidence_ghidra_source_v1
-                 WHERE candidate_id=? ORDER BY binding_id LIMIT 16",
-                &[Param::Text(candidate_id)],
-            )?;
-            let mut known = Vec::new();
-            for binding in sources {
-                known.push(checked_binding(
-                    binding[0].as_deref().ok_or("missing binding ID")?,
-                    candidate_id,
-                    binding[1].as_deref().ok_or("missing source binding")?,
-                )?);
-            }
+            let known = match binding_cache.entry(candidate_id.to_owned()) {
+                Entry::Occupied(existing) => existing.get().clone(),
+                Entry::Vacant(empty) => {
+                    let sources = db.query(
+                        "SELECT binding_id,raw_binding FROM evidence_ghidra_source_v1
+                         WHERE candidate_id=? ORDER BY binding_id LIMIT 16",
+                        &[Param::Text(candidate_id)],
+                    )?;
+                    let mut verified = Vec::new();
+                    for binding in sources {
+                        verified.push(checked_binding(
+                            binding[0].as_deref().ok_or("missing binding ID")?,
+                            candidate_id,
+                            binding[1].as_deref().ok_or("missing source binding")?,
+                        )?);
+                    }
+                    empty.insert(verified).clone()
+                }
+            };
             output.push(obj(&[
                 ("match_id", Value::string(mid)),
                 ("report_id", Value::string(report_id_ref)),

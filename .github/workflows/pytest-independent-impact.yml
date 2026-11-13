@@ -104,6 +104,11 @@ jobs:
               if effect['entity']['source_commit'] == head
           }
           tests = {p for p in transitive if p.startswith('testing/')}
+          head_effects = [effect for effect in cold['effects']
+                          if effect['entity']['source_commit'] == head]
+          witness_targets = {p: sorted({effect['entity']['path'] for effect in head_effects
+              if effect['hops'] and effect['hops'][-1]['target']['path'] == p})
+              for p in sorted(changed)}
           beyond_changed = transitive - changed
           beyond_direct = transitive - direct - changed
           metrics = {}
@@ -129,7 +134,11 @@ jobs:
               'excession_head_missing_vs_oracle': len(transitive-produced),
               'excession_head_unexpected_vs_oracle': len(produced-transitive),
               'excession_head_test_candidates': len(produced & tests),
-              'excession_report_truncated': cold['coverage'].get('truncated'),
+              'excession_report_truncated': any(
+                  gap.get('reason') == 'TRUNCATED' for gap in cold['coverage']['gaps']),
+              'excession_effect_count': len(cold['effects']),
+              'head_affected_paths_by_changed_source': {k: len(v) for k,v in witness_targets.items()},
+              'oracle_and_impact_wall_seconds': report.get('measured_wall_seconds'),
               'excession_report_coverage': cold['coverage'].get('status'),
               'independent_full_explanation_audit': report.get('status'),
               'independent_audit_error': report.get('error'),
@@ -192,6 +201,24 @@ jobs:
           test "$base_code" -ne 0
           test "$head_code" -eq 0
           grep -q 'IndexError: tuple index out of range' "$OUT/base-test.log"
+          python3 - "$OUT" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          out = Path(sys.argv[1])
+          witness = {
+              'schema': 'excession.pytest-behavioral-witness.v1',
+              'repository': 'pytest-dev/pytest',
+              'base_commit': (out / 'base.txt').read_text().strip(),
+              'head_commit': 'dcd0e636b4ce69021a9f607b060ea0056c339fd2',
+              'base_exit': int((out / 'base-test-exit.txt').read_text()),
+              'head_exit': int((out / 'head-test-exit.txt').read_text()),
+              'base_exception': 'IndexError: tuple index out of range',
+              'head_result': 'Collector.CollectError() repr_failure is empty string',
+              'status': 'BASE_FAIL_HEAD_PASS',
+          }
+          (out / 'behavioral-witness.json').write_text(json.dumps(witness, indent=2, sort_keys=True) + '\n')
+          PY
       - name: Collect independently inspectable artifacts even after failure
         if: always()
         uses: actions/upload-artifact@v4

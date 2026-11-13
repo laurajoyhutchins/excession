@@ -2,8 +2,8 @@
 //! A candidate import path never establishes change breakage or safe test elision.
 use crate::analyze;
 use crate::change_inventory;
-use crate::observed_relations::Selection;
 use crate::json::{Value, obj};
+use crate::observed_relations::Selection;
 use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
@@ -30,7 +30,11 @@ fn incoming(analysis: &Value) -> Result<BTreeMap<String, Vec<Value>>> {
         }
         // Imported module edges remain candidates until an independent
         // semantic oracle establishes anything stronger.
-        let expected = if kind == "STATIC_IMPORT" { "CANDIDATE" } else { "OBSERVED" };
+        let expected = if kind == "STATIC_IMPORT" {
+            "CANDIDATE"
+        } else {
+            "OBSERVED"
+        };
         if evidences.iter().any(|e| {
             e.get("assessment").and_then(Value::str).ok() != Some(expected)
                 || (kind == "SCIP_REFERENCE"
@@ -140,7 +144,14 @@ pub fn run(
     roots: Option<&str>,
     database: Option<&str>,
 ) -> Result<Value> {
-    run_with_evidence(path, base, head, roots, database, EvidenceByRevision::default())
+    run_with_evidence(
+        path,
+        base,
+        head,
+        roots,
+        database,
+        EvidenceByRevision::default(),
+    )
 }
 
 pub fn run_with_evidence(
@@ -167,7 +178,11 @@ pub fn run_with_evidence(
     let mut truncated = false;
     for (revision, side) in [(base_commit, "before"), (head_commit, "after")] {
         let changed = changed_paths(&changes, side)?;
-        let scope = if side == "before" { selected.base } else { selected.head };
+        let scope = if side == "before" {
+            selected.base
+        } else {
+            selected.head
+        };
         for source in &changed {
             if !indexed_language(source) {
                 gaps.push(obj(&[
@@ -248,16 +263,49 @@ pub fn run_with_evidence(
     ]);
     if !selected.base.is_empty() || !selected.head.is_empty() {
         let choices = obj(&[
-            ("base_scip_snapshot", selected.base.scip_snapshot.map_or(Value::Null, Value::string)),
-            ("head_scip_snapshot", selected.head.scip_snapshot.map_or(Value::Null, Value::string)),
-            ("base_graph_id", selected.base.graph_id.map_or(Value::Null, Value::string)),
-            ("head_graph_id", selected.head.graph_id.map_or(Value::Null, Value::string)),
-            ("base_source_prefix", selected.base.source_prefix.map_or(Value::Null, Value::string)),
-            ("head_source_prefix", selected.head.source_prefix.map_or(Value::Null, Value::string)),
+            (
+                "base_scip_snapshot",
+                selected
+                    .base
+                    .scip_snapshot
+                    .map_or(Value::Null, Value::string),
+            ),
+            (
+                "head_scip_snapshot",
+                selected
+                    .head
+                    .scip_snapshot
+                    .map_or(Value::Null, Value::string),
+            ),
+            (
+                "base_graph_id",
+                selected.base.graph_id.map_or(Value::Null, Value::string),
+            ),
+            (
+                "head_graph_id",
+                selected.head.graph_id.map_or(Value::Null, Value::string),
+            ),
+            (
+                "base_source_prefix",
+                selected
+                    .base
+                    .source_prefix
+                    .map_or(Value::Null, Value::string),
+            ),
+            (
+                "head_source_prefix",
+                selected
+                    .head
+                    .source_prefix
+                    .map_or(Value::Null, Value::string),
+            ),
         ]);
         let body = result.entries_mut()?;
         body.insert("producer_selections".into(), choices);
-        body.insert("configured_observations".into(), Value::array(configured_observations));
+        body.insert(
+            "configured_observations".into(),
+            Value::array(configured_observations),
+        );
         body.insert("producer_coverage".into(), Value::array(producer_coverage));
     }
     let id = result.sha256();

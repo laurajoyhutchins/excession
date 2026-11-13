@@ -2,8 +2,8 @@
 //! These are *candidate* dependencies, not complete dynamic semantics.
 use crate::discovery::{self, Discovery};
 use crate::json::{Value, obj};
-use crate::source_capabilities;
 use crate::observed_relations::{self, Selection};
+use crate::source_capabilities;
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, doctor, index, refuse, views};
 use std::collections::{BTreeMap, BTreeSet};
@@ -334,7 +334,6 @@ pub fn run_if_supported(
     Ok(Some((report, db_path)))
 }
 
-
 /// Explicitly combine a pinned static-module analysis with authenticated
 /// external producer evidence. A Git-only repository is supported when at
 /// least one native producer snapshot was explicitly selected.
@@ -351,7 +350,8 @@ pub fn run_with_evidence(
         }
         return run(path, rev, roots, db_override);
     }
-    let database = db_override.ok_or("selected source evidence requires --db to name an existing SQLite store")?;
+    let database = db_override
+        .ok_or("selected source evidence requires --db to name an existing SQLite store")?;
     let discovered = discovery::inspect(path, rev)?;
     let db_path = checked_external_destination(&discovered.root, Path::new(database), "SQLite")?;
     if !db_path.is_file() {
@@ -365,24 +365,32 @@ pub fn run_with_evidence(
         Some(current) => current,
         None => {
             let gaps = discovered.report()?.get("coverage")?.get("gaps")?.clone();
-            (obj(&[
-                ("schema", Value::string("excession.analysis.v1")),
-                ("source_commit", Value::string(&discovered.commit)),
-                ("source_tree", Value::string(&discovered.tree)),
-                ("status", Value::string("PARTIAL")),
-                ("observation_receipts", Value::array([])),
-                ("relationships", Value::array([])),
-                ("coverage", obj(&[
+            (
+                obj(&[
+                    ("schema", Value::string("excession.analysis.v1")),
+                    ("source_commit", Value::string(&discovered.commit)),
+                    ("source_tree", Value::string(&discovered.tree)),
                     ("status", Value::string("PARTIAL")),
-                    ("analyzed_sources", Value::number(0)),
-                    ("gaps", gaps),
-                ])),
-            ]), db_path.clone())
+                    ("observation_receipts", Value::array([])),
+                    ("relationships", Value::array([])),
+                    (
+                        "coverage",
+                        obj(&[
+                            ("status", Value::string("PARTIAL")),
+                            ("analyzed_sources", Value::number(0)),
+                            ("gaps", gaps),
+                        ]),
+                    ),
+                ]),
+                db_path.clone(),
+            )
         }
     };
     let mut relations = report.get("relationships")?.array_ref()?.to_vec();
     relations.extend(selected.relationships);
-    let mut receipts = report.get("observation_receipts")?.array_ref()?
+    let mut receipts = report
+        .get("observation_receipts")?
+        .array_ref()?
         .iter()
         .map(|value| Ok(value.str()?.to_owned()))
         .collect::<Result<BTreeSet<_>>>()?;
@@ -392,7 +400,9 @@ pub fn run_with_evidence(
     let covered = usize::try_from(report.get("coverage")?.get("analyzed_sources")?.integer()?)
         .map_err(|_| "invalid indexed source count")?;
     let count = covered.max(selected.source_paths.len());
-    report.entries_mut()?.get_mut("coverage")
+    report
+        .entries_mut()?
+        .get_mut("coverage")
         .ok_or("analysis report missing coverage")?
         .entries_mut()?
         .insert("analyzed_sources".into(), Value::number(count));
@@ -407,14 +417,28 @@ pub fn run_with_evidence(
         Value::array(selected.configured_observations),
     );
     body.insert("producer_coverage".into(), Value::array(selected.coverage));
-    body.insert("producer_selections".into(), obj(&[
-        ("scip_snapshot", selection.scip_snapshot.map_or(Value::Null, Value::string)),
-        ("graph_id", selection.graph_id.map_or(Value::Null, Value::string)),
-        ("source_prefix", selection.source_prefix.map_or(Value::Null, Value::string)),
-    ]));
+    body.insert(
+        "producer_selections".into(),
+        obj(&[
+            (
+                "scip_snapshot",
+                selection.scip_snapshot.map_or(Value::Null, Value::string),
+            ),
+            (
+                "graph_id",
+                selection.graph_id.map_or(Value::Null, Value::string),
+            ),
+            (
+                "source_prefix",
+                selection.source_prefix.map_or(Value::Null, Value::string),
+            ),
+        ]),
+    );
     body.remove("report_id");
     let report_id = report.sha256();
-    report.entries_mut()?.insert("report_id".into(), Value::string(report_id));
+    report
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(report_id));
     Ok((report, db_path))
 }
 

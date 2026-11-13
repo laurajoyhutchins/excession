@@ -32,13 +32,7 @@ pub struct Observed {
     pub source_paths: BTreeSet<String>,
 }
 
-fn source(
-    repo: &Path,
-    commit: &str,
-    tree: &str,
-    path: &str,
-    blob: &str,
-) -> Result<Value> {
+fn source(repo: &Path, commit: &str, tree: &str, path: &str, blob: &str) -> Result<Value> {
     git::validate_path(path)?;
     let entry = git::entry_at(repo, commit, path)?;
     if entry.oid != blob
@@ -58,7 +52,9 @@ fn source(
 
 fn digest_id(id: &str) -> Result<()> {
     if id.len() != 64
-        || !id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     {
         return refuse("producer selection requires an exact lowercase SHA-256 identity");
     }
@@ -89,7 +85,10 @@ fn select_scip(
         return refuse("selected SCIP snapshot has no unique native producer receipt");
     }
     let receipt = json::parse(
-        receipts[0][0].as_deref().ok_or("missing SCIP native receipt")?.as_bytes(),
+        receipts[0][0]
+            .as_deref()
+            .ok_or("missing SCIP native receipt")?
+            .as_bytes(),
     )?;
     let producer = receipt.get("producer")?.str()?;
     if !producer.starts_with("scip:") {
@@ -105,7 +104,10 @@ fn select_scip(
     let mut coverage = None;
     for row in rows {
         let record = json::parse(
-            row[0].as_deref().ok_or("missing SCIP observation")?.as_bytes(),
+            row[0]
+                .as_deref()
+                .ok_or("missing SCIP observation")?
+                .as_bytes(),
         )?;
         let kind = record.get("native_kind")?.str()?;
         let payload = record.get("payload")?;
@@ -179,7 +181,9 @@ fn select_graph(
     if rows.len() != 1 || rows[0][0].as_deref() != Some(commit) {
         return refuse("configured graph missing or belongs to a different Git revision");
     }
-    let raw = rows[0][1].as_deref().ok_or("configured graph document missing")?;
+    let raw = rows[0][1]
+        .as_deref()
+        .ok_or("configured graph document missing")?;
     let graph = json::parse(raw.as_bytes())?;
     if graph.sha256() != graph_id
         || graph.get("source_commit")?.str()? != commit
@@ -290,10 +294,13 @@ fn select_graph(
         ("producer", Value::string(graph.get("schema")?.str()?)),
         ("graph_id", Value::string(graph_id)),
         ("status", graph.get("status")?.clone()),
-        ("configuration", match graph.entries()?.get("configuration") {
-            Some(value) => value.clone(),
-            None => graph.get("config_sha256")?.clone(),
-        }),
+        (
+            "configuration",
+            match graph.entries()?.get("configuration") {
+                Some(value) => value.clone(),
+                None => graph.get("config_sha256")?.clone(),
+            },
+        ),
         ("source_count", Value::number(source_ids.len())),
         ("limitations", graph.get("limitations")?.clone()),
     ]));
@@ -302,12 +309,7 @@ fn select_graph(
 
 /// Compose selected evidence in a consistent read transaction; selected
 /// producer receipts must replay against exactly the requested Git revision.
-pub fn read(
-    db: &Db,
-    repo: &Path,
-    revision: &str,
-    selection: Selection<'_>,
-) -> Result<Observed> {
+pub fn read(db: &Db, repo: &Path, revision: &str, selection: Selection<'_>) -> Result<Observed> {
     if selection.source_prefix.is_some() && selection.scip_snapshot.is_none() {
         return refuse("--source-prefix requires --scip-snapshot");
     }

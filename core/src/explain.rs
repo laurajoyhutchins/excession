@@ -1,8 +1,8 @@
 //! Exact report replay and source-bound explanation.
 //! Does not promote candidate dependencies to verified behavior.
 use crate::impact_query::{self, EvidenceByRevision};
-use crate::observed_relations::Selection;
 use crate::json::{self, Value, obj};
+use crate::observed_relations::Selection;
 use crate::{Result, refuse};
 use std::fs;
 use std::path::Path;
@@ -68,7 +68,11 @@ fn checked_claim(
             }
         };
         impact_query::run_with_evidence(
-            repo, base, head, roots, db,
+            repo,
+            base,
+            head,
+            roots,
+            db,
             EvidenceByRevision {
                 base: Selection {
                     scip_snapshot: selected("base_scip_snapshot")?,

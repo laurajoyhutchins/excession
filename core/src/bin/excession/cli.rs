@@ -388,9 +388,24 @@ pub(super) fn command() -> Command {
                 .long("json")
                 .action(clap::ArgAction::SetTrue),
         )
-        .arg(Arg::new("scip-snapshot").long("scip-snapshot").num_args(1).value_parser(NonEmptyStringValueParser::new()))
-        .arg(Arg::new("graph-id").long("graph-id").num_args(1).value_parser(NonEmptyStringValueParser::new()))
-        .arg(Arg::new("source-prefix").long("source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+        .arg(
+            Arg::new("scip-snapshot")
+                .long("scip-snapshot")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("graph-id")
+                .long("graph-id")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("source-prefix")
+                .long("source-prefix")
+                .num_args(1)
+                .value_parser(NonEmptyStringValueParser::new()),
+        )
         .subcommand(clang());
     let kernel = group(
         "kernel",

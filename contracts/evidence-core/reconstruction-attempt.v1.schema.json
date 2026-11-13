@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Excession compiler feedback attempt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "attempt_id",
+    "target_artifact_subject_id",
+    "target_artifact_sha256",
+    "candidate_artifact_subject_id",
+    "candidate_artifact_sha256",
+    "candidate_source_sha256",
+    "compiler",
+    "objcopy",
+    "compiler_arguments",
+    "comparison_scope",
+    "target_text_sha256",
+    "candidate_text_sha256",
+    "target_text_bytes",
+    "candidate_text_bytes",
+    "mismatch_count",
+    "mismatch_examples",
+    "text_relation",
+    "target_rea_bundles",
+    "candidate_rea_bundles",
+    "source_recovery",
+    "behavioral_equivalence",
+    "relocation_equivalence",
+    "build_execution_attested",
+    "execution_boundary"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.reconstruction-attempt.v1"
+    },
+    "attempt_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "target_artifact_subject_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_artifact_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "candidate_artifact_subject_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_artifact_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "candidate_source_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "compiler": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objcopy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "compiler_arguments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "maxItems": 16
+    },
+    "comparison_scope": {
+      "const": "ELF_TEXT_SECTION_BYTES_ONLY"
+    },
+    "target_text_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "candidate_text_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "target_text_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
+    "candidate_text_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
+    "mismatch_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mismatch_examples": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "offset",
+          "target",
+          "candidate"
+        ],
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "target": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 255
+          },
+          "candidate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 255
+          }
+        }
+      }
+    },
+    "text_relation": {
+      "enum": [
+        "IDENTICAL_TEXT_BYTES",
+        "DIFFERENT_TEXT_BYTES"
+      ]
+    },
+    "target_rea_bundles": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "candidate_rea_bundles": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_recovery": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "behavioral_equivalence": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "relocation_equivalence": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "build_execution_attested": {
+      "const": false
+    },
+    "execution_boundary": {
+      "const": "TRUSTED_LOCAL_UNSANDBOXED"
+    }
+  }
+}

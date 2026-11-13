@@ -318,7 +318,7 @@ pub fn run(
     let failure_detail = stderr.chars().take(500).collect::<String>();
     let tool_name = tool_path.to_string_lossy().into_owned();
 
-    let mut selected = Vec::new();
+    let selected: Vec<String>;
     let mut selected_ids = Vec::new();
     let mut executed_count = 0usize;
     let mut receipts = Vec::new();

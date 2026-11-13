@@ -807,11 +807,31 @@ fn competing_scip_indexes_quarantine_only_overlapping_paths() {
     // still uniquely sourced and must remain usable for historical impact.
     let effects = impact.get("effects").unwrap().array_ref().unwrap();
     assert!(!effects.is_empty());
-    assert!(effects.iter().all(|effect| effect.get("hops").unwrap()
-        .array_ref().unwrap().iter().all(|hop| {
-            hop.get("source").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
-                && hop.get("target").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
-        })));
+    assert!(effects.iter().all(|effect| {
+        effect
+            .get("hops")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .all(|hop| {
+                hop.get("source")
+                    .unwrap()
+                    .get("source_commit")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+                    == f.base
+                    && hop
+                        .get("target")
+                        .unwrap()
+                        .get("source_commit")
+                        .unwrap()
+                        .str()
+                        .unwrap()
+                        == f.base
+            })
+    }));
     assert_eq!(
         impact
             .get("configured_observations")

@@ -50,7 +50,10 @@ fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, u
     let Some((header, body)) = replacement.split_once('\n') else {
         return Ok(None);
     };
-    let Some(name) = header.strip_prefix("mod ").and_then(|h| h.strip_suffix(" {")) else {
+    let Some(name) = header
+        .strip_prefix("mod ")
+        .and_then(|h| h.strip_suffix(" {"))
+    else {
         return Ok(None);
     };
     if !identifier(name) {
@@ -72,7 +75,9 @@ fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, u
     if deindented.join("\n") != original {
         return refuse("native extraction changed original Rust source bytes");
     }
-    if original.lines().any(|line| line.trim_start().starts_with("#["))
+    if original
+        .lines()
+        .any(|line| line.trim_start().starts_with("#["))
         || original.contains("super::")
         || original.contains("self::")
         || original.contains("crate::")
@@ -84,7 +89,8 @@ fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, u
 
 fn declared<'a>(source: &'a str, name: &str, prefixes: &[&str]) -> bool {
     prefixes.iter().any(|prefix| {
-        source.strip_prefix(prefix)
+        source
+            .strip_prefix(prefix)
             .and_then(|tail| tail.strip_prefix(name))
             .is_some_and(|tail| tail.starts_with('(') || tail.starts_with('<'))
     })
@@ -132,7 +138,9 @@ fn moved_items(
         if begin >= finish || finish > source.len() {
             return refuse("ast-grep item range outside Git source");
         }
-        let body = source.get(begin..finish).ok_or("ast-grep splits UTF-8 source")?;
+        let body = source
+            .get(begin..finish)
+            .ok_or("ast-grep splits UTF-8 source")?;
         let is_function = kind == "function_item"
             && item.get("symbolType")?.str()? == "function"
             && identifier(name);
@@ -140,16 +148,35 @@ fn moved_items(
             if begin < start || finish > end || !is_function {
                 return refuse("moved interval includes a partial or non-function syntax item");
             }
-            if !declared(body, name, &["pub fn ", "pub async fn ", "pub const fn ", "pub unsafe fn "]) {
+            if !declared(
+                body,
+                name,
+                &[
+                    "pub fn ",
+                    "pub async fn ",
+                    "pub const fn ",
+                    "pub unsafe fn ",
+                ],
+            ) {
                 return Ok(None);
             }
             moved.push((begin, finish, name.to_owned()));
         } else if is_function
-            && declared(body, name, &[
-                "fn ", "async fn ", "const fn ", "unsafe fn ",
-                "pub fn ", "pub async fn ", "pub(crate) fn ",
-                "pub(super) fn ", "pub const fn ",
-            ])
+            && declared(
+                body,
+                name,
+                &[
+                    "fn ",
+                    "async fn ",
+                    "const fn ",
+                    "unsafe fn ",
+                    "pub fn ",
+                    "pub async fn ",
+                    "pub(crate) fn ",
+                    "pub(super) fn ",
+                    "pub const fn ",
+                ],
+            )
         {
             helpers.insert(name.to_owned());
         }
@@ -162,7 +189,8 @@ fn moved_items(
     let mut names = BTreeSet::new();
     let mut public_functions = Vec::new();
     for (begin, finish, name) in moved {
-        if begin < cursor || !safe_gap(source.get(cursor..begin).ok_or("invalid moved gap")?)
+        if begin < cursor
+            || !safe_gap(source.get(cursor..begin).ok_or("invalid moved gap")?)
             || !names.insert(name.clone())
         {
             return refuse("moved items overlap, duplicate names, or include unsupported syntax");
@@ -170,10 +198,17 @@ fn moved_items(
         cursor = finish;
         public_functions.push(name);
     }
-    if !safe_gap(source.get(cursor..end).ok_or("invalid trailing moved gap")?) {
+    if !safe_gap(
+        source
+            .get(cursor..end)
+            .ok_or("invalid trailing moved gap")?,
+    ) {
         return refuse("unsupported source between extracted items");
     }
-    Ok(Some(MoveItems { public_functions, parent_helpers: helpers }))
+    Ok(Some(MoveItems {
+        public_functions,
+        parent_helpers: helpers,
+    }))
 }
 
 fn line_byte(text: &str, line: usize, column: usize) -> Result<usize> {
@@ -234,9 +269,7 @@ fn preserve_bytes(
         return refuse("native extracted range is not a valid UTF-8 source range");
     }
     let replacement = change.get("replacement")?.str()?;
-    let Some((module, header_bytes)) =
-        unchanged_move(&old_source[start..end], replacement)?
-    else {
+    let Some((module, header_bytes)) = unchanged_move(&old_source[start..end], replacement)? else {
         return Ok(None);
     };
     let Some(items) = moved_items(old_source, start, end, outline)? else {
@@ -287,7 +320,10 @@ fn preserve_bytes(
     let export = if items.public_functions.len() == 1 {
         format!("\npub use self::{module}::{};", items.public_functions[0])
     } else {
-        format!("\npub use self::{module}::{{{}}};", items.public_functions.join(", "))
+        format!(
+            "\npub use self::{module}::{{{}}};",
+            items.public_functions.join(", ")
+        )
     };
     let changes = Value::array([
         refactor_codegen::edit_operation(path, Some(oid), module_begin, module_begin, &imports),
@@ -384,27 +420,36 @@ pub(crate) fn propose(
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn outline(items: &[(&str, &str, usize, usize)]) -> Value {
         Value::array([obj(&[(
-            "items", Value::array(items.iter().map(|(name, kind, start, end)| obj(&[
-                ("name", Value::string(*name)),
-                ("symbolType", Value::string("function")),
-                ("astKind", Value::string(*kind)),
-                ("range", obj(&[("byteOffset", obj(&[
-                    ("start", Value::number(*start)), ("end", Value::number(*end)),
-                ]))])),
-            ]))),
+            "items",
+            Value::array(items.iter().map(|(name, kind, start, end)| {
+                obj(&[
+                    ("name", Value::string(*name)),
+                    ("symbolType", Value::string("function")),
+                    ("astKind", Value::string(*kind)),
+                    (
+                        "range",
+                        obj(&[(
+                            "byteOffset",
+                            obj(&[
+                                ("start", Value::number(*start)),
+                                ("end", Value::number(*end)),
+                            ]),
+                        )]),
+                    ),
+                ])
+            })),
         )])])
     }
 
     fn span(source: &str, text: &str) -> (usize, usize) {
-        let start=source.find(text).unwrap();
-        (start,start+text.len())
+        let start = source.find(text).unwrap();
+        (start, start + text.len())
     }
 
     fn fixture() -> (String, String, Value, Value) {
@@ -419,54 +464,117 @@ mod tests {
                       pub fn third() -> usize {\n    helper() + offset()\n}\n\
                       \n\
                       fn caller() -> usize { third() }\n";
-        let first="pub fn first<T: Copy>(x: T) -> T {\n    let _ = helper();\n    x\n}";
-        let second="pub const fn second() -> usize { 9 }";
-        let third="pub fn third() -> usize {\n    helper() + offset()\n}";
-        let moved=format!("/// documented α\n{first}\n\n{second}\n\n{third}");
-        let start=source.find(&moved).unwrap();
-        let wrapper=format!("mod extracted {{\n{}\n}}", moved.lines().map(|line|
-            if line.is_empty() { String::new() } else { format!("    {line}") }
-        ).collect::<Vec<_>>().join("\n"));
-        let mut candidate=source.to_owned();
-        candidate.replace_range(start..start+moved.len(),&wrapper);
-        let edit=refactor_codegen::edit_operation(
-            "src/example.rs",Some("old"),start,start+moved.len(),&wrapper);
-        let ast=outline(&[
-            ("helper","function_item",span(source,"fn helper() -> usize { 7 }").0,
-                span(source,"fn helper() -> usize { 7 }").1),
-            ("offset","function_item",span(source,"fn offset() -> usize { 3 }").0,
-                span(source,"fn offset() -> usize { 3 }").1),
-            ("first","function_item",span(source,first).0,span(source,first).1),
-            ("second","function_item",span(source,second).0,span(source,second).1),
-            ("third","function_item",span(source,third).0,span(source,third).1),
-            ("caller","function_item",span(source,"fn caller() -> usize { third() }").0,
-                span(source,"fn caller() -> usize { third() }").1),
+        let first = "pub fn first<T: Copy>(x: T) -> T {\n    let _ = helper();\n    x\n}";
+        let second = "pub const fn second() -> usize { 9 }";
+        let third = "pub fn third() -> usize {\n    helper() + offset()\n}";
+        let moved = format!("/// documented α\n{first}\n\n{second}\n\n{third}");
+        let start = source.find(&moved).unwrap();
+        let wrapper = format!(
+            "mod extracted {{\n{}\n}}",
+            moved
+                .lines()
+                .map(|line| if line.is_empty() {
+                    String::new()
+                } else {
+                    format!("    {line}")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        let mut candidate = source.to_owned();
+        candidate.replace_range(start..start + moved.len(), &wrapper);
+        let edit = refactor_codegen::edit_operation(
+            "src/example.rs",
+            Some("old"),
+            start,
+            start + moved.len(),
+            &wrapper,
+        );
+        let ast = outline(&[
+            (
+                "helper",
+                "function_item",
+                span(source, "fn helper() -> usize { 7 }").0,
+                span(source, "fn helper() -> usize { 7 }").1,
+            ),
+            (
+                "offset",
+                "function_item",
+                span(source, "fn offset() -> usize { 3 }").0,
+                span(source, "fn offset() -> usize { 3 }").1,
+            ),
+            (
+                "first",
+                "function_item",
+                span(source, first).0,
+                span(source, first).1,
+            ),
+            (
+                "second",
+                "function_item",
+                span(source, second).0,
+                span(source, second).1,
+            ),
+            (
+                "third",
+                "function_item",
+                span(source, third).0,
+                span(source, third).1,
+            ),
+            (
+                "caller",
+                "function_item",
+                span(source, "fn caller() -> usize { third() }").0,
+                span(source, "fn caller() -> usize { third() }").1,
+            ),
         ]);
-        (source.to_owned(),candidate,Value::array([edit]),ast)
+        (source.to_owned(), candidate, Value::array([edit]), ast)
     }
 
     fn repair_fixture() -> (String, String) {
-        let (old,candidate,edits,ast)=fixture();
-        let line=candidate.lines().position(|line| line.contains("        helper() + offset()")).unwrap();
-        let errors=[
-            Missing{path:"src/example.rs",line,column:8,code:"E0425",
-                message:"cannot find function \x60helper\x60 in this scope"},
-            Missing{path:"src/example.rs",line,column:19,code:"E0425",
-                message:"cannot find function \x60offset\x60 in this scope"},
+        let (old, candidate, edits, ast) = fixture();
+        let line = candidate
+            .lines()
+            .position(|line| line.contains("        helper() + offset()"))
+            .unwrap();
+        let errors = [
+            Missing {
+                path: "src/example.rs",
+                line,
+                column: 8,
+                code: "E0425",
+                message: "cannot find function \x60helper\x60 in this scope",
+            },
+            Missing {
+                path: "src/example.rs",
+                line,
+                column: 19,
+                code: "E0425",
+                message: "cannot find function \x60offset\x60 in this scope",
+            },
         ];
-        let plan=preserve_bytes("src/example.rs","old",&old,&candidate,&edits,&ast,&errors)
-            .unwrap().unwrap();
-        assert_eq!(plan.public_functions,["first","second","third"]);
-        assert_eq!(plan.helpers,["helper","offset"]);
-        let after=plan.outputs["src/example.rs"].clone();
+        let plan = preserve_bytes(
+            "src/example.rs",
+            "old",
+            &old,
+            &candidate,
+            &edits,
+            &ast,
+            &errors,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(plan.public_functions, ["first", "second", "third"]);
+        assert_eq!(plan.helpers, ["helper", "offset"]);
+        let after = plan.outputs["src/example.rs"].clone();
         assert!(after.contains("pub use self::extracted::{first, second, third};"));
         assert!(after.contains("    use super::helper;\n    use super::offset;\n"));
         assert!(after.contains("/// documented α"));
         assert_eq!(
-            refactor_codegen::replay_edits(&candidate,&plan.edits,"src/example.rs").unwrap(),
+            refactor_codegen::replay_edits(&candidate, &plan.edits, "src/example.rs").unwrap(),
             after
         );
-        (old,after)
+        (old, after)
     }
 
     #[test]
@@ -476,96 +584,197 @@ mod tests {
 
     #[test]
     fn refuse_malformed_ast_bodies_and_unsupported_visibility() {
-        let (before,candidate,edits,ast)=fixture();
-        let corrupt=candidate.replace("        helper() + offset()","        999");
-        assert!(preserve_bytes("src/example.rs","old",&before,&corrupt,&edits,&ast,&[]).is_err());
-        let bad=outline(&[("first","function_item",0,before.len()+1)]);
-        assert!(preserve_bytes("src/example.rs","old",&before,&candidate,&edits,&bad,&[]).is_err());
-        let partial=outline(&[("first","function_item",0,before.len()/2)]);
-        assert!(preserve_bytes("src/example.rs","old",&before,&candidate,&edits,&partial,&[]).is_err());
-        let wrong=outline(&[("first","struct_item",span(&before,"pub fn first").0,
-            span(&before,"pub fn first").1)]);
-        assert!(preserve_bytes("src/example.rs","old",&before,&candidate,&edits,&wrong,&[]).is_err());
+        let (before, candidate, edits, ast) = fixture();
+        let corrupt = candidate.replace("        helper() + offset()", "        999");
+        assert!(
+            preserve_bytes(
+                "src/example.rs",
+                "old",
+                &before,
+                &corrupt,
+                &edits,
+                &ast,
+                &[]
+            )
+            .is_err()
+        );
+        let bad = outline(&[("first", "function_item", 0, before.len() + 1)]);
+        assert!(
+            preserve_bytes(
+                "src/example.rs",
+                "old",
+                &before,
+                &candidate,
+                &edits,
+                &bad,
+                &[]
+            )
+            .is_err()
+        );
+        let partial = outline(&[("first", "function_item", 0, before.len() / 2)]);
+        assert!(
+            preserve_bytes(
+                "src/example.rs",
+                "old",
+                &before,
+                &candidate,
+                &edits,
+                &partial,
+                &[]
+            )
+            .is_err()
+        );
+        let wrong = outline(&[(
+            "first",
+            "struct_item",
+            span(&before, "pub fn first").0,
+            span(&before, "pub fn first").1,
+        )]);
+        assert!(
+            preserve_bytes(
+                "src/example.rs",
+                "old",
+                &before,
+                &candidate,
+                &edits,
+                &wrong,
+                &[]
+            )
+            .is_err()
+        );
 
-        let old="pub(crate) fn private() {}";
-        let ast=outline(&[("private","function_item",0,old.len())]);
-        assert!(moved_items(old,0,old.len(),&ast).unwrap().is_none());
+        let old = "pub(crate) fn private() {}";
+        let ast = outline(&[("private", "function_item", 0, old.len())]);
+        assert!(moved_items(old, 0, old.len(), &ast).unwrap().is_none());
 
-        let old="pub fn a() {}\nconst SKIPPED: u8 = 1;\npub fn b() {}";
-        let ast=outline(&[
-            ("a","function_item",0,"pub fn a() {}".len()),
-            ("b","function_item",old.find("pub fn b").unwrap(),old.len()),
+        let old = "pub fn a() {}\nconst SKIPPED: u8 = 1;\npub fn b() {}";
+        let ast = outline(&[
+            ("a", "function_item", 0, "pub fn a() {}".len()),
+            (
+                "b",
+                "function_item",
+                old.find("pub fn b").unwrap(),
+                old.len(),
+            ),
         ]);
-        assert!(moved_items(old,0,old.len(),&ast).is_err());
+        assert!(moved_items(old, 0, old.len(), &ast).is_err());
 
-        let marked="#[cfg(feature=\"x\")]\npub fn item() {}";
-        let wrapped="mod extra {\n    #[cfg(feature=\"x\")]\n    pub fn item() {}\n}";
-        assert!(unchanged_move(marked,wrapped).unwrap().is_none());
+        let marked = "#[cfg(feature=\"x\")]\npub fn item() {}";
+        let wrapped = "mod extra {\n    #[cfg(feature=\"x\")]\n    pub fn item() {}\n}";
+        assert!(unchanged_move(marked, wrapped).unwrap().is_none());
     }
 
     #[test]
     fn bounded_eight_item_selection_and_duplicate_guard() {
-        let mut source=String::new();
-        let mut entries=Vec::new();
+        let mut source = String::new();
+        let mut entries = Vec::new();
         for n in 0..9 {
-            let item=format!("pub fn f{n}() {{}}");
-            let start=source.len();
+            let item = format!("pub fn f{n}() {{}}");
+            let start = source.len();
             source.push_str(&item);
-            entries.push((format!("f{n}"),start,source.len()));
+            entries.push((format!("f{n}"), start, source.len()));
             source.push('\n');
         }
-        let ast=Value::array([obj(&[("items",Value::array(entries.iter().map(|(name,start,end)|
-            obj(&[
-                ("name",Value::string(name)),("symbolType",Value::string("function")),
-                ("astKind",Value::string("function_item")),
-                ("range",obj(&[("byteOffset",obj(&[
-                    ("start",Value::number(*start)),("end",Value::number(*end)),
-                ]))])),
-            ])) ))])]);
-        assert!(moved_items(&source,0,source.len(),&ast).unwrap().is_none());
-        let duplicate=outline(&[
-            ("a","function_item",0,12),
-            ("a","function_item",0,12),
-        ]);
-        assert!(moved_items("pub fn a() {}",0,12,&duplicate).is_err());
+        let ast = Value::array([obj(&[(
+            "items",
+            Value::array(entries.iter().map(|(name, start, end)| {
+                obj(&[
+                    ("name", Value::string(name)),
+                    ("symbolType", Value::string("function")),
+                    ("astKind", Value::string("function_item")),
+                    (
+                        "range",
+                        obj(&[(
+                            "byteOffset",
+                            obj(&[
+                                ("start", Value::number(*start)),
+                                ("end", Value::number(*end)),
+                            ]),
+                        )]),
+                    ),
+                ])
+            })),
+        )])]);
+        assert!(
+            moved_items(&source, 0, source.len(), &ast)
+                .unwrap()
+                .is_none()
+        );
+        let duplicate = outline(&[("a", "function_item", 0, 12), ("a", "function_item", 0, 12)]);
+        assert!(moved_items("pub fn a() {}", 0, 12, &duplicate).is_err());
     }
 
     #[test]
     fn rejects_unknown_parent_dependency_and_mismatched_diagnostic() {
-        let (old,candidate,edits,ast)=fixture();
-        let line=candidate.lines().position(|line|line.contains("        helper() + offset()")).unwrap();
-        for (code,message) in [
-            ("E0433","unknown path"),
-            ("E0425","cannot find function \x60not_declared\x60 in this scope"),
+        let (old, candidate, edits, ast) = fixture();
+        let line = candidate
+            .lines()
+            .position(|line| line.contains("        helper() + offset()"))
+            .unwrap();
+        for (code, message) in [
+            ("E0433", "unknown path"),
+            (
+                "E0425",
+                "cannot find function \x60not_declared\x60 in this scope",
+            ),
         ] {
-            let errors=[Missing{path:"src/example.rs",line,column:8,code,message}];
-            assert!(preserve_bytes("src/example.rs","old",&old,&candidate,&edits,&ast,&errors).is_err());
+            let errors = [Missing {
+                path: "src/example.rs",
+                line,
+                column: 8,
+                code,
+                message,
+            }];
+            assert!(
+                preserve_bytes(
+                    "src/example.rs",
+                    "old",
+                    &old,
+                    &candidate,
+                    &edits,
+                    &ast,
+                    &errors
+                )
+                .is_err()
+            );
         }
     }
 
     #[test]
     fn generated_multi_item_repair_compiles_and_matches_original_behavior() {
-        let (old,after)=repair_fixture();
-        let main="\nfn main() { println!(\"{} {} {}\", first(5), second(), third()); }\n";
-        let root=std::env::temp_dir().join(format!(
-            "excession-api-stress-{}-{}",std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        let (old, after) = repair_fixture();
+        let main = "\nfn main() { println!(\"{} {} {}\", first(5), second(), third()); }\n";
+        let root = std::env::temp_dir().join(format!(
+            "excession-api-stress-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         std::fs::create_dir_all(&root).unwrap();
-        let rustc=std::env::var_os("RUSTC").unwrap_or_else(||"rustc".into());
-        let run=|label:&str,body:&str|->Vec<u8> {
-            let source=root.join(format!("{label}.rs"));
-            let binary=root.join(label);
-            std::fs::write(&source,format!("{body}{main}")).unwrap();
-            let compile=std::process::Command::new(&rustc)
-                .args(["--crate-name","stress","--edition=2024"])
-                .arg(source).arg("-o").arg(&binary).output().unwrap();
-            assert!(compile.status.success(),"rustc: {}",String::from_utf8_lossy(&compile.stderr));
-            let output=std::process::Command::new(binary).output().unwrap();
+        let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+        let run = |label: &str, body: &str| -> Vec<u8> {
+            let source = root.join(format!("{label}.rs"));
+            let binary = root.join(label);
+            std::fs::write(&source, format!("{body}{main}")).unwrap();
+            let compile = std::process::Command::new(&rustc)
+                .args(["--crate-name", "stress", "--edition=2024"])
+                .arg(source)
+                .arg("-o")
+                .arg(&binary)
+                .output()
+                .unwrap();
+            assert!(
+                compile.status.success(),
+                "rustc: {}",
+                String::from_utf8_lossy(&compile.stderr)
+            );
+            let output = std::process::Command::new(binary).output().unwrap();
             assert!(output.status.success());
             output.stdout
         };
-        assert_eq!(run("original",&old),run("repaired",&after));
+        assert_eq!(run("original", &old), run("repaired", &after));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

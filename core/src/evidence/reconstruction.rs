@@ -1,9 +1,11 @@
 //! A bounded compiler-in-the-loop comparison for a single C object-code region.
 //! Code-byte equality is not source recovery, behavioral equivalence or build attestation.
+mod automatic;
 use crate::evidence::{artifact, identity::Subject};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, refuse};
+pub use automatic::{SearchOptions, search, searches};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

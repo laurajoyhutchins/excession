@@ -219,6 +219,72 @@ jobs:
           }
           (out / 'behavioral-witness.json').write_text(json.dumps(witness, indent=2, sort_keys=True) + '\n')
           PY
+      - name: Detect a controlled coding-agent-style regression in unchanged tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The upstream fix is the baseline. Simulate an agent silently
+          # reintroducing the exact historical bug, but changing only code.
+          python3 - "$PYTEST_REPO/src/_pytest/nodes.py" <<'PY'
+          from pathlib import Path
+          import sys
+          source = Path(sys.argv[1])
+          text = source.read_text()
+          good = '            return str(excinfo.value)\n'
+          broken = '            exc = excinfo.value\n            return str(exc.args[0])\n'
+          assert text.count(good) == 1, 'the upstream code has changed'
+          source.write_text(text.replace(good, broken, 1))
+          PY
+          git -C "$PYTEST_REPO" add -- src/_pytest/nodes.py
+          git -C "$PYTEST_REPO" -c user.name='Excession independent benchmark' \
+            -c user.email='benchmark@example.invalid' \
+            commit -qm 'Controlled agent regression: restore empty-args crash'
+          FAULT_SHA="$(git -C "$PYTEST_REPO" rev-parse HEAD)"
+          printf '%s\n' "$FAULT_SHA" > "$OUT/fault-commit.txt"
+          git -C "$PYTEST_REPO" diff --name-only "$HEAD_SHA" "$FAULT_SHA" \
+            > "$OUT/fault-changed.txt"
+          test "$(cat "$OUT/fault-changed.txt")" = 'src/_pytest/nodes.py'
+          set +e
+          (cd "$PYTEST_REPO" && PYTHONPATH=src python3 "$OUT/regression_probe.py") \
+            > "$OUT/fault-test.log" 2>&1
+          fault_exit=$?
+          set -e
+          printf '%s\n' "$fault_exit" > "$OUT/fault-test-exit.txt"
+          test "$fault_exit" -ne 0
+          grep -q 'IndexError: tuple index out of range' "$OUT/fault-test.log"
+          python3 - "$OUT" "$FAULT_SHA" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'benchmarks/experiments')
+          from impact_heldout import evaluate
+          out = Path(sys.argv[1])
+          candidate = sys.argv[2]
+          fixed = 'dcd0e636b4ce69021a9f607b060ea0056c339fd2'
+          result = evaluate(
+              Path('core/target/release/excession').resolve(),
+              Path('/tmp/pytest-independent-source'), fixed, candidate, 'src,testing')
+          test_path = 'testing/test_nodes.py'
+          assert result['status'] == 'MATCH', result
+          assert test_path not in result['changed_paths'], result['changed_paths']
+          assert test_path in result['oracle'][candidate]['expected_affected_paths']
+          assert test_path in result['actual'][candidate]
+          receipt = {
+              'schema': 'excession.external-pytest-controlled-regression.v1',
+              'base_commit': fixed,
+              'candidate_commit': candidate,
+              'changed_paths': result['changed_paths'],
+              'unmodified_regression_test': test_path,
+              'independent_import_oracle': result['status'],
+              'excession_flagged_unmodified_test': True,
+              'independent_behavioral_failure': 'IndexError: tuple index out of range',
+              'oracle_affected_paths': len(result['oracle'][candidate]['expected_affected_paths']),
+              'excession_affected_paths': len(result['actual'][candidate]),
+              'limitations': 'Controlled seeded regression, not a recorded mistake by an independent coding agent. Full AST oracle has the same reachability.'
+          }
+          (out / 'controlled-regression.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(receipt, indent=2))
+          PY
       - name: Collect independently inspectable artifacts even after failure
         if: always()
         uses: actions/upload-artifact@v4

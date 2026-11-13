@@ -328,8 +328,9 @@ pub fn verify(
     let effects = impact.get("effects")?.array_ref()?;
     let candidate_sources = impact.get("candidate_source_impacts")?.array_ref()?;
     let candidate_source_count = impact.get("candidate_source_count")?.integer()?;
-    let candidate_source_complete =
-        impact.get("candidate_source_enumeration_complete")?.bool()?;
+    let candidate_source_complete = impact
+        .get("candidate_source_enumeration_complete")?
+        .bool()?;
     let unknown = impact.get("unknown")?.array_ref()?;
     if !unknown.is_empty() {
         obligations.insert("UNRESOLVED_SOURCE_COVERAGE".into());
@@ -361,7 +362,10 @@ pub fn verify(
             "candidate_source_impacts",
             Value::array(take_bounded(candidate_sources, limit)),
         ),
-        ("candidate_source_count", Value::number(candidate_source_count)),
+        (
+            "candidate_source_count",
+            Value::number(candidate_source_count),
+        ),
         (
             "candidate_source_enumeration_complete",
             Value::Bool(candidate_source_complete && candidate_sources.len() <= limit),

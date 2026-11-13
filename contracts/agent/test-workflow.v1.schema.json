@@ -25,7 +25,9 @@
     "native_execution",
     "verification",
     "safe_to_skip_unlisted_tests",
-    "report_id"
+    "report_id",
+    "guidance",
+    "next_argv"
   ],
   "properties": {
     "schema": {
@@ -146,6 +148,18 @@
     },
     "report_id": {
       "$ref": "#/$defs/sha256"
+    },
+    "guidance": {
+      "type": "string",
+      "minLength": 1
+    },
+    "next_argv": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "$defs": {

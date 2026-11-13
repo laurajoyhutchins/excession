@@ -189,6 +189,51 @@ fn test_command(provider: &str, blockers: &BTreeSet<String>) -> &'static str {
     "excession tests --run"
 }
 
+fn shell_quote(argument: &str) -> String {
+    if !argument.is_empty()
+        && argument.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-' | b':' | b'=')
+        })
+    {
+        argument.to_owned()
+    } else {
+        format!("'{}'", argument.replace("'", "'\\''"))
+    }
+}
+
+fn next_invocation(
+    repo: &Path,
+    base: &str,
+    candidate: &str,
+    provider: &str,
+    tool: Option<&str>,
+    focus: Option<&str>,
+) -> (String, Vec<String>) {
+    let mut args = vec![
+        "excession".to_owned(),
+        "tests".to_owned(),
+        "--run".to_owned(),
+        "--repo".to_owned(),
+        repo.to_string_lossy().into_owned(),
+        "--base".to_owned(),
+        base.to_owned(),
+        "--candidate".to_owned(),
+        candidate.to_owned(),
+    ];
+    if provider != "UNRESOLVED" {
+        args.extend(["--provider".to_owned(), provider.to_owned()]);
+    }
+    if let Some(tool) = tool {
+        args.extend(["--tool".to_owned(), tool.to_owned()]);
+    }
+    if let Some(focus) = focus {
+        args.extend(["--focus".to_owned(), focus.to_owned()]);
+    }
+    let command = args.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ");
+    args.push("--json".to_owned());
+    (command, args)
+}
+
 pub struct Request<'a> {
     pub repo: &'a Path,
     pub base: Option<&'a str>,
@@ -322,7 +367,15 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         selection = chosen;
     }
 
-    let next_command = test_command(&provider, &blockers);
+    let guidance = test_command(&provider, &blockers);
+    let (next_command, next_argv) = next_invocation(
+        &root,
+        &base,
+        &commit,
+        &provider,
+        request.tool,
+        request.focus,
+    );
     let mut report = obj(&[
         ("schema", Value::string("excession.test-workflow.v1")),
         (
@@ -359,6 +412,11 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             "next_command",
             Value::string(next_command),
         ),
+        (
+            "next_argv",
+            Value::array(next_argv.into_iter().map(Value::string)),
+        ),
+        ("guidance", Value::string(guidance)),
         (
             "selected_test_files",
             Value::array(selected.into_iter().map(Value::string)),
@@ -528,5 +586,17 @@ mod tests {
         assert!(has_jest_config("packages/web/jest.config.ts"));
         assert!(declares_jest(br#"{"devDependencies":{"jest":"30.2.0"}}"#));
         assert!(!declares_jest(br#"{"devDependencies":{"vitest":"3"}}"#));
+        let (command, args) = next_invocation(
+            Path::new("/tmp/my project"),
+            "0123456789012345678901234567890123456789",
+            "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            "jest",
+            None,
+            Some("tests/a'b.test.js"),
+        );
+        assert!(command.contains("'/tmp/my project'"));
+        assert!(command.contains("'tests/a'\\''b.test.js'"));
+        assert!(args.contains(&"--json".to_owned()));
+        assert!(args.contains(&"--provider".to_owned()));
     }
 }

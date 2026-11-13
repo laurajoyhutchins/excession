@@ -93,6 +93,9 @@ fn test_summary(report: &excession::json::Value) -> Result<String> {
         lines.push(format!("  Blocked: {}", reason.str()?));
     }
     if mode == "PLAN" {
+        if phase == "BLOCKED" {
+            lines.push(format!("Fix: {}", report.get("guidance")?.str()?));
+        }
         lines.push(format!("Next: {}", report.get("next_command")?.str()?));
         if phase == "READY" {
             lines.push("This is a read-only plan. --run executes native project tools.".to_owned());

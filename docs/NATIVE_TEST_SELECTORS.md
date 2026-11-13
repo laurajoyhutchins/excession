@@ -154,3 +154,11 @@ Provider detection also checks Jest declarations in a tracked root-level
 can therefore produce a useful *blocked* plan before dependencies are installed.
 The displayed next action distinguishes an already-ready checkout from missing
 native prerequisites.
+
+
+For programmatic agents, the test plan also supplies \`next_argv\`: a complete
+argument vector containing absolute source identities, exact base/candidate
+commits, provider and focus. Its final \`--json\` argument ensures the next
+execution produces machine-readable evidence. Unlike re-running automatic
+discovery, this preserves what the agent approved during planning. Human
+output includes the shell-quoted equivalent \`next_command\`.

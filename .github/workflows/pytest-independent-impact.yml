@@ -363,6 +363,75 @@ jobs:
           (out / 'native-selection.json').write_text(json.dumps(summary, indent=2, sort_keys=True)+'\n')
           print(json.dumps(summary, indent=2))
           PY
+      - name: Verify agent failure and refuse stale source-bound test receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          FAULT_SHA="$(cat "$OUT/fault-commit.txt")"
+          python3 - "$OUT" "$PYTEST_REPO" "$FAULT_SHA" <<'PY'
+          import hashlib, json, subprocess, sys
+          from pathlib import Path
+          out, repo, fault = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+          tree = subprocess.check_output(
+              ['git', '-C', str(repo), 'rev-parse', fault+'^{tree}'], text=True
+          ).strip()
+          exit_code = int((out / 'fault-test-exit.txt').read_text())
+          assert exit_code != 0
+          receipt = {
+              'kind': 'TEST', 'status': 'FAIL',
+              'source_commit': fault, 'source_tree': tree,
+              'producer': 'github-actions-pinned-pytest-probe',
+              'command': 'PYTHONPATH=src python3 /tmp/excession-pytest-independent/regression_probe.py',
+              'exit_code': exit_code,
+              'log_sha256': hashlib.sha256((out / 'fault-test.log').read_bytes()).hexdigest(),
+          }
+          payload = {'schema': 'excession.execution-receipts.v1', 'receipts': [receipt]}
+          (out / 'fault-receipt.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          stale = json.loads(json.dumps(payload))
+          stale['receipts'][0]['source_commit'] = 'dcd0e636b4ce69021a9f607b060ea0056c339fd2'
+          (out / 'stale-receipt.json').write_text(json.dumps(stale, indent=2, sort_keys=True) + '\n')
+          PY
+          /usr/bin/time -f '%e %M' -o "$OUT/agent-verify.time" \
+            core/target/release/excession agent verify \
+              --repo "$PYTEST_REPO" --base "$HEAD_SHA" --candidate "$FAULT_SHA" \
+              --roots src,testing --db "$OUT/agent-verify.sqlite" --limit 64 \
+              --receipts "$OUT/fault-receipt.json" > "$OUT/agent-verify.json"
+          set +e
+          core/target/release/excession agent verify \
+            --repo "$PYTEST_REPO" --base "$HEAD_SHA" --candidate "$FAULT_SHA" \
+            --roots src,testing --db "$OUT/agent-verify.sqlite" --limit 64 \
+            --receipts "$OUT/stale-receipt.json" \
+            > "$OUT/stale-accepted.json" 2> "$OUT/stale-rejected.log"
+          stale_code=$?
+          set -e
+          test "$stale_code" -ne 0
+          grep -q 'does not bind to candidate commit/tree' "$OUT/stale-rejected.log"
+          python3 - "$OUT" "$FAULT_SHA" <<'PY'
+          import json, sys
+          from pathlib import Path
+          out, fault = Path(sys.argv[1]), sys.argv[2]
+          report = json.loads((out / 'agent-verify.json').read_text())
+          assert report['schema'] == 'excession.agent-verification.v1'
+          assert report['candidate_commit'] == fault
+          assert report['status'] == 'REPORTED_FAILURE', report
+          assert report['ready_to_merge'] is False
+          assert 'REPORTED_TEST_OR_BUILD_FAILURE' in report['obligations']
+          assert 'RECEIPT_AUTHENTICITY_UNVERIFIED' in report['obligations']
+          assert len(report['receipts']) == 1
+          assert report['receipts'][0]['trust'] == 'CALLER_SUPPLIED_UNATTESTED'
+          record = {
+              'schema': 'excession.pytest-agent-verification-comparison.v1',
+              'candidate_commit': fault,
+              'test_status': 'FAIL',
+              'agent_status': report['status'],
+              'ready_to_merge': report['ready_to_merge'],
+              'stale_commit_receipt_refused': True,
+              'trust_level': report['receipts'][0]['trust'],
+              'limitations': 'Receipt contains a locally declared log digest, not signed worker attestation. Agent consumers must honor the status. This compares an evidence-verification capability, not stronger semantic test selection.'
+          }
+          (out / 'agent-verification-evidence.json').write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(record, indent=2))
+          PY
       - name: Collect independently inspectable artifacts even after failure
         if: always()
         uses: actions/upload-artifact@v4

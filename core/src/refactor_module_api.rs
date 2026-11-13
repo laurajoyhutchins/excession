@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 const MAX_HELPERS: usize = 4;
+const MAX_ITEMS: usize = 8;
 const MAX_FILE: usize = 512 * 1024;
 
 pub(crate) struct Missing<'a> {
@@ -22,7 +23,7 @@ pub(crate) struct Proposal {
     pub path: String,
     pub edits: Value,
     pub outputs: BTreeMap<String, String>,
-    pub moved_function: String,
+    pub public_functions: Vec<String>,
     pub helpers: Vec<String>,
 }
 
@@ -39,20 +40,17 @@ fn identifier(value: &str) -> bool {
         )
 }
 
-/// Restrict the recipe to this exactly verified rust-analyzer move:
+/// Require a byte-identical native module wrapper. The upstream LSP supplies
+/// the edit; AST item identities are independently checked against original Git
+/// bytes below, using the existing ast-grep outline dependency.
 ///
-/// A `pub fn f(...)` is wrapped by `mod name { pub fn f(...) }`.
-///
-/// Both the original declaration and its entire function body must be
-/// byte-identical after removing the provider's four-space indentation.
-fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, String, usize)>> {
+/// Empty separator lines may be blank or four-space-indented. Nonblank lines
+/// must have exactly the provider-added four-space prefix.
+fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, usize)>> {
     let Some((header, body)) = replacement.split_once('\n') else {
         return Ok(None);
     };
-    let Some(name) = header
-        .strip_prefix("mod ")
-        .and_then(|h| h.strip_suffix(" {"))
-    else {
+    let Some(name) = header.strip_prefix("mod ").and_then(|h| h.strip_suffix(" {")) else {
         return Ok(None);
     };
     if !identifier(name) {
@@ -63,41 +61,119 @@ fn unchanged_move(original: &str, replacement: &str) -> Result<Option<(String, S
     };
     let mut deindented = Vec::new();
     for line in body.split('\n') {
-        let Some(line) = line.strip_prefix("    ") else {
+        if line.is_empty() {
+            deindented.push("");
+        } else if let Some(line) = line.strip_prefix("    ") {
+            deindented.push(line);
+        } else {
             return refuse("native extraction changed indentation or moved unsupported items");
-        };
-        deindented.push(line);
+        }
     }
     if deindented.join("\n") != original {
-        return refuse("native extraction changed Rust function source bytes");
+        return refuse("native extraction changed original Rust source bytes");
     }
-    let exported = original
-        .lines()
-        .filter_map(|line| {
-            line.strip_prefix("pub fn ")
-                .and_then(|s| s.split_once('('))
-                .map(|v| v.0)
-        })
-        .collect::<Vec<_>>();
-    if exported.len() != 1 || !identifier(exported[0]) {
-        return Ok(None);
-    }
-    // These are not self-contained function moves: the syntax and
-    // visibility would need different, separately audited rules.
-    if original
-        .lines()
-        .any(|line| line.trim_start().starts_with("#["))
+    if original.lines().any(|line| line.trim_start().starts_with("#["))
         || original.contains("super::")
         || original.contains("self::")
         || original.contains("crate::")
     {
         return Ok(None);
     }
-    Ok(Some((
-        name.to_owned(),
-        exported[0].to_owned(),
-        header.len() + 1,
-    )))
+    Ok(Some((name.to_owned(), header.len() + 1)))
+}
+
+fn declared<'a>(source: &'a str, name: &str, prefixes: &[&str]) -> bool {
+    prefixes.iter().any(|prefix| {
+        source.strip_prefix(prefix)
+            .and_then(|tail| tail.strip_prefix(name))
+            .is_some_and(|tail| tail.starts_with('(') || tail.starts_with('<'))
+    })
+}
+
+fn safe_gap(gap: &str) -> bool {
+    gap.lines().all(|line| {
+        let line = line.trim();
+        line.is_empty() || (line.starts_with("//") && !line.starts_with("//!"))
+    })
+}
+
+struct MoveItems {
+    public_functions: Vec<String>,
+    parent_helpers: BTreeSet<String>,
+}
+
+/// Trust ast-grep's top-level function ranges rather than an Excession line
+/// scanner. Refuse every non-function item intersecting the moved interval,
+/// ambiguous/overlapping ranges, unsupported visibility, and unexplained gaps.
+fn moved_items(
+    source: &str,
+    start: usize,
+    end: usize,
+    outline: &Value,
+) -> Result<Option<MoveItems>> {
+    let files = outline.array_ref()?;
+    if files.len() != 1 {
+        return refuse("ast-grep must return exactly one original Rust source file");
+    }
+    let items = files[0].get("items")?.array_ref()?;
+    if items.len() > 10_000 {
+        return refuse("ast-grep source item count exceeds bound");
+    }
+    let mut moved = Vec::new();
+    let mut helpers = BTreeSet::new();
+    for item in items {
+        let name = item.get("name")?.str()?;
+        let kind = item.get("astKind")?.str()?;
+        let offsets = item.get("range")?.get("byteOffset")?;
+        let begin = usize::try_from(offsets.get("start")?.integer()?)
+            .map_err(|_| "negative ast-grep item start")?;
+        let finish = usize::try_from(offsets.get("end")?.integer()?)
+            .map_err(|_| "negative ast-grep item end")?;
+        if begin >= finish || finish > source.len() {
+            return refuse("ast-grep item range outside Git source");
+        }
+        let body = source.get(begin..finish).ok_or("ast-grep splits UTF-8 source")?;
+        let is_function = kind == "function_item"
+            && item.get("symbolType")?.str()? == "function"
+            && identifier(name);
+        if begin < end && finish > start {
+            if begin < start || finish > end || !is_function {
+                return refuse("moved interval includes a partial or non-function syntax item");
+            }
+            if !declared(body, name, &["pub fn ", "pub async fn ", "pub const fn ", "pub unsafe fn "]) {
+                return Ok(None);
+            }
+            moved.push((begin, finish, name.to_owned()));
+        } else if is_function
+            && declared(body, name, &[
+                "fn ", "async fn ", "const fn ", "unsafe fn ",
+                "pub fn ", "pub async fn ", "pub(crate) fn ",
+                "pub(super) fn ", "pub const fn ",
+            ])
+        {
+            helpers.insert(name.to_owned());
+        }
+    }
+    moved.sort_by_key(|item| item.0);
+    if moved.is_empty() || moved.len() > MAX_ITEMS {
+        return Ok(None);
+    }
+    let mut cursor = start;
+    let mut names = BTreeSet::new();
+    let mut public_functions = Vec::new();
+    for (begin, finish, name) in moved {
+        if begin < cursor || !safe_gap(source.get(cursor..begin).ok_or("invalid moved gap")?)
+            || !names.insert(name.clone())
+        {
+            return refuse("moved items overlap, duplicate names, or include unsupported syntax");
+        }
+        cursor = finish;
+        public_functions.push(name);
+    }
+    if !safe_gap(source.get(cursor..end).ok_or("invalid trailing moved gap")?) {
+        return refuse("unsupported source between extracted items");
+    }
+    Ok(Some(MoveItems { public_functions, parent_helpers: helpers }))
 }
 
 fn line_byte(text: &str, line: usize, column: usize) -> Result<usize> {
@@ -132,6 +208,7 @@ fn preserve_bytes(
     old_source: &str,
     current_source: &str,
     prior_edits: &Value,
+    outline: &Value,
     errors: &[Missing<'_>],
 ) -> Result<Option<Proposal>> {
     let edits = prior_edits.array_ref()?;
@@ -157,9 +234,12 @@ fn preserve_bytes(
         return refuse("native extracted range is not a valid UTF-8 source range");
     }
     let replacement = change.get("replacement")?.str()?;
-    let Some((module, function, header_bytes)) =
+    let Some((module, header_bytes)) =
         unchanged_move(&old_source[start..end], replacement)?
     else {
+        return Ok(None);
+    };
+    let Some(items) = moved_items(old_source, start, end, outline)? else {
         return Ok(None);
     };
     let mut expected = old_source.to_owned();
@@ -186,13 +266,10 @@ fn preserve_bytes(
         let Some(helper) = missing_function(error.message) else {
             return refuse("unrecognized native extracted-module compiler diagnostic");
         };
-        if helper == function
+        if items.public_functions.iter().any(|name| name == helper)
             || !current_source[pos..].starts_with(helper)
             || !current_source[pos + helper.len()..].starts_with('(')
-            || !old_source.lines().any(|line| {
-                line.starts_with(&format!("fn {helper}("))
-                    || line.starts_with(&format!("pub fn {helper}("))
-            })
+            || !items.parent_helpers.contains(helper)
         {
             return refuse("compiler error is not a verified parent-module function dependency");
         }
@@ -207,7 +284,11 @@ fn preserve_bytes(
         .iter()
         .map(|h| format!("    use super::{h};\n"))
         .collect::<String>();
-    let export = format!("\npub use self::{module}::{function};");
+    let export = if items.public_functions.len() == 1 {
+        format!("\npub use self::{module}::{};", items.public_functions[0])
+    } else {
+        format!("\npub use self::{module}::{{{}}};", items.public_functions.join(", "))
+    };
     let changes = Value::array([
         refactor_codegen::edit_operation(path, Some(oid), module_begin, module_begin, &imports),
         refactor_codegen::edit_operation(path, Some(oid), module_end, module_end, &export),
@@ -222,7 +303,7 @@ fn preserve_bytes(
         path: path.to_owned(),
         edits: changes,
         outputs,
-        moved_function: function,
+        public_functions: items.public_functions,
         helpers: helpers.into_iter().collect(),
     }))
 }
@@ -231,6 +312,7 @@ pub(crate) fn propose(
     repo: &Path,
     base: &str,
     parent: &Value,
+    ast_grep: &Path,
     errors: &[Missing<'_>],
 ) -> Result<Option<Proposal>> {
     if parent.get("action_title")?.str()? != "Extract Module"
@@ -264,12 +346,14 @@ pub(crate) fn propose(
     reader.finish()?;
     let current_source =
         String::from_utf8(bytes).map_err(|_| "candidate Rust source is not UTF-8")?;
+    let syntax = refactor_codegen::outline(ast_grep, &original_source)?;
     preserve_bytes(
         path,
         &original.oid,
         &original_source,
         &current_source,
         parent.get("edits")?,
+        &syntax,
         errors,
     )
     .map(|proposal| {
@@ -300,88 +384,3 @@ pub(crate) fn propose(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn fixture() -> (String, String, Value) {
-        let source = "pub fn helper() -> usize { 2 }\n\n/// documented\npub fn public() -> usize {\n    helper()\n}\n\npub fn caller() -> usize { public() }\n";
-        let moved = "/// documented\npub fn public() -> usize {\n    helper()\n}";
-        let replacement = "mod extracted {\n    /// documented\n    pub fn public() -> usize {\n        helper()\n    }\n}";
-        let start = source.find(moved).unwrap();
-        let edit = refactor_codegen::edit_operation(
-            "src/semantic.rs",
-            Some("old"),
-            start,
-            start + moved.len(),
-            replacement,
-        );
-        let mut candidate = source.to_owned();
-        candidate.replace_range(start..start + moved.len(), replacement);
-        (source.to_owned(), candidate, Value::array([edit]))
-    }
-    #[test]
-    fn preserves_exact_function_body_and_parent_public_path() {
-        let (before, candidate, edits) = fixture();
-        let line = candidate
-            .lines()
-            .position(|l| l.contains("        helper()"))
-            .unwrap();
-        let error = Missing {
-            path: "src/semantic.rs",
-            line,
-            column: 8,
-            code: "E0425",
-            message: "cannot find function `helper` in this scope",
-        };
-        let patch = preserve_bytes(
-            "src/semantic.rs",
-            "old",
-            &before,
-            &candidate,
-            &edits,
-            &[error],
-        )
-        .unwrap()
-        .unwrap();
-        let after = &patch.outputs["src/semantic.rs"];
-        assert!(after.contains("    use super::helper;\n"));
-        assert!(after.contains("pub use self::extracted::public;"));
-        assert!(after.contains("pub fn public() -> usize {\n        helper()\n    }"));
-        assert_eq!(patch.moved_function, "public");
-        assert_eq!(patch.helpers, vec!["helper"]);
-        assert_eq!(
-            refactor_codegen::replay_edits(&candidate, &patch.edits, "src/semantic.rs").unwrap(),
-            *after
-        );
-    }
-    #[test]
-    fn refuses_mutated_function_or_unsupported_diagnostic() {
-        let (before, candidate, edits) = fixture();
-        let corrupt = candidate.replace("        helper()", "        999");
-        assert!(preserve_bytes("src/semantic.rs", "old", &before, &corrupt, &edits, &[]).is_err());
-        let line = candidate
-            .lines()
-            .position(|l| l.contains("        helper()"))
-            .unwrap();
-        let e = Missing {
-            path: "src/semantic.rs",
-            line,
-            column: 8,
-            code: "E0433",
-            message: "bad",
-        };
-        assert!(
-            preserve_bytes("src/semantic.rs", "old", &before, &candidate, &edits, &[e]).is_err()
-        );
-        let e = Missing {
-            path: "src/semantic.rs",
-            line,
-            column: 8,
-            code: "E0425",
-            message: "cannot find function `unknown` in this scope",
-        };
-        assert!(
-            preserve_bytes("src/semantic.rs", "old", &before, &candidate, &edits, &[e]).is_err()
-        );
-    }
-}

@@ -5,6 +5,7 @@ use excession::digest;
 use excession::json::{Value, obj};
 use excession::sqlite::Db;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -194,7 +195,7 @@ fn two_upstream_match_families_share_pinned_git_source_in_one_corpus() {
         assert_eq!(record.get("source_git_replayed").unwrap().bool().unwrap(),true);
         assert_eq!(field(record,"binary_source_equivalence"),"NOT_ESTABLISHED");
         assert_eq!(field(record.get("source").unwrap(),"path"),"src/lib.c");
-        assert_eq!(field(record.get("source").unwrap(),"commit"),f.commit);
+        assert_eq!(field(record.get("source").unwrap(),"commit"),f.commit.as_str());
         assert_eq!(field(m,"binary_source_correspondence"),"NOT_ESTABLISHED");
     }
     let schema:serde_json::Value=serde_json::from_str(include_str!(
@@ -229,7 +230,7 @@ fn matches_from_distinct_artifacts_join_same_source_without_reanalysis() {
         field(&a.get("source_candidates").unwrap().array_ref().unwrap()[0],"binding_id"),
         field(&b.get("source_candidates").unwrap().array_ref().unwrap()[0],"binding_id"),
     );
-    assert_eq!(f.candidates(&f.second,"ram:1000","1").status.success(),true);
+    assert!(f.candidates(&f.second,"ram:1000","1").status.success());
 }
 #[test]
 fn corrupted_provider_receipts_and_artifact_identities_refuse_closed() {

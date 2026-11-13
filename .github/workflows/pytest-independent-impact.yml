@@ -294,10 +294,13 @@ jobs:
           python3 -m pip install -q 'pytest-testmon==2.3.0'
           python3 -m pip show pytest-testmon > "$OUT/native-testmon-version.txt"
           git -C "$PYTEST_REPO" checkout -q --detach "$HEAD_SHA"
+          # A shallow historical fetch reports pytest 0.1.devN because no
+          # release tag is reachable. Override only the self-test minversion;
+          # keep source, fixtures, selectors, and the pytest plugin unchanged.
           rm -f "$PYTEST_REPO/.testmondata"
           set +e
           (cd "$PYTEST_REPO" && /usr/bin/time -f '%e %M' -o "$OUT/testmon-baseline.time" \
-            env PYTHONPATH=src python3 -m pytest --testmon --testmon-noselect \
+            env PYTHONPATH=src python3 -m pytest -o minversion=0.0 --testmon --testmon-noselect \
               testing/test_nodes.py::test_collector_repr_failure_collect_error -q \
               > "$OUT/testmon-baseline.log" 2>&1)
           base_code=$?
@@ -307,7 +310,7 @@ jobs:
           test -s "$PYTEST_REPO/.testmondata"
           set +e
           (cd "$PYTEST_REPO" && /usr/bin/time -f '%e %M' -o "$OUT/testmon-unchanged.time" \
-            env PYTHONPATH=src python3 -m pytest --testmon --testmon-forceselect \
+            env PYTHONPATH=src python3 -m pytest -o minversion=0.0 --testmon --testmon-forceselect \
               testing/test_nodes.py::test_collector_repr_failure_collect_error -q \
               > "$OUT/testmon-unchanged.log" 2>&1)
           unchanged_code=$?
@@ -319,7 +322,7 @@ jobs:
           test "$(git -C "$PYTEST_REPO" diff --name-only "$HEAD_SHA" "$FAULT_SHA")" = 'src/_pytest/nodes.py'
           set +e
           (cd "$PYTEST_REPO" && /usr/bin/time -f '%e %M' -o "$OUT/testmon-fault.time" \
-            env PYTHONPATH=src python3 -m pytest --testmon --testmon-forceselect \
+            env PYTHONPATH=src python3 -m pytest -o minversion=0.0 --testmon --testmon-forceselect \
               testing/test_nodes.py::test_collector_repr_failure_collect_error -q \
               > "$OUT/testmon-fault.log" 2>&1)
           fault_code=$?

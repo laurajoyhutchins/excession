@@ -33,8 +33,11 @@ deterministic ordered-map/set implementation takes
 `O((|V| + |E|) log |V|)` time for the graph traversal and `O(|V| + |E|)`
 working memory, excluding native indexing and report serialization. The
 witness *forest* itself has at most `|V|` edges, not one object per possible
-path. This is a standard graph algorithm used to correct a product-level
-path-enumeration failure, not a claimed new graph-theory theorem.
+path. Within the class of certificates containing an explicit outgoing
+witness edge for each affected non-seed source, this size is **optimal**:
+each of the `k` affected sources needs at least one such edge, and the BFS
+forest supplies exactly `k`. This standard graph-theoretic observation fixes
+a product-level enumeration failure; it is not claimed as a new theorem.
 
 The inventory has an independent 10,000-entry output cap.
 `candidate_source_count` is the exact (base-plus-head) count prior to

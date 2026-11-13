@@ -575,6 +575,8 @@ pub(super) fn command() -> Command {
             vec![
                 leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),
                 leaf("history", &["db", "target"], &["limit"]),
+                leaf("auto", &["db", "target", "out", "trusted-local"], &["compiler", "objcopy", "objdump", "nm", "max-candidates", "time-budget-seconds"]),
+                leaf("searches", &["db", "target"], &["limit"]),
             ],
         ).about("Trusted-local compiler feedback for C object-code reconstruction"))
         .subcommand(inspect)

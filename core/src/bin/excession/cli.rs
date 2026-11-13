@@ -158,7 +158,11 @@ pub(super) fn command() -> Command {
             ),
             leaf("unknown-history", &["db", "id"], &[]),
             leaf("producer-candidates", &["repo", "db"], &["rev"]),
-            leaf("ghidra-candidates", &["db", "artifact", "entry"], &["limit"]),
+            leaf(
+                "ghidra-candidates",
+                &["db", "artifact", "entry"],
+                &["limit"],
+            ),
             leaf(
                 "build-provenance",
                 &["db", "repo", "rev", "artifact", "snapshot"],
@@ -217,8 +221,16 @@ pub(super) fn command() -> Command {
                 ],
                 &[],
             ),
-            leaf("ghidra-import", &["db", "artifact", "report", "native"], &[]),
-            leaf("ghidra-source-bind", &["db", "repo", "rev", "source", "candidate", "symbol"], &[]),
+            leaf(
+                "ghidra-import",
+                &["db", "artifact", "report", "native"],
+                &[],
+            ),
+            leaf(
+                "ghidra-source-bind",
+                &["db", "repo", "rev", "source", "candidate", "symbol"],
+                &[],
+            ),
             leaf(
                 "rea-import",
                 &["db", "artifact", "bundle"],

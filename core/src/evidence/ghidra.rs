@@ -1,6 +1,9 @@
 //! Artifact-first Ghidra Function ID and BSim observations, joined to pinned Git
 //! source candidates without claiming the two are causally or semantically equivalent.
-use crate::evidence::{build, identity::{SourceRef, Subject}};
+use crate::evidence::{
+    build,
+    identity::{SourceRef, Subject},
+};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
@@ -30,7 +33,11 @@ fn text(value: &Value, max: usize) -> Result<&str> {
     Ok(v)
 }
 fn hex(value: &str, bytes: usize) -> Result<()> {
-    if value.len() != bytes * 2 || !value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if value.len() != bytes * 2
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return refuse("Ghidra identity requires lowercase fixed-width hex");
     }
     Ok(())
@@ -56,14 +63,32 @@ fn database(value: &Value) -> Result<()> {
 fn candidate(value: &Value) -> Result<String> {
     match value.get("engine")?.str()? {
         "FID" => {
-            exact(value, &["engine","database","library_family","library_version","library_variant","function"])?;
+            exact(
+                value,
+                &[
+                    "engine",
+                    "database",
+                    "library_family",
+                    "library_version",
+                    "library_variant",
+                    "function",
+                ],
+            )?;
             database(value.get("database")?)?;
-            for key in ["library_family","library_version","library_variant","function"] {
+            for key in [
+                "library_family",
+                "library_version",
+                "library_variant",
+                "function",
+            ] {
                 text(value.get(key)?, 256)?;
             }
         }
         "BSIM" => {
-            exact(value, &["engine","database","executable_md5","entry","function"])?;
+            exact(
+                value,
+                &["engine", "database", "executable_md5", "entry", "function"],
+            )?;
             database(value.get("database")?)?;
             hex(text(value.get("executable_md5")?, 32)?, 16)?;
             text(value.get("entry")?, 128)?;
@@ -75,41 +100,63 @@ fn candidate(value: &Value) -> Result<String> {
     bytes.extend_from_slice(value.canonical().as_bytes());
     Ok(digest::sha256(&bytes))
 }
-fn match_record(value: &Value) -> Result<(String,String)> {
-    exact(value, &["entry","candidate","evidence"])?;
+fn match_record(value: &Value) -> Result<(String, String)> {
+    exact(value, &["entry", "candidate", "evidence"])?;
     let entry = text(value.get("entry")?, 128)?;
     let key = candidate(value.get("candidate")?)?;
     let evidence = value.get("evidence")?;
     match value.get("candidate")?.get("engine")?.str()? {
         "FID" => {
-            exact(evidence, &["engine","overall_score","match_mode"])?;
-            if evidence.get("engine")?.str()? != "FID" { return refuse("FID score engine mismatch"); }
+            exact(evidence, &["engine", "overall_score", "match_mode"])?;
+            if evidence.get("engine")?.str()? != "FID" {
+                return refuse("FID score engine mismatch");
+            }
             decimal(evidence.get("overall_score")?, 0.0, 1_000_000.0)?;
             text(evidence.get("match_mode")?, 128)?;
         }
         "BSIM" => {
-            exact(evidence, &["engine","similarity","confidence"])?;
-            if evidence.get("engine")?.str()? != "BSIM" { return refuse("BSim score engine mismatch"); }
+            exact(evidence, &["engine", "similarity", "confidence"])?;
+            if evidence.get("engine")?.str()? != "BSIM" {
+                return refuse("BSim score engine mismatch");
+            }
             decimal(evidence.get("similarity")?, 0.0, 1.0)?;
             decimal(evidence.get("confidence")?, 0.0, 1_000_000.0)?;
         }
         _ => unreachable!(),
     }
-    Ok((entry.to_owned(),key))
+    Ok((entry.to_owned(), key))
 }
-fn report(value: &Value, sha: &str, size: u64, native_sha: &str) -> Result<Vec<(String,String,String,Value)>> {
-    exact(value, &["schema","artifact","producer","matches"])?;
+fn report(
+    value: &Value,
+    sha: &str,
+    size: u64,
+    native_sha: &str,
+) -> Result<Vec<(String, String, String, Value)>> {
+    exact(value, &["schema", "artifact", "producer", "matches"])?;
     if value.get("schema")?.str()? != REPORT_SCHEMA {
         return refuse("unsupported Ghidra evidence schema");
     }
     let artifact = value.get("artifact")?;
-    exact(artifact, &["sha256","size_bytes"])?;
-    if artifact.get("sha256")?.str()? != sha || artifact.get("size_bytes")?.integer()? != i64::try_from(size).map_err(|_| "artifact size too large")? {
+    exact(artifact, &["sha256", "size_bytes"])?;
+    if artifact.get("sha256")?.str()? != sha
+        || artifact.get("size_bytes")?.integer()?
+            != i64::try_from(size).map_err(|_| "artifact size too large")?
+    {
         return refuse("Ghidra report artifact bytes disagree with local artifact");
     }
     let producer = value.get("producer")?;
-    exact(producer, &["tool","version","analysis_profile_sha256","native_receipt_sha256"])?;
-    if producer.get("tool")?.str()? != "Ghidra" || producer.get("native_receipt_sha256")?.str()? != native_sha {
+    exact(
+        producer,
+        &[
+            "tool",
+            "version",
+            "analysis_profile_sha256",
+            "native_receipt_sha256",
+        ],
+    )?;
+    if producer.get("tool")?.str()? != "Ghidra"
+        || producer.get("native_receipt_sha256")?.str()? != native_sha
+    {
         return refuse("Ghidra producer native receipt mismatch");
     }
     text(producer.get("version")?, 128)?;
@@ -121,10 +168,12 @@ fn report(value: &Value, sha: &str, size: u64, native_sha: &str) -> Result<Vec<(
     let mut seen = BTreeSet::new();
     let mut output = Vec::new();
     for item in matches {
-        let (entry,key) = match_record(item)?;
+        let (entry, key) = match_record(item)?;
         let canonical = item.canonical();
-        if !seen.insert(canonical.clone()) { return refuse("duplicate Ghidra match"); }
-        output.push((entry,key,canonical,item.clone()));
+        if !seen.insert(canonical.clone()) {
+            return refuse("duplicate Ghidra match");
+        }
+        output.push((entry, key, canonical, item.clone()));
     }
     Ok(output)
 }
@@ -134,7 +183,9 @@ fn bounded(path: &Path, max: usize) -> Result<Vec<u8>> {
         return refuse("Ghidra input must be a bounded regular file");
     }
     let bytes = fs::read(path).map_err(|e| format!("Ghidra input read: {e}"))?;
-    if bytes.is_empty() || bytes.len() > max { return refuse("Ghidra input size outside budget"); }
+    if bytes.is_empty() || bytes.len() > max {
+        return refuse("Ghidra input size outside budget");
+    }
     Ok(bytes)
 }
 fn schema(db: &Db) -> Result<()> {
@@ -193,36 +244,41 @@ fn match_id(report_id: &str, canonical: &str) -> String {
 }
 fn source_doc(source: &SourceRef) -> Value {
     obj(&[
-        ("commit",Value::string(&source.commit)),
-        ("tree",Value::string(&source.tree)),
-        ("path",Value::string(&source.path)),
-        ("blob",Value::string(&source.blob)),
-        ("mode",Value::string(&source.mode)),
+        ("commit", Value::string(&source.commit)),
+        ("tree", Value::string(&source.tree)),
+        ("path", Value::string(&source.path)),
+        ("blob", Value::string(&source.blob)),
+        ("mode", Value::string(&source.mode)),
     ])
 }
 fn parse_source(value: &Value) -> Result<SourceRef> {
-    exact(value,&["commit","tree","path","blob","mode"])?;
+    exact(value, &["commit", "tree", "path", "blob", "mode"])?;
     let source = SourceRef {
-        commit:value.get("commit")?.str()?.to_owned(),
-        tree:value.get("tree")?.str()?.to_owned(),
-        path:value.get("path")?.str()?.to_owned(),
-        blob:value.get("blob")?.str()?.to_owned(),
-        mode:value.get("mode")?.str()?.to_owned(),
+        commit: value.get("commit")?.str()?.to_owned(),
+        tree: value.get("tree")?.str()?.to_owned(),
+        path: value.get("path")?.str()?.to_owned(),
+        blob: value.get("blob")?.str()?.to_owned(),
+        mode: value.get("mode")?.str()?.to_owned(),
     };
     source.validate()?;
     Ok(source)
 }
 pub fn import(db: &Db, artifact: &Path, normalized: &Path, native: &Path) -> Result<Value> {
-    let (sha,size) = build::read_artifact(artifact)?;
-    let subject_id = Subject::Artifact{sha256:sha.clone(),size_bytes:size}.id()?;
-    let normalized_bytes = bounded(normalized,MAX_REPORT)?;
+    let (sha, size) = build::read_artifact(artifact)?;
+    let subject_id = Subject::Artifact {
+        sha256: sha.clone(),
+        size_bytes: size,
+    }
+    .id()?;
+    let normalized_bytes = bounded(normalized, MAX_REPORT)?;
     let raw = String::from_utf8(normalized_bytes).map_err(|_| "Ghidra report must be UTF-8")?;
     let parsed = json::parse(raw.as_bytes())?;
-    let native_bytes = bounded(native,MAX_NATIVE)?;
-    let native_raw = String::from_utf8(native_bytes).map_err(|_| "Ghidra native receipt must be UTF-8")?;
+    let native_bytes = bounded(native, MAX_NATIVE)?;
+    let native_raw =
+        String::from_utf8(native_bytes).map_err(|_| "Ghidra native receipt must be UTF-8")?;
     let native_sha = digest::sha256(native_raw.as_bytes());
-    let records = report(&parsed,&sha,size,&native_sha)?;
-    let id = report_id(&raw,&native_sha);
+    let records = report(&parsed, &sha, size, &native_sha)?;
+    let id = report_id(&raw, &native_sha);
     schema(db)?;
     db.transaction(|db| {
         db.execute(
@@ -245,140 +301,199 @@ pub fn import(db: &Db, artifact: &Path, normalized: &Path, native: &Path) -> Res
     })?;
     Ok(obj(&[
         ("schema", Value::string("excession.ghidra-import.v1")),
-        ("report_id",Value::string(id)),
-        ("artifact_subject_id",Value::string(subject_id)),
-        ("match_count",Value::number(records.len())),
-        ("native_receipt_sha256",Value::string(native_sha)),
-        ("artifact_bytes_verified",Value::Bool(true)),
-        ("producer_execution_attested",Value::Bool(false)),
-        ("semantic_source_correspondence",Value::string("NOT_ESTABLISHED")),
+        ("report_id", Value::string(id)),
+        ("artifact_subject_id", Value::string(subject_id)),
+        ("match_count", Value::number(records.len())),
+        ("native_receipt_sha256", Value::string(native_sha)),
+        ("artifact_bytes_verified", Value::Bool(true)),
+        ("producer_execution_attested", Value::Bool(false)),
+        (
+            "semantic_source_correspondence",
+            Value::string("NOT_ESTABLISHED"),
+        ),
     ]))
 }
 
 /// Associate a provider's *native candidate identity* with immutable Git source
 /// objects. Registration does not assert that the code generated any binary.
 pub fn bind_source(
-    db: &Db, repo: &Path, revision: &str, path: &str,
-    candidate_file: &Path, symbol: &str,
+    db: &Db,
+    repo: &Path,
+    revision: &str,
+    path: &str,
+    candidate_file: &Path,
+    symbol: &str,
 ) -> Result<Value> {
-    let candidate_bytes = bounded(candidate_file,16*1024)?;
+    let candidate_bytes = bounded(candidate_file, 16 * 1024)?;
     let value = json::parse(&candidate_bytes)?;
     let key = candidate(&value)?;
-    text(&Value::string(symbol),1024)?;
+    text(&Value::string(symbol), 1024)?;
     let canonical_repo = fs::canonicalize(repo).map_err(|e| format!("repo path: {e}"))?;
     git::verify_repo(&canonical_repo)?;
-    let commit = git::rev(&canonical_repo,&format!("{revision}^{{commit}}"))?;
-    let source = SourceRef::from_git(&canonical_repo,&commit,path)?;
+    let commit = git::rev(&canonical_repo, &format!("{revision}^{{commit}}"))?;
+    let source = SourceRef::from_git(&canonical_repo, &commit, path)?;
     let document = obj(&[
-        ("schema",Value::string(BINDING_SCHEMA)),
-        ("candidate",value),
-        ("candidate_id",Value::string(&key)),
-        ("source",source_doc(&source)),
-        ("repository_path",Value::string(canonical_repo.to_str().ok_or("non-UTF8 repo path")?)),
-        ("symbol",Value::string(symbol)),
-        ("relationship",Value::string("REVIEWED_CANDIDATE_NOT_PROVEN")),
+        ("schema", Value::string(BINDING_SCHEMA)),
+        ("candidate", value),
+        ("candidate_id", Value::string(&key)),
+        ("source", source_doc(&source)),
+        (
+            "repository_path",
+            Value::string(canonical_repo.to_str().ok_or("non-UTF8 repo path")?),
+        ),
+        ("symbol", Value::string(symbol)),
+        (
+            "relationship",
+            Value::string("REVIEWED_CANDIDATE_NOT_PROVEN"),
+        ),
     ]);
     let id = document.sha256();
     schema(db)?;
     db.execute(
         "INSERT OR IGNORE INTO evidence_ghidra_source_v1(binding_id,candidate_id,raw_binding)
          VALUES (?,?,?)",
-        &[Param::Text(&id),Param::Text(&key),Param::Text(&document.canonical())],
+        &[
+            Param::Text(&id),
+            Param::Text(&key),
+            Param::Text(&document.canonical()),
+        ],
     )?;
     let mut result = document;
-    result.entries_mut()?.insert("binding_id".into(),Value::string(id));
+    result
+        .entries_mut()?
+        .insert("binding_id".into(), Value::string(id));
     Ok(result)
 }
 fn checked_binding(id: &str, expected_key: &str, raw: &str) -> Result<Value> {
     let document = json::parse(raw.as_bytes())?;
-    if document.canonical()!=raw || document.sha256()!=id {
+    if document.canonical() != raw || document.sha256() != id {
         return refuse("source binding content identity changed");
     }
-    exact(&document,&["schema","candidate","candidate_id","source","repository_path","symbol","relationship"])?;
-    if document.get("schema")?.str()?!=BINDING_SCHEMA
-        || document.get("relationship")?.str()?!="REVIEWED_CANDIDATE_NOT_PROVEN"
-        || document.get("candidate_id")?.str()?!=expected_key
-        || candidate(document.get("candidate")?)?!=expected_key
+    exact(
+        &document,
+        &[
+            "schema",
+            "candidate",
+            "candidate_id",
+            "source",
+            "repository_path",
+            "symbol",
+            "relationship",
+        ],
+    )?;
+    if document.get("schema")?.str()? != BINDING_SCHEMA
+        || document.get("relationship")?.str()? != "REVIEWED_CANDIDATE_NOT_PROVEN"
+        || document.get("candidate_id")?.str()? != expected_key
+        || candidate(document.get("candidate")?)? != expected_key
     {
         return refuse("source association is not a supported candidate binding");
     }
-    let repo=Path::new(text(document.get("repository_path")?,4096)?);
-    let source=parse_source(document.get("source")?)?;
-    text(document.get("symbol")?,1024)?;
+    let repo = Path::new(text(document.get("repository_path")?, 4096)?);
+    let source = parse_source(document.get("source")?)?;
+    text(document.get("symbol")?, 1024)?;
     // Never silently promote previously verified objects after checkout changes
     // or when the local repository no longer exists at this path.
     source.verify_git(repo)?;
-    let mut result=document;
-    result.entries_mut()?.insert("binding_id".into(),Value::string(id));
-    result.entries_mut()?.insert("source_git_replayed".into(),Value::Bool(true));
-    result.entries_mut()?.insert("binary_source_equivalence".into(),Value::string("NOT_ESTABLISHED"));
+    let mut result = document;
+    result
+        .entries_mut()?
+        .insert("binding_id".into(), Value::string(id));
+    result
+        .entries_mut()?
+        .insert("source_git_replayed".into(), Value::Bool(true));
+    result.entries_mut()?.insert(
+        "binary_source_equivalence".into(),
+        Value::string("NOT_ESTABLISHED"),
+    );
     Ok(result)
 }
-fn checked_report(
-    db: &Db, id: &str, subject_id: &str, sha: &str, size: u64,
-) -> Result<Value> {
+fn checked_report(db: &Db, id: &str, subject_id: &str, sha: &str, size: u64) -> Result<Value> {
     let rows = db.query(
         "SELECT artifact_subject_id,native_sha256,raw_report,native_receipt
          FROM evidence_ghidra_report_v1 WHERE report_id=?",
         &[Param::Text(id)],
     )?;
-    if rows.len()!=1 { return refuse("missing Ghidra producer report"); }
-    let row=&rows[0];
-    let stored_subject=row[0].as_deref().ok_or("missing Ghidra subject")?;
-    let native_sha=row[1].as_deref().ok_or("missing native SHA")?;
-    let raw=row[2].as_deref().ok_or("missing Ghidra report bytes")?;
-    let native=row[3].as_deref().ok_or("missing Ghidra raw producer receipt")?;
-    if stored_subject!=subject_id
-        || digest::sha256(native.as_bytes())!=native_sha
-        || report_id(raw,native_sha)!=id
+    if rows.len() != 1 {
+        return refuse("missing Ghidra producer report");
+    }
+    let row = &rows[0];
+    let stored_subject = row[0].as_deref().ok_or("missing Ghidra subject")?;
+    let native_sha = row[1].as_deref().ok_or("missing native SHA")?;
+    let raw = row[2].as_deref().ok_or("missing Ghidra report bytes")?;
+    let native = row[3]
+        .as_deref()
+        .ok_or("missing Ghidra raw producer receipt")?;
+    if stored_subject != subject_id
+        || digest::sha256(native.as_bytes()) != native_sha
+        || report_id(raw, native_sha) != id
     {
         return refuse("Ghidra report identity, native receipt, or artifact association changed");
     }
-    let parsed=json::parse(raw.as_bytes())?;
-    report(&parsed,sha,size,native_sha)?;
+    let parsed = json::parse(raw.as_bytes())?;
+    report(&parsed, sha, size, native_sha)?;
     Ok(parsed)
 }
-pub fn candidates(
-    db: &Db, artifact: &Path, entry: &str, limit: usize,
-) -> Result<Value> {
-    if !(1..=MAX_RESULTS).contains(&limit) { return refuse("Ghidra candidate limit must be 1..32"); }
-    text(&Value::string(entry),128)?;
-    let (sha,size)=build::read_artifact(artifact)?;
-    let subject_id=Subject::Artifact{sha256:sha.clone(),size_bytes:size}.id()?;
+pub fn candidates(db: &Db, artifact: &Path, entry: &str, limit: usize) -> Result<Value> {
+    if !(1..=MAX_RESULTS).contains(&limit) {
+        return refuse("Ghidra candidate limit must be 1..32");
+    }
+    text(&Value::string(entry), 128)?;
+    let (sha, size) = build::read_artifact(artifact)?;
+    let subject_id = Subject::Artifact {
+        sha256: sha.clone(),
+        size_bytes: size,
+    }
+    .id()?;
     schema(db)?;
     db.read_transaction(|db| {
-        let total = db.scalar(
-            "SELECT count(*) FROM evidence_ghidra_match_v1
+        let total = db
+            .scalar(
+                "SELECT count(*) FROM evidence_ghidra_match_v1
              WHERE artifact_subject_id=? AND function_entry=?",
-            &[Param::Text(&subject_id),Param::Text(entry)],
-        )?.parse::<usize>().map_err(|_| "invalid Ghidra corpus match count")?;
-        let matches=db.query(
+                &[Param::Text(&subject_id), Param::Text(entry)],
+            )?
+            .parse::<usize>()
+            .map_err(|_| "invalid Ghidra corpus match count")?;
+        let matches = db.query(
             "SELECT match_id,report_id,candidate_id,raw_match FROM evidence_ghidra_match_v1
              WHERE artifact_subject_id=? AND function_entry=?
              ORDER BY match_id LIMIT ?",
-            &[Param::Text(&subject_id),Param::Text(entry),Param::Integer(limit as i64)],
+            &[
+                Param::Text(&subject_id),
+                Param::Text(entry),
+                Param::Integer(limit as i64),
+            ],
         )?;
-        let mut output=Vec::new();
+        let mut output = Vec::new();
         for row in matches {
-            let mid=row[0].as_deref().ok_or("missing Ghidra match ID")?;
-            let report_id_ref=row[1].as_deref().ok_or("missing Ghidra report ID")?;
-            let candidate_id=row[2].as_deref().ok_or("missing Ghidra candidate identity")?;
-            let raw=row[3].as_deref().ok_or("missing Ghidra match record")?;
-            let native_report=checked_report(db,report_id_ref,&subject_id,&sha,size)?;
-            let checked=json::parse(raw.as_bytes())?;
-            let (actual_entry,actual_candidate)=match_record(&checked)?;
-            let found=native_report.get("matches")?.array_ref()?.iter().any(|item| item==&checked);
-            if checked.canonical()!=raw || match_id(report_id_ref,raw)!=mid || !found
-                || actual_entry!=entry || actual_candidate!=candidate_id
+            let mid = row[0].as_deref().ok_or("missing Ghidra match ID")?;
+            let report_id_ref = row[1].as_deref().ok_or("missing Ghidra report ID")?;
+            let candidate_id = row[2]
+                .as_deref()
+                .ok_or("missing Ghidra candidate identity")?;
+            let raw = row[3].as_deref().ok_or("missing Ghidra match record")?;
+            let native_report = checked_report(db, report_id_ref, &subject_id, &sha, size)?;
+            let checked = json::parse(raw.as_bytes())?;
+            let (actual_entry, actual_candidate) = match_record(&checked)?;
+            let found = native_report
+                .get("matches")?
+                .array_ref()?
+                .iter()
+                .any(|item| item == &checked);
+            if checked.canonical() != raw
+                || match_id(report_id_ref, raw) != mid
+                || !found
+                || actual_entry != entry
+                || actual_candidate != candidate_id
             {
                 return refuse("Ghidra match index disagrees with immutable native report");
             }
-            let sources=db.query(
+            let sources = db.query(
                 "SELECT binding_id,raw_binding FROM evidence_ghidra_source_v1
                  WHERE candidate_id=? ORDER BY binding_id LIMIT 16",
                 &[Param::Text(candidate_id)],
             )?;
-            let mut known=Vec::new();
+            let mut known = Vec::new();
             for binding in sources {
                 known.push(checked_binding(
                     binding[0].as_deref().ok_or("missing binding ID")?,
@@ -387,23 +502,32 @@ pub fn candidates(
                 )?);
             }
             output.push(obj(&[
-                ("match_id",Value::string(mid)),
-                ("report_id",Value::string(report_id_ref)),
-                ("candidate_id",Value::string(candidate_id)),
-                ("native_observation",checked),
-                ("source_candidates",Value::array(known)),
-                ("recognition_authority",Value::string("PRODUCER_SUPPLIED_UNATTESTED")),
-                ("binary_source_correspondence",Value::string("NOT_ESTABLISHED")),
+                ("match_id", Value::string(mid)),
+                ("report_id", Value::string(report_id_ref)),
+                ("candidate_id", Value::string(candidate_id)),
+                ("native_observation", checked),
+                ("source_candidates", Value::array(known)),
+                (
+                    "recognition_authority",
+                    Value::string("PRODUCER_SUPPLIED_UNATTESTED"),
+                ),
+                (
+                    "binary_source_correspondence",
+                    Value::string("NOT_ESTABLISHED"),
+                ),
             ]));
         }
         Ok(obj(&[
-            ("schema",Value::string("excession.ghidra-corpus-candidates.v1")),
-            ("artifact_subject_id",Value::string(subject_id)),
-            ("function_entry",Value::string(entry)),
-            ("total_matches",Value::number(total)),
-            ("results_truncated",Value::Bool(total>limit)),
-            ("matches",Value::array(output)),
-            ("semantic_equivalence",Value::string("NOT_ESTABLISHED")),
+            (
+                "schema",
+                Value::string("excession.ghidra-corpus-candidates.v1"),
+            ),
+            ("artifact_subject_id", Value::string(subject_id)),
+            ("function_entry", Value::string(entry)),
+            ("total_matches", Value::number(total)),
+            ("results_truncated", Value::Bool(total > limit)),
+            ("matches", Value::array(output)),
+            ("semantic_equivalence", Value::string("NOT_ESTABLISHED")),
         ]))
     })
 }

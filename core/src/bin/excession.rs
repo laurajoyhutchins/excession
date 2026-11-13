@@ -1019,22 +1019,34 @@ fn execute(args: &[String]) -> Result<Response> {
         [top, sub] if top == "evidence" && sub == "ghidra-import" => {
             let db = Db::open(opt.path("db"))?;
             Ok(json(excession::evidence::ghidra::import(
-                &db, opt.path("artifact"), opt.path("report"), opt.path("native")
+                &db,
+                opt.path("artifact"),
+                opt.path("report"),
+                opt.path("native"),
             )?))
         }
         [top, sub] if top == "evidence" && sub == "ghidra-source-bind" => {
             let db = Db::open(opt.path("db"))?;
             Ok(json(excession::evidence::ghidra::bind_source(
-                &db, opt.path("repo"), opt.get("rev"), opt.get("source"),
-                opt.path("candidate"), opt.get("symbol")
+                &db,
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.get("source"),
+                opt.path("candidate"),
+                opt.get("symbol"),
             )?))
         }
         [top, sub] if top == "inspect" && sub == "ghidra-candidates" => {
             let db = Db::open(opt.path("db"))?;
-            let limit = opt.get_or("limit", "16").parse::<usize>()
+            let limit = opt
+                .get_or("limit", "16")
+                .parse::<usize>()
                 .map_err(|_| "invalid Ghidra candidate limit")?;
             Ok(json(excession::evidence::ghidra::candidates(
-                &db, opt.path("artifact"), opt.get("entry"), limit
+                &db,
+                opt.path("artifact"),
+                opt.get("entry"),
+                limit,
             )?))
         }
         [top, sub] if top == "evidence" && sub == "rea-import" => {

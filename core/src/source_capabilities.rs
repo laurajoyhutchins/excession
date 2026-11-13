@@ -29,7 +29,8 @@ pub const STATIC_MODULE_PRODUCERS: &[StaticModuleProducer] = &[
 /// Do not mistake installed package trees for project-owned modules.
 /// Additional exclusion policies belong to producers, not global Git identity.
 pub fn excluded_from_static_modules(path: &str) -> bool {
-    path.split('/').any(|component| matches!(component, "node_modules" | ".venv"))
+    path.split('/')
+        .any(|component| matches!(component, "node_modules" | ".venv"))
 }
 
 pub fn static_module_producer(path: &str) -> Option<&'static StaticModuleProducer> {
@@ -37,7 +38,10 @@ pub fn static_module_producer(path: &str) -> Option<&'static StaticModuleProduce
         return None;
     }
     STATIC_MODULE_PRODUCERS.iter().find(|producer| {
-        producer.extensions.iter().any(|extension| path.ends_with(extension))
+        producer
+            .extensions
+            .iter()
+            .any(|extension| path.ends_with(extension))
     })
 }
 
@@ -52,15 +56,24 @@ pub fn detected_language(path: &str) -> Option<String> {
 /// Best-effort test *candidate* for agent context, never proof of test coverage.
 pub fn test_candidate(path: &str) -> bool {
     let file = path.rsplit('/').next().unwrap_or(path);
-    path.split('/').any(|component| component == "tests" || component == "test")
+    path.split('/')
+        .any(|component| component == "tests" || component == "test")
         || file.starts_with("test_")
         || file.ends_with("_test.rs")
         || file.ends_with("_test.py")
         || file.ends_with("_test.go")
-        || [".test.ts", ".spec.ts", ".test.js", ".spec.js", ".test.tsx",
-            ".spec.tsx", ".test.jsx", ".spec.jsx"]
-            .iter()
-            .any(|suffix| file.ends_with(suffix))
+        || [
+            ".test.ts",
+            ".spec.ts",
+            ".test.js",
+            ".spec.js",
+            ".test.tsx",
+            ".spec.tsx",
+            ".test.jsx",
+            ".spec.jsx",
+        ]
+        .iter()
+        .any(|suffix| file.ends_with(suffix))
 }
 
 #[cfg(test)]
@@ -69,12 +82,24 @@ mod tests {
 
     #[test]
     fn static_indexing_is_a_producer_capability_not_a_language_guess() {
-        assert_eq!(static_module_producer("src/main.py").unwrap().name, "python");
-        assert_eq!(static_module_producer("web/index.ts").unwrap().name, "javascript");
+        assert_eq!(
+            static_module_producer("src/main.py").unwrap().name,
+            "python"
+        );
+        assert_eq!(
+            static_module_producer("web/index.ts").unwrap().name,
+            "javascript"
+        );
         assert_eq!(static_module_producer("web/view.tsx").map(|p| p.name), None);
         assert_eq!(static_module_producer("src/main.rs").map(|p| p.name), None);
-        assert_eq!(static_module_producer("node_modules/pkg/a.js").map(|p| p.name), None);
-        assert_eq!(static_module_producer(".venv/lib/a.py").map(|p| p.name), None);
+        assert_eq!(
+            static_module_producer("node_modules/pkg/a.js").map(|p| p.name),
+            None
+        );
+        assert_eq!(
+            static_module_producer(".venv/lib/a.py").map(|p| p.name),
+            None
+        );
     }
 
     #[test]

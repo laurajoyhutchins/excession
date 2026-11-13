@@ -1,8 +1,8 @@
 //! Read-only discovery of Git source inputs for the ordinary CLI.
 //! No build commands, source code or checkout modification are performed here.
 use crate::git;
-use crate::source_capabilities;
 use crate::json::{Value, obj};
+use crate::source_capabilities;
 use crate::{Result, doctor, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -195,13 +195,15 @@ impl Discovery {
             ("roots", Value::array(self.roots.iter().map(Value::string))),
             (
                 "source_languages",
-                Value::array(self.source_languages.iter().map(|(language, (tracked, indexable))| {
-                    obj(&[
-                        ("language", Value::string(language)),
-                        ("tracked_sources", Value::number(*tracked)),
-                        ("indexable_sources", Value::number(*indexable)),
-                    ])
-                })),
+                Value::array(self.source_languages.iter().map(
+                    |(language, (tracked, indexable))| {
+                        obj(&[
+                            ("language", Value::string(language)),
+                            ("tracked_sources", Value::number(*tracked)),
+                            ("indexable_sources", Value::number(*indexable)),
+                        ])
+                    },
+                )),
             ),
             ("adapters", Value::array(adapters)),
             (
@@ -248,7 +250,10 @@ mod tests {
         assert_eq!(root_level, 0);
         assert_eq!(langs["python"], 3);
         assert_eq!(langs["javascript"], 1);
-        assert_eq!(census.values().map(|(tracked, _)| tracked).sum::<usize>(), 4);
+        assert_eq!(
+            census.values().map(|(tracked, _)| tracked).sum::<usize>(),
+            4
+        );
     }
 
     #[test]
@@ -264,7 +269,11 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(langs["python"], 1);
         for lang in ["rust", "go", "c"] {
-            assert!(census.get(lang).is_some_and(|(total, indexable)| *total == 1 && *indexable == 0));
+            assert!(
+                census
+                    .get(lang)
+                    .is_some_and(|(total, indexable)| *total == 1 && *indexable == 0)
+            );
         }
     }
 

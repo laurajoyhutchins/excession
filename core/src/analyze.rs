@@ -1,8 +1,8 @@
 //! End-user entry point over the existing Git/SQLite static indexer.
 //! These are *candidate* dependencies, not complete dynamic semantics.
 use crate::discovery::{self, Discovery};
-use crate::source_capabilities;
 use crate::json::{Value, obj};
+use crate::source_capabilities;
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, doctor, index, refuse, views};
 use std::collections::{BTreeMap, BTreeSet};

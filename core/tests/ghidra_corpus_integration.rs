@@ -50,8 +50,8 @@ fn fid() -> Value {
             ]),
         ),
         ("library_family", Value::string("sample-c-library")),
-        ("library_version", Value::string("1.0")),
-        ("library_variant", Value::string("clang-O2")),
+        ("library_version", Value::Null),
+        ("library_variant", Value::string("")),
         ("function", Value::string("triple")),
     ])
 }

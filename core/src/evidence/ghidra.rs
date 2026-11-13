@@ -60,6 +60,13 @@ fn database(value: &Value) -> Result<()> {
         _ => refuse("unrecognized Ghidra database identity basis"),
     }
 }
+fn optional_label(value: &Value) -> Result<()> {
+    match value {
+        Value::Null => Ok(()),
+        Value::String(s) if s.len() <= 256 && !s.chars().any(char::is_control) => Ok(()),
+        _ => refuse("unsupported Ghidra optional library metadata"),
+    }
+}
 fn candidate(value: &Value) -> Result<String> {
     match value.get("engine")?.str()? {
         "FID" => {
@@ -75,13 +82,11 @@ fn candidate(value: &Value) -> Result<String> {
                 ],
             )?;
             database(value.get("database")?)?;
-            for key in [
-                "library_family",
-                "library_version",
-                "library_variant",
-                "function",
-            ] {
+            for key in ["library_family", "function"] {
                 text(value.get(key)?, 256)?;
+            }
+            for key in ["library_version", "library_variant"] {
+                optional_label(value.get(key)?)?;
             }
         }
         "BSIM" => {
@@ -111,7 +116,7 @@ fn match_record(value: &Value) -> Result<(String, String)> {
             if evidence.get("engine")?.str()? != "FID" {
                 return refuse("FID score engine mismatch");
             }
-            decimal(evidence.get("overall_score")?, 0.0, 1_000_000.0)?;
+            decimal(evidence.get("overall_score")?, 0.0, f64::MAX)?;
             text(evidence.get("match_mode")?, 128)?;
         }
         "BSIM" => {
@@ -120,7 +125,7 @@ fn match_record(value: &Value) -> Result<(String, String)> {
                 return refuse("BSim score engine mismatch");
             }
             decimal(evidence.get("similarity")?, 0.0, 1.0)?;
-            decimal(evidence.get("confidence")?, 0.0, 1_000_000.0)?;
+            decimal(evidence.get("confidence")?, 0.0, f64::MAX)?;
         }
         _ => unreachable!(),
     }
@@ -344,7 +349,7 @@ pub fn bind_source(
         ("symbol", Value::string(symbol)),
         (
             "relationship",
-            Value::string("REVIEWED_CANDIDATE_NOT_PROVEN"),
+            Value::string("DECLARED_CANDIDATE_NOT_PROVEN"),
         ),
     ]);
     let id = document.sha256();
@@ -382,7 +387,7 @@ fn checked_binding(id: &str, expected_key: &str, raw: &str) -> Result<Value> {
         ],
     )?;
     if document.get("schema")?.str()? != BINDING_SCHEMA
-        || document.get("relationship")?.str()? != "REVIEWED_CANDIDATE_NOT_PROVEN"
+        || document.get("relationship")?.str()? != "DECLARED_CANDIDATE_NOT_PROVEN"
         || document.get("candidate_id")?.str()? != expected_key
         || candidate(document.get("candidate")?)? != expected_key
     {

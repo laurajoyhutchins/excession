@@ -180,13 +180,17 @@
               "maxLength": 256
             },
             "library_version": {
-              "type": "string",
-              "minLength": 1,
+              "type": [
+                "string",
+                "null"
+              ],
               "maxLength": 256
             },
             "library_variant": {
-              "type": "string",
-              "minLength": 1,
+              "type": [
+                "string",
+                "null"
+              ],
               "maxLength": 256
             },
             "function": {

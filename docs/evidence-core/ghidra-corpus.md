@@ -14,7 +14,7 @@ excession evidence ghidra-import --db corpus.sqlite \
   --artifact ./unknown.o --report /tmp/ghidra-matches.json \
   --native /tmp/ghidra-native.txt
 
-# Register an externally reviewed candidate from a pinned Git commit.
+# Declare a candidate source association from a pinned Git commit.
 # candidate.json contains the exact "candidate" object from an imported match.
 excession evidence ghidra-source-bind --db corpus.sqlite \
   --repo /path/to/checkout --rev 0123... --source src/function.c \
@@ -45,7 +45,8 @@ The report pins artifact SHA-256 and length, producer version, an
 analysis-profile digest, and typed FID/BSim native match records.
 
 FID candidates retain the database identity, library family/version/variant
-and function name. FID evidence retains native overall score and hash-match
+and function name; unavailable version/variant values remain null or empty
+rather than being filled with guessed metadata. FID evidence retains native overall score and hash-match
 mode. BSim candidates retain its **native executable MD5 and function entry
 identity**, the BSim database identity, and the matched function name. BSim
 evidence retains similarity and confidence **as different measures**.

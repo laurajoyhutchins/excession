@@ -430,23 +430,40 @@ fn corrupted_provider_receipts_and_artifact_identities_refuse_closed() {
 }
 #[test]
 fn source_associations_reject_forged_git_sources_and_constrain_output() {
-    let f=Fixture::new();
-    f.report(&f.first,vec![
-        evidence(fid(),"ram:1000"),evidence(bsim(),"ram:1000")
-    ]);
+    let f = Fixture::new();
+    f.report(
+        &f.first,
+        vec![evidence(fid(), "ram:1000"), evidence(bsim(), "ram:1000")],
+    );
     read(f.import(&f.first));
-    fs::write(&f.candidate,fid().canonical()).unwrap();
+    fs::write(&f.candidate, fid().canonical()).unwrap();
     bad(cli(&[
-        "evidence","ghidra-source-bind","--db",Fixture::path(&f.db),
-        "--repo",Fixture::path(&f.repo),"--rev",&f.commit,
-        "--source","src/does-not-exist.c",
-        "--candidate",Fixture::path(&f.candidate),"--symbol","triple",
+        "evidence",
+        "ghidra-source-bind",
+        "--db",
+        Fixture::path(&f.db),
+        "--repo",
+        Fixture::path(&f.repo),
+        "--rev",
+        &f.commit,
+        "--source",
+        "src/does-not-exist.c",
+        "--candidate",
+        Fixture::path(&f.candidate),
+        "--symbol",
+        "triple",
     ]));
     read(f.binding(fid()));
-    let truncated=read(f.candidates(&f.first,"ram:1000","1"));
-    assert_eq!(truncated.get("total_matches").unwrap().integer().unwrap(),2);
+    let truncated = read(f.candidates(&f.first, "ram:1000", "1"));
+    assert_eq!(
+        truncated.get("total_matches").unwrap().integer().unwrap(),
+        2
+    );
     assert!(truncated.get("results_truncated").unwrap().bool().unwrap());
-    bad(f.candidates(&f.first,"ram:1000","0"));
-    let db=Db::open(&f.db).unwrap();
-    assert!(db.exec("UPDATE evidence_ghidra_match_v1 SET candidate_id='forged'").is_err());
+    bad(f.candidates(&f.first, "ram:1000", "0"));
+    let db = Db::open(&f.db).unwrap();
+    assert!(
+        db.exec("UPDATE evidence_ghidra_match_v1 SET candidate_id='forged'")
+            .is_err()
+    );
 }

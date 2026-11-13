@@ -3,7 +3,7 @@
 use crate::analyze;
 use crate::change_inventory;
 use crate::json::{Value, obj};
-use crate::observed_relations::Selection;
+use crate::observed_relations::{Plan, Selection};
 use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
@@ -154,6 +154,11 @@ pub fn run(
     )
 }
 
+enum Mode<'a> {
+    Explicit(EvidenceByRevision<'a>),
+    Pinned(&'a Plan, &'a Plan),
+}
+
 pub fn run_with_evidence(
     path: &Path,
     base: &str,
@@ -162,10 +167,37 @@ pub fn run_with_evidence(
     database: Option<&str>,
     selected: EvidenceByRevision<'_>,
 ) -> Result<Value> {
-    if (selected.base.source_prefix.is_some() && selected.base.scip_snapshot.is_none())
-        || (selected.head.source_prefix.is_some() && selected.head.scip_snapshot.is_none())
-    {
-        return refuse("source-prefix selection requires the corresponding SCIP snapshot");
+    run_core(path, base, head, roots, database, Mode::Explicit(selected))
+}
+
+/// Replay the selected identities, not a fresh discovery of future imports.
+/// This is also the entrypoint for ordinary, automatically composed impact.
+pub fn run_with_plans(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+    base_plan: &Plan,
+    head_plan: &Plan,
+) -> Result<Value> {
+    run_core(path, base, head, roots, database, Mode::Pinned(base_plan, head_plan))
+}
+
+fn run_core(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+    selected: Mode<'_>,
+) -> Result<Value> {
+    if let Mode::Explicit(scope) = selected {
+        if (scope.base.source_prefix.is_some() && scope.base.scip_snapshot.is_none())
+            || (scope.head.source_prefix.is_some() && scope.head.scip_snapshot.is_none())
+        {
+            return refuse("source-prefix selection requires the corresponding SCIP snapshot");
+        }
     }
     let changes = change_inventory::inventory(path, base, head)?;
     let base_commit = changes.get("base_commit")?.str()?;
@@ -178,10 +210,15 @@ pub fn run_with_evidence(
     let mut truncated = false;
     for (revision, side) in [(base_commit, "before"), (head_commit, "after")] {
         let changed = changed_paths(&changes, side)?;
-        let scope = if side == "before" {
-            selected.base
-        } else {
-            selected.head
+        let scope = match selected {
+            Mode::Explicit(choices) => {
+                if side == "before" { choices.base } else { choices.head }
+            }
+            Mode::Pinned(_, _) => Selection::default(),
+        };
+        let plan = match selected {
+            Mode::Pinned(before, after) => Some(if side == "before" { before } else { after }),
+            Mode::Explicit(_) => None,
         };
         for source in &changed {
             if !indexed_language(source) {
@@ -191,10 +228,12 @@ pub fn run_with_evidence(
                 ]));
             }
         }
-        if changed.is_empty() && scope.is_empty() {
+        if changed.is_empty() && scope.is_empty() && plan.is_none_or(Plan::is_empty) {
             continue;
         }
-        let observation = if scope.is_empty() {
+        let observation = if let Some(plan) = plan {
+            Some(analyze::run_with_plan(path, revision, roots, database, plan)?.0)
+        } else if scope.is_empty() {
             observe(path, revision, roots, database)?
         } else {
             Some(analyze::run_with_evidence(path, revision, roots, database, scope)?.0)
@@ -220,7 +259,7 @@ pub fn run_with_evidence(
                 .iter()
                 .cloned(),
         );
-        if !scope.is_empty() {
+        if !scope.is_empty() || plan.is_some() {
             producer_coverage.push(obj(&[
                 ("revision", Value::string(revision)),
                 ("producers", report.get("producer_coverage")?.clone()),
@@ -261,7 +300,20 @@ pub fn run_with_evidence(
         ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
-    if !selected.base.is_empty() || !selected.head.is_empty() {
+    match selected {
+        Mode::Pinned(before, after) => {
+            let body = result.entries_mut()?;
+            body.insert(
+                "producer_selection_plan".into(),
+                obj(&[("base", before.document()), ("head", after.document())]),
+            );
+            body.insert(
+                "configured_observations".into(),
+                Value::array(configured_observations),
+            );
+            body.insert("producer_coverage".into(), Value::array(producer_coverage));
+        }
+        Mode::Explicit(selected) if !selected.base.is_empty() || !selected.head.is_empty() => {
         let choices = obj(&[
             (
                 "base_scip_snapshot",
@@ -307,6 +359,8 @@ pub fn run_with_evidence(
             Value::array(configured_observations),
         );
         body.insert("producer_coverage".into(), Value::array(producer_coverage));
+        }
+        Mode::Explicit(_) => {}
     }
     let id = result.sha256();
     result

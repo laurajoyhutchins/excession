@@ -29,38 +29,67 @@ fn value<'a>(item: &'a Value, key: &str) -> Result<&'a Value> {
     item.get(key).ok_or_else(|| format!("missing {key}"))
 }
 fn string<'a>(item: &'a Value, key: &str) -> Result<&'a str> {
-    value(item, key)?.as_str().ok_or_else(|| format!("{key} must be a string"))
+    value(item, key)?
+        .as_str()
+        .ok_or_else(|| format!("{key} must be a string"))
 }
 fn number(item: &Value, key: &str) -> Result<u64> {
-    value(item, key)?.as_u64().ok_or_else(|| format!("{key} must be a nonnegative integer"))
+    value(item, key)?
+        .as_u64()
+        .ok_or_else(|| format!("{key} must be a nonnegative integer"))
 }
 fn list<'a>(item: &'a Value, key: &str) -> Result<&'a [Value]> {
-    value(item, key)?.as_array().map(Vec::as_slice).ok_or_else(|| format!("{key} must be an array"))
+    value(item, key)?
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| format!("{key} must be an array"))
 }
 fn sha(value: &str, size: usize) -> bool {
-    value.len() == size && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    value.len() == size
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 fn slug(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 80 && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    !value.is_empty()
+        && value.len() <= 80
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 fn bytes_sha(path: &Path) -> Result<String> {
-    Ok(digest::sha256(&fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?))
+    Ok(digest::sha256(
+        &fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?,
+    ))
 }
 fn encoded(item: &Value) -> Result<Vec<u8>> {
     serde_json::to_vec_pretty(item).map_err(|e| format!("serialize review data: {e}"))
 }
 fn write_new(path: &Path, item: &Value) -> Result<()> {
-    let mut f = OpenOptions::new().write(true).create_new(true).open(path)
+    let mut f = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
         .map_err(|e| format!("create {} (no overwrite): {e}", path.display()))?;
-    f.write_all(&encoded(item)?).map_err(|e| format!("write {}: {e}", path.display()))?;
-    f.sync_all().map_err(|e| format!("sync {}: {e}", path.display()))
+    f.write_all(&encoded(item)?)
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    f.sync_all()
+        .map_err(|e| format!("sync {}: {e}", path.display()))
 }
 fn git_output(path: &Path, args: &[&str]) -> Result<String> {
-    let out = Command::new("git").arg("-C").arg(path).args(args)
-        .env("GIT_TERMINAL_PROMPT", "0").output()
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
         .map_err(|e| format!("launch Git: {e}"))?;
     if !out.status.success() {
-        return refuse(format!("git {:?} failed: {}", args, String::from_utf8_lossy(&out.stderr)));
+        return refuse(format!(
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
@@ -89,7 +118,10 @@ fn receipt(entry: &Value, revision: &str, expected_pass: bool, repo: &Path) -> R
         return refuse("oracle receipt is not bound to the specified Git commit and tree");
     }
     let cmd = list(&raw, "command")?;
-    if cmd.is_empty() || cmd.len() > 40 || cmd.iter().any(|x| x.as_str().is_none_or(|s| s.is_empty())) {
+    if cmd.is_empty()
+        || cmd.len() > 40
+        || cmd.iter().any(|x| x.as_str().is_none_or(|s| s.is_empty()))
+    {
         return refuse("oracle receipt needs a nonempty argument-vector command");
     }
     if !sha(string(&raw, "stdout_sha256")?, 64)
@@ -146,7 +178,12 @@ fn validated(study: &Value) -> Result<()> {
         }
         let oracles = value(case, "oracles")?;
         let a = receipt(value(oracles, "base")?, base, true, root)?;
-        let b = receipt(value(oracles, "candidate")?, candidate, truth == "CLEAN", root)?;
+        let b = receipt(
+            value(oracles, "candidate")?,
+            candidate,
+            truth == "CLEAN",
+            root,
+        )?;
         if a != b {
             return refuse("base and candidate oracle commands must match exactly");
         }
@@ -163,7 +200,9 @@ fn validated(study: &Value) -> Result<()> {
                 }
             }
             "CLEAN" => {
-                if case.get("repair").is_some_and(|v| !v.is_null()) || oracles.get("repair").is_some() {
+                if case.get("repair").is_some_and(|v| !v.is_null())
+                    || oracles.get("repair").is_some()
+                {
                     return refuse("clean control cannot contain a repair or repair oracle");
                 }
             }
@@ -174,7 +213,9 @@ fn validated(study: &Value) -> Result<()> {
 }
 
 fn find_case<'a>(study: &'a Value, id: &str) -> Result<&'a Value> {
-    list(study, "cases")?.iter().find(|c| c["id"] == id)
+    list(study, "cases")?
+        .iter()
+        .find(|c| c["id"] == id)
         .ok_or_else(|| format!("unknown case {id}"))
 }
 fn arm(name: &str) -> Result<()> {
@@ -226,7 +267,13 @@ fn evidence(report: &Value, condition: &str) -> Result<Value> {
 /// ancestors only. The hidden study, independent oracle, and repair are never
 /// copied into the exported assignment. OS-level workspace isolation is still
 /// the responsibility of the agent runner.
-pub fn prepare(study_path: &Path, case_id: &str, condition: &str, repetition: u64, out: &Path) -> Result<PathBuf> {
+pub fn prepare(
+    study_path: &Path,
+    case_id: &str,
+    condition: &str,
+    repetition: u64,
+    out: &Path,
+) -> Result<PathBuf> {
     arm(condition)?;
     let study = load(study_path)?;
     validated(&study)?;
@@ -244,21 +291,38 @@ pub fn prepare(study_path: &Path, case_id: &str, condition: &str, repetition: u6
     fs::create_dir_all(out.join("workspace")).map_err(|e| format!("create assignment: {e}"))?;
     let result = (|| {
         let workspace = out.join("workspace");
-        let o = Command::new("git").args(["init", "-q", "--object-format=sha1"])
-            .arg(&workspace).output().map_err(|e| format!("initialize blinded Git repository: {e}"))?;
+        let o = Command::new("git")
+            .args(["init", "-q", "--object-format=sha1"])
+            .arg(&workspace)
+            .output()
+            .map_err(|e| format!("initialize blinded Git repository: {e}"))?;
         if !o.status.success() {
             return refuse(format!("git init: {}", String::from_utf8_lossy(&o.stderr)));
         }
         let source_text = source.to_str().ok_or("source path is not UTF-8")?;
-        git_output(&workspace, &["fetch", "--no-tags", "--no-write-fetch-head", source_text, candidate])?;
+        git_output(
+            &workspace,
+            &[
+                "fetch",
+                "--no-tags",
+                "--no-write-fetch-head",
+                source_text,
+                candidate,
+            ],
+        )?;
         git_output(&workspace, &["checkout", "-q", "--detach", candidate])?;
-        if tree(&workspace, candidate)? != candidate_tree || git_output(&workspace, &["rev-parse", "HEAD"])? != candidate {
+        if tree(&workspace, candidate)? != candidate_tree
+            || git_output(&workspace, &["rev-parse", "HEAD"])? != candidate
+        {
             return refuse("blinded checkout does not match the pinned candidate");
         }
         if let Some(fix) = case.get("repair").and_then(Value::as_str) {
-            let accessible = Command::new("git").arg("-C").arg(&workspace)
+            let accessible = Command::new("git")
+                .arg("-C")
+                .arg(&workspace)
                 .args(["cat-file", "-e", &format!("{fix}^{{commit}}")])
-                .output().map_err(|e| format!("probe hidden repair object: {e}"))?;
+                .output()
+                .map_err(|e| format!("probe hidden repair object: {e}"))?;
             if accessible.status.success() {
                 return refuse("hidden repair is accessible inside blinded Git object database");
             }
@@ -266,7 +330,15 @@ pub fn prepare(study_path: &Path, case_id: &str, condition: &str, repetition: u6
         let context = if condition == "baseline" {
             None
         } else {
-            let native = agent::verify(source, base, candidate, 64, Some(string(case, "roots")?), None, None)?;
+            let native = agent::verify(
+                source,
+                base,
+                candidate,
+                64,
+                Some(string(case, "roots")?),
+                None,
+                None,
+            )?;
             let report: Value = serde_json::from_str(&native.canonical())
                 .map_err(|e| format!("parse native agent evidence: {e}"))?;
             let projected = evidence(&report, condition)?;
@@ -311,7 +383,14 @@ pub fn prepare(study_path: &Path, case_id: &str, condition: &str, repetition: u6
 
 /// Record a completed externally run review, without manufacturing token
 /// measurements or accepting a self-declared ground truth label.
-pub fn record(assignment_path: &Path, transcript: &Path, decision: &str, out: &Path, input_tokens: Option<u64>, output_tokens: Option<u64>) -> Result<()> {
+pub fn record(
+    assignment_path: &Path,
+    transcript: &Path,
+    decision: &str,
+    out: &Path,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+) -> Result<()> {
     if !matches!(decision, "APPROVE" | "BLOCK" | "ABSTAIN") {
         return refuse("decision must be APPROVE, BLOCK, or ABSTAIN");
     }
@@ -322,24 +401,36 @@ pub fn record(assignment_path: &Path, transcript: &Path, decision: &str, out: &P
     if string(&assignment, "schema")? != ASSIGNMENT {
         return refuse("invalid assignment schema");
     }
-    let evidence_path = assignment_path.parent().ok_or("assignment has no parent")?.join("evidence.json");
+    let evidence_path = assignment_path
+        .parent()
+        .ok_or("assignment has no parent")?
+        .join("evidence.json");
     let expected_evidence = value(&assignment, "evidence_sha256")?;
     if expected_evidence.is_null() != !evidence_path.exists()
-        || (!expected_evidence.is_null() && string(&assignment, "evidence_sha256")? != bytes_sha(&evidence_path)?)
+        || (!expected_evidence.is_null()
+            && string(&assignment, "evidence_sha256")? != bytes_sha(&evidence_path)?)
     {
         return refuse("assignment evidence changed or is missing");
     }
-    let prompt_path = assignment_path.parent().ok_or("assignment has no parent")?.join("prompt.txt");
+    let prompt_path = assignment_path
+        .parent()
+        .ok_or("assignment has no parent")?
+        .join("prompt.txt");
     if string(&assignment, "prompt_sha256")? != bytes_sha(&prompt_path)? {
         return refuse("assignment prompt changed");
     }
     let mut unsigned = assignment.clone();
     let id = string(&assignment, "assignment_id")?.to_owned();
-    unsigned.as_object_mut().ok_or("assignment not an object")?.remove("assignment_id");
+    unsigned
+        .as_object_mut()
+        .ok_or("assignment not an object")?
+        .remove("assignment_id");
     if digest::sha256(&serde_json::to_vec(&unsigned).map_err(|e| e.to_string())?) != id {
         return refuse("assignment identity mismatch");
     }
-    let size = fs::metadata(transcript).map_err(|e| format!("transcript metadata: {e}"))?.len();
+    let size = fs::metadata(transcript)
+        .map_err(|e| format!("transcript metadata: {e}"))?
+        .len();
     if !(1..=MAX_TRANSCRIPT).contains(&size) {
         return refuse("transcript must be 1 byte..8 MiB");
     }
@@ -367,7 +458,8 @@ pub fn record(assignment_path: &Path, transcript: &Path, decision: &str, out: &P
 }
 
 fn verified_attempt(attempt: &Value, study: &Value) -> Result<()> {
-    if string(attempt, "schema")? != ATTEMPT || string(attempt, "study_id")? != string(study, "id")? {
+    if string(attempt, "schema")? != ATTEMPT || string(attempt, "study_id")? != string(study, "id")?
+    {
         return refuse("attempt has wrong schema or study identity");
     }
     arm(string(attempt, "condition")?)?;
@@ -393,11 +485,15 @@ fn verified_attempt(attempt: &Value, study: &Value) -> Result<()> {
     }
     let transcript = Path::new(string(attempt, "transcript_path")?);
     if bytes_sha(transcript)? != string(attempt, "transcript_sha256")?
-        || fs::metadata(transcript).map_err(|e| e.to_string())?.len() != number(attempt, "transcript_bytes")?
+        || fs::metadata(transcript).map_err(|e| e.to_string())?.len()
+            != number(attempt, "transcript_bytes")?
     {
         return refuse("attempt transcript changed");
     }
-    if !matches!(string(attempt, "decision")?, "APPROVE" | "BLOCK" | "ABSTAIN") {
+    if !matches!(
+        string(attempt, "decision")?,
+        "APPROVE" | "BLOCK" | "ABSTAIN"
+    ) {
         return refuse("invalid decision");
     }
     if value(attempt, "input_tokens")?.is_null() != value(attempt, "output_tokens")?.is_null() {
@@ -476,11 +572,15 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
         }
     }
     let total = list(&study, "cases")?.len() as u64 * number(&study, "repetitions")? * 4;
-    let arms: Vec<Value> = ARMS.iter().map(|name| {
-        let (correct, escaped, false_block, abstain, missing) = totals.get(name).copied().unwrap_or_default();
-        json!({"condition":name,"correct_gate":correct,"escaped_regressions":escaped,
+    let arms: Vec<Value> = ARMS
+        .iter()
+        .map(|name| {
+            let (correct, escaped, false_block, abstain, missing) =
+                totals.get(name).copied().unwrap_or_default();
+            json!({"condition":name,"correct_gate":correct,"escaped_regressions":escaped,
                "false_blocks":false_block,"abstentions":abstain,"missing":missing})
-    }).collect();
+        })
+        .collect();
     let results = json!({
         "schema": RESULT, "study_id": string(&study, "id")?,
         "study_sha256": bytes_sha(study_path)?,
@@ -507,12 +607,27 @@ mod tests {
     fn commit(repo: &Path, source: &str) -> String {
         fs::write(repo.join("module.py"), source).unwrap();
         run_git(repo, &["add", "."]);
-        run_git(repo, &["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "case"]);
+        run_git(
+            repo,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "-qm",
+                "case",
+            ],
+        );
         git::rev(repo, "HEAD").unwrap()
     }
     #[test]
     fn blinded_workspaces_and_paired_decision_receipts() {
-        let temp = std::env::temp_dir().join(format!("excession-review-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let temp = std::env::temp_dir().join(format!(
+            "excession-review-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
         let repo = temp.join("repo");
         fs::create_dir_all(&repo).unwrap();
         run_git(&repo, &["init", "-q"]);
@@ -520,7 +635,11 @@ mod tests {
         let b = commit(&repo, "VALUE = 0\n");
         let c = commit(&repo, "VALUE = 1  # restored\n");
         let mut oracles = serde_json::Map::new();
-        for (part, revision, pass) in [("base", &a, true), ("candidate", &b, false), ("repair", &c, true)] {
+        for (part, revision, pass) in [
+            ("base", &a, true),
+            ("candidate", &b, false),
+            ("repair", &c, true),
+        ] {
             let receipt_path = temp.join(format!("{part}-oracle.json"));
             let content = json!({
                 "schema": ORACLE, "commit": revision, "tree": tree(&repo, revision).unwrap(),
@@ -535,27 +654,45 @@ mod tests {
             }));
         }
         let manifest = temp.join("study.json");
-        write_new(&manifest, &json!({
-            "schema": STUDY, "id": "smoke", "repetitions": 1,
-            "cases": [{"id":"sample","repo_path":repo.to_str().unwrap(),
-                       "base":a,"candidate":b,"repair":c,
-                       "truth":"REGRESSION","task":"Review changed default value",
-                       "roots":"module.py","oracles":oracles}]
-        })).unwrap();
+        write_new(
+            &manifest,
+            &json!({
+                "schema": STUDY, "id": "smoke", "repetitions": 1,
+                "cases": [{"id":"sample","repo_path":repo.to_str().unwrap(),
+                           "base":a,"candidate":b,"repair":c,
+                           "truth":"REGRESSION","task":"Review changed default value",
+                           "roots":"module.py","oracles":oracles}]
+            }),
+        )
+        .unwrap();
         let attempts = temp.join("attempts");
         fs::create_dir_all(&attempts).unwrap();
         for condition in ARMS {
-            let assignment = prepare(&manifest, "sample", condition, 1, &temp.join(condition)).unwrap();
+            let assignment =
+                prepare(&manifest, "sample", condition, 1, &temp.join(condition)).unwrap();
             let workspace = temp.join(condition).join("workspace");
             assert_eq!(git::rev(&workspace, "HEAD").unwrap(), b);
-            let repair_visible = Command::new("git").arg("-C").arg(&workspace).args(["cat-file", "-e", &c]).status().unwrap();
+            let repair_visible = Command::new("git")
+                .arg("-C")
+                .arg(&workspace)
+                .args(["cat-file", "-e", &c])
+                .status()
+                .unwrap();
             assert!(!repair_visible.success());
             let text = fs::read_to_string(&assignment).unwrap();
             assert!(!text.contains(&c));
             assert!(!text.contains("REGRESSION"));
             let transcript = temp.join(format!("{condition}.txt"));
             fs::write(&transcript, "Block: changed behavior needs tests\n").unwrap();
-            record(&assignment, &transcript, "BLOCK", &attempts.join(format!("{condition}.json")), None, None).unwrap();
+            record(
+                &assignment,
+                &transcript,
+                "BLOCK",
+                &attempts.join(format!("{condition}.json")),
+                None,
+                None,
+            )
+            .unwrap();
         }
         let result_path = temp.join("results.json");
         evaluate(&manifest, &attempts, &result_path).unwrap();

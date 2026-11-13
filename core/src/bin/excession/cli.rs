@@ -242,7 +242,11 @@ pub(super) fn command() -> Command {
     let benchmark = group(
         "benchmark",
         vec![
-            leaf("review-prepare", &["study", "case", "condition", "repetition", "out"], &[]),
+            leaf(
+                "review-prepare",
+                &["study", "case", "condition", "repetition", "out"],
+                &[],
+            ),
             leaf(
                 "review-record",
                 &["assignment", "transcript", "decision", "out"],

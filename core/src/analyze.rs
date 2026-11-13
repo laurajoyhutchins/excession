@@ -2,7 +2,7 @@
 //! These are *candidate* dependencies, not complete dynamic semantics.
 use crate::discovery::{self, Discovery};
 use crate::json::{Value, obj};
-use crate::observed_relations::{self, Selection};
+use crate::observed_relations::{self, Observed, Plan, Selection};
 use crate::source_capabilities;
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, doctor, index, refuse, views};
@@ -334,34 +334,26 @@ pub fn run_if_supported(
     Ok(Some((report, db_path)))
 }
 
-/// Explicitly combine a pinned static-module analysis with authenticated
-/// external producer evidence. A Git-only repository is supported when at
-/// least one native producer snapshot was explicitly selected.
-pub fn run_with_evidence(
+/// Compose already authenticated native observations with native static
+/// candidates. This is the single report assembly point for explicit and
+/// default selection, so coverage and receipt handling cannot drift.
+fn compose(
     path: &Path,
     rev: &str,
     roots: Option<&str>,
-    db_override: Option<&str>,
-    selection: Selection<'_>,
+    database: Option<&str>,
+    discovered: &Discovery,
+    selected: Observed,
+    selection_key: &str,
+    selection_record: Value,
+    native_gaps: &[Value],
 ) -> Result<(Value, PathBuf)> {
-    if selection.is_empty() {
-        if selection.source_prefix.is_some() {
-            return refuse("--source-prefix requires --scip-snapshot");
-        }
-        return run(path, rev, roots, db_override);
-    }
-    let database = db_override
-        .ok_or("selected source evidence requires --db to name an existing SQLite store")?;
-    let discovered = discovery::inspect(path, rev)?;
-    let db_path = checked_external_destination(&discovered.root, Path::new(database), "SQLite")?;
-    if !db_path.is_file() {
-        return refuse("selected source evidence database does not exist");
-    }
-    let selected = {
-        let db = Db::open(&db_path)?;
-        observed_relations::read(&db, &discovered.root, &discovered.commit, selection)?
-    };
-    let (mut report, _) = match run_if_supported(path, rev, roots, Some(database))? {
+    let db_path = checked_external_destination(
+        &discovered.root,
+        database.map(Path::new).unwrap_or(&discovered.index_path),
+        "SQLite",
+    )?;
+    let (mut report, _) = match run_if_supported(path, rev, roots, database)? {
         Some(current) => current,
         None => {
             let gaps = discovered.report()?.get("coverage")?.get("gaps")?.clone();
@@ -373,14 +365,11 @@ pub fn run_with_evidence(
                     ("status", Value::string("PARTIAL")),
                     ("observation_receipts", Value::array([])),
                     ("relationships", Value::array([])),
-                    (
-                        "coverage",
-                        obj(&[
-                            ("status", Value::string("PARTIAL")),
-                            ("analyzed_sources", Value::number(0)),
-                            ("gaps", gaps),
-                        ]),
-                    ),
+                    ("coverage", obj(&[
+                        ("status", Value::string("PARTIAL")),
+                        ("analyzed_sources", Value::number(0)),
+                        ("gaps", gaps),
+                    ])),
                 ]),
                 db_path.clone(),
             )
@@ -395,51 +384,127 @@ pub fn run_with_evidence(
         .map(|value| Ok(value.str()?.to_owned()))
         .collect::<Result<BTreeSet<_>>>()?;
     receipts.extend(selected.receipt_ids);
-    // The aggregate is still partial; this count is of recognized sources,
-    // not a certificate that their dependencies are complete.
     let covered = usize::try_from(report.get("coverage")?.get("analyzed_sources")?.integer()?)
         .map_err(|_| "invalid indexed source count")?;
     let count = covered.max(selected.source_paths.len());
-    report
+    let coverage = report
         .entries_mut()?
         .get_mut("coverage")
-        .ok_or("analysis report missing coverage")?
-        .entries_mut()?
-        .insert("analyzed_sources".into(), Value::number(count));
+        .ok_or("analysis report missing coverage")?;
+    let gaps = coverage.get("gaps")?.array_ref()?.to_vec();
+    let mut gaps = [gaps, native_gaps.to_vec()].concat();
+    if gaps.len() > 10000 {
+        gaps.truncate(9999);
+        gaps.push(obj(&[("reason", Value::string("TRUNCATED"))]));
+    }
+    coverage.entries_mut()?.insert("gaps".into(), Value::array(gaps));
+    coverage.entries_mut()?.insert("analyzed_sources".into(), Value::number(count));
     let body = report.entries_mut()?;
     body.insert("relationships".into(), Value::array(relations));
     body.insert(
         "observation_receipts".into(),
         Value::array(receipts.into_iter().map(Value::string)),
     );
-    body.insert(
-        "configured_observations".into(),
-        Value::array(selected.configured_observations),
-    );
+    body.insert("configured_observations".into(), Value::array(selected.configured_observations));
     body.insert("producer_coverage".into(), Value::array(selected.coverage));
-    body.insert(
-        "producer_selections".into(),
-        obj(&[
-            (
-                "scip_snapshot",
-                selection.scip_snapshot.map_or(Value::Null, Value::string),
-            ),
-            (
-                "graph_id",
-                selection.graph_id.map_or(Value::Null, Value::string),
-            ),
-            (
-                "source_prefix",
-                selection.source_prefix.map_or(Value::Null, Value::string),
-            ),
-        ]),
-    );
+    body.insert(selection_key.into(), selection_record);
     body.remove("report_id");
     let report_id = report.sha256();
-    report
-        .entries_mut()?
-        .insert("report_id".into(), Value::string(report_id));
+    report.entries_mut()?.insert("report_id".into(), Value::string(report_id));
     Ok((report, db_path))
+}
+
+/// Explicit identities continue to narrow source evidence, even if multiple
+/// other snapshots are present in the store. Do not automatically add anything
+/// to this explicit scope.
+pub fn run_with_evidence(
+    path: &Path,
+    rev: &str,
+    roots: Option<&str>,
+    db_override: Option<&str>,
+    selection: Selection<'_>,
+) -> Result<(Value, PathBuf)> {
+    if selection.is_empty() && selection.source_prefix.is_some() {
+        return refuse("--source-prefix requires --scip-snapshot");
+    }
+    let discovered = discovery::inspect(path, rev)?;
+    let selected = if selection.is_empty() {
+        Observed::default()
+    } else {
+        let database = db_override.ok_or("selected native evidence requires --db")?;
+        let dest = checked_external_destination(
+            &discovered.root, Path::new(database), "SQLite",
+        )?;
+        if !dest.is_file() {
+            return refuse("selected source evidence database does not exist");
+        }
+        observed_relations::read(
+            &Db::open(&dest)?, &discovered.root, &discovered.commit, selection,
+        )?
+    };
+    compose(
+        path, rev, roots, db_override, &discovered, selected,
+        "producer_selections",
+        obj(&[
+            ("scip_snapshot", selection.scip_snapshot.map_or(Value::Null, Value::string)),
+            ("graph_id", selection.graph_id.map_or(Value::Null, Value::string)),
+            ("source_prefix", selection.source_prefix.map_or(Value::Null, Value::string)),
+        ]),
+        &[],
+    )
+}
+
+/// Generate an analysis from an immutable, already selected producer plan.
+pub fn run_with_plan(
+    path: &Path,
+    rev: &str,
+    roots: Option<&str>,
+    db_override: Option<&str>,
+    plan: &Plan,
+) -> Result<(Value, PathBuf)> {
+    let discovered = discovery::inspect(path, rev)?;
+    let selected = if plan.is_empty() {
+        Observed::default()
+    } else {
+        let dest = checked_external_destination(
+            &discovered.root,
+            db_override.map(Path::new).unwrap_or(&discovered.index_path),
+            "SQLite",
+        )?;
+        if !dest.is_file() {
+            return refuse("pinned native evidence database does not exist");
+        }
+        observed_relations::read_plan(&Db::open(&dest)?, &discovered.root, &discovered.commit, plan)?
+    };
+    compose(
+        path, rev, roots, db_override, &discovered, selected,
+        "producer_selection_plan", plan.document(), &plan.gaps,
+    )
+}
+
+/// Default: select everything compatible from the existing evidence store.
+/// If there is no store, preserve existing static analysis and report its
+/// unsupported-language coverage rather than treating discovery as an opt-in.
+pub fn run_default(
+    path: &Path,
+    rev: &str,
+    roots: Option<&str>,
+    db_override: Option<&str>,
+) -> Result<(Value, PathBuf)> {
+    let discovered = discovery::inspect(path, rev)?;
+    let dest = checked_external_destination(
+        &discovered.root,
+        db_override.map(Path::new).unwrap_or(&discovered.index_path),
+        "SQLite",
+    )?;
+    let plan = if dest.is_file() {
+        observed_relations::default_plan(
+            &Db::open(&dest)?, &discovered.root, &discovered.commit,
+        )?
+    } else {
+        Plan::default()
+    };
+    run_with_plan(path, rev, roots, db_override, &plan)
 }
 
 pub fn human(report: &Value, db_path: &Path) -> Result<String> {

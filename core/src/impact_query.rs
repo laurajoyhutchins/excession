@@ -200,12 +200,11 @@ fn run_core(
     database: Option<&str>,
     selected: Mode<'_>,
 ) -> Result<Value> {
-    if let Mode::Explicit(scope) = selected {
-        if (scope.base.source_prefix.is_some() && scope.base.scip_snapshot.is_none())
-            || (scope.head.source_prefix.is_some() && scope.head.scip_snapshot.is_none())
-        {
-            return refuse("source-prefix selection requires the corresponding SCIP snapshot");
-        }
+    if let Mode::Explicit(scope) = selected
+        && ((scope.base.source_prefix.is_some() && scope.base.scip_snapshot.is_none())
+            || (scope.head.source_prefix.is_some() && scope.head.scip_snapshot.is_none()))
+    {
+        return refuse("source-prefix selection requires the corresponding SCIP snapshot");
     }
     let changes = change_inventory::inventory(path, base, head)?;
     let base_commit = changes.get("base_commit")?.str()?;

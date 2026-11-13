@@ -337,17 +337,23 @@ pub fn run_if_supported(
 /// Compose already authenticated native observations with native static
 /// candidates. This is the single report assembly point for explicit and
 /// default selection, so coverage and receipt handling cannot drift.
-fn compose(
-    path: &Path,
-    rev: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-    discovered: &Discovery,
+struct Compose<'a> {
+    path: &'a Path,
+    rev: &'a str,
+    roots: Option<&'a str>,
+    database: Option<&'a str>,
+    discovered: &'a Discovery,
     selected: Observed,
-    selection_key: &str,
+    selection_key: &'a str,
     selection_record: Value,
-    native_gaps: &[Value],
-) -> Result<(Value, PathBuf)> {
+    native_gaps: &'a [Value],
+}
+
+fn compose(request: Compose<'_>) -> Result<(Value, PathBuf)> {
+    let Compose {
+        path, rev, roots, database, discovered, selected,
+        selection_key, selection_record, native_gaps,
+    } = request;
     let db_path = checked_external_destination(
         &discovered.root,
         database.map(Path::new).unwrap_or(&discovered.index_path),
@@ -455,30 +461,21 @@ pub fn run_with_evidence(
             selection,
         )?
     };
-    compose(
+    compose(Compose {
         path,
         rev,
         roots,
-        db_override,
-        &discovered,
+        database: db_override,
+        discovered: &discovered,
         selected,
-        "producer_selections",
-        obj(&[
-            (
-                "scip_snapshot",
-                selection.scip_snapshot.map_or(Value::Null, Value::string),
-            ),
-            (
-                "graph_id",
-                selection.graph_id.map_or(Value::Null, Value::string),
-            ),
-            (
-                "source_prefix",
-                selection.source_prefix.map_or(Value::Null, Value::string),
-            ),
+        selection_key: "producer_selections",
+        selection_record: obj(&[
+            ("scip_snapshot", selection.scip_snapshot.map_or(Value::Null, Value::string)),
+            ("graph_id", selection.graph_id.map_or(Value::Null, Value::string)),
+            ("source_prefix", selection.source_prefix.map_or(Value::Null, Value::string)),
         ]),
-        &[],
-    )
+        native_gaps: &[],
+    })
 }
 
 /// Generate an analysis from an immutable, already selected producer plan.
@@ -508,17 +505,17 @@ pub fn run_with_plan(
             plan,
         )?
     };
-    compose(
+    compose(Compose {
         path,
         rev,
         roots,
-        db_override,
-        &discovered,
+        database: db_override,
+        discovered: &discovered,
         selected,
-        "producer_selection_plan",
-        plan.document(),
-        &plan.gaps,
-    )
+        selection_key: "producer_selection_plan",
+        selection_record: plan.document(),
+        native_gaps: &plan.gaps,
+    })
 }
 
 /// Default: select everything compatible from the existing evidence store.

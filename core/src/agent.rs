@@ -43,16 +43,7 @@ fn report_id(mut value: Value) -> Result<Value> {
 }
 
 fn is_test(path: &str) -> bool {
-    let file = path.rsplit('/').next().unwrap_or(path);
-    path.starts_with("tests/")
-        || path.contains("/tests/")
-        || file.starts_with("test_")
-        || file.ends_with("_test.rs")
-        || file.ends_with("_test.py")
-        || file.ends_with(".test.ts")
-        || file.ends_with(".spec.ts")
-        || file.ends_with(".test.js")
-        || file.ends_with(".spec.js")
+    crate::source_capabilities::test_candidate(path)
 }
 
 fn matches_focus(test: &str, focus: &BTreeSet<String>) -> bool {

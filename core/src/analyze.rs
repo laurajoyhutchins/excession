@@ -2,6 +2,7 @@
 //! These are *candidate* dependencies, not complete dynamic semantics.
 use crate::discovery::{self, Discovery};
 use crate::json::{Value, obj};
+use crate::source_capabilities;
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, doctor, index, refuse, views};
 use std::collections::{BTreeMap, BTreeSet};
@@ -148,16 +149,7 @@ fn scoped_languages(
                 && index::module_name(&entry.path, &roots).is_some()
         })
         .filter_map(|entry| {
-            if entry.path.ends_with(".py") {
-                Some("python")
-            } else if [".js", ".cjs", ".mjs", ".ts"]
-                .iter()
-                .any(|extension| entry.path.ends_with(extension))
-            {
-                Some("javascript")
-            } else {
-                None
-            }
+            source_capabilities::static_module_producer(&entry.path).map(|producer| producer.name)
         })
         .collect())
 }
@@ -212,13 +204,11 @@ pub fn run_if_supported(
     let languages = scoped_languages(&discovered, &normalized_roots, explicit_roots.is_some())?;
     let capabilities = doctor::report();
     let cap = capabilities.get("capabilities")?;
-    for (lang, key) in [
-        ("python", "python_index"),
-        ("javascript", "javascript_index"),
-    ] {
-        if languages.contains(lang) && !cap.get(key)?.bool()? {
+    for producer in source_capabilities::STATIC_MODULE_PRODUCERS {
+        if languages.contains(producer.name) && !cap.get(producer.capability)?.bool()? {
             return refuse(format!(
-                "required {lang} analyzer unavailable; run excession doctor --json"
+                "required {} analyzer unavailable; run excession doctor --json",
+                producer.name
             ));
         }
     }

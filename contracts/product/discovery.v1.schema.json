@@ -63,6 +63,19 @@
         }
       }
     },
+    "source_languages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["language", "tracked_sources", "indexable_sources"],
+        "properties": {
+          "language": { "type": "string", "minLength": 1 },
+          "tracked_sources": { "type": "integer", "minimum": 0 },
+          "indexable_sources": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
     "index_path": {
       "type": "string",
       "minLength": 1

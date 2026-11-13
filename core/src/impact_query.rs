@@ -109,9 +109,7 @@ fn walk(
 }
 
 fn indexed_language(path: &str) -> bool {
-    [".py", ".js", ".cjs", ".mjs", ".ts"]
-        .iter()
-        .any(|extension| path.ends_with(extension))
+    crate::source_capabilities::static_module_producer(path).is_some()
 }
 
 fn observe(

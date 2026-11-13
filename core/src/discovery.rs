@@ -2,6 +2,7 @@
 //! No build commands, source code or checkout modification are performed here.
 use crate::git;
 use crate::json::{Value, obj};
+use crate::source_capabilities;
 use crate::{Result, doctor, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -17,41 +18,46 @@ pub struct Discovery {
     pub source_files: usize,
     pub root_level_files: usize,
     pub language_counts: BTreeMap<&'static str, usize>,
+    /// (tracked source count, static-module-indexable count), by detected language.
+    pub source_languages: BTreeMap<String, (usize, usize)>,
 }
 
-/// Select all first-level directories containing supported tracked source,
-/// not guessed 'src' and 'tests' paths. Top-level files are reported as
-/// excluded because the existing module indexer requires a rooted directory.
-fn source_layout(
-    entries: &[git::Entry],
-) -> (Vec<String>, usize, usize, BTreeMap<&'static str, usize>) {
+/// Inventory all language-detected tracked files, but select roots only for
+/// languages with a real static-module producer. Source detection is not
+/// evidence of resolved dependencies or installed parser availability.
+type SourceLayout = (
+    Vec<String>,
+    usize,
+    usize,
+    BTreeMap<&'static str, usize>,
+    BTreeMap<String, (usize, usize)>,
+);
+
+fn source_layout(entries: &[git::Entry]) -> SourceLayout {
     let mut roots = BTreeSet::new();
     let mut included = 0usize;
     let mut root_level = 0usize;
     let mut languages = BTreeMap::new();
+    let mut source_languages = BTreeMap::<String, (usize, usize)>::new();
     for entry in entries {
         if entry.kind != "blob" || !matches!(entry.mode.as_str(), "100644" | "100755") {
             continue;
         }
-        let language = if entry.path.ends_with(".py") {
-            "python"
-        } else if entry.path.ends_with(".js")
-            || entry.path.ends_with(".cjs")
-            || entry.path.ends_with(".mjs")
-            || entry.path.ends_with(".ts")
-        {
-            "javascript"
-        } else {
-            continue;
-        };
-        // The current indexer intentionally excludes installed packages.
-        if entry
-            .path
-            .split('/')
-            .any(|p| p == "node_modules" || p == ".venv")
-        {
+        // Exclude known installed package trees from the product source census;
+        // they remain present in the authoritative Git tree.
+        if source_capabilities::excluded_from_static_modules(&entry.path) {
             continue;
         }
+        let Some(detected) = source_capabilities::detected_language(&entry.path) else {
+            continue;
+        };
+        let count = source_languages.entry(detected).or_default();
+        count.0 += 1;
+        let Some(producer) = source_capabilities::static_module_producer(&entry.path) else {
+            continue;
+        };
+        count.1 += 1;
+        let language = producer.name;
         let Some((root, _)) = entry.path.split_once('/') else {
             root_level += 1;
             *languages.entry(language).or_insert(0usize) += 1;
@@ -69,7 +75,13 @@ fn source_layout(
         included += root_level;
         root_level = 0;
     }
-    (roots.into_iter().collect(), included, root_level, languages)
+    (
+        roots.into_iter().collect(),
+        included,
+        root_level,
+        languages,
+        source_languages,
+    )
 }
 
 fn cache_path(root: &Path) -> PathBuf {
@@ -94,7 +106,8 @@ pub fn inspect(path: &Path, rev: &str) -> Result<Discovery> {
     }
     let tree = git::rev(&root, &format!("{commit}^{{tree}}"))?;
     let entries = git::entries(&root, &commit)?;
-    let (roots, source_files, root_level_files, language_counts) = source_layout(&entries);
+    let (roots, source_files, root_level_files, language_counts, source_languages) =
+        source_layout(&entries);
     Ok(Discovery {
         index_path: cache_path(&root),
         root,
@@ -104,6 +117,7 @@ pub fn inspect(path: &Path, rev: &str) -> Result<Discovery> {
         source_files,
         root_level_files,
         language_counts,
+        source_languages,
     })
 }
 
@@ -113,11 +127,9 @@ impl Discovery {
         let caps = capabilities.get("capabilities")?;
         let mut adapters = Vec::new();
         let mut gaps = Vec::new();
-        for (lang, cap) in [
-            ("python", "python_index"),
-            ("javascript", "javascript_index"),
-        ] {
-            let found = caps.get(cap)?.bool()?;
+        for producer in source_capabilities::STATIC_MODULE_PRODUCERS {
+            let lang = producer.name;
+            let found = caps.get(producer.capability)?.bool()?;
             adapters.push(obj(&[
                 ("name", Value::string(lang)),
                 (
@@ -131,6 +143,20 @@ impl Discovery {
                     (
                         "detail",
                         Value::string(format!("{lang} analyzer is not installed or ready")),
+                    ),
+                ]));
+            }
+        }
+        for (language, &(tracked, indexable)) in &self.source_languages {
+            if tracked > indexable {
+                gaps.push(obj(&[
+                    ("reason", Value::string("UNSUPPORTED_LANGUAGE")),
+                    (
+                        "detail",
+                        Value::string(format!(
+                            "{language}: {} detected source file(s) have no static-module producer; syntax or native observations require a separate configured workflow",
+                            tracked - indexable
+                        )),
                     ),
                 ]));
             }
@@ -167,6 +193,18 @@ impl Discovery {
                 Value::string(self.root.to_string_lossy()),
             ),
             ("roots", Value::array(self.roots.iter().map(Value::string))),
+            (
+                "source_languages",
+                Value::array(self.source_languages.iter().map(
+                    |(language, (tracked, indexable))| {
+                        obj(&[
+                            ("language", Value::string(language)),
+                            ("tracked_sources", Value::number(*tracked)),
+                            ("indexable_sources", Value::number(*indexable)),
+                        ])
+                    },
+                )),
+            ),
             ("adapters", Value::array(adapters)),
             (
                 "index_path",
@@ -199,7 +237,7 @@ mod tests {
 
     #[test]
     fn discovers_all_tracked_source_roots_not_guessed_defaults() {
-        let (roots, n, root_level, langs) = source_layout(&[
+        let (roots, n, root_level, langs, census) = source_layout(&[
             entry("lib/impl.py"),
             entry("examples/demo.ts"),
             entry("tests/test_impl.py"),
@@ -212,13 +250,38 @@ mod tests {
         assert_eq!(root_level, 0);
         assert_eq!(langs["python"], 3);
         assert_eq!(langs["javascript"], 1);
+        assert_eq!(
+            census.values().map(|(tracked, _)| tracked).sum::<usize>(),
+            4
+        );
+    }
+
+    #[test]
+    fn inventories_other_languages_without_pretending_to_index_them() {
+        let (roots, count, _, langs, census) = source_layout(&[
+            entry("src/lib.rs"),
+            entry("cmd/server.go"),
+            entry("native/main.c"),
+            entry("src/app.py"),
+            entry("node_modules/lib.rs"),
+        ]);
+        assert_eq!(roots, ["src"]);
+        assert_eq!(count, 1);
+        assert_eq!(langs["python"], 1);
+        for lang in ["rust", "go", "c"] {
+            assert!(
+                census
+                    .get(lang)
+                    .is_some_and(|(total, indexable)| *total == 1 && *indexable == 0)
+            );
+        }
     }
 
     #[test]
     fn excludes_git_symlinks_from_supported_source_inventory() {
         let mut link = entry("lib/link.py");
         link.mode = "120000".into();
-        let (roots, count, _, _) = source_layout(&[link]);
+        let (roots, count, _, _, _) = source_layout(&[link]);
         assert!(roots.is_empty());
         assert_eq!(count, 0);
     }

@@ -5,12 +5,7 @@
 // This pure conversion is shared by semantic preparation, revision indexing,
 // and incremental reuse without requiring dependencies on either orchestrator.
 pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
-    if path
-        .split('/')
-        .any(|part| matches!(part, "node_modules" | ".venv"))
-    {
-        return None;
-    }
+    crate::source_capabilities::static_module_producer(path)?;
     for &root in roots {
         // "." is an explicit whole-repository root. It supports tracked
         // top-level modules without inventing a path prefix.
@@ -38,12 +33,7 @@ pub fn module_name(path: &str, roots: &[&str]) -> Option<(String, bool)> {
             .strip_suffix(".__init__")
             .or_else(|| module.strip_suffix(".index"))
             .unwrap_or(&module);
-        let is_test = path.starts_with("tests/")
-            || path.starts_with("h11/tests/")
-            || path
-                .rsplit('/')
-                .next()
-                .is_some_and(|p| p.starts_with("test_"));
+        let is_test = crate::source_capabilities::test_candidate(path);
         return Some((name.to_owned(), is_test));
     }
     None

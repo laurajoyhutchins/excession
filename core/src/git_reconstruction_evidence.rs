@@ -197,7 +197,7 @@ pub fn replay(db: &Db, repo: &Path, plan_path: &Path, evidence_path: &Path) -> R
             ("behavioral_preservation", Value::string("NOT_ESTABLISHED")),
         ]));
     }
-    reports.sort_by(|a, b| a.canonical().cmp(&b.canonical()));
+    reports.sort_by_key(|a| a.canonical());
     let missing = expected
         .difference(&checked)
         .map(|(phase, checkpoint, contract)| {

@@ -448,7 +448,19 @@ pub fn synthesize(
                 ("contract", json_array(names.iter())),
                 ("checkpoint", Value::string(&merged)),
                 ("tree", Value::string(&merged_tree)),
-                ("state", Value::string("NEEDS_JOINT_INDEPENDENT_ORACLE")),
+                (
+                    "state",
+                    Value::string(
+                        if names
+                            .iter()
+                            .any(|id| failures.contains(&(id.clone(), merged_tree.clone())))
+                        {
+                            "COUNTEREXAMPLE_REQUIRES_REPAIR"
+                        } else {
+                            "NEEDS_JOINT_INDEPENDENT_ORACLE"
+                        },
+                    ),
+                ),
             ]));
             for (number, sequence) in orders.iter().enumerate() {
                 let name = format!("synthetic-{number}");
@@ -660,6 +672,42 @@ pub fn synthesize(
             .map_err(|e| format!("write generated plan: {e}"))?;
         let structural = git_reconstruction::verify(&scratch, &plan_path)?;
         let target_failed = failures.iter().any(|(_, tree)| tree == &target_tree);
+        // Prefer the next structural candidate that does not reproduce a
+        // caller-reported failing intermediate tree. This is a *retest priority*,
+        // not a conclusion that reordering repaired a behavioral defect.
+        let common_failure = oracle_selections.iter().any(|item| {
+            item.get("candidate").ok().and_then(|v| v.str().ok()) == Some("ALL")
+                && item.get("state").ok().and_then(|v| v.str().ok())
+                    == Some("COUNTEREXAMPLE_REQUIRES_REPAIR")
+        });
+        let mut recommended = Value::Null;
+        for candidate in &mut candidate_reports {
+            let name = candidate.get("name")?.str()?.to_owned();
+            let matched = oracle_selections
+                .iter()
+                .filter(|item| {
+                    item.get("candidate").ok().and_then(|v| v.str().ok()) == Some(name.as_str())
+                        && item.get("state").ok().and_then(|v| v.str().ok())
+                            == Some("COUNTEREXAMPLE_REQUIRES_REPAIR")
+                })
+                .count()
+                + usize::from(common_failure);
+            candidate.entries_mut()?.insert(
+                "known_counterexample_count".to_owned(),
+                Value::number(matched),
+            );
+            candidate.entries_mut()?.insert(
+                "candidate_status".to_owned(),
+                Value::string(if target_failed || matched > 0 {
+                    "COUNTEREXAMPLE_REQUIRES_REPAIR"
+                } else {
+                    "UNVERIFIED_NEEDS_ORACLES"
+                }),
+            );
+            if !target_failed && matched == 0 && matches!(recommended, Value::Null) {
+                recommended = Value::string(name);
+            }
+        }
         let mut report = obj(&[
             (
                 "schema",
@@ -674,6 +722,7 @@ pub fn synthesize(
             ("candidates", Value::array(candidate_reports)),
             ("oracle_selections", Value::array(oracle_selections)),
             ("counterexample_matches", Value::number(failure_hits)),
+            ("recommended_next_candidate", recommended),
             (
                 "target_behavior",
                 Value::string(if target_failed {

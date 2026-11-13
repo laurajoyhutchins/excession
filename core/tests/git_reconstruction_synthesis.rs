@@ -170,6 +170,14 @@ fn counterexamples_never_promote_reordering_to_a_behavioral_fix() {
             > 0
     );
     assert_eq!(
+        second
+            .get("recommended_next_candidate")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "synthetic-1"
+    );
+    assert_eq!(
         second.get("feedback_authority").unwrap().str().unwrap(),
         "CALLER_SUPPLIED_UNATTESTED"
     );
@@ -194,6 +202,10 @@ fn counterexamples_never_promote_reordering_to_a_behavioral_fix() {
             .str()
             .unwrap(),
         "COUNTEREXAMPLE_BLOCKS_ALL_SOURCE_IDENTICAL_HISTORIES"
+    );
+    assert_eq!(
+        final_feedback.get("recommended_next_candidate").unwrap(),
+        &Value::Null
     );
 }
 #[test]

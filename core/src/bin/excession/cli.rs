@@ -188,7 +188,16 @@ pub(super) fn command() -> Command {
             ),
             leaf(
                 "build-record",
-                &["db", "repo", "rev", "artifact", "sources", "toolchain", "configuration", "representation"],
+                &[
+                    "db",
+                    "repo",
+                    "rev",
+                    "artifact",
+                    "sources",
+                    "toolchain",
+                    "configuration",
+                    "representation",
+                ],
                 &[],
             ),
         ],

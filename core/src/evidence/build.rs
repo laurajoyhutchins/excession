@@ -14,10 +14,16 @@ const PRODUCER: &str = "excession:build-provenance";
 const FORMAT: &str = "excession.build-provenance.v1";
 
 fn sha256(value: &str) -> Result<()> {
-    Subject::Configuration { sha256: value.to_owned() }.validate()
+    Subject::Configuration {
+        sha256: value.to_owned(),
+    }
+    .validate()
 }
 fn representation(value: &str) -> Result<()> {
-    if matches!(value, "EXECUTABLE" | "OBJECT" | "ARCHIVE" | "WASM" | "OTHER") {
+    if matches!(
+        value,
+        "EXECUTABLE" | "OBJECT" | "ARCHIVE" | "WASM" | "OTHER"
+    ) {
         Ok(())
     } else {
         refuse("unsupported build artifact representation")
@@ -54,8 +60,13 @@ struct Prepared {
     artifact_subject_id: String,
 }
 fn prepare(
-    repo: &Path, revision: &str, artifact: &Path,
-    inputs: &[&str], toolchain: &str, configuration: &str, kind: &str,
+    repo: &Path,
+    revision: &str,
+    artifact: &Path,
+    inputs: &[&str],
+    toolchain: &str,
+    configuration: &str,
+    kind: &str,
 ) -> Result<Prepared> {
     git::verify_repo(repo)?;
     let commit = git::rev(repo, &format!("{revision}^{{commit}}"))?;
@@ -79,24 +90,40 @@ fn prepare(
     let artifact_subject_id = Subject::Artifact {
         sha256: sha.clone(),
         size_bytes: size,
-    }.id()?;
+    }
+    .id()?;
     let claim = obj(&[
         ("schema", Value::string(FORMAT)),
         ("source_commit", Value::string(&commit)),
         ("source_tree", Value::string(&tree)),
-        ("artifact", obj(&[
-            ("sha256", Value::string(&sha)),
-            ("size_bytes", Value::number(size)),
-            ("representation", Value::string(kind)),
-        ])),
-        ("build", obj(&[
-            ("toolchain_digest", Value::string(toolchain)),
-            ("configuration_digest", Value::string(configuration)),
-            ("source_inputs", Value::array(sources.iter().map(source_doc))),
-            ("execution_authority", Value::string("DECLARED_RECIPE_UNATTESTED")),
-        ])),
+        (
+            "artifact",
+            obj(&[
+                ("sha256", Value::string(&sha)),
+                ("size_bytes", Value::number(size)),
+                ("representation", Value::string(kind)),
+            ]),
+        ),
+        (
+            "build",
+            obj(&[
+                ("toolchain_digest", Value::string(toolchain)),
+                ("configuration_digest", Value::string(configuration)),
+                (
+                    "source_inputs",
+                    Value::array(sources.iter().map(source_doc)),
+                ),
+                (
+                    "execution_authority",
+                    Value::string("DECLARED_RECIPE_UNATTESTED"),
+                ),
+            ]),
+        ),
         ("source_artifact_relation", Value::string("NOT_ESTABLISHED")),
-        ("execution_security", Value::string("UNTRUSTED_BUILDS_REQUIRE_ISOLATION")),
+        (
+            "execution_security",
+            Value::string("UNTRUSTED_BUILDS_REQUIRE_ISOLATION"),
+        ),
     ]);
     let receipt = Receipt {
         producer: PRODUCER.into(),
@@ -128,9 +155,13 @@ fn prepare(
     }
     Ok(Prepared {
         batch: Batch {
-            source_commit: commit, receipts: vec![receipt], observations,
+            source_commit: commit,
+            receipts: vec![receipt],
+            observations,
         },
-        claim, receipt_id, artifact_subject_id,
+        claim,
+        receipt_id,
+        artifact_subject_id,
     })
 }
 fn report(prepared: &Prepared, snapshot: &str) -> Result<Value> {
@@ -138,28 +169,56 @@ fn report(prepared: &Prepared, snapshot: &str) -> Result<Value> {
     let body = result.entries_mut()?;
     body.insert("snapshot_id".into(), Value::string(snapshot));
     body.insert("receipt_id".into(), Value::string(&prepared.receipt_id));
-    body.insert("artifact_subject_id".into(), Value::string(&prepared.artifact_subject_id));
+    body.insert(
+        "artifact_subject_id".into(),
+        Value::string(&prepared.artifact_subject_id),
+    );
     body.insert("artifact_bytes_verified".into(), Value::Bool(true));
     body.insert("git_inputs_verified".into(), Value::Bool(true));
     body.insert("build_execution_verified".into(), Value::Bool(false));
-    body.insert("status".into(), Value::string("GIT_INPUTS_AND_ARTIFACT_BYTES_REPLAYED"));
+    body.insert(
+        "status".into(),
+        Value::string("GIT_INPUTS_AND_ARTIFACT_BYTES_REPLAYED"),
+    );
     let id = result.sha256();
-    result.entries_mut()?.insert("report_id".into(), Value::string(id));
+    result
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(id));
     Ok(result)
 }
 /// Persist immutable source and artifact facts in the shared evidence store.
 /// Never execute untrusted build commands on the host.
 pub fn record(
-    db: &Db, repo: &Path, revision: &str, artifact: &Path,
-    inputs: &[&str], toolchain: &str, configuration: &str, kind: &str,
+    db: &Db,
+    repo: &Path,
+    revision: &str,
+    artifact: &Path,
+    inputs: &[&str],
+    toolchain: &str,
+    configuration: &str,
+    kind: &str,
 ) -> Result<Value> {
-    let prepared = prepare(repo, revision, artifact, inputs, toolchain, configuration, kind)?;
+    let prepared = prepare(
+        repo,
+        revision,
+        artifact,
+        inputs,
+        toolchain,
+        configuration,
+        kind,
+    )?;
     let snapshot = evidence_store::persist(db, &prepared.batch)?;
     report(&prepared, &snapshot)
 }
 /// Rebuild the original snapshot from the original receipt, pinned Git objects,
 /// and freshly read artifact bytes. Refuse any disagreement.
-pub fn audit(db: &Db, repo: &Path, revision: &str, artifact: &Path, snapshot: &str) -> Result<Value> {
+pub fn audit(
+    db: &Db,
+    repo: &Path,
+    revision: &str,
+    artifact: &Path,
+    snapshot: &str,
+) -> Result<Value> {
     db.read_transaction(|db| {
         let existing = evidence_store::audit(db, snapshot)?;
         let commit = git::rev(repo, &format!("{revision}^{{commit}}"))?;
@@ -174,15 +233,20 @@ pub fn audit(db: &Db, repo: &Path, revision: &str, artifact: &Path, snapshot: &s
             return refuse("build snapshot requires exactly one original producer receipt");
         }
         let receipt = json::parse(
-            rows[0][0].as_deref().ok_or("missing original receipt document")?.as_bytes(),
+            rows[0][0]
+                .as_deref()
+                .ok_or("missing original receipt document")?
+                .as_bytes(),
         )?;
         if receipt.get("producer")?.str()? != PRODUCER || receipt.get("version")?.str()? != "1" {
             return refuse("not an Excession build provenance receipt");
         }
         let raw = receipt.get("raw_json")?.str()?;
         let claim = json::parse(raw.as_bytes())?;
-        if raw != claim.canonical() || claim.get("schema")?.str()? != FORMAT
-            || claim.entries()?.len() != 7 {
+        if raw != claim.canonical()
+            || claim.get("schema")?.str()? != FORMAT
+            || claim.entries()?.len() != 7
+        {
             return refuse("build receipt is not canonical or contains unsupported fields");
         }
         let build = claim.get("build")?;
@@ -193,18 +257,23 @@ pub fn audit(db: &Db, repo: &Path, revision: &str, artifact: &Path, snapshot: &s
         if inputs.is_empty() || inputs.len() > MAX_INPUTS {
             return refuse("bad number of recorded source inputs");
         }
-        let paths = inputs.iter()
+        let paths = inputs
+            .iter()
             .map(|item| item.get("path").and_then(Value::str))
             .collect::<Result<Vec<_>>>()?;
         let prepared = prepare(
-            repo, &commit, artifact, &paths,
+            repo,
+            &commit,
+            artifact,
+            &paths,
             build.get("toolchain_digest")?.str()?,
             build.get("configuration_digest")?.str()?,
             claim.get("artifact")?.get("representation")?.str()?,
         )?;
         if prepared.claim != claim
             || prepared.receipt_id != receipt.get("receipt_id")?.str()?
-            || evidence_store::manifest(&prepared.batch)? != existing {
+            || evidence_store::manifest(&prepared.batch)? != existing
+        {
             return refuse("artifact bytes, Git inputs, or build observations changed");
         }
         report(&prepared, snapshot)

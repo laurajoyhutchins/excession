@@ -272,8 +272,7 @@ fn run_core(
     // Preserve separate budgets for unique changed-source dependents and
     // alternative path witnesses. The latter must never starve the former.
     let mut primary_paths = Vec::<Vec<Value>>::new();
-    let mut alternative_graphs =
-        Vec::<(BTreeMap<String, Vec<Value>>, BTreeSet<String>)>::new();
+    let mut alternative_graphs = Vec::<(BTreeMap<String, Vec<Value>>, BTreeSet<String>)>::new();
     let mut configured_observations = Vec::new();
     let mut producer_coverage = Vec::new();
     let mut gaps = Vec::new();

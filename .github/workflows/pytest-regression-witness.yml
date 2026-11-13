@@ -1,0 +1,96 @@
+name: Independent upstream pytest regression witness
+
+on:
+  push:
+    branches:
+      - experiments/pytest-regression-witness-20261113
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  behavior:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      HEAD_SHA: dcd0e636b4ce69021a9f607b060ea0056c339fd2
+      REPO: /tmp/pytest-behavior
+      OUT: /tmp/pytest-behavior-evidence
+    steps:
+      - name: Fetch exact upstream commit and parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPO" "$OUT"
+          git -C "$REPO" init -q
+          git -C "$REPO" remote add origin https://github.com/pytest-dev/pytest.git
+          git -C "$REPO" fetch -q --depth=2 origin "$HEAD_SHA"
+          git -C "$REPO" checkout -q --detach "$HEAD_SHA"
+          test "$(git -C "$REPO" rev-parse HEAD)" = "$HEAD_SHA"
+          git -C "$REPO" rev-parse "$HEAD_SHA^" > "$OUT/base.txt"
+          git -C "$REPO" rev-parse "$HEAD_SHA^{tree}" > "$OUT/head-tree.txt"
+          git -C "$REPO" show "$HEAD_SHA:testing/test_nodes.py" > "$OUT/head-test-nodes.py"
+      - name: Install exact code from the upstream source
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The shallow checkout lacks tags. Force a valid packaging version,
+          # without modifying tracked Git source or the tested source code.
+          SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PYTEST=9.99.0 \
+            python3 -m pip install --disable-pip-version-check -q -e "$REPO"
+          (cd "$REPO" && PYTHONPATH=src python3 -m pytest --version) | tee "$OUT/version.txt"
+      - name: Replay the newly added regression on buggy parent
+        shell: bash
+        run: |
+          set -uo pipefail
+          BASE="$(cat "$OUT/base.txt")"
+          git -C "$REPO" checkout -q --detach "$BASE"
+          cp "$OUT/head-test-nodes.py" "$REPO/testing/test_nodes.py"
+          (cd "$REPO" && PYTHONPATH=src python3 -m pytest -p pytester \
+            testing/test_nodes.py -k test_collector_repr_failure_collect_error -q) \
+            > "$OUT/base.log" 2>&1
+          rc=$?
+          echo "$rc" > "$OUT/base.exit"
+          cat "$OUT/base.log"
+          exit 0
+      - name: Replay same regression on fixed upstream commit
+        shell: bash
+        run: |
+          set -uo pipefail
+          git -C "$REPO" reset -q --hard "$HEAD_SHA"
+          (cd "$REPO" && PYTHONPATH=src python3 -m pytest -p pytester \
+            testing/test_nodes.py -k test_collector_repr_failure_collect_error -q) \
+            > "$OUT/head.log" 2>&1
+          rc=$?
+          echo "$rc" > "$OUT/head.exit"
+          cat "$OUT/head.log"
+          exit 0
+      - name: Compare actual before/after behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "base exit $(cat "$OUT/base.exit"), head exit $(cat "$OUT/head.exit")"
+          test "$(cat "$OUT/base.exit")" -ne 0
+          test "$(cat "$OUT/head.exit")" -eq 0
+          grep -q 'IndexError' "$OUT/base.log"
+          grep -q '2 passed' "$OUT/head.log"
+          cat > "$OUT/summary.json" <<'JSON'
+          {
+            "schema": "excession.external-pytest-behavior.v1",
+            "upstream": "pytest-dev/pytest",
+            "head": "dcd0e636b4ce69021a9f607b060ea0056c339fd2",
+            "test": "testing/test_nodes.py::test_collector_repr_failure_collect_error",
+            "expected": "parent raises IndexError for zero-argument CollectError; fixed head passes both cases",
+            "base": "IndexError observed",
+            "head_result": "2 tests passed",
+            "claim": "Concrete upstream regression behavior, not proof of completeness of change-impact candidate set"
+          }
+          JSON
+      - name: Save source-identified regression evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-before-after-regression-evidence
+          path: /tmp/pytest-behavior-evidence
+          if-no-files-found: warn

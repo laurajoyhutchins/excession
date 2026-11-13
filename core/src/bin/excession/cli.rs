@@ -388,6 +388,9 @@ pub(super) fn command() -> Command {
                 .long("json")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(Arg::new("scip-snapshot").long("scip-snapshot").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+        .arg(Arg::new("graph-id").long("graph-id").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+        .arg(Arg::new("source-prefix").long("source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
         .subcommand(clang());
     let kernel = group(
         "kernel",
@@ -517,6 +520,12 @@ pub(super) fn command() -> Command {
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
                 )
+                .arg(Arg::new("base-scip-snapshot").long("base-scip-snapshot").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("head-scip-snapshot").long("head-scip-snapshot").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("base-graph-id").long("base-graph-id").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("head-graph-id").long("head-graph-id").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("base-source-prefix").long("base-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("head-source-prefix").long("head-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
                 .arg(
                     Arg::new("output")
                         .long("output")

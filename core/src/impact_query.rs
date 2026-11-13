@@ -2,6 +2,7 @@
 //! A candidate import path never establishes change breakage or safe test elision.
 use crate::analyze;
 use crate::change_inventory;
+use crate::observed_relations::Selection;
 use crate::json::{Value, obj};
 use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -17,7 +18,7 @@ fn incoming(analysis: &Value) -> Result<BTreeMap<String, Vec<Value>>> {
     let mut by_target = BTreeMap::<String, Vec<Value>>::new();
     for edge in analysis.get("relationships")?.array_ref()? {
         let kind = edge.get("kind")?.str()?;
-        if kind != "STATIC_IMPORT" {
+        if !matches!(kind, "STATIC_IMPORT" | "SCIP_REFERENCE") {
             return refuse(format!(
                 "impact cannot silently interpret unsupported relationship kind {kind}"
             ));
@@ -29,11 +30,14 @@ fn incoming(analysis: &Value) -> Result<BTreeMap<String, Vec<Value>>> {
         }
         // Imported module edges remain candidates until an independent
         // semantic oracle establishes anything stronger.
-        if evidences
-            .iter()
-            .any(|e| e.get("assessment").and_then(Value::str).ok() != Some("CANDIDATE"))
-        {
-            return refuse("static dependency candidate has an invalid evidence assessment");
+        let expected = if kind == "STATIC_IMPORT" { "CANDIDATE" } else { "OBSERVED" };
+        if evidences.iter().any(|e| {
+            e.get("assessment").and_then(Value::str).ok() != Some(expected)
+                || (kind == "SCIP_REFERENCE"
+                    && e.get("observation_kind").and_then(Value::str).ok()
+                        != Some("SCIP_REFERENCE"))
+        }) {
+            return refuse("source relationship has an invalid producer evidence assessment");
         }
         by_target.entry(target.to_owned()).or_default().push(obj(&[
             ("source", edge.get("source")?.clone()),
@@ -123,6 +127,12 @@ fn observe(
 
 /// Investigate both revision graphs. A removed source is considered under the
 /// base revision rather than being invented in the head revision.
+#[derive(Default, Clone, Copy)]
+pub struct EvidenceByRevision<'a> {
+    pub base: Selection<'a>,
+    pub head: Selection<'a>,
+}
+
 pub fn run(
     path: &Path,
     base: &str,
@@ -130,10 +140,23 @@ pub fn run(
     roots: Option<&str>,
     database: Option<&str>,
 ) -> Result<Value> {
+    run_with_evidence(path, base, head, roots, database, EvidenceByRevision::default())
+}
+
+pub fn run_with_evidence(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+    selected: EvidenceByRevision<'_>,
+) -> Result<Value> {
     let changes = change_inventory::inventory(path, base, head)?;
     let base_commit = changes.get("base_commit")?.str()?;
     let head_commit = changes.get("head_commit")?.str()?;
     let mut effects = Vec::new();
+    let mut configured_observations = Vec::new();
+    let mut producer_coverage = Vec::new();
     let mut gaps = Vec::new();
     let mut source_count = 0i64;
     let mut truncated = false;
@@ -150,7 +173,13 @@ pub fn run(
         if changed.is_empty() {
             continue;
         }
-        let Some(report) = observe(path, revision, roots, database)? else {
+        let scope = if side == "before" { selected.base } else { selected.head };
+        let observation = if scope.is_empty() {
+            observe(path, revision, roots, database)?
+        } else {
+            Some(analyze::run_with_evidence(path, revision, roots, database, scope)?.0)
+        };
+        let Some(report) = observation else {
             gaps.push(obj(&[
                 ("reason", Value::string("EXCLUDED_SCOPE")),
                 (
@@ -171,6 +200,18 @@ pub fn run(
                 .iter()
                 .cloned(),
         );
+        if !scope.is_empty() {
+            producer_coverage.push(obj(&[
+                ("revision", Value::string(revision)),
+                ("producers", report.get("producer_coverage")?.clone()),
+            ]));
+            for observed in report.get("configured_observations")?.array_ref()? {
+                let source = observed.get("source")?.get("path")?.str()?;
+                if changed.contains(source) {
+                    configured_observations.push(observed.clone());
+                }
+            }
+        }
         truncated |= walk(&incoming(&report)?, &changed, &mut effects)?;
         if truncated {
             break;
@@ -200,6 +241,20 @@ pub fn run(
         ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
+    if !selected.base.is_empty() || !selected.head.is_empty() {
+        let choices = obj(&[
+            ("base_scip_snapshot", selected.base.scip_snapshot.map_or(Value::Null, Value::string)),
+            ("head_scip_snapshot", selected.head.scip_snapshot.map_or(Value::Null, Value::string)),
+            ("base_graph_id", selected.base.graph_id.map_or(Value::Null, Value::string)),
+            ("head_graph_id", selected.head.graph_id.map_or(Value::Null, Value::string)),
+            ("base_source_prefix", selected.base.source_prefix.map_or(Value::Null, Value::string)),
+            ("head_source_prefix", selected.head.source_prefix.map_or(Value::Null, Value::string)),
+        ]);
+        let body = result.entries_mut()?;
+        body.insert("producer_selections".into(), choices);
+        body.insert("configured_observations".into(), Value::array(configured_observations));
+        body.insert("producer_coverage".into(), Value::array(producer_coverage));
+    }
     let id = result.sha256();
     result
         .entries_mut()?

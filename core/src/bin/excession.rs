@@ -9,6 +9,7 @@ use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
 use excession::impact_query;
+use excession::observed_relations::Selection;
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::{
@@ -508,11 +509,16 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
         [top] if top == "analyze" => {
-            let (report, db_path) = analyze::run(
+            let (report, db_path) = analyze::run_with_evidence(
                 Path::new(opt.get_or("path", ".")),
                 opt.get_or("rev", "HEAD"),
                 opt.0.get("roots").map(String::as_str),
                 opt.0.get("db").map(String::as_str),
+                Selection {
+                    scip_snapshot: opt.0.get("scip-snapshot").map(String::as_str),
+                    graph_id: opt.0.get("graph-id").map(String::as_str),
+                    source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                },
             )?;
             if opt.get_or("json", "false") == "true" {
                 Ok(json(report))
@@ -581,12 +587,24 @@ fn execute(args: &[String]) -> Result<Response> {
             }
         }
         [top] if top == "impact" => {
-            let result = impact_query::run(
+            let result = impact_query::run_with_evidence(
                 Path::new(opt.get_or("path", ".")),
                 opt.get("base"),
                 opt.get_or("head", "HEAD"),
                 opt.0.get("roots").map(String::as_str),
                 opt.0.get("db").map(String::as_str),
+                impact_query::EvidenceByRevision {
+                    base: Selection {
+                        scip_snapshot: opt.0.get("base-scip-snapshot").map(String::as_str),
+                        graph_id: opt.0.get("base-graph-id").map(String::as_str),
+                        source_prefix: opt.0.get("base-source-prefix").map(String::as_str),
+                    },
+                    head: Selection {
+                        scip_snapshot: opt.0.get("head-scip-snapshot").map(String::as_str),
+                        graph_id: opt.0.get("head-graph-id").map(String::as_str),
+                        source_prefix: opt.0.get("head-source-prefix").map(String::as_str),
+                    },
+                },
             )?;
             if let Some(path) = opt.0.get("output") {
                 let checkout = discovery::inspect(

@@ -90,3 +90,49 @@ Machine-readable receipts are retained in the GitHub Actions run artifacts.
 Review the runnable workflow, source commit IDs, raw independent oracle
 comparison, timing outputs, regression logs, and executable digest rather
 than relying on the workflow badge alone.
+
+
+## Stronger native test-selection control and agent-receipt check
+
+A controlled one-file implementation change reintroduced the historical
+`CollectError` crash without changing `testing/test_nodes.py`. Excession and
+the independent AST oracle both selected the unchanged test source in the
+faulty revision: **152/152** affected paths. The new test was not chosen
+by looking at Excession's report. This is a seeded agent-style defect, not
+an incident involving an independently operating agent.
+
+A direct third-party baseline used `pytest-testmon==2.3.0`, a mature
+dynamic test-selection plugin, with an actual executed-test baseline
+*before* checking the injected regression. In the passing
+[external run 43491166705](https://github.com/laurajoyhutchins/excession/actions/runs/43491166705):
+
+| Measured step | Wall time | Reported process RSS | Exit |
+| --- | ---: | ---: | ---: |
+| testmon baseline (focused historical test) | 1.40 s | `52.6 MiB | 0 |
+| testmon unchanged-source check | 0.28 s | `39.8 MiB | 0 |
+| testmon changed-source regression test | 1.11 s | `52.2 MiB | 1 (expected `IndexError`) |
+| Excession complete impact, cold | 2.85 s | `37.7 MiB | 0 |
+| Excession complete impact, repeated | 2.78–2.83 s | `37.8 MiB | 0 |
+
+testmon also caught the defect, so **Excession does not outperform
+native executed-test selection on this witness**. Importantly, these
+timings are not comparable operation-for-operation: testmon runs one
+prewarmed focused test, while Excession traverses repository-scope static
+dependencies and retains source-bound candidate explanations. The
+full testmon setup and the Rust build are excluded from the command timings.
+
+The experiment also runs `excession agent verify` with a caller-supplied
+failed-test receipt built from the actual behavioral witness at the
+faulty commit. Excession reports `REPORTED_FAILURE`, leaves
+`ready_to_merge=false`, and refuses the same receipt after changing
+its source commit. These are source-binding checks, **not**
+cryptographic producer attestation. The passing-test receipt from the
+fixed revision is separately tested against both the correct and the
+incorrect candidate. Correct-source import must preserve open
+obligations; applying that pass to the broken candidate must fail.
+
+The real differentiation demonstrated is therefore **revision-bound,
+auditable evidence and conservative agent integration**, not superior
+impact recall versus full AST or mature test-selection tools. This
+can prevent accidental cross-revision receipt reuse *if* the coding
+agent or its orchestrator honors the verification refusal.

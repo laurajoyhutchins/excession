@@ -433,6 +433,71 @@ jobs:
           (out / 'agent-verification-evidence.json').write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
           print(json.dumps(record, indent=2))
           PY
+      - name: Reject passing evidence from the wrong coding-agent revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          FAULT_SHA="$(cat "$OUT/fault-commit.txt")"
+          BASE_SHA="$(cat "$OUT/base.txt")"
+          # The passing test log is REAL and belongs to the fixed revision.
+          # Relabeling it as proof for the faulty candidate must be rejected.
+          python3 - "$OUT" "$PYTEST_REPO" "$HEAD_SHA" <<'PY'
+          import hashlib, json, subprocess, sys
+          from pathlib import Path
+          out, repo, correct = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+          assert int((out / 'head-test-exit.txt').read_text()) == 0
+          tree = subprocess.check_output(
+              ['git','-C',str(repo),'rev-parse',correct+'^{tree}'], text=True
+          ).strip()
+          receipt = {
+              'kind': 'TEST', 'status': 'PASS',
+              'source_commit': correct, 'source_tree': tree,
+              'producer': 'github-actions-pinned-pytest-probe',
+              'command': 'PYTHONPATH=src python3 /tmp/excession-pytest-independent/regression_probe.py',
+              'exit_code': 0,
+              'log_sha256': hashlib.sha256((out/'head-test.log').read_bytes()).hexdigest(),
+          }
+          (out / 'fixed-pass-receipt.json').write_text(json.dumps(
+              {'schema':'excession.execution-receipts.v1','receipts':[receipt]},
+              indent=2, sort_keys=True
+          ) + '\n')
+          PY
+          core/target/release/excession agent verify \
+            --repo "$PYTEST_REPO" --base "$BASE_SHA" --candidate "$HEAD_SHA" \
+            --roots src,testing --db "$OUT/pass-verify.sqlite" --limit 64 \
+            --receipts "$OUT/fixed-pass-receipt.json" \
+            > "$OUT/pass-verified-at-correct-revision.json"
+          set +e
+          core/target/release/excession agent verify \
+            --repo "$PYTEST_REPO" --base "$HEAD_SHA" --candidate "$FAULT_SHA" \
+            --roots src,testing --db "$OUT/agent-verify.sqlite" --limit 64 \
+            --receipts "$OUT/fixed-pass-receipt.json" \
+            > "$OUT/false-pass-accepted.json" 2> "$OUT/false-pass-rejection.log"
+          wrong_code=$?
+          set -e
+          test "$wrong_code" -ne 0
+          grep -q 'does not bind to candidate commit/tree' "$OUT/false-pass-rejection.log"
+          python3 - "$OUT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          out=Path(sys.argv[1])
+          accepted=json.loads((out/'pass-verified-at-correct-revision.json').read_text())
+          assert accepted['status']=='OPEN_OBLIGATIONS',accepted['status']
+          assert accepted['ready_to_merge'] is False
+          assert len(accepted['receipts'])==1
+          assert accepted['receipts'][0]['trust']=='CALLER_SUPPLIED_UNATTESTED'
+          statement={
+              'schema':'excession.pytest-stale-passing-receipt.v1',
+              'correct_source_receipt_imported':True,
+              'same_pass_receipt_refused_for_faulty_candidate':True,
+              'source_identity_check':'COMMIT_TREE_MISMATCH_REJECTED',
+              'correct_source_status':accepted['status'],
+              'pass_receipt_authenticity':'CALLER_SUPPLIED_UNATTESTED',
+              'limitations':'An Excession consumer must honor rejection. Replaying reported receipts does not authenticate their producer or prove coverage. pytest-testmon is not a receipt-verification tool.'
+          }
+          (out/'stale-pass-evidence.json').write_text(json.dumps(statement, indent=2,sort_keys=True)+'\n')
+          print(json.dumps(statement, indent=2))
+          PY
       - name: Collect independently inspectable artifacts even after failure
         if: always()
         uses: actions/upload-artifact@v4

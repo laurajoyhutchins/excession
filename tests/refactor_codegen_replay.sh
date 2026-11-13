@@ -154,6 +154,7 @@ run_repair > "$TMP/repair-preview.json"
 jq -e '
   .status == "REPAIR_PREVIEW_UNVERIFIED"
   and .repair_kind == "byte-conservative-extract-module-api"
+  and .preserved_public_functions == ["module_name_with_import_base"]
   and .parent_helpers == ["module_name"]
   and .action_title == "Preserve public path of module_name_with_import_base"
   and (.edits | length) == 2

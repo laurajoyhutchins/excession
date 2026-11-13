@@ -388,3 +388,26 @@ to compile and return identical results against the original and repaired
 libraries, and a **fresh, exact-commit SCIP reindex** on the repaired Git
 revision. These are concrete tested properties, not a universal guarantee
 for all Rust code.
+
+## AST-backed extraction stress and multi-function preservation
+
+The API-preserving fallback now uses the same pinned external `ast-grep outline`
+used by Excession's original extraction recipe. It checks exact top-level AST
+item ranges rather than discovering exported functions from plain source lines.
+It accepts **one to eight public Rust functions** in one contiguous,
+byte-identical native `Extract Module` edit, including ordinary, generic,
+async, const and unsafe functions. It restores every original public path
+with a single explicit `pub use self::<module>::{...};` export. Narrow
+`use super::<helper>;` entries are still permitted only for compiler E0425
+observations bound to functions outside the moved span in the original AST.
+
+This does not expand to arbitrary Rust transformations. Refusal cases include
+mutated bodies, non-function AST items within the interval, partial or
+ambiguous ranges, more than eight functions, private-only visibility,
+attributes, module-relative paths, unknown helpers and non-byte-preserving
+indentation. The AST is a structural oracle, **not** a name-resolution proof.
+
+The stress suite exercises these conditions and compiles both an original and
+its repaired multi-function Rust program, comparing observable output.
+The separate historical Excession integration still tests real rust-analyzer,
+independent compiler errors, public API compatibility and fresh SCIP.

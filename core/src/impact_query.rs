@@ -462,11 +462,19 @@ fn run_core(
 pub fn human(report: &Value) -> Result<String> {
     const PREVIEW_LIMIT: usize = 10;
     let effects = report.get("effects")?.array_ref()?;
+    let source_count = report.get("candidate_source_count")?.integer()?;
+    let source_complete = report
+        .get("candidate_source_enumeration_complete")?
+        .bool()?;
     let gaps = report.get("unknown")?.array_ref()?.len();
     let mut lines = vec![
         format!(
             "Excession change impact: {} candidate dependent paths.",
             effects.len()
+        ),
+        format!(
+            "Distinct dependent sources: {source_count} (observed-graph inventory {}).",
+            if source_complete { "complete" } else { "truncated" }
         ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),

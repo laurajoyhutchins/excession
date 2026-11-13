@@ -114,7 +114,12 @@ fn require_native_execution(trusted_local: &str) -> Result<()> {
     Ok(())
 }
 
-fn checked_scope(root: &Path, focus: Option<&str>) -> Result<Vec<String>> {
+fn checked_scope(root: &Path, commit: &str, focus: Option<&str>) -> Result<Vec<String>> {
+    let tracked = git::entries(root, commit)?
+        .into_iter()
+        .filter(|entry| entry.kind == "blob")
+        .map(|entry| entry.path)
+        .collect::<BTreeSet<_>>();
     let mut paths = BTreeSet::new();
     if let Some(value) = focus {
         for part in value.split(',') {
@@ -128,8 +133,8 @@ fn checked_scope(root: &Path, focus: Option<&str>) -> Result<Vec<String>> {
             {
                 return refuse("native pytest scope must contain normalized repository paths");
             }
-            if !root.join(part).is_file() {
-                return refuse(format!("native pytest scope path does not exist: {part}"));
+            if !root.join(part).is_file() || !tracked.contains(part) {
+                return refuse(format!("native pytest scope is not a tracked file: {part}"));
             }
             paths.insert(part.to_owned());
         }
@@ -158,6 +163,11 @@ pub fn run(
     clean_checkout(root, commit)?;
     let changed = changed_sources(&changes)?;
     let tool_path = executable(root, provider, tool);
+    let scope = if provider == "pytest-testmon" {
+        checked_scope(root, commit, focus)?
+    } else {
+        Vec::new()
+    };
     let mut command = Command::new(&tool_path);
     command.current_dir(root);
 
@@ -172,12 +182,15 @@ pub fn run(
             return refuse("pytest-testmon requires an existing .testmondata coverage baseline");
         }
         command.args(["-m", "pytest", "--testmon", "--testmon-forceselect", "-q"]);
-        command.args(checked_scope(root, focus)?);
+        command.args(&scope);
     }
 
     let output = command.output().map_err(|error| {
         format!("invoke explicit trusted-local native test selector {provider}: {error}")
     })?;
+    // A native project tool can mutate tracked source during execution.
+    // Never source-bind its observations to the previous commit in that case.
+    clean_checkout(root, commit)?;
     if output.stdout.len() + output.stderr.len() > MAX_LOG_BYTES {
         return refuse("native selector output exceeds 16 MiB; refusing partial evidence");
     }
@@ -223,8 +236,9 @@ pub fn run(
             (
                 "command",
                 Value::string(format!(
-                    "{tool_name} -m pytest --testmon --testmon-forceselect -q"
-                )),
+                    "{tool_name} -m pytest --testmon --testmon-forceselect -q {}",
+                    scope.iter().map(|path| format!("{path:?}")).collect::<Vec<_>>().join(" ")
+                ).trim_end().to_owned()),
             ),
             ("exit_code", Value::number(code as i64)),
             ("log_sha256", Value::string(digest::sha256(&log))),
@@ -256,6 +270,10 @@ pub fn run(
             Value::array(selected.into_iter().map(Value::string)),
         ),
         ("outcome", Value::string(outcome)),
+        ("scope_files", Value::array(scope.into_iter().map(Value::string))),
+        ("native_exit_code", Value::number(output.status.code().unwrap_or(-1))),
+        ("native_stdout_sha256", Value::string(digest::sha256(&output.stdout))),
+        ("native_stderr_sha256", Value::string(digest::sha256(&output.stderr))),
         ("execution_receipts", digest_value),
         ("receipt_trust", Value::string("LOCAL_COMMAND_UNATTESTED")),
         ("coverage", Value::string("PARTIAL")),

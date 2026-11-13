@@ -158,6 +158,11 @@ pub(super) fn command() -> Command {
             ),
             leaf("unknown-history", &["db", "id"], &[]),
             leaf(
+                "build-provenance",
+                &["db", "repo", "rev", "artifact", "snapshot"],
+                &[],
+            ),
+            leaf(
                 "verify-observation",
                 &[
                     "db",
@@ -175,13 +180,20 @@ pub(super) fn command() -> Command {
     .about("Query indexed Git relationships");
     let evidence = group(
         "evidence",
-        vec![leaf(
-            "unknown-append",
-            &["db", "snapshot", "question", "expected", "action"],
-            &["support", "counter", "resolution"],
-        )],
+        vec![
+            leaf(
+                "unknown-append",
+                &["db", "snapshot", "question", "expected", "action"],
+                &["support", "counter", "resolution"],
+            ),
+            leaf(
+                "build-record",
+                &["db", "repo", "rev", "artifact", "sources", "toolchain", "configuration", "representation"],
+                &[],
+            ),
+        ],
     )
-    .about("Append receipt-backed uncertainty without semantic promotion");
+    .about("Persist native build and other source/artifact evidence");
     let benchmark = group(
         "benchmark",
         vec![

@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/build-provenance.v1.schema.json",
+  "title": "Excession authenticated Git-input and artifact-byte provenance",
+  "description": "A real read-back of stored artifact/source evidence. No source-to-artifact execution proof.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_commit",
+    "source_tree",
+    "artifact",
+    "build",
+    "source_artifact_relation",
+    "execution_security",
+    "snapshot_id",
+    "receipt_id",
+    "artifact_subject_id",
+    "artifact_bytes_verified",
+    "git_inputs_verified",
+    "build_execution_verified",
+    "status",
+    "report_id"
+  ],
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "tree",
+        "path",
+        "blob",
+        "mode"
+      ],
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/oid"
+        },
+        "tree": {
+          "$ref": "#/$defs/oid"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blob": {
+          "$ref": "#/$defs/oid"
+        },
+        "mode": {
+          "enum": [
+            "100644",
+            "100755"
+          ]
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "excession.build-provenance.v1"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/oid"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "size_bytes",
+        "representation"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/sha"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16777216
+        },
+        "representation": {
+          "enum": [
+            "EXECUTABLE",
+            "OBJECT",
+            "ARCHIVE",
+            "WASM",
+            "OTHER"
+          ]
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "toolchain_digest",
+        "configuration_digest",
+        "source_inputs",
+        "execution_authority"
+      ],
+      "properties": {
+        "toolchain_digest": {
+          "$ref": "#/$defs/sha"
+        },
+        "configuration_digest": {
+          "$ref": "#/$defs/sha"
+        },
+        "source_inputs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "execution_authority": {
+          "const": "DECLARED_RECIPE_UNATTESTED"
+        }
+      }
+    },
+    "source_artifact_relation": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "execution_security": {
+      "const": "UNTRUSTED_BUILDS_REQUIRE_ISOLATION"
+    },
+    "snapshot_id": {
+      "$ref": "#/$defs/sha"
+    },
+    "receipt_id": {
+      "$ref": "#/$defs/sha"
+    },
+    "artifact_subject_id": {
+      "$ref": "#/$defs/sha"
+    },
+    "artifact_bytes_verified": {
+      "const": true
+    },
+    "git_inputs_verified": {
+      "const": true
+    },
+    "build_execution_verified": {
+      "const": false
+    },
+    "status": {
+      "const": "GIT_INPUTS_AND_ARTIFACT_BYTES_REPLAYED"
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha"
+    }
+  }
+}

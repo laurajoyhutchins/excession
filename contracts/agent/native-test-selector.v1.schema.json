@@ -23,7 +23,9 @@
     "coverage",
     "safe_to_skip_unlisted_tests",
     "selector_policy",
-    "report_id"
+    "report_id",
+    "executed_test_count",
+    "selected_test_ids"
   ],
   "properties": {
     "schema": {
@@ -127,6 +129,20 @@
     },
     "report_id": {
       "$ref": "#/$defs/sha256"
+    },
+    "executed_test_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4096
+    },
+    "selected_test_ids": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "$defs": {

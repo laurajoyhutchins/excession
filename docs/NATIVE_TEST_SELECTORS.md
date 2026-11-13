@@ -67,6 +67,12 @@ interpreter. An optional --focus tests/file.py limits pytest collection;
 the plugin still owns the selection. Passing a scope does not prove that
 other tests are unaffected.
 
+The provider also requires the installed pytest-json-report plugin. The JSON
+report supplies the native executed-test count and test node IDs. If the plugin
+deselects every test, Excession returns EMPTY_UNPROVEN and emits **no PASS
+receipt**, even when pytest exits 0. This prevents an empty-selection false
+green. The native temporary report is created outside the checkout and removed.
+
 The result includes execution_receipts with schema
 excession.execution-receipts.v1. To verify the same candidate revision
 without re-executing the selection:

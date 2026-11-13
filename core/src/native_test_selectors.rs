@@ -5,11 +5,42 @@
 use crate::json::{Value, obj};
 use crate::{Result, change_inventory, digest, discovery, git, refuse};
 use std::collections::BTreeSet;
+use std::fs;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 const MAX_SELECTION: usize = 4096;
 const MAX_LOG_BYTES: usize = 16 * 1024 * 1024;
+static REPORT_SERIAL: AtomicUsize = AtomicUsize::new(0);
+
+struct NativeReport {
+    directory: PathBuf,
+    file: PathBuf,
+}
+
+impl NativeReport {
+    fn new() -> Result<Self> {
+        let directory = std::env::temp_dir().join(format!(
+            "excession-native-pytest-report-{}-{}",
+            std::process::id(),
+            REPORT_SERIAL.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory)
+            .map_err(|error| format!("create private pytest report directory: {error}"))?;
+        Ok(Self {
+            file: directory.join("pytest-report.json"),
+            directory,
+        })
+    }
+}
+
+impl Drop for NativeReport {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.directory);
+    }
+}
+
 
 fn clean_checkout(root: &Path, commit: &str) -> Result<()> {
     if git::rev(root, "HEAD")? != commit {
@@ -107,6 +138,71 @@ fn tracked_selection(root: &Path, commit: &str, output: &[u8]) -> Result<Vec<Str
     Ok(selected.into_iter().collect())
 }
 
+fn reported_pytest_tests(
+    root: &Path,
+    commit: &str,
+    json_bytes: &[u8],
+    exit_code: i32,
+) -> Result<(Vec<String>, Vec<String>, usize, usize)> {
+    let report: serde_json::Value = serde_json::from_slice(json_bytes)
+        .map_err(|error| format!("pytest-json-report returned invalid JSON: {error}"))?;
+    let reported_exit = report
+        .get("exitcode")
+        .and_then(serde_json::Value::as_i64)
+        .ok_or("pytest-json-report has no exitcode")?;
+    if reported_exit != i64::from(exit_code) {
+        return refuse("pytest-json-report exitcode disagrees with native process");
+    }
+    let summary = report
+        .get("summary")
+        .ok_or("pytest-json-report has no summary")?;
+    let total = summary
+        .get("total")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or("pytest-json-report has no executed-test count")? as usize;
+    let passed = summary
+        .get("passed")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as usize;
+    let tests = report
+        .get("tests")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("pytest-json-report has no per-test observations")?;
+    if total != tests.len() || total > MAX_SELECTION || passed > total {
+        return refuse("pytest-json-report test count is inconsistent or too large");
+    }
+    let tracked = git::entries(root, commit)?
+        .into_iter()
+        .filter(|entry| entry.kind == "blob")
+        .map(|entry| entry.path)
+        .collect::<BTreeSet<_>>();
+    let mut files = BTreeSet::new();
+    let mut node_ids = BTreeSet::new();
+    for test in tests {
+        let node_id = test
+            .get("nodeid")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("pytest-json-report has a test without nodeid")?;
+        if test
+            .get("outcome")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
+            return refuse("pytest-json-report has a test without outcome");
+        }
+        let path = node_id.split("::").next().unwrap_or("");
+        git::validate_path(path)?;
+        if !tracked.contains(path) {
+            return refuse(format!(
+                "pytest-json-report selected test outside candidate Git: {path}"
+            ));
+        }
+        files.insert(path.to_owned());
+        node_ids.insert(node_id.to_owned());
+    }
+    Ok((files.into_iter().collect(), node_ids.into_iter().collect(), total, passed))
+}
+
 fn require_native_execution(trusted_local: &str) -> Result<()> {
     if trusted_local != "true" {
         return refuse("native selectors execute project configuration; pass --trusted-local true");
@@ -168,6 +264,11 @@ pub fn run(
     } else {
         Vec::new()
     };
+    let native_report = if provider == "pytest-testmon" {
+        Some(NativeReport::new()?)
+    } else {
+        None
+    };
     let mut command = Command::new(&tool_path);
     command.current_dir(root);
 
@@ -182,6 +283,9 @@ pub fn run(
             return refuse("pytest-testmon requires an existing .testmondata coverage baseline");
         }
         command.args(["-m", "pytest", "--testmon", "--testmon-forceselect", "-q"]);
+        let report = native_report.as_ref().ok_or("missing native pytest report path")?;
+        command.arg("--json-report");
+        command.arg(format!("--json-report-file={}", report.file.display()));
         command.args(&scope);
     }
 
@@ -199,6 +303,8 @@ pub fn run(
     let tool_name = tool_path.to_string_lossy().into_owned();
 
     let mut selected = Vec::new();
+    let mut selected_ids = Vec::new();
+    let mut executed_count = 0usize;
     let mut receipts = Vec::new();
     let outcome = if provider == "jest" {
         if !output.status.success() {
@@ -222,40 +328,57 @@ pub fn run(
                 "pytest-testmon did not complete normal test execution (exit {code}): {failure_detail}"
             ));
         }
-        let mut log = output.stdout.clone();
-        log.extend_from_slice(&output.stderr);
-        let execution = obj(&[
-            ("kind", Value::string("TEST")),
-            (
-                "status",
-                Value::string(if code == 0 { "PASS" } else { "FAIL" }),
-            ),
-            ("source_commit", Value::string(commit)),
-            ("source_tree", Value::string(tree)),
-            ("producer", Value::string("pytest-testmon")),
-            (
-                "command",
-                Value::string(
-                    format!(
-                        "{tool_name} -m pytest --testmon --testmon-forceselect -q {}",
-                        scope
-                            .iter()
-                            .map(|path| format!("{path:?}"))
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    )
-                    .trim_end()
-                    .to_owned(),
-                ),
-            ),
-            ("exit_code", Value::number(code as i64)),
-            ("log_sha256", Value::string(digest::sha256(&log))),
-        ]);
-        receipts.push(execution);
-        if code == 0 {
-            "EXECUTED_PASS"
+        let native_report = native_report
+            .as_ref()
+            .ok_or("missing native pytest execution report")?;
+        let native_json = fs::read(&native_report.file).map_err(|error| {
+            format!("pytest-json-report is required for verifiable test execution: {error}")
+        })?;
+        let (files, ids, total, passed) =
+            reported_pytest_tests(root, commit, &native_json, code)?;
+        selected = files;
+        selected_ids = ids;
+        executed_count = total;
+        if total == 0 || (code == 0 && passed == 0) {
+            // pytest-testmon can exit successfully after deselecting every test.
+            // That is not a passing test execution and must not yield a PASS receipt.
+            "EMPTY_UNPROVEN"
         } else {
-            "EXECUTED_FAIL"
+            let mut log = output.stdout.clone();
+            log.extend_from_slice(&output.stderr);
+            let execution = obj(&[
+                ("kind", Value::string("TEST")),
+                (
+                    "status",
+                    Value::string(if code == 0 { "PASS" } else { "FAIL" }),
+                ),
+                ("source_commit", Value::string(commit)),
+                ("source_tree", Value::string(tree)),
+                ("producer", Value::string("pytest-testmon")),
+                (
+                    "command",
+                    Value::string(
+                        format!(
+                            "{tool_name} -m pytest --testmon --testmon-forceselect -q --json-report {}",
+                            scope
+                                .iter()
+                                .map(|path| format!("{path:?}"))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        )
+                        .trim_end()
+                        .to_owned(),
+                    ),
+                ),
+                ("exit_code", Value::number(code as i64)),
+                ("log_sha256", Value::string(digest::sha256(&log))),
+            ]);
+            receipts.push(execution);
+            if code == 0 {
+                "EXECUTED_PASS"
+            } else {
+                "EXECUTED_FAIL"
+            }
         }
     };
     let digest_value = obj(&[
@@ -278,6 +401,11 @@ pub fn run(
             Value::array(selected.into_iter().map(Value::string)),
         ),
         ("outcome", Value::string(outcome)),
+        ("executed_test_count", Value::number(executed_count)),
+        (
+            "selected_test_ids",
+            Value::array(selected_ids.into_iter().map(Value::string)),
+        ),
         (
             "scope_files",
             Value::array(scope.into_iter().map(Value::string)),

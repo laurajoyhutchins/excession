@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install -q 'pytest-testmon==2.3.0'
+          python3 -m pip install -q 'pytest-testmon==2.3.0' 'pytest-json-report==1.5.0'
           ROOT="$RUNNER_TEMP/native-testmon"
           mkdir -p "$ROOT/src" "$ROOT/tests"
           cd "$ROOT"
@@ -75,7 +75,8 @@ jobs:
           BASE="$(git rev-parse HEAD)"
           python3 -m pytest --testmon --testmon-noselect -q tests/test_value.py
           test -s .testmondata
-          printf 'def value():\n    return 42\n' > src/value.py
+          printf 'def value():\n    return 4242\n' > src/value.py
+          find src tests -type d -name __pycache__ -prune -exec rm -rf '{}' +
           git add src/value.py
           git -c user.name=Test -c user.email=test@example.invalid commit -qm candidate
           HEAD="$(git rev-parse HEAD)"
@@ -88,7 +89,9 @@ jobs:
           d=json.load(open(sys.argv[1]))
           assert d['outcome']=='EXECUTED_FAIL',d
           assert not d['safe_to_skip_unlisted_tests']
-          assert d['selected_test_files']==[]
+          assert d['selected_test_files']==['tests/test_value.py'],d
+          assert d['executed_test_count']==1,d
+          assert d['selected_test_ids']==['tests/test_value.py::test_value'],d
           assert d['execution_receipts']['schema']=='excession.execution-receipts.v1'
           assert len(d['execution_receipts']['receipts'])==1
           assert d['execution_receipts']['receipts'][0]['status']=='FAIL'

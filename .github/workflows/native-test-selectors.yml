@@ -91,15 +91,32 @@ jobs:
           echo 'module.exports = () => 41;' > src/value.js
           git add src/value.js
           git -c user.name=Test -c user.email=test@example.invalid commit -qm fix
-          "$BIN" tests --repo "$ROOT" --run --verify --json > "$RUNNER_TEMP/jest-pass-workflow.json"
+          "$BIN" tests --repo "$ROOT" --run --json > "$RUNNER_TEMP/jest-pass-workflow.json"
           python3 - "$RUNNER_TEMP/jest-pass-workflow.json" <<'PY'
           import json,sys
           r=json.load(open(sys.argv[1]))
           assert r['status']=='PASS',r
           assert r['executed_test_count']==1
           assert r['native_execution']['execution_receipts']['receipts'][0]['status']=='PASS'
-          assert r['verification']['status']=='OPEN_OBLIGATIONS'
+          assert r['verification'] is None
+          PY
+          # The minimal release bundle in this workflow intentionally omits
+          # the optional JS analyzer. --verify must retain the native green
+          # result but refuse a green overall verification status.
+          set +e
+          "$BIN" tests --repo "$ROOT" --run --verify --json \
+            > "$RUNNER_TEMP/jest-unverified-workflow.json"
+          result=$?
+          set -e
+          test "$result" -eq 3
+          python3 - "$RUNNER_TEMP/jest-unverified-workflow.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r['status']=='INCONCLUSIVE',r
+          assert r['native_execution']['status']=='PASS'
+          assert r['verification']['status']=='UNAVAILABLE'
           assert not r['verification']['ready_to_merge']
+          assert 'VERIFICATION_CAPABILITY_UNAVAILABLE' in r['verification']['obligations']
           PY
       - name: Execute installed pytest-testmon against a seeded change
         shell: bash
@@ -203,6 +220,7 @@ jobs:
             ${{ runner.temp }}/jest-plan.json
             ${{ runner.temp }}/jest-test-workflow.json
             ${{ runner.temp }}/jest-pass-workflow.json
+            ${{ runner.temp }}/jest-unverified-workflow.json
             ${{ runner.temp }}/testmon-plan.json
             ${{ runner.temp }}/testmon-workflow.json
           if-no-files-found: warn

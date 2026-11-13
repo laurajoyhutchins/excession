@@ -365,8 +365,28 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
             fs::write(&receipt_file, receipts.canonical()).map_err(|error| {
                 format!("write isolated native receipt for verification: {error}")
             })?;
-            verification =
-                agent::verify(&root, &base, &commit, 32, None, None, Some(&receipt_file))?;
+            verification = match agent::verify(
+                &root, &base, &commit, 32, None, None, Some(&receipt_file)
+            ) {
+                Ok(report) => report,
+                Err(error) => {
+                    // A native test result must not vanish because a separate,
+                    // optional static analyzer is unavailable. Preserve the
+                    // test evidence, explicitly refuse verification, and never
+                    // promote an unverified PASS to a green overall outcome.
+                    if status == "PASS" {
+                        status = "INCONCLUSIVE".to_owned();
+                    }
+                    obj(&[
+                        ("status", Value::string("UNAVAILABLE")),
+                        ("reason", Value::string(error)),
+                        ("ready_to_merge", Value::Bool(false)),
+                        ("obligations", Value::array(vec![
+                            Value::string("VERIFICATION_CAPABILITY_UNAVAILABLE")
+                        ])),
+                    ])
+                }
+            };
         }
         selection = chosen;
     }

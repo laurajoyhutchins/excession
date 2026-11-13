@@ -162,3 +162,11 @@ commits, provider and focus. Its final \`--json\` argument ensures the next
 execution produces machine-readable evidence. Unlike re-running automatic
 discovery, this preserves what the agent approved during planning. Human
 output includes the shell-quoted equivalent \`next_command\`.
+
+
+If \`--verify\` cannot initialize an optional Excession analyzer (for example,
+a standalone Rust binary without the JavaScript sidecar), the workflow keeps
+the native test report and returns \`verification.status=UNAVAILABLE\` with
+\`ready_to_merge=false\`. A native PASS then has overall status INCONCLUSIVE
+and exit code 3 rather than falsely claiming verification. A real native
+test failure remains FAIL with exit code 1.

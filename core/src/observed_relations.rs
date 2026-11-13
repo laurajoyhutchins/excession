@@ -337,3 +337,210 @@ pub fn read(db: &Db, repo: &Path, revision: &str, selection: Selection<'_>) -> R
         Ok(out)
     })
 }
+
+const MAX_DISCOVERY_ROWS: usize = 128;
+
+/// An automatic choice is only a specific, Git-scoped producer identity.
+/// Owning the strings permits safe borrowing after the discovery transaction.
+#[derive(Default)]
+pub struct AutoSelection {
+    pub scip_snapshot: Option<String>,
+    pub graph_id: Option<String>,
+    pub source_prefix: Option<String>,
+}
+
+impl AutoSelection {
+    pub fn selection(&self) -> Selection<'_> {
+        Selection {
+            scip_snapshot: self.scip_snapshot.as_deref(),
+            graph_id: self.graph_id.as_deref(),
+            source_prefix: self.source_prefix.as_deref(),
+        }
+    }
+}
+
+fn has_table(db: &Db, name: &str) -> Result<bool> {
+    Ok(!db
+        .query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            &[Param::Text(name)],
+        )?
+        .is_empty())
+}
+
+/// Recover the source prefix from the same SCIP project_root declaration
+/// already authenticated by scip_refactor during native evidence ingestion.
+/// Absence is allowed only for root-scoped indexes; no project root is guessed.
+fn scip_prefix(repo: &Path, raw: &str) -> Result<Option<String>> {
+    let parsed = json::parse(raw.as_bytes())?;
+    let meta = parsed.get("metadata")?;
+    let project_root = meta
+        .entries()?
+        .get("project_root")
+        .or_else(|| meta.entries().ok()?.get("projectRoot"));
+    let Some(root) = project_root else {
+        return Ok(None);
+    };
+    let root = root.str()?;
+    let physical = root
+        .strip_prefix("file://")
+        .ok_or("SCIP project root is not a file URI")?;
+    let canonical = repo
+        .canonicalize()
+        .map_err(|e| format!("Git source root: {e}"))?;
+    let prefix = Path::new(physical)
+        .strip_prefix(&canonical)
+        .map_err(|_| "SCIP project root is outside selected Git checkout")?;
+    if prefix.as_os_str().is_empty() {
+        return Ok(None);
+    }
+    let path = prefix.to_str().ok_or("SCIP source prefix is not UTF-8")?;
+    git::validate_path(path)?;
+    Ok(Some(path.to_owned()))
+}
+
+/// Enumerate *all* relevant snapshots for a pinned revision. Matching a
+/// commit is only a scope filter; chosen evidence is reauthenticated before
+/// use. No ranking by recency, filename, producer popularity or configuration.
+pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
+    let commit = git::rev(repo, revision)?;
+    let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
+    db.read_transaction(|db| {
+        let mut scip = Vec::new();
+        let mut graphs = Vec::new();
+        if has_table(db, "evidence_snapshot_v1")? {
+            let rows = db.query(
+                "SELECT snapshot_id FROM evidence_snapshot_v1 WHERE source_commit=? ORDER BY snapshot_id LIMIT 129",
+                &[Param::Text(&commit)],
+            )?;
+            if rows.len() > MAX_DISCOVERY_ROWS {
+                return refuse("more than 128 evidence snapshots for revision; narrow the database");
+            }
+            for row in rows {
+                let snapshot = row[0].as_deref().ok_or("snapshot ID missing")?;
+                digest_id(snapshot)?;
+                let receipts = db.query(
+                    "SELECT document FROM evidence_receipt_v1 WHERE snapshot_id=? ORDER BY receipt_id LIMIT 2",
+                    &[Param::Text(snapshot)],
+                )?;
+                if receipts.len() != 1 {
+                    continue;
+                }
+                let receipt = json::parse(
+                    receipts[0][0].as_deref().ok_or("native receipt missing")?.as_bytes(),
+                )?;
+                let producer = receipt.get("producer")?.str()?;
+                if !producer.starts_with("scip:") {
+                    continue;
+                }
+                // Verify the immutable manifest and its exact receipt/observation
+                // membership before offering this snapshot as a candidate.
+                crate::evidence_store::audit(db, snapshot)?;
+                let prefix = scip_prefix(repo, receipt.get("raw_json")?.str()?)?;
+                scip.push(obj(&[
+                    ("snapshot_id", Value::string(snapshot)),
+                    ("producer", Value::string(producer)),
+                    ("version", receipt.get("version")?.clone()),
+                    ("source_prefix", prefix.as_deref().map_or(Value::Null, Value::string)),
+                    ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
+                ]));
+            }
+        }
+        if has_table(db, "configured_graph")? {
+            let rows = db.query(
+                "SELECT graph_id,document FROM configured_graph WHERE source_commit=? ORDER BY graph_id LIMIT 129",
+                &[Param::Text(&commit)],
+            )?;
+            if rows.len() > MAX_DISCOVERY_ROWS {
+                return refuse("more than 128 configured graphs for revision; narrow the database");
+            }
+            for row in rows {
+                let id = row[0].as_deref().ok_or("configured graph ID missing")?;
+                digest_id(id)?;
+                let body = json::parse(
+                    row[1].as_deref().ok_or("configured graph body missing")?.as_bytes(),
+                )?;
+                if body.sha256() != id
+                    || body.get("source_tree")?.str()? != tree
+                    || body.get("source_commit")?.str()? != commit
+                {
+                    return refuse("configured graph discovery found invalid Git-bound identity");
+                }
+                let schema = body.get("schema")?.str()?;
+                if !matches!(schema, "excession.configured-graph.v1" | "excession.kbuild-graph.v1") {
+                    return refuse("unrecognized configured graph producer");
+                }
+                let (target_key, configuration_key) = if schema == "excession.configured-graph.v1" {
+                    ("target", "configuration")
+                } else {
+                    ("archive", "config_sha256")
+                };
+                graphs.push(obj(&[
+                    ("graph_id", Value::string(id)),
+                    ("producer", Value::string(schema)),
+                    ("target", body.get(target_key)?.clone()),
+                    ("configuration", body.get(configuration_key)?.clone()),
+                    ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
+                ]));
+            }
+        }
+        let ambiguous = scip.len() > 1 || graphs.len() > 1;
+        let chosen_scip = if scip.len() == 1 {
+            scip[0].get("snapshot_id")?.clone()
+        } else {
+            Value::Null
+        };
+        let chosen_prefix = if scip.len() == 1 {
+            scip[0].get("source_prefix")?.clone()
+        } else {
+            Value::Null
+        };
+        let chosen_graph = if graphs.len() == 1 {
+            graphs[0].get("graph_id")?.clone()
+        } else {
+            Value::Null
+        };
+        let result = obj(&[
+            ("schema", Value::string("excession.producer-discovery.v1")),
+            ("source_commit", Value::string(commit)),
+            ("source_tree", Value::string(tree)),
+            ("status", Value::string(if ambiguous { "AMBIGUOUS" }
+                else if scip.is_empty() && graphs.is_empty() { "NO_IMPORTED_EVIDENCE" }
+                else { "UNAMBIGUOUS" })),
+            ("scip_candidates", Value::array(scip)),
+            ("graph_candidates", Value::array(graphs)),
+            ("selection", obj(&[
+                ("scip_snapshot", chosen_scip),
+                ("graph_id", chosen_graph),
+                ("source_prefix", chosen_prefix),
+            ])),
+            ("selection_policy", Value::string("EXACTLY_ONE_PER_PRODUCER_FACET_OR_REFUSE")),
+            ("source_authentication", Value::string("REQUIRES_GIT_REPLAY_ON_USE")),
+            ("complete_semantics", Value::Bool(false)),
+        ]);
+        Ok(result)
+    })
+}
+
+/// Auto selection refuses ambiguity; callers can inspect the candidate report
+/// and provide explicit IDs rather than mixing incompatible configurations.
+pub fn choose_auto(db: &Db, repo: &Path, revision: &str) -> Result<AutoSelection> {
+    let report = discover(db, repo, revision)?;
+    if report.get("status")?.str()? == "AMBIGUOUS" {
+        return refuse(
+            "multiple native evidence snapshots or configured graphs for revision; use 'excession inspect producer-candidates' then explicit --scip-snapshot/--graph-id flags",
+        );
+    }
+    let selected = report.get("selection")?;
+    let value = |key: &str| -> Result<Option<String>> {
+        match selected.get(key)? {
+            Value::Null => Ok(None),
+            record => Ok(Some(record.str()?.to_owned())),
+        }
+    };
+    Ok(AutoSelection {
+        scip_snapshot: value("scip_snapshot")?,
+        graph_id: value("graph_id")?,
+        source_prefix: value("source_prefix")?,
+    })
+}

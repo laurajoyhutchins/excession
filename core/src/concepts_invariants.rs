@@ -547,10 +547,20 @@ mod tests {
             "NOT_EVALUATED"
         );
         assert_eq!(answer.get("model_only_hits").unwrap().integer().unwrap(), 2);
-        assert_eq!(answer.get("baseline_only_hits").unwrap().integer().unwrap(), 0);
-        assert!(answer.get("observations").unwrap().array_ref().unwrap()
-            .iter().any(|item| item.get("status").unwrap().str().unwrap()
-                == "NOT_OBSERVED_NOT_A_PROVEN_BUG"));
+        assert_eq!(
+            answer.get("baseline_only_hits").unwrap().integer().unwrap(),
+            0
+        );
+        assert!(
+            answer
+                .get("observations")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .iter()
+                .any(|item| item.get("status").unwrap().str().unwrap()
+                    == "NOT_OBSERVED_NOT_A_PROVEN_BUG")
+        );
         let prospect = Settings {
             holdout: 0,
             ..config

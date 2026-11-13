@@ -956,7 +956,7 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.path("seed"),
                 opt.path("output"),
                 count,
-                opt.0.get("feedback").map(|s| Path::new(s)),
+                opt.0.get("feedback").map(Path::new),
             )?))
         }
         [top, sub] if top == "reconstruct" && sub == "git-oracles" => {

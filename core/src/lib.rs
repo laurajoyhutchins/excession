@@ -42,6 +42,7 @@ pub mod native_boundary;
 pub mod native_discovery;
 pub mod native_syntax;
 pub mod native_test_selectors;
+pub mod native_test_workflow;
 pub mod observed_relations;
 pub mod optimizer;
 pub mod overlap;

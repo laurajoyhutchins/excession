@@ -32,7 +32,15 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq podman uidmap fuse-overlayfs slirp4netns
-          test "$(podman info --format '{{.Host.Security.Rootless}} {{.Host.Security.SeccompEnabled}}')" = "true true"
+          podman --remote=false info --format json > "$RUNNER_TEMP/podman-security.json"
+          python3 - "$RUNNER_TEMP/podman-security.json" <<'PY'
+          import json,sys
+          host=json.load(open(sys.argv[1]))['host']
+          assert host['security']['rootless'] is True,host['security']
+          assert host['security']['seccompEnabled'] is True,host['security']
+          assert host['cgroupVersion']=='v2',host
+          assert host['serviceIsRemote'] is False,host
+          PY
           mkdir -p "$RUNNER_TEMP/sandbox-image"
           cat > "$RUNNER_TEMP/sandbox-image/Dockerfile" <<'DOCKERFILE'
           FROM docker.io/library/ubuntu:24.04

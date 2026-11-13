@@ -351,8 +351,15 @@ struct Compose<'a> {
 
 fn compose(request: Compose<'_>) -> Result<(Value, PathBuf)> {
     let Compose {
-        path, rev, roots, database, discovered, selected,
-        selection_key, selection_record, native_gaps,
+        path,
+        rev,
+        roots,
+        database,
+        discovered,
+        selected,
+        selection_key,
+        selection_record,
+        native_gaps,
     } = request;
     let db_path = checked_external_destination(
         &discovered.root,
@@ -470,9 +477,18 @@ pub fn run_with_evidence(
         selected,
         selection_key: "producer_selections",
         selection_record: obj(&[
-            ("scip_snapshot", selection.scip_snapshot.map_or(Value::Null, Value::string)),
-            ("graph_id", selection.graph_id.map_or(Value::Null, Value::string)),
-            ("source_prefix", selection.source_prefix.map_or(Value::Null, Value::string)),
+            (
+                "scip_snapshot",
+                selection.scip_snapshot.map_or(Value::Null, Value::string),
+            ),
+            (
+                "graph_id",
+                selection.graph_id.map_or(Value::Null, Value::string),
+            ),
+            (
+                "source_prefix",
+                selection.source_prefix.map_or(Value::Null, Value::string),
+            ),
         ]),
         native_gaps: &[],
     })

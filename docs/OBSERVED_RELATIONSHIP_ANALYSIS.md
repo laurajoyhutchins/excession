@@ -72,3 +72,35 @@ explicit selection, Git SHA-1 checkout support, bounded observations, and
 read-only integration. It does not execute language indexers, join cross-language
 symbol semantics, independently verify compiler correctness, or establish
 complete build closure. No new graph store was introduced.
+
+## Deterministic producer discovery
+
+An existing SQLite evidence store can be inspected without running parsers,
+compilers or creating another index:
+
+```sh
+excession inspect producer-candidates --repo "$REPO" --rev "$REV" --db "$DB"
+excession analyze "$REPO" --rev "$REV" --db "$DB" --auto-evidence --json
+excession impact "$REPO" --base "$BASE" --head "$HEAD" --db "$DB" --auto-evidence --json
+```
+
+Discovery lists the revision's persisted SCIP and configured-build candidates
+with the original producer identity, target, configuration and source prefix.
+It selects a facet **only when there is exactly one candidate for that facet**.
+Different target/configuration graphs are deliberately not coalesced. Multiple
+SCIP indexes, including duplicate-language indexes with distinct source scopes,
+are ambiguous, not ranked by recency. Use explicit producer IDs after reviewing
+`inspect producer-candidates` to resolve conflicts.
+
+A native index's nested source prefix is derived only from its original
+`metadata.project_root` declaration within the selected Git checkout.
+Selected evidence is subsequently replayed against Git; discovery alone does
+not certify semantic correctness. The database must already exist and be outside
+the source checkout. A repository without imported evidence retains its
+ordinary static-index behavior; unsupported languages are not silently treated
+as semantically indexed.
+
+Automatically selected IDs are written to the resulting analysis and impact
+reports. Saved impact reports replay the *exact selected IDs*, not a future
+reinterpretation of whatever happens to be the newest evidence in SQLite.
+`--auto-evidence` and explicit producer IDs cannot be mixed in one invocation.

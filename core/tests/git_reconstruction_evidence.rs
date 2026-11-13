@@ -181,6 +181,11 @@ fn real_build_and_rea_are_replayed_without_semantic_promotion() {
     let a = f.replay().unwrap();
     assert_eq!(a, f.replay().unwrap());
     assert_eq!(
+        a.get("bindings").unwrap().array_ref().unwrap()[0]
+            .get("rea_bundle").unwrap().str().unwrap(),
+        f.rea
+    );
+    assert_eq!(
         a.get("receipt_coverage").unwrap().str().unwrap(),
         "COMPLETE_REPLAYED_BYTES_ONLY"
     );

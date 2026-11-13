@@ -157,6 +157,7 @@ pub(super) fn command() -> Command {
                 &["focus", "after", "repo", "rev", "source-prefix"],
             ),
             leaf("unknown-history", &["db", "id"], &[]),
+            leaf("producer-candidates", &["repo", "db"], &["rev"]),
             leaf(
                 "build-provenance",
                 &["db", "repo", "rev", "artifact", "snapshot"],
@@ -406,6 +407,11 @@ pub(super) fn command() -> Command {
                 .num_args(1)
                 .value_parser(NonEmptyStringValueParser::new()),
         )
+        .arg(
+            Arg::new("auto-evidence")
+                .long("auto-evidence")
+                .action(clap::ArgAction::SetTrue),
+        )
         .subcommand(clang());
     let kernel = group(
         "kernel",
@@ -541,6 +547,7 @@ pub(super) fn command() -> Command {
                 .arg(Arg::new("head-graph-id").long("head-graph-id").num_args(1).value_parser(NonEmptyStringValueParser::new()))
                 .arg(Arg::new("base-source-prefix").long("base-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
                 .arg(Arg::new("head-source-prefix").long("head-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
+                .arg(Arg::new("auto-evidence").long("auto-evidence").action(clap::ArgAction::SetTrue))
                 .arg(
                     Arg::new("output")
                         .long("output")
@@ -599,10 +606,12 @@ pub(super) fn command() -> Command {
             vec![
                 leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),
                 leaf("history", &["db", "target"], &["limit"]),
+                leaf("auto", &["db", "target", "out", "trusted-local"], &["compiler", "objcopy", "objdump", "nm", "max-candidates", "time-budget-seconds"]),
+                leaf("searches", &["db", "target"], &["limit"]),
                 leaf("git", &["repo", "plan"], &[]),
                 leaf("git-evidence", &["repo", "plan", "db", "evidence"], &[]),
             ],
-        ).about("Read-only Git reconstruction and trusted-local compiler feedback"))
+        ).about("Read-only Git reconstruction and trusted-local C compiler feedback"))
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)

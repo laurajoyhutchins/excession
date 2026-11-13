@@ -241,7 +241,7 @@ fn open_source(_root: &Path, _relative: &str) -> io::Result<fs::File> {
 
 fn read_file(root: &Path, path: &str) -> Result<(Vec<u8>, bool)> {
     git::validate_path(path)?;
-    let mut file = open_source(root, path)
+    let file = open_source(root, path)
         .map_err(|error| format!("confined, no-symlink source open {path:?}: {error}"))?;
     let metadata = file
         .metadata()
@@ -1022,7 +1022,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         );
         entries.insert(
             "blockers".to_owned(),
-            Value::array(blockers.iter().map(Value::string).collect()),
+            Value::array(blockers.iter().map(Value::string)),
         );
         entries.insert(
             "next_argv".to_owned(),

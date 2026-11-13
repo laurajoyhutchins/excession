@@ -98,7 +98,9 @@ fn tracked_selection(root: &Path, commit: &str, output: &[u8]) -> Result<Vec<Str
             .to_str()
             .ok_or("Jest selected a non-UTF-8 Git path")?;
         if !tracked.contains(relative) {
-            return refuse(format!("Jest selected a file not tracked by candidate Git: {relative}"));
+            return refuse(format!(
+                "Jest selected a file not tracked by candidate Git: {relative}"
+            ));
         }
         selected.insert(relative.to_owned());
     }
@@ -187,7 +189,9 @@ pub fn run(
     let mut receipts = Vec::new();
     let outcome = if provider == "jest" {
         if !output.status.success() {
-            return refuse(format!("Jest related-test selection failed: {failure_detail}"));
+            return refuse(format!(
+                "Jest related-test selection failed: {failure_detail}"
+            ));
         }
         selected = tracked_selection(root, commit, &output.stdout)?;
         if selected.is_empty() {
@@ -196,7 +200,10 @@ pub fn run(
             "SELECTED"
         }
     } else {
-        let code = output.status.code().ok_or("pytest-testmon exited without a numeric status")?;
+        let code = output
+            .status
+            .code()
+            .ok_or("pytest-testmon exited without a numeric status")?;
         if !matches!(code, 0 | 1) {
             return refuse(format!(
                 "pytest-testmon did not complete normal test execution (exit {code}): {failure_detail}"
@@ -206,16 +213,28 @@ pub fn run(
         log.extend_from_slice(&output.stderr);
         let execution = obj(&[
             ("kind", Value::string("TEST")),
-            ("status", Value::string(if code == 0 { "PASS" } else { "FAIL" })),
+            (
+                "status",
+                Value::string(if code == 0 { "PASS" } else { "FAIL" }),
+            ),
             ("source_commit", Value::string(commit)),
             ("source_tree", Value::string(tree)),
             ("producer", Value::string("pytest-testmon")),
-            ("command", Value::string(format!("{tool_name} -m pytest --testmon --testmon-forceselect -q"))),
+            (
+                "command",
+                Value::string(format!(
+                    "{tool_name} -m pytest --testmon --testmon-forceselect -q"
+                )),
+            ),
             ("exit_code", Value::number(code as i64)),
             ("log_sha256", Value::string(digest::sha256(&log))),
         ]);
         receipts.push(execution);
-        if code == 0 { "EXECUTED_PASS" } else { "EXECUTED_FAIL" }
+        if code == 0 {
+            "EXECUTED_PASS"
+        } else {
+            "EXECUTED_FAIL"
+        }
     };
     let digest_value = obj(&[
         ("schema", Value::string("excession.execution-receipts.v1")),
@@ -228,19 +247,30 @@ pub fn run(
         ("base_commit", changes.get("base_commit")?.clone()),
         ("candidate_commit", Value::string(commit)),
         ("candidate_tree", Value::string(tree)),
-        ("changed_sources", Value::array(changed.into_iter().map(Value::string))),
-        ("selected_test_files", Value::array(selected.into_iter().map(Value::string))),
+        (
+            "changed_sources",
+            Value::array(changed.into_iter().map(Value::string)),
+        ),
+        (
+            "selected_test_files",
+            Value::array(selected.into_iter().map(Value::string)),
+        ),
         ("outcome", Value::string(outcome)),
         ("execution_receipts", digest_value),
         ("receipt_trust", Value::string("LOCAL_COMMAND_UNATTESTED")),
         ("coverage", Value::string("PARTIAL")),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
-        ("selector_policy", Value::string(
-            "NATIVE_TOOL_AUTHORITATIVE_FOR_REPORTED_SELECTION; NO_COMPLETENESS_GUARANTEE",
-        )),
+        (
+            "selector_policy",
+            Value::string(
+                "NATIVE_TOOL_AUTHORITATIVE_FOR_REPORTED_SELECTION; NO_COMPLETENESS_GUARANTEE",
+            ),
+        ),
     ]);
     let report_id = report.sha256();
-    report.entries_mut()?.insert("report_id".to_owned(), Value::string(report_id));
+    report
+        .entries_mut()?
+        .insert("report_id".to_owned(), Value::string(report_id));
     Ok(report)
 }
 
@@ -307,9 +337,9 @@ mod tests {
         assert!(tracked_selection(&root, &commit, br#"{"wrong": true}"#).is_err());
 
         fs::write(root.join("testing/untracked.test.js"), "").unwrap();
-        let untracked = serde_json::to_vec(
-            &vec![root.join("testing/untracked.test.js").to_str().unwrap()]
-        )
+        let untracked = serde_json::to_vec(&vec![
+            root.join("testing/untracked.test.js").to_str().unwrap(),
+        ])
         .unwrap();
         assert!(tracked_selection(&root, &commit, &untracked).is_err());
         fs::remove_dir_all(root).unwrap();

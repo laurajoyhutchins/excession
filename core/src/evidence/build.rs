@@ -186,26 +186,27 @@ fn report(prepared: &Prepared, snapshot: &str) -> Result<Value> {
         .insert("report_id".into(), Value::string(id));
     Ok(result)
 }
+/// Caller-owned description; keep the established Git/SQLite store authoritative.
+pub struct BuildSpec<'a> {
+    pub repo: &'a Path,
+    pub revision: &'a str,
+    pub artifact: &'a Path,
+    pub inputs: &'a [&'a str],
+    pub toolchain: &'a str,
+    pub configuration: &'a str,
+    pub kind: &'a str,
+}
 /// Persist immutable source and artifact facts in the shared evidence store.
 /// Never execute untrusted build commands on the host.
-pub fn record(
-    db: &Db,
-    repo: &Path,
-    revision: &str,
-    artifact: &Path,
-    inputs: &[&str],
-    toolchain: &str,
-    configuration: &str,
-    kind: &str,
-) -> Result<Value> {
+pub fn record(db: &Db, spec: &BuildSpec<'_>) -> Result<Value> {
     let prepared = prepare(
-        repo,
-        revision,
-        artifact,
-        inputs,
-        toolchain,
-        configuration,
-        kind,
+        spec.repo,
+        spec.revision,
+        spec.artifact,
+        spec.inputs,
+        spec.toolchain,
+        spec.configuration,
+        spec.kind,
     )?;
     let snapshot = evidence_store::persist(db, &prepared.batch)?;
     report(&prepared, &snapshot)

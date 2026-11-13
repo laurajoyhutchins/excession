@@ -833,13 +833,15 @@ fn execute(args: &[String]) -> Result<Response> {
             let sources = opt.get("sources").split(',').collect::<Vec<_>>();
             Ok(json(excession::evidence::build::record(
                 &db,
-                opt.path("repo"),
-                opt.get("rev"),
-                opt.path("artifact"),
-                &sources,
-                opt.get("toolchain"),
-                opt.get("configuration"),
-                opt.get("representation"),
+                &excession::evidence::build::BuildSpec {
+                    repo: opt.path("repo"),
+                    revision: opt.get("rev"),
+                    artifact: opt.path("artifact"),
+                    inputs: &sources,
+                    toolchain: opt.get("toolchain"),
+                    configuration: opt.get("configuration"),
+                    kind: opt.get("representation"),
+                },
             )?))
         }
         [top, sub] if top == "inspect" && sub == "build-provenance" => {

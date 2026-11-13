@@ -21,6 +21,7 @@ pub mod evidence_query;
 pub mod evidence_store;
 pub mod explain;
 pub mod git;
+pub mod git_reconstruction;
 pub mod graph;
 pub mod graph_assembly;
 pub mod graph_baseline;

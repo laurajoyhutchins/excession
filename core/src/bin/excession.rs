@@ -867,6 +867,12 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "git" => {
+            Ok(json(excession::git_reconstruction::verify(
+                opt.path("repo"),
+                opt.path("plan"),
+            )?))
+        }
         [top, sub] if top == "reconstruct" && sub == "evaluate" => {
             let db = Db::open(opt.path("db"))?;
             let trusted = match opt.get("trusted-local") {

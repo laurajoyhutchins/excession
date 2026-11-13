@@ -599,8 +599,9 @@ pub(super) fn command() -> Command {
             vec![
                 leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),
                 leaf("history", &["db", "target"], &["limit"]),
+                leaf("git", &["repo", "plan"], &[]),
             ],
-        ).about("Trusted-local compiler feedback for C object-code reconstruction"))
+        ).about("Read-only Git reconstruction and trusted-local compiler feedback"))
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)

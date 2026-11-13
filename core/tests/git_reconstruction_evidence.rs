@@ -37,6 +37,7 @@ struct Fixture {
     plan: PathBuf,
     manifest: PathBuf,
     artifact: PathBuf,
+    bundle: PathBuf,
     db: Db,
     head: String,
     build: String,
@@ -160,6 +161,7 @@ impl Fixture {
             plan,
             manifest,
             artifact,
+            bundle,
             db,
             head,
             build,
@@ -226,10 +228,31 @@ fn cannot_bind_an_incomplete_build_source_closure_or_wrong_receipt() {
     )
     .unwrap();
     let narrow_id = narrow.get("snapshot_id").unwrap().str().unwrap();
+    // Bind an independently audited REA bundle to *this* incomplete build,
+    // eliminating wrong-link refusal as an explanation for the failure.
+    let linked = rea::import(
+        &f.db,
+        &rea::ImportSpec {
+            artifact: &f.artifact,
+            bundle: &f.bundle,
+            build: Some(rea::BuildLink {
+                repo: &f.repo,
+                revision: &f.head,
+                snapshot: narrow_id,
+            }),
+        },
+    )
+    .unwrap();
+    let narrow_bundle = linked.get("bundle_id").unwrap().str().unwrap();
     let mut data: J = serde_json::from_slice(&fs::read(&f.manifest).unwrap()).unwrap();
     data["bindings"][0]["build_snapshot"] = J::String(narrow_id.to_owned());
+    data["bindings"][0]["rea_bundle"] = J::String(narrow_bundle.to_owned());
     fs::write(&f.manifest, data.to_string()).unwrap();
-    assert!(f.replay().is_err()); // Previously linked REA refuses a different build.
+    let refusal = f.replay().unwrap_err();
+    assert!(
+        refusal.contains("omits source in contract closure"),
+        "{refusal}"
+    );
     data["bindings"][0]["build_snapshot"] = J::String(f.build.clone());
     data["bindings"][0]["rea_bundle"] = J::String("e".repeat(64));
     fs::write(&f.manifest, data.to_string()).unwrap();

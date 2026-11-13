@@ -448,8 +448,17 @@ pub(super) fn command() -> Command {
     let tests = leaf(
         "tests",
         &[],
-        &["repo", "base", "candidate", "provider", "tool", "focus",
-          "sandbox-image", "expected-snapshot", "timeout"],
+        &[
+            "repo",
+            "base",
+            "candidate",
+            "provider",
+            "tool",
+            "focus",
+            "sandbox-image",
+            "expected-snapshot",
+            "timeout",
+        ],
     )
     .visible_alias("test")
     .about("Plan and run native tests for committed or safely sandboxed uncommitted code")
@@ -827,7 +836,16 @@ mod tests {
         assert!(parse(&strings(&["tests"])).is_ok());
         assert!(parse(&strings(&["test", "--json"])).is_ok());
         assert!(parse(&strings(&["tests", "--run", "--verify", "--json"])).is_ok());
-        assert!(parse(&strings(&["tests", "--run", "--sandbox-image", "example@sha256:abc", "--working-tree"])).is_ok());
+        assert!(
+            parse(&strings(&[
+                "tests",
+                "--run",
+                "--sandbox-image",
+                "example@sha256:abc",
+                "--working-tree"
+            ]))
+            .is_ok()
+        );
         assert!(parse(&strings(&["tests", "--unknown"])).is_err());
     }
 

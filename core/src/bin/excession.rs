@@ -11,10 +11,10 @@ use excession::explain;
 use excession::impact_query;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
-use excession::working_tree_tests;
 use excession::observed_relations::{self, Plan, Selection};
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
+use excession::working_tree_tests;
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
     kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refactor_codegen,
@@ -85,7 +85,14 @@ fn test_summary(report: &excession::json::Value) -> Result<String> {
     let mut lines = vec![
         format!("Tests: {phase} ({mode}, {provider})"),
         format!("Repository: {repo_path}"),
-        format!("Source: {}", if worktree.is_some() { "ephemeral uncommitted snapshot" } else { "committed Git revision" }),
+        format!(
+            "Source: {}",
+            if worktree.is_some() {
+                "ephemeral uncommitted snapshot"
+            } else {
+                "committed Git revision"
+            }
+        ),
         format!(
             "Revision: {}..{} | {changed} changed file(s)",
             short(base),
@@ -95,7 +102,12 @@ fn test_summary(report: &excession::json::Value) -> Result<String> {
     if let Some(snapshot) = worktree {
         lines.push(format!(
             "Snapshot: {} | original checkout stays untouched",
-            snapshot.get("snapshot_sha256")?.str()?.chars().take(12).collect::<String>()
+            snapshot
+                .get("snapshot_sha256")?
+                .str()?
+                .chars()
+                .take(12)
+                .collect::<String>()
         ));
     }
     for reason in report.get("blockers")?.array_ref()? {
@@ -569,7 +581,9 @@ fn execute(args: &[String]) -> Result<Response> {
             let explicit_worktree = opt.get_or("working-tree", "false") == "true";
             let sandbox_image = opt.0.get("sandbox-image").map(String::as_str);
             let expected_snapshot = opt.0.get("expected-snapshot").map(String::as_str);
-            let timeout_seconds = opt.get_or("timeout", "120").parse::<u64>()
+            let timeout_seconds = opt
+                .get_or("timeout", "120")
+                .parse::<u64>()
                 .map_err(|_| "--timeout must be an integer from 1 to 600")?;
             let dirty_source = working_tree_tests::has_source_changes(repo)?;
             if explicit_worktree || dirty_source {
@@ -586,10 +600,15 @@ fn execute(args: &[String]) -> Result<Response> {
                     expected_snapshot,
                     timeout_seconds,
                 })?;
-                return Ok(Response::Test(report, opt.get_or("json", "false") == "true"));
+                return Ok(Response::Test(
+                    report,
+                    opt.get_or("json", "false") == "true",
+                ));
             }
             if sandbox_image.is_some() || expected_snapshot.is_some() {
-                return refuse("sandbox flags require uncommitted source changes or --working-tree");
+                return refuse(
+                    "sandbox flags require uncommitted source changes or --working-tree",
+                );
             }
             let report = native_test_workflow::execute(native_test_workflow::Request {
                 repo: Path::new(opt.get_or("repo", ".")),

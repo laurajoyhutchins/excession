@@ -43,7 +43,6 @@ pub mod native_discovery;
 pub mod native_syntax;
 pub mod native_test_selectors;
 pub mod native_test_workflow;
-pub mod working_tree_tests;
 pub mod observed_relations;
 pub mod optimizer;
 pub mod overlap;
@@ -70,6 +69,7 @@ pub mod syntax_resolution;
 pub mod transactions;
 pub mod transform;
 pub mod views;
+pub mod working_tree_tests;
 
 pub type Result<T> = std::result::Result<T, String>;
 

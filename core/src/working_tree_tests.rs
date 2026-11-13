@@ -10,7 +10,10 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -50,7 +53,9 @@ impl Temporary {
         if made.is_null() {
             return refuse(format!("mkdtemp: {}", io::Error::last_os_error()));
         }
-        Ok(Self { path: PathBuf::from(std::ffi::OsStr::from_bytes(&raw[..raw.len()-1])) })
+        Ok(Self {
+            path: PathBuf::from(std::ffi::OsStr::from_bytes(&raw[..raw.len() - 1])),
+        })
     }
     #[cfg(not(target_os = "linux"))]
     fn new() -> Result<Self> {
@@ -86,8 +91,11 @@ fn nul_paths(data: &[u8]) -> Result<Vec<String>> {
         let path = std::str::from_utf8(raw)
             .map_err(|_| "working-tree snapshot refuses non-UTF-8 paths")?;
         git::validate_path(path)?;
-        if path.starts_with(".git/") || path == ".git"
-            || Path::new(path).components().any(|c| !matches!(c, Component::Normal(_)))
+        if path.starts_with(".git/")
+            || path == ".git"
+            || Path::new(path)
+                .components()
+                .any(|c| !matches!(c, Component::Normal(_)))
         {
             return refuse("snapshot path contains a Git metadata or non-normal component");
         }
@@ -98,19 +106,31 @@ fn nul_paths(data: &[u8]) -> Result<Vec<String>> {
 
 fn trusted_git(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("/usr/bin/git")
-        .arg("-c").arg("core.fsmonitor=false")
-        .arg("-c").arg("core.hooksPath=/dev/null")
-        .arg("-c").arg("core.sparseCheckout=false")
-        .arg("-C").arg(root).args(args)
-        .env_clear().env("PATH", "/usr/bin:/bin")
+        .arg("-c")
+        .arg("core.fsmonitor=false")
+        .arg("-c")
+        .arg("core.hooksPath=/dev/null")
+        .arg("-c")
+        .arg("core.sparseCheckout=false")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_OPTIONAL_LOCKS", "0")
-        .output().map_err(|error| format!("Git inventory: {error}"))?;
+        .output()
+        .map_err(|error| format!("Git inventory: {error}"))?;
     if !output.status.success() {
-        return refuse(format!("Git inventory failed: {}", String::from_utf8_lossy(&output.stderr)
-            .chars().take(300).collect::<String>()));
+        return refuse(format!(
+            "Git inventory failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(300)
+                .collect::<String>()
+        ));
     }
     Ok(output.stdout)
 }
@@ -120,14 +140,26 @@ fn source_paths(root: &Path) -> Result<(Vec<String>, BTreeSet<String>)> {
     if !unmerged.is_empty() {
         return refuse("cannot snapshot unresolved merge conflicts");
     }
-    let changed = nul_paths(&trusted_git(root, &[
-        "diff", "HEAD", "--no-renames", "--no-ext-diff", "--no-textconv",
-        "--name-only", "-z", "--",
-    ])?)?;
-    let untracked = nul_paths(&trusted_git(root, &[
-        "ls-files", "--others", "--exclude-standard", "-z", "--",
-    ])?)?;
-    let untracked = untracked.into_iter().filter(|p| p != ".testmondata")
+    let changed = nul_paths(&trusted_git(
+        root,
+        &[
+            "diff",
+            "HEAD",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            "-z",
+            "--",
+        ],
+    )?)?;
+    let untracked = nul_paths(&trusted_git(
+        root,
+        &["ls-files", "--others", "--exclude-standard", "-z", "--"],
+    )?)?;
+    let untracked = untracked
+        .into_iter()
+        .filter(|p| p != ".testmondata")
         .collect::<BTreeSet<_>>();
     let mut all = changed;
     all.extend(untracked.iter().cloned());
@@ -141,26 +173,47 @@ fn source_paths(root: &Path) -> Result<(Vec<String>, BTreeSet<String>)> {
 
 fn forbidden_secret(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
-    name == ".env" || name.starts_with(".env.")
-        || matches!(name, ".npmrc" | ".pypirc" | "id_rsa" | "id_ed25519"
-            | ".netrc" | "credentials.json" | "service-account.json")
-        || path.starts_with(".ssh/") || path.contains("/.ssh/")
-        || name.ends_with(".pem") || name.ends_with(".key")
+    name == ".env"
+        || name.starts_with(".env.")
+        || matches!(
+            name,
+            ".npmrc"
+                | ".pypirc"
+                | "id_rsa"
+                | "id_ed25519"
+                | ".netrc"
+                | "credentials.json"
+                | "service-account.json"
+        )
+        || path.starts_with(".ssh/")
+        || path.contains("/.ssh/")
+        || name.ends_with(".pem")
+        || name.ends_with(".key")
 }
 
 #[cfg(target_os = "linux")]
 fn open_source(root: &Path, relative: &str) -> io::Result<fs::File> {
-    use std::os::fd::{FromRawFd, AsRawFd};
+    use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::ffi::OsStrExt;
     let dir = CString::new(root.as_os_str().as_bytes())
         .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-    let name = CString::new(relative)
-        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-    let dirfd = unsafe { libc::open(dir.as_ptr(), libc::O_PATH | libc::O_DIRECTORY | libc::O_CLOEXEC) };
-    if dirfd < 0 { return Err(io::Error::last_os_error()); }
+    let name = CString::new(relative).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let dirfd = unsafe {
+        libc::open(
+            dir.as_ptr(),
+            libc::O_PATH | libc::O_DIRECTORY | libc::O_CLOEXEC,
+        )
+    };
+    if dirfd < 0 {
+        return Err(io::Error::last_os_error());
+    }
     let directory = unsafe { fs::File::from_raw_fd(dirfd) };
     #[repr(C)]
-    struct OpenHow { flags: u64, mode: u64, resolve: u64 }
+    struct OpenHow {
+        flags: u64,
+        mode: u64,
+        resolve: u64,
+    }
     // RESOLVE_NO_XDEV is not needed; prohibit symlinks, magic links and escape.
     let how = OpenHow {
         flags: (libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NOFOLLOW) as u64,
@@ -168,10 +221,17 @@ fn open_source(root: &Path, relative: &str) -> io::Result<fs::File> {
         resolve: 0x02 | 0x04 | 0x08,
     };
     let fd = unsafe {
-        libc::syscall(libc::SYS_openat2, directory.as_raw_fd(), name.as_ptr(),
-            &how as *const OpenHow, std::mem::size_of::<OpenHow>()) as i32
+        libc::syscall(
+            libc::SYS_openat2,
+            directory.as_raw_fd(),
+            name.as_ptr(),
+            &how as *const OpenHow,
+            std::mem::size_of::<OpenHow>(),
+        ) as i32
     };
-    if fd < 0 { return Err(io::Error::last_os_error()); }
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
     Ok(unsafe { fs::File::from_raw_fd(fd) })
 }
 #[cfg(not(target_os = "linux"))]
@@ -183,7 +243,8 @@ fn read_file(root: &Path, path: &str) -> Result<(Vec<u8>, bool)> {
     git::validate_path(path)?;
     let mut file = open_source(root, path)
         .map_err(|error| format!("confined, no-symlink source open {path:?}: {error}"))?;
-    let metadata = file.metadata()
+    let metadata = file
+        .metadata()
         .map_err(|error| format!("inspect {path:?}: {error}"))?;
     if !metadata.file_type().is_file() || metadata.len() > MAX_FILE_BYTES as u64 {
         return refuse(format!("source is not a regular file <=16 MiB: {path:?}"));
@@ -196,7 +257,8 @@ fn read_file(root: &Path, path: &str) -> Result<(Vec<u8>, bool)> {
     #[cfg(not(unix))]
     let executable = false;
     let mut bytes = Vec::new();
-    file.take((MAX_FILE_BYTES + 1) as u64).read_to_end(&mut bytes)
+    file.take((MAX_FILE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
         .map_err(|error| format!("read {path:?}: {error}"))?;
     if bytes.len() > MAX_FILE_BYTES {
         return refuse(format!("source grew beyond 16 MiB: {path:?}"));
@@ -210,18 +272,20 @@ fn capture(root: &Path, expected_head: &str) -> Result<Capture> {
     }
     for entry in git::entries(root, expected_head)? {
         if entry.kind == "commit" || entry.mode == "120000" {
-            return refuse(format!("snapshot refuses Git submodules and symlinks: {}", entry.path));
+            return refuse(format!(
+                "snapshot refuses Git submodules and symlinks: {}",
+                entry.path
+            ));
         }
     }
     // Refuse new symlinks and non-stage-zero entries even before inspecting bytes.
     for entry in trusted_git(root, &["ls-files", "--stage", "-z"])?
-        .split(|b| *b == 0).filter(|b| !b.is_empty())
+        .split(|b| *b == 0)
+        .filter(|b| !b.is_empty())
     {
         let header = entry.split(|b| *b == b'\t').next().unwrap_or(&[]);
         let text = std::str::from_utf8(header).map_err(|_| "invalid staged entry")?;
-        if text.starts_with("120000 ") || text.starts_with("160000 ")
-            || !text.ends_with(" 0")
-        {
+        if text.starts_with("120000 ") || text.starts_with("160000 ") || !text.ends_with(" 0") {
             return refuse("snapshot refuses staged links, submodules and unmerged entries");
         }
     }
@@ -238,7 +302,9 @@ fn capture(root: &Path, expected_head: &str) -> Result<Capture> {
         let is_untracked = untracked.contains(&path);
         let value = match read_file(root, &path) {
             Ok((bytes, executable)) => {
-                total = total.checked_add(bytes.len()).ok_or("snapshot size overflow")?;
+                total = total
+                    .checked_add(bytes.len())
+                    .ok_or("snapshot size overflow")?;
                 if total > MAX_TOTAL_BYTES {
                     return refuse("modified/untracked source exceeds 128 MiB");
                 }
@@ -276,13 +342,24 @@ fn capture(root: &Path, expected_head: &str) -> Result<Capture> {
     let id = obj(&[
         ("head", Value::string(expected_head)),
         ("files", Value::array(fingerprint_rows)),
-        ("baseline_sha256", baseline.as_ref().map(|b| Value::string(digest::sha256(b)))
-            .unwrap_or(Value::Null)),
-    ]).sha256();
+        (
+            "baseline_sha256",
+            baseline
+                .as_ref()
+                .map(|b| Value::string(digest::sha256(b)))
+                .unwrap_or(Value::Null),
+        ),
+    ])
+    .sha256();
     if git::rev(root, "HEAD")? != expected_head {
         return refuse("HEAD moved during source capture");
     }
-    Ok(Capture { head: expected_head.to_owned(), files, baseline, fingerprint: id })
+    Ok(Capture {
+        head: expected_head.to_owned(),
+        files,
+        baseline,
+        fingerprint: id,
+    })
 }
 
 pub fn has_source_changes(repo: &Path) -> Result<bool> {
@@ -292,17 +369,31 @@ pub fn has_source_changes(repo: &Path) -> Result<bool> {
 
 fn git_sanitized(root: &Path, args: &[&str]) -> Result<()> {
     let output = Command::new("/usr/bin/git")
-        .args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-C"])
-        .arg(root).args(args)
-        .env_clear().env("PATH", "/usr/bin:/bin")
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-C",
+        ])
+        .arg(root)
+        .args(args)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_OPTIONAL_LOCKS", "0")
-        .output().map_err(|error| format!("spawn isolated Git: {error}"))?;
+        .output()
+        .map_err(|error| format!("spawn isolated Git: {error}"))?;
     if !output.status.success() {
-        return refuse(format!("isolated Git command failed: {}",
-            String::from_utf8_lossy(&output.stderr).chars().take(300).collect::<String>()));
+        return refuse(format!(
+            "isolated Git command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(300)
+                .collect::<String>()
+        ));
     }
     Ok(())
 }
@@ -314,19 +405,37 @@ fn clone_into(root: &Path, directory: &Path) -> Result<PathBuf> {
     // Local copy without hard links avoids upload-pack, fetch helpers, filters
     // and credential access from the original repository's configuration.
     let output = Command::new("/usr/bin/git")
-        .args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
-            "clone", "-q", "--local", "--no-hardlinks", "--no-checkout"])
-        .arg("--").arg(root).arg(&checkout)
-        .env_clear().env("PATH", "/usr/bin:/bin")
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "clone",
+            "-q",
+            "--local",
+            "--no-hardlinks",
+            "--no-checkout",
+        ])
+        .arg("--")
+        .arg(root)
+        .arg(&checkout)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TEMPLATE_DIR", directory.join("empty-git-template"))
-        .output().map_err(|error| format!("create independent Git clone: {error}"))?;
+        .output()
+        .map_err(|error| format!("create independent Git clone: {error}"))?;
     if !output.status.success() {
-        return refuse(format!("independent clone failed: {}",
-            String::from_utf8_lossy(&output.stderr).chars().take(300).collect::<String>()));
+        return refuse(format!(
+            "independent clone failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(300)
+                .collect::<String>()
+        ));
     }
     Ok(checkout)
 }
@@ -334,14 +443,18 @@ fn clone_into(root: &Path, directory: &Path) -> Result<PathBuf> {
 fn check_git_storage(root: &Path) -> Result<()> {
     let output = trusted_git(root, &["count-objects", "-v"])?;
     let stats = std::str::from_utf8(&output).map_err(|_| "invalid Git object statistics")?;
-    let size = stats.lines().filter_map(|line| {
-        let (key, value) = line.split_once(": ")?;
-        if matches!(key, "size" | "size-pack") {
-            Some(value.parse::<u64>().ok())
-        } else {
-            None
-        }
-    }).collect::<Option<Vec<_>>>().ok_or("invalid Git object size")?;
+    let size = stats
+        .lines()
+        .filter_map(|line| {
+            let (key, value) = line.split_once(": ")?;
+            if matches!(key, "size" | "size-pack") {
+                Some(value.parse::<u64>().ok())
+            } else {
+                None
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or("invalid Git object size")?;
     if size.len() != 2 || size.iter().sum::<u64>() > MAX_GIT_DB_KIB {
         return refuse("Git object database exceeds 256 MiB safe snapshot limit");
     }
@@ -351,12 +464,18 @@ fn check_git_storage(root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn prepare_snapshot(original: &Path, state: &Capture, directory: &Path) -> Result<(PathBuf, String, String)> {
+fn prepare_snapshot(
+    original: &Path,
+    state: &Capture,
+    directory: &Path,
+) -> Result<(PathBuf, String, String)> {
     check_git_storage(original)?;
     let checkout = clone_into(original, directory)?;
     git_sanitized(&checkout, &["checkout", "--force", "--detach", &state.head])?;
     let exclusion = checkout.join(".git/info/exclude");
-    fs::OpenOptions::new().append(true).open(&exclusion)
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&exclusion)
         .and_then(|mut file| file.write_all(b"\n/.testmondata\n"))
         .map_err(|error| format!("exclude local coverage database from source commit: {error}"))?;
     for input in &state.files {
@@ -384,20 +503,39 @@ fn prepare_snapshot(original: &Path, state: &Capture, directory: &Path) -> Resul
         }
     }
     let output = Command::new("/usr/bin/git")
-        .arg("-C").arg(&checkout)
-        .args(["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
-            "-c", "user.name=Excession Ephemeral",
-            "-c", "user.email=ephemeral@invalid.example",
-            "commit", "--allow-empty", "-q", "-m", "Excession working-tree snapshot"])
-        .env_clear().env("PATH", "/usr/bin:/bin")
+        .arg("-C")
+        .arg(&checkout)
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "user.name=Excession Ephemeral",
+            "-c",
+            "user.email=ephemeral@invalid.example",
+            "commit",
+            "--allow-empty",
+            "-q",
+            "-m",
+            "Excession working-tree snapshot",
+        ])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("HOME", "/nonexistent")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_OPTIONAL_LOCKS", "0")
-        .output().map_err(|e| format!("commit ephemeral snapshot: {e}"))?;
+        .output()
+        .map_err(|e| format!("commit ephemeral snapshot: {e}"))?;
     if !output.status.success() {
-        return refuse(format!("commit snapshot failed: {}",
-            String::from_utf8_lossy(&output.stderr).chars().take(300).collect::<String>()));
+        return refuse(format!(
+            "commit snapshot failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(300)
+                .collect::<String>()
+        ));
     }
     let commit = git::rev(&checkout, "HEAD")?;
     let tree = git::rev(&checkout, &format!("{commit}^{{tree}}"))?;
@@ -405,7 +543,12 @@ fn prepare_snapshot(original: &Path, state: &Capture, directory: &Path) -> Resul
         fs::write(checkout.join(".testmondata"), baseline)
             .map_err(|e| format!("restore native coverage baseline: {e}"))?;
     }
-    if !git::command(&checkout, &["status", "--porcelain", "--untracked-files=no"])?.is_empty() {
+    if !git::command(
+        &checkout,
+        &["status", "--porcelain", "--untracked-files=no"],
+    )?
+    .is_empty()
+    {
         return refuse("temporary snapshot has dirty tracked files");
     }
     Ok((checkout, commit, tree))
@@ -419,10 +562,16 @@ fn valid_image(value: &str) -> bool {
     } else {
         return false;
     };
-    (name == "sha256" || (!name.is_empty() && !name.starts_with('-')
-        && name.bytes().all(|c| c.is_ascii_alphanumeric() ||
-            matches!(c, b'/' | b'.' | b'_' | b'-' | b':'))))
-        && digest.len() == 64 && digest.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    (name == "sha256"
+        || (!name.is_empty()
+            && !name.starts_with('-')
+            && name.bytes().all(|c| {
+                c.is_ascii_alphanumeric() || matches!(c, b'/' | b'.' | b'_' | b'-' | b':')
+            })))
+        && digest.len() == 64
+        && digest
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
 fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
@@ -441,14 +590,21 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
         return blocked;
     }
     let info = Command::new("podman")
-        .args(["info", "--format", "{{.Host.Security.Rootless}} {{.Host.Security.SeccompEnabled}}"])
+        .args([
+            "info",
+            "--format",
+            "{{.Host.Security.Rootless}} {{.Host.Security.SeccompEnabled}}",
+        ])
         .output();
     if !matches!(info, Ok(ref output) if output.status.success()
-        && String::from_utf8_lossy(&output.stdout).trim() == "true true") {
+        && String::from_utf8_lossy(&output.stdout).trim() == "true true")
+    {
         blocked.push("ROOTLESS_PODMAN_WITH_SECCOMP_REQUIRED".to_owned());
     }
-    let image_found = Command::new("podman").args(["image", "exists", image])
-        .output().is_ok_and(|output| output.status.success());
+    let image_found = Command::new("podman")
+        .args(["image", "exists", image])
+        .output()
+        .is_ok_and(|output| output.status.success());
     if !image_found {
         blocked.push("PREINSTALLED_PINNED_IMAGE_REQUIRED_NO_PULL".to_owned());
     }
@@ -456,17 +612,30 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
 }
 
 fn tool_in_image(path: Option<&str>, provider: &str) -> Result<String> {
-    let chosen = path.unwrap_or(if provider == "jest" { "/usr/local/bin/jest" } else { "/usr/local/bin/python3" });
-    if !chosen.starts_with('/') || chosen.len() > 256 || chosen.contains('\0')
-        || !Path::new(chosen).components().all(|c| matches!(c, Component::RootDir | Component::Normal(_)))
+    let chosen = path.unwrap_or(if provider == "jest" {
+        "/usr/local/bin/jest"
+    } else {
+        "/usr/local/bin/python3"
+    });
+    if !chosen.starts_with('/')
+        || chosen.len() > 256
+        || chosen.contains('\0')
+        || !Path::new(chosen)
+            .components()
+            .all(|c| matches!(c, Component::RootDir | Component::Normal(_)))
     {
-        return refuse("--tool in uncommitted mode must be an absolute normalized path inside the sandbox image");
+        return refuse(
+            "--tool in uncommitted mode must be an absolute normalized path inside the sandbox image",
+        );
     }
     Ok(chosen.to_owned())
 }
 
 fn shell_quote(value: &str) -> String {
-    if value.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b':' | b'-' | b'_' | b'=' | b'@')) && !value.is_empty() {
+    if value.bytes().all(|b| {
+        b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b':' | b'-' | b'_' | b'=' | b'@')
+    }) && !value.is_empty()
+    {
         value.to_owned()
     } else {
         format!("'{}'", value.replace('\'', "'\\''"))
@@ -477,7 +646,9 @@ fn podman_stop(cidfile: &Path) {
     if let Ok(id) = fs::read_to_string(cidfile) {
         let id = id.trim();
         if id.len() == 64 && id.bytes().all(|c| c.is_ascii_hexdigit()) {
-            let _ = Command::new("podman").args(["rm", "--force", "--ignore", id]).output();
+            let _ = Command::new("podman")
+                .args(["rm", "--force", "--ignore", id])
+                .output();
         }
     }
 }
@@ -486,15 +657,22 @@ struct ContainerGuard {
     cidfile: PathBuf,
 }
 impl Drop for ContainerGuard {
-    fn drop(&mut self) { podman_stop(&self.cidfile); }
+    fn drop(&mut self) {
+        podman_stop(&self.cidfile);
+    }
 }
 
 fn read_capped(mut input: impl Read, limit: usize, exceeded: Arc<AtomicBool>) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut buffer = [0u8; 8192];
     loop {
-        let Ok(n) = input.read(&mut buffer) else { exceeded.store(true, Ordering::Release); break };
-        if n == 0 { break }
+        let Ok(n) = input.read(&mut buffer) else {
+            exceeded.store(true, Ordering::Release);
+            break;
+        };
+        if n == 0 {
+            break;
+        }
         if bytes.len().saturating_add(n) > limit {
             exceeded.store(true, Ordering::Release);
             break;
@@ -505,34 +683,57 @@ fn read_capped(mut input: impl Read, limit: usize, exceeded: Arc<AtomicBool>) ->
 }
 
 fn execute_isolated(
-    checkout: &Path, directory: &Path, image: &str,
-    base: &str, candidate: &str, provider: &str,
-    tool: &str, focus: Option<&str>, verify: bool,
+    checkout: &Path,
+    directory: &Path,
+    image: &str,
+    base: &str,
+    candidate: &str,
+    provider: &str,
+    tool: &str,
+    focus: Option<&str>,
+    verify: bool,
     timeout_seconds: u64,
 ) -> Result<Value> {
-    let binary = std::env::current_exe().map_err(|e| format!("current executable: {e}"))?
-        .canonicalize().map_err(|e| format!("resolve executable: {e}"))?;
-    if !binary.is_file() { return refuse("no regular Excession binary to mount"); }
+    let binary = std::env::current_exe()
+        .map_err(|e| format!("current executable: {e}"))?
+        .canonicalize()
+        .map_err(|e| format!("resolve executable: {e}"))?;
+    if !binary.is_file() {
+        return refuse("no regular Excession binary to mount");
+    }
     let cidfile = directory.join("sandbox.cid");
     let mut command = Command::new("podman");
     command.args([
-        "run", "--rm", "--pull=never",
-        "--network=none", "--pid=private", "--ipc=private", "--uts=private",
-        "--userns=keep-id", "--cap-drop=ALL",
+        "run",
+        "--rm",
+        "--pull=never",
+        "--network=none",
+        "--pid=private",
+        "--ipc=private",
+        "--uts=private",
+        "--userns=keep-id",
+        "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
-        "--read-only", "--pids-limit=128", "--memory=1g", "--cpus=2",
-        "--ulimit=nofile=256:256", "--ulimit=fsize=104857600:104857600",
+        "--read-only",
+        "--pids-limit=128",
+        "--memory=1g",
+        "--cpus=2",
+        "--ulimit=nofile=256:256",
+        "--ulimit=fsize=104857600:104857600",
         "--tmpfs=/tmp:rw,nosuid,nodev,size=134217728,mode=1777",
         "--tmpfs=/work:rw,nosuid,nodev,size=536870912,mode=1777",
-        "--env=HOME=/tmp", "--env=XDG_CACHE_HOME=/tmp/cache",
+        "--env=HOME=/tmp",
+        "--env=XDG_CACHE_HOME=/tmp/cache",
         "--entrypoint=/bin/sh",
     ]);
     command.arg("--cidfile").arg(&cidfile);
     command.arg("--mount").arg(format!(
-        "type=bind,src={},dst=/input,readonly", checkout.display()
+        "type=bind,src={},dst=/input,readonly",
+        checkout.display()
     ));
     command.arg("--mount").arg(format!(
-        "type=bind,src={},dst=/usr/local/bin/excession,readonly", binary.display()
+        "type=bind,src={},dst=/usr/local/bin/excession,readonly",
+        binary.display()
     ));
     command.arg(image);
     command.args(["-c",
@@ -541,11 +742,19 @@ fn execute_isolated(
         "--base", base, "--candidate", candidate, "--provider", provider,
         "--tool", tool,
     ]);
-    if let Some(focus) = focus { command.args(["--focus", focus]); }
-    if verify { command.arg("--verify"); }
+    if let Some(focus) = focus {
+        command.args(["--focus", focus]);
+    }
+    if verify {
+        command.arg("--verify");
+    }
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn().map_err(|e| format!("start rootless sandbox: {e}"))?;
-    let _cleanup = ContainerGuard { cidfile: cidfile.clone() };
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("start rootless sandbox: {e}"))?;
+    let _cleanup = ContainerGuard {
+        cidfile: cidfile.clone(),
+    };
     let exceeded = Arc::new(AtomicBool::new(false));
     let stdout = child.stdout.take().ok_or("no sandbox stdout")?;
     let stderr = child.stderr.take().ok_or("no sandbox stderr")?;
@@ -563,17 +772,31 @@ fn execute_isolated(
             let _ = err_reader.join();
             return refuse("sandbox timed out or exceeded bounded output; container terminated");
         }
-        match child.try_wait().map_err(|e| format!("wait for sandbox: {e}"))? {
+        match child
+            .try_wait()
+            .map_err(|e| format!("wait for sandbox: {e}"))?
+        {
             Some(status) => break status.code().ok_or("sandbox exited by signal")?,
             None => thread::sleep(Duration::from_millis(100)),
         }
     };
-    let stdout = out_reader.join().map_err(|_| "sandbox stdout reader failed")?;
-    let stderr = err_reader.join().map_err(|_| "sandbox stderr reader failed")?;
-    if exceeded.load(Ordering::Acquire) { return refuse("sandbox produced oversized output"); }
+    let stdout = out_reader
+        .join()
+        .map_err(|_| "sandbox stdout reader failed")?;
+    let stderr = err_reader
+        .join()
+        .map_err(|_| "sandbox stderr reader failed")?;
+    if exceeded.load(Ordering::Acquire) {
+        return refuse("sandbox produced oversized output");
+    }
     if !matches!(code, 0 | 1 | 3) {
-        return refuse(format!("isolated test runner refused or crashed (exit {code}): {}",
-            String::from_utf8_lossy(&stderr).chars().take(250).collect::<String>()));
+        return refuse(format!(
+            "isolated test runner refused or crashed (exit {code}): {}",
+            String::from_utf8_lossy(&stderr)
+                .chars()
+                .take(250)
+                .collect::<String>()
+        ));
     }
     let report = json::parse(&stdout)
         .map_err(|error| format!("sandbox returned invalid structured test evidence: {error}"))?;
@@ -598,7 +821,9 @@ fn execute_isolated(
 fn report_id(report: &mut Value) -> Result<()> {
     report.entries_mut()?.remove("report_id");
     let id = report.sha256();
-    report.entries_mut()?.insert("report_id".to_owned(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("report_id".to_owned(), Value::string(id));
     Ok(())
 }
 
@@ -612,7 +837,10 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     if !matches!(request.candidate, None | Some("HEAD")) {
         return refuse("uncommitted test mode requires --candidate HEAD");
     }
-    if request.expected_snapshot.is_some_and(|id| id.len()!=64 || !id.bytes().all(|c| c.is_ascii_hexdigit())) {
+    if request
+        .expected_snapshot
+        .is_some_and(|id| id.len() != 64 || !id.bytes().all(|c| c.is_ascii_hexdigit()))
+    {
         return refuse("--expected-snapshot must be a SHA-256 hex digest");
     }
     let discovered = discovery::inspect(request.repo, "HEAD")?;
@@ -627,7 +855,9 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         }
     }
     let image = request.sandbox_image;
-    let mut blockers = sandbox_preflight(image).into_iter().collect::<BTreeSet<_>>();
+    let mut blockers = sandbox_preflight(image)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
     let temp = Temporary::new()?;
     let (checkout, commit, tree) = prepare_snapshot(&root, &state, &temp.path)?;
     let base = if let Some(spec) = request.base {
@@ -637,15 +867,20 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     };
     let tool = tool_in_image(request.tool, request.provider.unwrap_or("jest"))?;
     let mut plan = native_test_workflow::execute(native_test_workflow::Request {
-        repo: &checkout, base: Some(&base), candidate: Some(&commit),
-        provider: request.provider, tool: Some(&tool), focus: request.focus,
-        run: false, verify: false,
+        repo: &checkout,
+        base: Some(&base),
+        candidate: Some(&commit),
+        provider: request.provider,
+        tool: Some(&tool),
+        focus: request.focus,
+        run: false,
+        verify: false,
     })?;
     let provider = match plan.get("provider")? {
         Value::Null => {
             blockers.insert("MULTIPLE_OR_UNKNOWN_NATIVE_PROVIDERS".to_owned());
             None
-        },
+        }
         value => Some(value.str()?.to_owned()),
     };
     for reason in plan.get("blockers")?.array_ref()? {
@@ -656,15 +891,25 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     }
     let tool = if let Some(ref selected) = provider {
         tool_in_image(request.tool, selected)?
-    } else { tool };
+    } else {
+        tool
+    };
     let mut argv = vec![
-        "excession".to_owned(), "tests".to_owned(),
-        "--working-tree".to_owned(), "--run".to_owned(), "--json".to_owned(),
-        "--repo".to_owned(), root.to_string_lossy().into_owned(),
-        "--base".to_owned(), base.clone(),
-        "--candidate".to_owned(), "HEAD".to_owned(),
-        "--expected-snapshot".to_owned(), state.fingerprint.clone(),
-        "--timeout".to_owned(), request.timeout_seconds.to_string(),
+        "excession".to_owned(),
+        "tests".to_owned(),
+        "--working-tree".to_owned(),
+        "--run".to_owned(),
+        "--json".to_owned(),
+        "--repo".to_owned(),
+        root.to_string_lossy().into_owned(),
+        "--base".to_owned(),
+        base.clone(),
+        "--candidate".to_owned(),
+        "HEAD".to_owned(),
+        "--expected-snapshot".to_owned(),
+        state.fingerprint.clone(),
+        "--timeout".to_owned(),
+        request.timeout_seconds.to_string(),
     ];
     if let Some(image) = image {
         argv.extend(["--sandbox-image".to_owned(), image.to_owned()]);
@@ -678,10 +923,23 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     if let Some(focus) = request.focus {
         argv.extend(["--focus".to_owned(), focus.to_owned()]);
     }
-    let next_command = argv.iter().map(|a| shell_quote(a)).collect::<Vec<_>>().join(" ");
+    let next_command = argv
+        .iter()
+        .map(|a| shell_quote(a))
+        .collect::<Vec<_>>()
+        .join(" ");
     let fingerprint = state.fingerprint.clone();
-    let changed = state.files.iter().map(|file| file.path.clone()).collect::<Vec<_>>();
-    let untracked = state.files.iter().filter(|file| file.untracked).map(|file| Value::string(&file.path)).collect::<Vec<_>>();
+    let changed = state
+        .files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect::<Vec<_>>();
+    let untracked = state
+        .files
+        .iter()
+        .filter(|file| file.untracked)
+        .map(|file| Value::string(&file.path))
+        .collect::<Vec<_>>();
     let working_tree = obj(&[
         ("source_head", Value::string(&state.head)),
         ("snapshot_sha256", Value::string(&fingerprint)),
@@ -691,11 +949,16 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         ("ephemeral", Value::Bool(true)),
         ("replayable_after_completion", Value::Bool(false)),
         ("source_checkout_modified", Value::Bool(false)),
-        ("receipt_trust", Value::string("EPHEMERAL_LOCAL_SANDBOX_UNATTESTED")),
+        (
+            "receipt_trust",
+            Value::string("EPHEMERAL_LOCAL_SANDBOX_UNATTESTED"),
+        ),
     ]);
     if request.run && !blockers.is_empty() {
-        return refuse(format!("refusing uncommitted execution: {}; see excession tests for plan",
-            blockers.iter().cloned().collect::<Vec<_>>().join(", ")));
+        return refuse(format!(
+            "refusing uncommitted execution: {}; see excession tests for plan",
+            blockers.iter().cloned().collect::<Vec<_>>().join(", ")
+        ));
     }
     if request.run {
         let actual = capture(&root, &state.head)?;
@@ -704,29 +967,67 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         }
         let provider = provider.ok_or("no supported native provider selected")?;
         let mut result = execute_isolated(
-            &checkout, &temp.path, image.ok_or("missing pinned image")?,
-            &base, &commit, &provider, &tool, request.focus, request.verify,
+            &checkout,
+            &temp.path,
+            image.ok_or("missing pinned image")?,
+            &base,
+            &commit,
+            &provider,
+            &tool,
+            request.focus,
+            request.verify,
             request.timeout_seconds,
         )?;
-        result.entries_mut()?.insert("repo".to_owned(), Value::string(root.to_string_lossy()));
-        result.entries_mut()?.insert("working_tree".to_owned(), working_tree);
-        result.entries_mut()?.insert("schema".to_owned(), Value::string("excession.test-workflow.v2"));
-        result.entries_mut()?.insert("next_argv".to_owned(), Value::array(argv.into_iter().map(Value::string)));
-        result.entries_mut()?.insert("next_command".to_owned(), Value::string(next_command));
-        result.entries_mut()?.insert("guidance".to_owned(), Value::string("Native execution occurred inside rootless Podman, never on the host"));
+        result
+            .entries_mut()?
+            .insert("repo".to_owned(), Value::string(root.to_string_lossy()));
+        result
+            .entries_mut()?
+            .insert("working_tree".to_owned(), working_tree);
+        result.entries_mut()?.insert(
+            "schema".to_owned(),
+            Value::string("excession.test-workflow.v2"),
+        );
+        result.entries_mut()?.insert(
+            "next_argv".to_owned(),
+            Value::array(argv.into_iter().map(Value::string)),
+        );
+        result
+            .entries_mut()?
+            .insert("next_command".to_owned(), Value::string(next_command));
+        result.entries_mut()?.insert(
+            "guidance".to_owned(),
+            Value::string("Native execution occurred inside rootless Podman, never on the host"),
+        );
         report_id(&mut result)?;
         return Ok(result);
     }
 
-    let status = if blockers.is_empty() { "READY" } else { "BLOCKED" };
+    let status = if blockers.is_empty() {
+        "READY"
+    } else {
+        "BLOCKED"
+    };
     {
         let entries = plan.entries_mut()?;
-        entries.insert("schema".to_owned(), Value::string("excession.test-workflow.v2"));
+        entries.insert(
+            "schema".to_owned(),
+            Value::string("excession.test-workflow.v2"),
+        );
         entries.insert("repo".to_owned(), Value::string(root.to_string_lossy()));
         entries.insert("status".to_owned(), Value::string(status));
-        entries.insert("changed_sources".to_owned(), Value::array(changed.into_iter().map(Value::string)));
-        entries.insert("blockers".to_owned(), Value::array(blockers.iter().map(Value::string).collect()));
-        entries.insert("next_argv".to_owned(), Value::array(argv.into_iter().map(Value::string)));
+        entries.insert(
+            "changed_sources".to_owned(),
+            Value::array(changed.into_iter().map(Value::string)),
+        );
+        entries.insert(
+            "blockers".to_owned(),
+            Value::array(blockers.iter().map(Value::string).collect()),
+        );
+        entries.insert(
+            "next_argv".to_owned(),
+            Value::array(argv.into_iter().map(Value::string)),
+        );
         entries.insert("next_command".to_owned(), Value::string(next_command));
         entries.insert("guidance".to_owned(), Value::string(if blockers.contains("PINNED_SANDBOX_IMAGE_REQUIRED") {
             "Pass --sandbox-image registry/image@sha256:<digest> with preinstalled tests, Git and Excession-compatible libc"
@@ -751,18 +1052,33 @@ mod tests {
         let source = base.path.join("source");
         fs::create_dir(&source).unwrap();
         let cmd = |args: &[&str]| {
-            let out = Command::new("/usr/bin/git").arg("-C").arg(&source)
-                .args(args).output().unwrap();
-            assert!(out.status.success(), "Git {:?}: {}", args,
-                String::from_utf8_lossy(&out.stderr));
+            let out = Command::new("/usr/bin/git")
+                .arg("-C")
+                .arg(&source)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "Git {:?}: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
         };
         cmd(&["init", "-q"]);
         fs::write(source.join("staged.py"), b"old staged\n").unwrap();
         fs::write(source.join("unstaged.py"), b"old unstaged\n").unwrap();
         fs::write(source.join("deleted.py"), b"to delete\n").unwrap();
         cmd(&["add", "."]);
-        cmd(&["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-            "commit", "-qm", "initial"]);
+        cmd(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "initial",
+        ]);
         let head = git::rev(&source, "HEAD").unwrap();
         fs::write(source.join("staged.py"), b"new staged\n").unwrap();
         cmd(&["add", "staged.py"]);
@@ -773,24 +1089,48 @@ mod tests {
         let index_before = fs::read(source.join(".git/index")).unwrap();
         let captured = capture(&source, &head).unwrap();
         assert_eq!(captured.files.len(), 4);
-        assert_eq!(captured.baseline.as_deref(), Some(&b"coverage baseline\n"[..]));
+        assert_eq!(
+            captured.baseline.as_deref(),
+            Some(&b"coverage baseline\n"[..])
+        );
         let work = Temporary::new().unwrap();
         let (snapshot, commit, _tree) = prepare_snapshot(&source, &captured, &work.path).unwrap();
         assert_eq!(git::rev(&snapshot, "HEAD^").unwrap(), head);
         assert_ne!(git::rev(&snapshot, "HEAD").unwrap(), head);
-        assert_eq!(fs::read(snapshot.join("staged.py")).unwrap(), b"new staged\n");
-        assert_eq!(fs::read(snapshot.join("unstaged.py")).unwrap(), b"new unstaged\n");
-        assert_eq!(fs::read(snapshot.join("new_test.py")).unwrap(), b"def test_untracked(): pass\n");
+        assert_eq!(
+            fs::read(snapshot.join("staged.py")).unwrap(),
+            b"new staged\n"
+        );
+        assert_eq!(
+            fs::read(snapshot.join("unstaged.py")).unwrap(),
+            b"new unstaged\n"
+        );
+        assert_eq!(
+            fs::read(snapshot.join("new_test.py")).unwrap(),
+            b"def test_untracked(): pass\n"
+        );
         assert!(!snapshot.join("deleted.py").exists());
-        assert_eq!(fs::read(snapshot.join(".testmondata")).unwrap(), b"coverage baseline\n");
+        assert_eq!(
+            fs::read(snapshot.join(".testmondata")).unwrap(),
+            b"coverage baseline\n"
+        );
         assert_eq!(fs::read(source.join(".git/index")).unwrap(), index_before);
         assert_eq!(git::rev(&source, "HEAD").unwrap(), head);
         assert_eq!(fs::read(source.join("staged.py")).unwrap(), b"new staged\n");
-        assert!(git::command(&snapshot, &["status", "--porcelain", "--untracked-files=no"])
-            .unwrap().is_empty());
+        assert!(
+            git::command(
+                &snapshot,
+                &["status", "--porcelain", "--untracked-files=no"]
+            )
+            .unwrap()
+            .is_empty()
+        );
         assert_eq!(commit, git::rev(&snapshot, "HEAD").unwrap());
         fs::write(source.join("new_test.py"), b"changed again\n").unwrap();
-        assert_ne!(capture(&source, &head).unwrap().fingerprint, captured.fingerprint);
+        assert_ne!(
+            capture(&source, &head).unwrap().fingerprint,
+            captured.fingerprint
+        );
     }
 
     #[test]
@@ -799,15 +1139,26 @@ mod tests {
         fs::create_dir(source.path.join("repo")).unwrap();
         let root = source.path.join("repo");
         let call = |args: &[&str]| {
-            let output = Command::new("/usr/bin/git").arg("-C").arg(&root)
-                .args(args).output().unwrap();
+            let output = Command::new("/usr/bin/git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
             assert!(output.status.success());
         };
         call(&["init", "-q"]);
         fs::write(root.join("ok.py"), b"x=1\n").unwrap();
         call(&["add", "."]);
-        call(&["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-            "commit", "-qm", "init"]);
+        call(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "init",
+        ]);
         let head = git::rev(&root, "HEAD").unwrap();
         std::os::unix::fs::symlink("/etc/passwd", root.join("evil.py")).unwrap();
         assert!(capture(&root, &head).is_err());
@@ -815,7 +1166,10 @@ mod tests {
 
     #[test]
     fn digest_pins_sandbox_images_and_rejects_tags() {
-        assert!(valid_image(&format!("docker.io/library/debian@sha256:{}", "a".repeat(64))));
+        assert!(valid_image(&format!(
+            "docker.io/library/debian@sha256:{}",
+            "a".repeat(64)
+        )));
         assert!(!valid_image("docker.io/library/debian:latest"));
         assert!(valid_image(&format!("sha256:{}", "b".repeat(64))));
         assert!(!valid_image(&format!("-image@sha256:{}", "a".repeat(64))));

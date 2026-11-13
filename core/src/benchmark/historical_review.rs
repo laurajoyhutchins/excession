@@ -134,7 +134,7 @@ fn receipt(entry: &Value, revision: &str, expected_pass: bool, repo: &Path) -> R
     if exit > 255 || (exit == 0) != expected_pass {
         return refuse("independent oracle receipts contradict the registered behavior");
     }
-    Ok(serde_json::to_string(cmd).map_err(|e| e.to_string())?)
+    serde_json::to_string(cmd).map_err(|e| e.to_string())
 }
 
 fn validated(study: &Value) -> Result<()> {
@@ -276,7 +276,18 @@ pub fn prepare(
 ) -> Result<PathBuf> {
     arm(condition)?;
     let study = load(study_path)?;
-    validated(&study)?;
+    // Validate the full study at scoring time. Per-assignment preparation only
+    // checks the selected Git/oracle case to avoid O(cases^2) Git processes.
+    let all_cases = list(&study, "cases")?;
+    let mut seen = BTreeSet::new();
+    for item in all_cases {
+        if !seen.insert(string(item, "id")?) {
+            return refuse("duplicate study case IDs");
+        }
+    }
+    let mut selected_study = study.clone();
+    selected_study["cases"] = json!([find_case(&study, case_id)?]);
+    validated(&selected_study)?;
     if repetition == 0 || repetition > number(&study, "repetitions")? {
         return refuse("repetition is outside preregistered study range");
     }
@@ -358,6 +369,7 @@ pub fn prepare(
         let mut assignment = json!({
             "schema": ASSIGNMENT,
             "study_id": string(&study, "id")?,
+            "study_sha256": bytes_sha(study_path)?,
             "case_id": case_id,
             "condition": condition,
             "repetition": repetition,
@@ -437,6 +449,7 @@ pub fn record(
     let entry = json!({
         "schema": ATTEMPT,
         "study_id": string(&assignment, "study_id")?,
+        "study_sha256": string(&assignment, "study_sha256")?,
         "case_id": string(&assignment, "case_id")?,
         "condition": string(&assignment, "condition")?,
         "repetition": number(&assignment, "repetition")?,
@@ -457,10 +470,13 @@ pub fn record(
     write_new(out, &entry)
 }
 
-fn verified_attempt(attempt: &Value, study: &Value) -> Result<()> {
+fn verified_attempt(attempt: &Value, study: &Value, study_digest: &str) -> Result<()> {
     if string(attempt, "schema")? != ATTEMPT || string(attempt, "study_id")? != string(study, "id")?
     {
         return refuse("attempt has wrong schema or study identity");
+    }
+    if string(attempt, "study_sha256")? != study_digest {
+        return refuse("attempt is bound to a different private study manifest");
     }
     arm(string(attempt, "condition")?)?;
     let case = find_case(study, string(attempt, "case_id")?)?;
@@ -476,12 +492,27 @@ fn verified_attempt(attempt: &Value, study: &Value) -> Result<()> {
     if bytes_sha(assignment_path)? != string(attempt, "assignment_sha256")?
         || string(&assignment, "assignment_id")? != string(attempt, "assignment_id")?
         || string(&assignment, "study_id")? != string(study, "id")?
+        || string(&assignment, "study_sha256")? != study_digest
         || string(&assignment, "case_id")? != string(attempt, "case_id")?
         || string(&assignment, "condition")? != string(attempt, "condition")?
         || number(&assignment, "repetition")? != number(attempt, "repetition")?
         || string(&assignment, "candidate_commit")? != string(case, "candidate")?
     {
         return refuse("attempt is not bound to the original assignment");
+    }
+    // Evaluation authenticates the exact evidence and instructions originally
+    // offered, not merely the JSON pointer to an assignment.
+    let parent = assignment_path.parent().ok_or("assignment has no parent")?;
+    if bytes_sha(&parent.join("prompt.txt"))? != string(&assignment, "prompt_sha256")? {
+        return refuse("assignment prompt changed after recording");
+    }
+    let expected_evidence = value(&assignment, "evidence_sha256")?;
+    let evidence_path = parent.join("evidence.json");
+    if expected_evidence.is_null() != !evidence_path.exists()
+        || (!expected_evidence.is_null()
+            && string(&assignment, "evidence_sha256")? != bytes_sha(&evidence_path)?)
+    {
+        return refuse("assignment evidence changed after recording");
     }
     let transcript = Path::new(string(attempt, "transcript_path")?);
     if bytes_sha(transcript)? != string(attempt, "transcript_sha256")?
@@ -511,6 +542,7 @@ fn verified_attempt(attempt: &Value, study: &Value) -> Result<()> {
 pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
     let study = load(study_path)?;
     validated(&study)?;
+    let study_digest = bytes_sha(study_path)?;
     let mut map = BTreeMap::<(String, u64, String), Value>::new();
     for file in fs::read_dir(attempts).map_err(|e| format!("read attempt directory: {e}"))? {
         let file = file.map_err(|e| e.to_string())?.path();
@@ -518,7 +550,7 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
             continue;
         }
         let entry = load(&file)?;
-        verified_attempt(&entry, &study)?;
+        verified_attempt(&entry, &study, &study_digest)?;
         let key = (
             string(&entry, "case_id")?.to_owned(),
             number(&entry, "repetition")?,
@@ -531,6 +563,7 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
     let mut observations = Vec::new();
     let mut totals = BTreeMap::<&str, (u64, u64, u64, u64, u64)>::new();
     let mut paired = Vec::new();
+    let mut usage = BTreeMap::<&str, (u64, u64, u64)>::new();
     for case in list(&study, "cases")? {
         let case_id = string(case, "id")?;
         let truth = string(case, "truth")?;
@@ -538,7 +571,18 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
             let mut by_condition = BTreeMap::new();
             for condition in ARMS {
                 let key = (case_id.to_owned(), repetition, condition.to_owned());
-                let decision = map.get(&key).map(|r| string(r, "decision")).transpose()?;
+                let attempt = map.get(&key);
+                let decision = attempt.map(|r| string(r, "decision")).transpose()?;
+                if let Some(attempt) = attempt {
+                    if !value(attempt, "input_tokens")?.is_null() {
+                        let row = usage.entry(condition).or_default();
+                        row.0 = row.0.checked_add(number(attempt, "input_tokens")?)
+                            .ok_or("input token sum overflow")?;
+                        row.1 = row.1.checked_add(number(attempt, "output_tokens")?)
+                            .ok_or("output token sum overflow")?;
+                        row.2 += 1;
+                    }
+                }
                 let classification = match (truth, decision) {
                     (_, None) => "MISSING",
                     (_, Some("ABSTAIN")) => "ABSTAIN",
@@ -577,13 +621,17 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
         .map(|name| {
             let (correct, escaped, false_block, abstain, missing) =
                 totals.get(name).copied().unwrap_or_default();
-            json!({"condition":name,"correct_gate":correct,"escaped_regressions":escaped,
-               "false_blocks":false_block,"abstentions":abstain,"missing":missing})
+            let (input, output, measured) = usage.get(name).copied().unwrap_or_default();
+        json!({"condition":name,"correct_gate":correct,"escaped_regressions":escaped,
+               "false_blocks":false_block,"abstentions":abstain,"missing":missing,
+               "reported_input_tokens":input,"reported_output_tokens":output,
+               "token_measurements":measured,
+               "tokens_unmeasured":correct + escaped + false_block + abstain - measured})
         })
         .collect();
     let results = json!({
         "schema": RESULT, "study_id": string(&study, "id")?,
-        "study_sha256": bytes_sha(study_path)?,
+        "study_sha256": study_digest,
         "status": if map.len() as u64 == total { "COMPLETE" } else { "PARTIAL" },
         "expected_attempts": total, "received_attempts": map.len(),
         "metric": "GATE_DECISION_PROXY_NOT_DEMONSTRATED_BUG_PREVENTION",
@@ -640,6 +688,8 @@ mod tests {
             ("candidate", &b, false),
             ("repair", &c, true),
         ] {
+            let source = git_output(&repo, &["show", &format!("{revision}:module.py")]).unwrap();
+            assert_eq!(source != "VALUE = 0", pass);
             let receipt_path = temp.join(format!("{part}-oracle.json"));
             let content = json!({
                 "schema": ORACLE, "commit": revision, "tree": tree(&repo, revision).unwrap(),

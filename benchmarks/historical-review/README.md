@@ -63,7 +63,9 @@ before an agent review. It is **not** copied into the agent assignment.
 
 All three receipts must refer to the same command, bind the exact Git commit
 and tree, and report A=pass, B=fail, C=pass. Clean controls require A=pass and
-B=pass, without C. Receipt hashes reject mutation, but **do not prove that a
+B=pass, without C. The sealed study SHA-256 is embedded in every prepared assignment and each
+attempt receipt, preventing silent replacement of hidden labels after preparation.
+Receipt hashes reject mutation, but **do not prove that a
 claimed command executed**. Preserve original logs, pinned toolchains and an
 independent execution attestation; independently audit a sample of cases. A
 developer-authored assertion alone is not accepted as a real-world regression.
@@ -102,7 +104,8 @@ An agent's decision is \`APPROVE\`, \`BLOCK\`, or \`ABSTAIN\`. Omit **both**
 token flags if usage is not measured. \`review-record\` computes receipt,
 assignment and transcript hashes; it refuses overwriting an existing attempt.
 \`review-evaluate\` refuses duplicates and changed artifacts. Missing attempts
-stay in the denominator. Its \`CORRECT_GATE\` measure is **only a merge-decision
+stay in the denominator. Per-arm caller-reported token totals and unmeasured
+attempt counts are separate, not zero-filled. Its \`CORRECT_GATE\` measure is **only a merge-decision
 proxy**: blocking a bad commit is not independently adjudicated as a valid
 explanation, and producing a repaired implementation is out of scope.
 

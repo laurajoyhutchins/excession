@@ -5,4 +5,5 @@ pub mod claims;
 pub mod comparison;
 pub mod identity;
 pub mod rea;
+pub mod reconstruction;
 pub mod unknowns;

@@ -849,6 +849,34 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "evaluate" => {
+            let db = Db::open(opt.path("db"))?;
+            let trusted = match opt.get("trusted-local") {
+                "true" => true,
+                "false" => false,
+                _ => return refuse("--trusted-local requires true or false"),
+            };
+            Ok(json(excession::evidence::reconstruction::evaluate(
+                &db,
+                opt.path("target"),
+                opt.path("candidate"),
+                opt.get_or("compiler", "cc"),
+                opt.get_or("objcopy", "objcopy"),
+                trusted,
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "history" => {
+            let db = Db::open(opt.path("db"))?;
+            let limit = opt
+                .get_or("limit", "16")
+                .parse::<usize>()
+                .map_err(|_| "invalid reconstruction history limit")?;
+            Ok(json(excession::evidence::reconstruction::history(
+                &db,
+                opt.path("target"),
+                limit,
+            )?))
+        }
         [top, sub] if top == "evidence" && sub == "rea-import" => {
             let db = Db::open(opt.path("db"))?;
             let build = rea_build_link(opt)?;

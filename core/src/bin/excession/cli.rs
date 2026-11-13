@@ -570,6 +570,13 @@ pub(super) fn command() -> Command {
         .subcommand(views)
         .subcommand(security)
         .subcommand(evidence)
+        .subcommand(group(
+            "reconstruct",
+            vec![
+                leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),
+                leaf("history", &["db", "target"], &["limit"]),
+            ],
+        ).about("Trusted-local compiler feedback for C object-code reconstruction"))
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)

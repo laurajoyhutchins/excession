@@ -154,6 +154,27 @@
     },
     "report_id": {
       "$ref": "#/$defs/sha256"
+    },
+    "candidate_source_impacts": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "Bounded distinct-source witnesses from the impact report; unlike candidate_impacts these are independent of path enumeration.",
+      "items": {
+        "type": "object",
+        "required": [
+          "entity",
+          "assessment",
+          "next_hop",
+          "distance_to_change"
+        ]
+      }
+    },
+    "candidate_source_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "candidate_source_enumeration_complete": {
+      "type": "boolean"
     }
   },
   "$defs": {

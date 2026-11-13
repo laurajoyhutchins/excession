@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/product/producer-discovery.v1.schema.json",
+  "title": "Pinned Git native evidence discovery",
+  "description": "Read-only producer candidates and exact, unambiguous facet selection; native source replay is performed on use.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_commit",
+    "source_tree",
+    "status",
+    "scip_candidates",
+    "graph_candidates",
+    "selection",
+    "selection_policy",
+    "source_authentication",
+    "complete_semantics"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.producer-discovery.v1"
+    },
+    "source_commit": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "source_tree": {
+      "$ref": "common.v1.schema.json#/$defs/oid"
+    },
+    "status": {
+      "enum": [
+        "AMBIGUOUS",
+        "NO_IMPORTED_EVIDENCE",
+        "UNAMBIGUOUS"
+      ]
+    },
+    "scip_candidates": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "snapshot_id",
+          "producer",
+          "version",
+          "source_prefix",
+          "source_authentication"
+        ],
+        "properties": {
+          "snapshot_id": {
+            "$ref": "common.v1.schema.json#/$defs/sha256"
+          },
+          "producer": {
+            "type": "string",
+            "pattern": "^scip:.+"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_prefix": {
+            "oneOf": [
+              {
+                "$ref": "common.v1.schema.json#/$defs/path"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_authentication": {
+            "const": "REPLAY_REQUIRED_ON_SELECTION"
+          }
+        }
+      }
+    },
+    "graph_candidates": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "graph_id",
+          "producer",
+          "target",
+          "configuration",
+          "source_authentication"
+        ],
+        "properties": {
+          "graph_id": {
+            "$ref": "common.v1.schema.json#/$defs/sha256"
+          },
+          "producer": {
+            "enum": [
+              "excession.configured-graph.v1",
+              "excession.kbuild-graph.v1"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "configuration": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_authentication": {
+            "const": "REPLAY_REQUIRED_ON_SELECTION"
+          }
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scip_snapshot",
+        "graph_id",
+        "source_prefix"
+      ],
+      "properties": {
+        "scip_snapshot": {
+          "oneOf": [
+            {
+              "$ref": "common.v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "graph_id": {
+          "oneOf": [
+            {
+              "$ref": "common.v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_prefix": {
+          "oneOf": [
+            {
+              "$ref": "common.v1.schema.json#/$defs/path"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "selection_policy": {
+      "const": "EXACTLY_ONE_PER_PRODUCER_FACET_OR_REFUSE"
+    },
+    "source_authentication": {
+      "const": "REQUIRES_GIT_REPLAY_ON_USE"
+    },
+    "complete_semantics": {
+      "const": false
+    }
+  }
+}

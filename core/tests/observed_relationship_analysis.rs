@@ -890,3 +890,52 @@ fn discovery_does_not_create_missing_store_or_assume_source_completeness() {
         f.db(),
     ]));
 }
+
+#[test]
+fn auto_detects_native_scip_subproject_only_from_declared_project_root() {
+    let f = Fixture::new();
+    let nested = f.repo.join("packages/native");
+    fs::create_dir_all(nested.join("src")).unwrap();
+    fs::write(nested.join("src/a.rs"), "pub fn foo() { bar(); }\n").unwrap();
+    fs::write(nested.join("src/b.rs"), "pub fn bar() {}\n").unwrap();
+    let revision = commit(&f.repo, "nested project");
+    let canonical = nested.canonicalize().unwrap();
+    let root_uri = format!("file://{}", canonical.display());
+    let native = native_index().canonical();
+    let source = native.replace(
+        r#""metadata":{"tool_info""#,
+        &format!(r#""metadata":{{"project_root":"{root_uri}","tool_info""#),
+    );
+    assert_ne!(source, native);
+    let input = f.root.join("nested-index.json");
+    fs::write(&input, source).unwrap();
+    let database = f.root.join("nested.sqlite");
+    let db = Db::open(&database).unwrap();
+    let imported = scip_evidence::import(
+        &f.repo, &revision, &input, Some("packages/native"), &db,
+    ).unwrap();
+    let found = json::parse(success(f.cli(&[
+        "inspect", "producer-candidates", "--repo", f.repo(), "--rev", &revision,
+        "--db", database.to_str().unwrap(),
+    ])).as_bytes()).unwrap();
+    assert_eq!(found.get("status").unwrap().str().unwrap(), "UNAMBIGUOUS");
+    let selected = found.get("selection").unwrap();
+    assert_eq!(
+        selected.get("scip_snapshot").unwrap().str().unwrap(),
+        imported.get("snapshot_id").unwrap().str().unwrap()
+    );
+    assert_eq!(
+        selected.get("source_prefix").unwrap().str().unwrap(),
+        "packages/native"
+    );
+    let analyzed = json::parse(success(f.cli(&[
+        "analyze", f.repo(), "--rev", &revision, "--db", database.to_str().unwrap(),
+        "--auto-evidence", "--json",
+    ])).as_bytes()).unwrap();
+    let edges = analyzed.get("relationships").unwrap().array_ref().unwrap();
+    assert_eq!(edges.len(), 1);
+    assert_eq!(
+        edges[0].get("source").unwrap().get("path").unwrap().str().unwrap(),
+        "packages/native/src/a.rs"
+    );
+}

@@ -55,7 +55,9 @@ fn run(program: &str, args: &[&str]) -> Result<()> {
     loop {
         match child.try_wait().map_err(|e| e.to_string())? {
             Some(status) if status.success() => return Ok(()),
-            Some(status) => return refuse(format!("trusted-local tool {program:?} failed: {status}")),
+            Some(status) => {
+                return refuse(format!("trusted-local tool {program:?} failed: {status}"));
+            }
             None if started.elapsed() >= Duration::from_secs(15) => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -82,7 +84,11 @@ fn code_region(objcopy: &str, source: &Path, destination: &Path) -> Result<Vec<u
     let arg = format!(".text={}", destination.display());
     run(
         objcopy,
-        &["--dump-section", &arg, source.to_str().ok_or("non-UTF-8 object path")?],
+        &[
+            "--dump-section",
+            &arg,
+            source.to_str().ok_or("non-UTF-8 object path")?,
+        ],
     )?;
     bounded_file(destination, MAX_TEXT)
 }
@@ -147,7 +153,9 @@ pub fn evaluate(
     trusted_local: bool,
 ) -> Result<Value> {
     if !trusted_local {
-        return refuse("reconstruction compilation requires --trusted-local true; no sandbox is provided");
+        return refuse(
+            "reconstruction compilation requires --trusted-local true; no sandbox is provided",
+        );
     }
     if compiler.is_empty() || objcopy.is_empty() {
         return refuse("compiler and objcopy programs must be specified");
@@ -161,11 +169,19 @@ pub fn evaluate(
     let object = scratch.path("candidate.o");
     fs::write(&target_copy, &original).map_err(|e| e.to_string())?;
     fs::write(&source_copy, &source).map_err(|e| e.to_string())?;
-    let source_path = source_copy.to_str().ok_or("non-UTF-8 candidate source path")?;
+    let source_path = source_copy
+        .to_str()
+        .ok_or("non-UTF-8 candidate source path")?;
     let object_path = object.to_str().ok_or("non-UTF-8 candidate object path")?;
     let args = [
-        FLAGS[0], FLAGS[1], FLAGS[2], FLAGS[3], FLAGS[4],
-        "-o", object_path, source_path,
+        FLAGS[0],
+        FLAGS[1],
+        FLAGS[2],
+        FLAGS[3],
+        FLAGS[4],
+        "-o",
+        object_path,
+        source_path,
     ];
     run(compiler, &args)?;
     let candidate_object = bounded_file(&object, 16 * 1024 * 1024)?;
@@ -177,41 +193,97 @@ pub fn evaluate(
     let target_rea = artifact::dossier(db, &target_copy, None, 1)?;
     let candidate_rea = artifact::dossier(db, &object, None, 1)?;
     let mut report = obj(&[
-        ("schema", Value::string("excession.reconstruction-attempt.v1")),
+        (
+            "schema",
+            Value::string("excession.reconstruction-attempt.v1"),
+        ),
         ("target_artifact_subject_id", Value::string(&original_id)),
-        ("target_artifact_sha256", Value::string(digest::sha256(&original))),
-        ("candidate_artifact_subject_id", Value::string(&candidate_id)),
-        ("candidate_artifact_sha256", Value::string(digest::sha256(&candidate_object))),
-        ("candidate_source_sha256", Value::string(digest::sha256(&source))),
+        (
+            "target_artifact_sha256",
+            Value::string(digest::sha256(&original)),
+        ),
+        (
+            "candidate_artifact_subject_id",
+            Value::string(&candidate_id),
+        ),
+        (
+            "candidate_artifact_sha256",
+            Value::string(digest::sha256(&candidate_object)),
+        ),
+        (
+            "candidate_source_sha256",
+            Value::string(digest::sha256(&source)),
+        ),
         ("compiler", Value::string(compiler)),
         ("objcopy", Value::string(objcopy)),
-        ("compiler_arguments", Value::array(FLAGS.iter().copied().chain(["-o", "<candidate-object>", "<candidate-source>"]).map(Value::string))),
-        ("comparison_scope", Value::string("ELF_TEXT_SECTION_BYTES_ONLY")),
-        ("target_text_sha256", Value::string(digest::sha256(&target_text))),
-        ("candidate_text_sha256", Value::string(digest::sha256(&candidate_text))),
+        (
+            "compiler_arguments",
+            Value::array(
+                FLAGS
+                    .iter()
+                    .copied()
+                    .chain(["-o", "<candidate-object>", "<candidate-source>"])
+                    .map(Value::string),
+            ),
+        ),
+        (
+            "comparison_scope",
+            Value::string("ELF_TEXT_SECTION_BYTES_ONLY"),
+        ),
+        (
+            "target_text_sha256",
+            Value::string(digest::sha256(&target_text)),
+        ),
+        (
+            "candidate_text_sha256",
+            Value::string(digest::sha256(&candidate_text)),
+        ),
         ("target_text_bytes", Value::number(target_text.len())),
         ("candidate_text_bytes", Value::number(candidate_text.len())),
         ("mismatch_count", Value::number(mismatch_count)),
         ("mismatch_examples", Value::array(mismatch_examples)),
-        ("text_relation", Value::string(if match_text { "IDENTICAL_TEXT_BYTES" } else { "DIFFERENT_TEXT_BYTES" })),
-        ("target_rea_bundles", target_rea.get("rea_total_stored")?.clone()),
-        ("candidate_rea_bundles", candidate_rea.get("rea_total_stored")?.clone()),
+        (
+            "text_relation",
+            Value::string(if match_text {
+                "IDENTICAL_TEXT_BYTES"
+            } else {
+                "DIFFERENT_TEXT_BYTES"
+            }),
+        ),
+        (
+            "target_rea_bundles",
+            target_rea.get("rea_total_stored")?.clone(),
+        ),
+        (
+            "candidate_rea_bundles",
+            candidate_rea.get("rea_total_stored")?.clone(),
+        ),
         ("source_recovery", Value::string("NOT_ESTABLISHED")),
         ("behavioral_equivalence", Value::string("NOT_ESTABLISHED")),
         ("relocation_equivalence", Value::string("NOT_ESTABLISHED")),
         ("build_execution_attested", Value::Bool(false)),
-        ("execution_boundary", Value::string("TRUSTED_LOCAL_UNSANDBOXED")),
+        (
+            "execution_boundary",
+            Value::string("TRUSTED_LOCAL_UNSANDBOXED"),
+        ),
     ]);
     // Scratch path names are never part of the content-addressed attempt.
     let id = report.sha256();
-    report.entries_mut()?.insert("attempt_id".into(), Value::string(&id));
+    report
+        .entries_mut()?
+        .insert("attempt_id".into(), Value::string(&id));
     schema(db)?;
     db.transaction(|db| {
         db.execute(
             "INSERT OR IGNORE INTO evidence_reconstruction_attempt_v1
              (attempt_id,target_subject_id,candidate_source_sha256,report)
              VALUES (?,?,?,?)",
-            &[Param::Text(&id), Param::Text(&original_id), Param::Text(&digest::sha256(&source)), Param::Text(&report.canonical())],
+            &[
+                Param::Text(&id),
+                Param::Text(&original_id),
+                Param::Text(&digest::sha256(&source)),
+                Param::Text(&report.canonical()),
+            ],
         )?;
         Ok(())
     })?;

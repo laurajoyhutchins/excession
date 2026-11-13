@@ -573,19 +573,19 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
                 let key = (case_id.to_owned(), repetition, condition.to_owned());
                 let attempt = map.get(&key);
                 let decision = attempt.map(|r| string(r, "decision")).transpose()?;
-                if let Some(attempt) = attempt {
-                    if !value(attempt, "input_tokens")?.is_null() {
-                        let row = usage.entry(condition).or_default();
-                        row.0 = row
-                            .0
-                            .checked_add(number(attempt, "input_tokens")?)
-                            .ok_or("input token sum overflow")?;
-                        row.1 = row
-                            .1
-                            .checked_add(number(attempt, "output_tokens")?)
-                            .ok_or("output token sum overflow")?;
-                        row.2 += 1;
-                    }
+                if let Some(attempt) = attempt
+                    && !value(attempt, "input_tokens")?.is_null()
+                {
+                    let row = usage.entry(condition).or_default();
+                    row.0 = row
+                        .0
+                        .checked_add(number(attempt, "input_tokens")?)
+                        .ok_or("input token sum overflow")?;
+                    row.1 = row
+                        .1
+                        .checked_add(number(attempt, "output_tokens")?)
+                        .ok_or("output token sum overflow")?;
+                    row.2 += 1;
                 }
                 let classification = match (truth, decision) {
                     (_, None) => "MISSING",

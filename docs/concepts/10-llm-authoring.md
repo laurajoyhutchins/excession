@@ -117,7 +117,7 @@ that may write unreviewed proposals. The default is read-only.
 The server implements JSON-RPC/MCP `initialize`, `ping`,
 `tools/list`, and `tools/call`. It speaks one JSON object per stdin/stdout
 line, produces no general-purpose network listener, and exposes exactly the
-curated tools: `inspect_code_evidence`, `ontology_schema`,
+curated tools: `inspect_code_evidence`, `discover_change_companions`, `ontology_schema`,
 `draft_ontology`, `audit_ontology`, `query_ontology`,
 `compare_native_baseline`, plus `publish_ontology` when explicitly
 enabled. Tool results include JSON `structuredContent` and plain text
@@ -125,6 +125,16 @@ fallbacks. This is intended for LLM clients that support launching a local
 MCP stdio server; it is **not** automatically connected to any ChatGPT
 conversation or remote MCP client. An external compatible host is responsible
 for registering/launching the server and assigning user permissions.
+
+
+The read-only `discover_change_companions` tool queries a bounded earlier Git
+history at the server's pinned revision (8–128 commits). It reports candidate
+co-edit associations with witness commits, base-rate comparisons and explicit
+unknowns. These data can guide an LLM's architectural investigation, but the
+ontology draft schema still requires SCIP observation IDs for membership.
+Historical co-edit evidence is **not** automatically accepted as support for
+a semantic claim. No future commits or behavioral oracle are exposed to the
+authoring agent through this tool.
 
 ## Authority and failure boundaries
 

@@ -867,6 +867,15 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "git-evidence" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_evidence::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+            )?))
+        }
         [top, sub] if top == "reconstruct" && sub == "git" => {
             Ok(json(excession::git_reconstruction::verify(
                 opt.path("repo"),

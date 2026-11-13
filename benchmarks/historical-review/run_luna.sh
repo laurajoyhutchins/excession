@@ -51,7 +51,8 @@ fi
 # Reject API-key sign-ins before sending any task; never enable pay-as-you-go.
 unset OPENAI_API_KEY CODEX_ACCESS_TOKEN
 login=$("$codex" login status 2>&1) || fail 'Codex not signed in; use codex login with ChatGPT'
-[[ ${login,,} == *chatgpt* && ${login,,} != *'api key'* ]] || fail 'Codex must be signed in with ChatGPT, not an API key'
+login_lower=$(printf '%s' "$login" | tr '[:upper:]' '[:lower:]')
+[[ $login_lower == *chatgpt* && $login_lower != *'api key'* ]] || fail 'Codex must be signed in with ChatGPT, not an API key'
 # Exactly one review, pinned to the cheaper model. No automatic batch runner.
 {
   cat "$root/prompt.txt"

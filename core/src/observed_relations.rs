@@ -495,7 +495,7 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
                 ("graph_id", chosen_graph),
                 ("source_prefix", chosen_prefix),
             ])),
-            ("selection_policy", Value::string("EXACTLY_ONE_PER_PRODUCER_FACET_OR_REFUSE")),
+            ("selection_policy", Value::string("UNIQUE_ID_HINTS_WITH_CONFLICT_ISOLATED_COMPOSITION")),
             ("source_authentication", Value::string("REQUIRES_GIT_REPLAY_ON_USE")),
             ("complete_semantics", Value::Bool(false)),
         ]);

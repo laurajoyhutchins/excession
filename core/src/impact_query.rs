@@ -154,6 +154,7 @@ pub fn run(
     )
 }
 
+#[derive(Clone, Copy)]
 enum Mode<'a> {
     Explicit(EvidenceByRevision<'a>),
     Pinned(&'a Plan, &'a Plan),

@@ -154,7 +154,7 @@
       }
     },
     "selection_policy": {
-      "const": "EXACTLY_ONE_PER_PRODUCER_FACET_OR_REFUSE"
+      "const": "UNIQUE_ID_HINTS_WITH_CONFLICT_ISOLATED_COMPOSITION"
     },
     "source_authentication": {
       "const": "REQUIRES_GIT_REPLAY_ON_USE"

@@ -79,6 +79,15 @@
     "safe_to_skip_unlisted_tests": {
       "const": false
     },
+    "producer_selection_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base", "head"],
+      "properties": {
+        "base": { "$ref": "analysis.v1.schema.json#/$defs/producer_plan" },
+        "head": { "$ref": "analysis.v1.schema.json#/$defs/producer_plan" }
+      }
+    },
     "producer_selections": {
       "type": "object",
       "additionalProperties": false,

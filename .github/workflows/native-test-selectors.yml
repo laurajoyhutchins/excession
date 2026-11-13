@@ -1,0 +1,105 @@
+name: Native mature test selectors
+on:
+  pull_request:
+    paths:
+      - core/src/native_test_selectors.rs
+      - core/src/bin/excession.rs
+      - core/src/bin/excession/cli.rs
+      - .github/workflows/native-test-selectors.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-selectors:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Excession
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --release --manifest-path core/Cargo.toml --bin excession
+      - name: Execute installed Jest selector on pinned Git code
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/native-jest"
+          mkdir -p "$ROOT/src" "$ROOT/tests"
+          cd "$ROOT"
+          echo '{"name":"excession-selector-fixture","version":"1.0.0","private":true,"devDependencies":{"jest":"30.2.0"}}' > package.json
+          echo 'module.exports = () => 41;' > src/value.js
+          echo "const value = require('../src/value'); test('value', () => expect(value()).toBe(41));" > tests/value.test.js
+          git init -q
+          git add .
+          git -c user.name=Test -c user.email=test@example.invalid commit -qm base
+          BASE="$(git rev-parse HEAD)"
+          echo 'module.exports = () => 42;' > src/value.js
+          git add src/value.js
+          git -c user.name=Test -c user.email=test@example.invalid commit -qm candidate
+          HEAD="$(git rev-parse HEAD)"
+          npm install --ignore-scripts --no-audit --no-fund
+          BIN="$GITHUB_WORKSPACE/core/target/release/excession"
+          "$BIN" agent select-tests --repo "$ROOT" --base "$BASE" --candidate "$HEAD" \
+            --provider jest --trusted-local true > "$RUNNER_TEMP/jest-selector.json"
+          python3 - "$RUNNER_TEMP/jest-selector.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['outcome']=='SELECTED' and d['selected_test_files']==['tests/value.test.js'], d
+          assert not d['safe_to_skip_unlisted_tests']
+          assert d['execution_receipts']['receipts']==[]
+          PY
+          if "$BIN" agent select-tests --repo "$ROOT" --base "$BASE" --candidate "$HEAD" \
+            --provider jest --trusted-local false >/dev/null 2>&1; then
+            echo 'Untrusted selector was run' >&2; exit 1
+          fi
+          echo 'module.exports = () => 43;' > src/value.js
+          if "$BIN" agent select-tests --repo "$ROOT" --base "$BASE" --candidate "$HEAD" \
+            --provider jest --trusted-local true >/dev/null 2>&1; then
+            echo 'Dirty checkout was accepted' >&2; exit 1
+          fi
+      - name: Execute installed pytest-testmon against a seeded change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -q 'pytest-testmon==2.3.0'
+          ROOT="$RUNNER_TEMP/native-testmon"
+          mkdir -p "$ROOT/src" "$ROOT/tests"
+          cd "$ROOT"
+          touch src/__init__.py
+          printf 'def value():\n    return 41\n' > src/value.py
+          printf 'from src.value import value\ndef test_value():\n    assert value() == 41\n' > tests/test_value.py
+          git init -q
+          git add src tests
+          git -c user.name=Test -c user.email=test@example.invalid commit -qm base
+          BASE="$(git rev-parse HEAD)"
+          python3 -m pytest --testmon --testmon-noselect -q tests/test_value.py
+          test -s .testmondata
+          printf 'def value():\n    return 42\n' > src/value.py
+          git add src/value.py
+          git -c user.name=Test -c user.email=test@example.invalid commit -qm candidate
+          HEAD="$(git rev-parse HEAD)"
+          "$GITHUB_WORKSPACE/core/target/release/excession" agent select-tests \
+            --repo "$ROOT" --base "$BASE" --candidate "$HEAD" \
+            --provider pytest-testmon --trusted-local true --focus tests/test_value.py \
+            > "$RUNNER_TEMP/testmon-selector.json"
+          python3 - "$RUNNER_TEMP/testmon-selector.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['outcome']=='EXECUTED_FAIL',d
+          assert not d['safe_to_skip_unlisted_tests']
+          assert d['selected_test_files']==[]
+          assert d['execution_receipts']['schema']=='excession.execution-receipts.v1'
+          assert len(d['execution_receipts']['receipts'])==1
+          assert d['execution_receipts']['receipts'][0]['status']=='FAIL'
+          assert d['execution_receipts']['receipts'][0]['source_commit']==d['candidate_commit']
+          PY
+      - name: Keep native JSON evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-selector-evidence
+          path: |
+            ${{ runner.temp }}/jest-selector.json
+            ${{ runner.temp }}/testmon-selector.json
+          if-no-files-found: warn

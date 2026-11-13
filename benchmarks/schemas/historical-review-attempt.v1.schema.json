@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://excession.dev/schemas/historical-review-attempt.v1.schema.json",
+  "title": "Recorded historical PR review attempt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "study_id",
+    "case_id",
+    "condition",
+    "repetition",
+    "base_commit",
+    "candidate_commit",
+    "assignment_path",
+    "assignment_sha256",
+    "assignment_id",
+    "transcript_path",
+    "transcript_sha256",
+    "transcript_bytes",
+    "decision",
+    "input_tokens",
+    "output_tokens",
+    "token_source",
+    "signature_status"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.historical-review-attempt.v1"
+    },
+    "study_id": {
+      "type": "string"
+    },
+    "case_id": {
+      "type": "string"
+    },
+    "condition": {
+      "enum": [
+        "baseline",
+        "legacy_paths",
+        "graph",
+        "excession"
+      ]
+    },
+    "repetition": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "candidate_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "assignment_path": {
+      "type": "string"
+    },
+    "assignment_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "assignment_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "transcript_path": {
+      "type": "string"
+    },
+    "transcript_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "transcript_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8388608
+    },
+    "decision": {
+      "enum": [
+        "APPROVE",
+        "BLOCK",
+        "ABSTAIN"
+      ]
+    },
+    "input_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "output_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "token_source": {
+      "enum": [
+        "CALLER_REPORTED",
+        "NOT_MEASURED"
+      ]
+    },
+    "signature_status": {
+      "const": "UNATTESTED"
+    }
+  }
+}

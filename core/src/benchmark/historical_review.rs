@@ -571,6 +571,6 @@ mod tests {
         assert!(!slug("../repair"));
         assert!(!slug("white space"));
         assert!(arm("unknown").is_err());
-        assert!(sha("abcd", 40) == false);
+        assert!(!sha("abcd", 40));
     }
 }

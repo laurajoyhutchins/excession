@@ -859,6 +859,31 @@ fn execute(args: &[String]) -> Result<Response> {
             }))
         }
         [top, sub] if top == "benchmark" => match sub.as_str() {
+            "review-prepare" => {
+                let repetition = opt.get("repetition").parse::<u64>()
+                    .map_err(|_| "invalid --repetition".to_owned())?;
+                let assignment = benchmark::historical_review::prepare(
+                    opt.path("study"), opt.get("case"), opt.get("condition"), repetition, opt.path("out")
+                )?;
+                Ok(Response::Message(format!("PREPARED {}", assignment.display())))
+            }
+            "review-record" => {
+                let parse_tokens = |key: &str| -> Result<Option<u64>> {
+                    opt.0.get(key).map(|v| v.parse::<u64>()
+                        .map_err(|_| format!("invalid --{key}"))).transpose()
+                };
+                benchmark::historical_review::record(
+                    opt.path("assignment"), opt.path("transcript"), opt.get("decision"),
+                    opt.path("out"), parse_tokens("input-tokens")?, parse_tokens("output-tokens")?
+                )?;
+                Ok(Response::Message(format!("RECORDED {}", opt.get("out"))))
+            }
+            "review-evaluate" => {
+                benchmark::historical_review::evaluate(
+                    opt.path("study"), opt.path("attempts"), opt.path("out")
+                )?;
+                Ok(Response::Message(format!("EVALUATED {}", opt.get("out"))))
+            }
             "validate" => {
                 benchmark::validate(opt.path("report"))?;
                 Ok(Response::Message(format!("VALID {}", opt.get("report"))))

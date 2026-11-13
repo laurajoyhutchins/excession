@@ -246,16 +246,15 @@ fn limited_budget_returns_partial_candidate_with_explicit_uncertainty() {
 }
 #[test]
 fn refuses_unsafe_invocation_and_ambiguous_functions() {
-    let f=Fixture::new("int evaluate(int x) { return x * 3; }\n");
-    refused(f.search("16","false"));
-    refused(f.search("0","true"));
-    refused(f.search("129","true"));
+    let f = Fixture::new("int evaluate(int x) { return x * 3; }\n");
+    refused(f.search("16", "false"));
+    refused(f.search("0", "true"));
+    refused(f.search("129", "true"));
     assert!(!f.output.exists());
-    let bad=Fixture::new("int foo(int x) { return x; }\nint bar(int x) { return x*3; }\n");
-    refused(bad.search("8","true"));
+    let bad = Fixture::new("int foo(int x) { return x; }\nint bar(int x) { return x*3; }\n");
+    refused(bad.search("8", "true"));
     assert!(!bad.output.exists());
-    let mut invalid=Fixture::new("int evaluate(int x) { return x+7; }\n");
-    fs::write(&invalid.target,b"not ELF").unwrap();
-    refused(invalid.search("8","true"));
-    invalid.source.clear();
+    let invalid = Fixture::new("int evaluate(int x) { return x+7; }\n");
+    fs::write(&invalid.target, b"not ELF").unwrap();
+    refused(invalid.search("8", "true"));
 }

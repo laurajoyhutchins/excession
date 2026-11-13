@@ -263,13 +263,19 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
             concepts_query::run(&db, query)
         }
         "discover_change_companions" => {
-            if fields.keys().any(|key| {
-                !matches!(key.as_str(), "train" | "support" | "confidence_percent")
-            }) {
+            if fields
+                .keys()
+                .any(|key| !matches!(key.as_str(), "train" | "support" | "confidence_percent"))
+            {
                 return refuse("unexpected historical ontology parameter");
             }
             let integer = |key: &str, default: i64| -> Result<usize> {
-                let value = args.get(key).ok().map(Value::integer).transpose()?.unwrap_or(default);
+                let value = args
+                    .get(key)
+                    .ok()
+                    .map(Value::integer)
+                    .transpose()?
+                    .unwrap_or(default);
                 usize::try_from(value).map_err(|_| format!("invalid temporal {key}"))
             };
             let settings = crate::concepts_invariants::Settings {

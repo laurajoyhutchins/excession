@@ -947,7 +947,8 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
         [top, sub] if top == "reconstruct" && sub == "git-synthesize" => {
-            let count = opt.get_or("max-candidates", "2")
+            let count = opt
+                .get_or("max-candidates", "2")
                 .parse::<usize>()
                 .map_err(|_| "invalid reconstruction candidate count")?;
             Ok(json(excession::git_reconstruction_synthesis::synthesize(

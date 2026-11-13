@@ -249,6 +249,14 @@ fn run_core(
             ]));
             continue;
         };
+        if plan.is_some_and(Plan::is_empty)
+            && report.get("coverage")?.get("analyzed_sources")?.integer()? == 0
+        {
+            gaps.push(obj(&[
+                ("reason", Value::string("EXCLUDED_SCOPE")),
+                ("detail", Value::string("no static or imported source relationships in selected revision")),
+            ]));
+        }
         source_count = source_count
             .checked_add(report.get("coverage")?.get("analyzed_sources")?.integer()?)
             .ok_or("analyzed source count overflow")?;

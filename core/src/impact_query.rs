@@ -367,8 +367,14 @@ fn run_core(
         ("head_commit", Value::string(head_commit)),
         ("change_inventory_id", changes.get("report_id")?.clone()),
         ("effects", Value::array(effects)),
-        ("candidate_source_impacts", Value::array(candidate_source_impacts)),
-        ("candidate_source_count", Value::number(candidate_source_count)),
+        (
+            "candidate_source_impacts",
+            Value::array(candidate_source_impacts),
+        ),
+        (
+            "candidate_source_count",
+            Value::number(candidate_source_count),
+        ),
         (
             "candidate_source_enumeration_complete",
             Value::Bool(!source_truncated),
@@ -508,10 +514,13 @@ mod tests {
                 ("kind", Value::string("STATIC_IMPORT")),
                 ("source", obj(&[("path", Value::string(source))])),
                 ("target", obj(&[("path", Value::string(target))])),
-                ("evidence", Value::array([obj(&[
-                    ("assessment", Value::string("CANDIDATE")),
-                    ("receipt_id", Value::string("native-observation")),
-                ])])),
+                (
+                    "evidence",
+                    Value::array([obj(&[
+                        ("assessment", Value::string("CANDIDATE")),
+                        ("receipt_id", Value::string("native-observation")),
+                    ])]),
+                ),
             ])
         };
         // Only 21 affected sources, but 3 + 9 + ... + 2187 different
@@ -540,13 +549,33 @@ mod tests {
         assert_eq!(witnesses.len(), 21);
         let mut ranks = BTreeMap::from([("pkg/changed.py".to_owned(), 0i64)]);
         for witness in &witnesses {
-            let path = witness.get("entity").unwrap().get("path").unwrap().str().unwrap();
-            let target = witness.get("next_hop").unwrap().get("target")
-                .unwrap().get("path").unwrap().str().unwrap();
-            let rank = witness.get("distance_to_change").unwrap().integer().unwrap();
+            let path = witness
+                .get("entity")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap();
+            let target = witness
+                .get("next_hop")
+                .unwrap()
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap();
+            let rank = witness
+                .get("distance_to_change")
+                .unwrap()
+                .integer()
+                .unwrap();
             assert_eq!(ranks.get(target), Some(&(rank - 1)));
             assert!(ranks.insert(path.to_owned(), rank).is_none());
-            assert_eq!(witness.get("assessment").unwrap().str().unwrap(), "CANDIDATE_PATH");
+            assert_eq!(
+                witness.get("assessment").unwrap().str().unwrap(),
+                "CANDIDATE_PATH"
+            );
         }
         for leaf in parents {
             assert_eq!(ranks.get(&leaf), Some(&7));
@@ -555,14 +584,18 @@ mod tests {
 
     #[test]
     fn changed_seeds_are_not_mistaken_for_distinct_dependents() {
-        let graph = BTreeMap::from([
-            ("pkg/a.py".to_owned(), vec![obj(&[
+        let graph = BTreeMap::from([(
+            "pkg/a.py".to_owned(),
+            vec![obj(&[
                 ("source", obj(&[("path", Value::string("pkg/b.py"))])),
                 ("target", obj(&[("path", Value::string("pkg/a.py"))])),
                 ("relation", Value::string("STATIC_IMPORT")),
-                ("evidence", Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])])),
-            ])]),
-        ]);
+                (
+                    "evidence",
+                    Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])]),
+                ),
+            ])],
+        )]);
         let seeds = BTreeSet::from(["pkg/a.py".to_owned(), "pkg/b.py".to_owned()]);
         assert!(source_witnesses(&graph, &seeds).unwrap().is_empty());
     }

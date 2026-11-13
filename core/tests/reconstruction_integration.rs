@@ -213,14 +213,33 @@ fn changed_target_identity_does_not_reuse_prior_attempts() {
     let target2 = f.root.join("another.o");
     let source2 = f.root.join("another.c");
     fs::write(&source2, "int evaluate(int x) { return x * 7; }\n").unwrap();
-    success(run("cc", &[
-        "-O2", "-fno-stack-protector", "-fno-asynchronous-unwind-tables",
-        "-fno-ident", "-c", "-o", target2.to_str().unwrap(),
-        source2.to_str().unwrap(),
-    ]));
+    success(run(
+        "cc",
+        &[
+            "-O2",
+            "-fno-stack-protector",
+            "-fno-asynchronous-unwind-tables",
+            "-fno-ident",
+            "-c",
+            "-o",
+            target2.to_str().unwrap(),
+            source2.to_str().unwrap(),
+        ],
+    ));
     let other = json(cli(&[
-        "reconstruct", "history", "--db", f.db(),
-        "--target", target2.to_str().unwrap(),
+        "reconstruct",
+        "history",
+        "--db",
+        f.db(),
+        "--target",
+        target2.to_str().unwrap(),
     ]));
-    assert_eq!(other.get("stored_attempt_count").unwrap().integer().unwrap(), 0);
+    assert_eq!(
+        other
+            .get("stored_attempt_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        0
+    );
 }

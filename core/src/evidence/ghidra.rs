@@ -482,9 +482,9 @@ pub fn candidates(db: &Db, artifact: &Path, entry: &str, limit: usize) -> Result
             let raw = row[3].as_deref().ok_or("missing Ghidra match record")?;
             let native_report = match report_cache.entry(report_id_ref.to_owned()) {
                 Entry::Occupied(existing) => existing.into_mut(),
-                Entry::Vacant(empty) => empty.insert(
-                    checked_report(db, report_id_ref, &subject_id, &sha, size)?
-                ),
+                Entry::Vacant(empty) => {
+                    empty.insert(checked_report(db, report_id_ref, &subject_id, &sha, size)?)
+                }
             };
             let checked = json::parse(raw.as_bytes())?;
             let (actual_entry, actual_candidate) = match_record(&checked)?;

@@ -24,6 +24,7 @@ pub mod git;
 pub mod git_reconstruction;
 pub mod git_reconstruction_evidence;
 pub mod git_reconstruction_oracles;
+pub mod git_reconstruction_synthesis;
 pub mod graph;
 pub mod graph_assembly;
 pub mod graph_baseline;

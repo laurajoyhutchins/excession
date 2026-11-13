@@ -946,6 +946,18 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "git-synthesize" => {
+            let count = opt.get_or("max-candidates", "2")
+                .parse::<usize>()
+                .map_err(|_| "invalid reconstruction candidate count")?;
+            Ok(json(excession::git_reconstruction_synthesis::synthesize(
+                opt.path("repo"),
+                opt.path("seed"),
+                opt.path("output"),
+                count,
+                opt.0.get("feedback").map(|s| Path::new(s)),
+            )?))
+        }
         [top, sub] if top == "reconstruct" && sub == "git-oracles" => {
             if !opt.path("db").is_file() {
                 return refuse("Git reconstruction oracles need an existing SQLite database");

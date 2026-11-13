@@ -1,7 +1,8 @@
 //! Exact report replay and source-bound explanation.
 //! Does not promote candidate dependencies to verified behavior.
-use crate::impact_query;
+use crate::impact_query::{self, EvidenceByRevision};
 use crate::json::{self, Value, obj};
+use crate::observed_relations::Selection;
 use crate::{Result, refuse};
 use std::fs;
 use std::path::Path;
@@ -59,7 +60,35 @@ fn checked_claim(
     let reported = supported_report(saved_report)?;
     let base = reported.get("base_commit")?.str()?;
     let head = reported.get("head_commit")?.str()?;
-    let fresh = impact_query::run(repo, base, head, roots, db)?;
+    let fresh = if let Some(choices) = reported.entries()?.get("producer_selections") {
+        let selected = |key: &str| -> Result<Option<&str>> {
+            match choices.get(key)? {
+                Value::Null => Ok(None),
+                item => Ok(Some(item.str()?)),
+            }
+        };
+        impact_query::run_with_evidence(
+            repo,
+            base,
+            head,
+            roots,
+            db,
+            EvidenceByRevision {
+                base: Selection {
+                    scip_snapshot: selected("base_scip_snapshot")?,
+                    graph_id: selected("base_graph_id")?,
+                    source_prefix: selected("base_source_prefix")?,
+                },
+                head: Selection {
+                    scip_snapshot: selected("head_scip_snapshot")?,
+                    graph_id: selected("head_graph_id")?,
+                    source_prefix: selected("head_source_prefix")?,
+                },
+            },
+        )?
+    } else {
+        impact_query::run(repo, base, head, roots, db)?
+    };
     if reported.canonical() != fresh.canonical() {
         return refuse(
             "impact report does not replay against pinned Git source and configured analyzers",

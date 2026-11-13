@@ -116,6 +116,65 @@ fn walk(
     Ok(false)
 }
 
+/// Enumerate distinct dependent source paths before spending the result budget
+/// on alternative evidence chains. One shortest, source-authenticated witness
+/// is sufficient to preserve a candidate path in the bounded report.
+///
+/// This is graph reachability over declared observations, not a claim that
+/// every possible runtime dependency has been discovered.
+fn walk_first_paths(
+    incoming: &BTreeMap<String, Vec<Value>>,
+    changed: &BTreeSet<String>,
+) -> Result<(Vec<Value>, bool)> {
+    let mut effects = Vec::new();
+    let mut emitted = BTreeSet::new();
+    let mut depth_truncated = false;
+
+    for seed in changed {
+        // Each changed source is a seed, not an impacted dependent. The
+        // change inventory already accounts for changed paths explicitly.
+        let mut visited = changed.clone();
+        let mut queue = VecDeque::from([(seed.to_owned(), Vec::<Value>::new())]);
+        while let Some((target, suffix)) = queue.pop_front() {
+            let Some(edges) = incoming.get(&target) else {
+                continue;
+            };
+            for edge in edges {
+                let path = edge.get("source")?.get("path")?.str()?.to_owned();
+                if visited.contains(&path) {
+                    continue;
+                }
+                if suffix.len() >= MAX_DEPTH {
+                    depth_truncated = true;
+                    continue;
+                }
+                visited.insert(path.clone());
+                let mut hops = Vec::with_capacity(suffix.len() + 1);
+                hops.push(edge.clone());
+                hops.extend(suffix.iter().cloned());
+
+                if emitted.insert(path.clone()) {
+                    let mut effect = obj(&[
+                        ("entity", edge.get("source")?.clone()),
+                        ("assessment", Value::string("CANDIDATE_PATH")),
+                        ("hops", Value::array(hops.clone())),
+                    ]);
+                    let claim_id = effect.sha256();
+                    effect
+                        .entries_mut()?
+                        .insert("claim_id".to_owned(), Value::string(claim_id));
+                    effects.push(effect);
+                    if effects.len() >= MAX_EFFECTS {
+                        return Ok((effects, true));
+                    }
+                }
+                queue.push_back((path, hops));
+            }
+        }
+    }
+    Ok((effects, depth_truncated))
+}
+
 fn indexed_language(path: &str) -> bool {
     crate::source_capabilities::static_module_producer(path).is_some()
 }
@@ -210,6 +269,11 @@ fn run_core(
     let base_commit = changes.get("base_commit")?.str()?;
     let head_commit = changes.get("head_commit")?.str()?;
     let mut effects = Vec::new();
+    // Preserve separate budgets for unique changed-source dependents and
+    // alternative path witnesses. The latter must never starve the former.
+    let mut primary_paths = Vec::<Vec<Value>>::new();
+    let mut alternative_graphs =
+        Vec::<(BTreeMap<String, Vec<Value>>, BTreeSet<String>)>::new();
     let mut configured_observations = Vec::new();
     let mut producer_coverage = Vec::new();
     let mut gaps = Vec::new();
@@ -295,9 +359,66 @@ fn run_core(
                 }
             }
         }
-        truncated |= walk(&incoming(&report)?, &changed, &mut effects)?;
-        if truncated {
+        let graph = incoming(&report)?;
+        let (primary, depth_or_count_truncated) = walk_first_paths(&graph, &changed)?;
+        truncated |= depth_or_count_truncated;
+        primary_paths.push(primary);
+        alternative_graphs.push((graph, changed));
+    }
+
+    // Interleave the two revisions so a large base graph cannot leave zero
+    // visibility into the candidate/head revision.
+    let mut primary = primary_paths
+        .into_iter()
+        .map(Vec::into_iter)
+        .collect::<Vec<_>>();
+    loop {
+        let mut progressed = false;
+        for iter in &mut primary {
+            let Some(effect) = iter.next() else {
+                continue;
+            };
+            if effects.len() >= MAX_EFFECTS {
+                truncated = true;
+                break;
+            }
+            effects.push(effect);
+            progressed = true;
+        }
+        if !progressed || effects.len() >= MAX_EFFECTS {
             break;
+        }
+    }
+
+    // Retain distinct alternative paths when capacity allows. The original
+    // path-enumeration contract is still exercised by the diamond test.
+    if effects.len() < MAX_EFFECTS {
+        let mut claims = BTreeSet::new();
+        for effect in &effects {
+            claims.insert(effect.get("claim_id")?.str()?.to_owned());
+        }
+        for (graph, changed) in alternative_graphs {
+            let mut alternatives = Vec::new();
+            truncated |= walk(&graph, &changed, &mut alternatives)?;
+            for effect in alternatives {
+                // Changed files already appear in the change inventory and
+                // are not a discovered dependent of themselves.
+                if changed.contains(effect.get("entity")?.get("path")?.str()?) {
+                    continue;
+                }
+                if !claims.insert(effect.get("claim_id")?.str()?.to_owned()) {
+                    continue;
+                }
+                if effects.len() >= MAX_EFFECTS {
+                    truncated = true;
+                    break;
+                }
+                effects.push(effect);
+            }
+            if effects.len() >= MAX_EFFECTS {
+                truncated = true;
+                break;
+            }
         }
     }
     if gaps.len() > MAX_GAPS {

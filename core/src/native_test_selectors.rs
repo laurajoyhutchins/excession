@@ -477,7 +477,11 @@ mod tests {
         fs::create_dir_all(root.join("testing")).unwrap();
         fs::write(root.join("src/module.js"), "module.exports = 1;\n").unwrap();
         fs::write(root.join("testing/module.test.js"), "test('ok', ()=>{});\n").unwrap();
-        fs::write(root.join("testing/test_example.py"), "def test_ok(): pass\n").unwrap();
+        fs::write(
+            root.join("testing/test_example.py"),
+            "def test_ok(): pass\n",
+        )
+        .unwrap();
 
         let git_call = |args: &[&str]| {
             let result = Command::new("git")
@@ -521,15 +525,13 @@ mod tests {
         .unwrap();
         assert!(tracked_selection(&root, &commit, &untracked).is_err());
         let native = br#"{"exitcode":0,"summary":{"total":1,"passed":1},"tests":[{"nodeid":"testing/test_example.py::test_ok","outcome":"passed"}]}"#;
-        let (files, ids, total, passed) =
-            reported_pytest_tests(&root, &commit, native, 0).unwrap();
+        let (files, ids, total, passed) = reported_pytest_tests(&root, &commit, native, 0).unwrap();
         assert_eq!(files, vec!["testing/test_example.py"]);
         assert_eq!(ids, vec!["testing/test_example.py::test_ok"]);
         assert_eq!((total, passed), (1, 1));
 
         let empty = br#"{"exitcode":0,"summary":{"total":0},"tests":[]}"#;
-        let (_, _, total, passed) =
-            reported_pytest_tests(&root, &commit, empty, 0).unwrap();
+        let (_, _, total, passed) = reported_pytest_tests(&root, &commit, empty, 0).unwrap();
         assert_eq!(pytest_execution_outcome(0, total, passed), "EMPTY_UNPROVEN");
         assert_eq!(pytest_execution_outcome(0, 1, 1), "EXECUTED_PASS");
         assert_eq!(pytest_execution_outcome(1, 1, 0), "EXECUTED_FAIL");

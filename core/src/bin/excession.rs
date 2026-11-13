@@ -9,6 +9,7 @@ use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
 use excession::impact_query;
+use excession::native_test_selectors;
 use excession::observed_relations::{self, Plan, Selection};
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
@@ -503,6 +504,15 @@ fn execute(args: &[String]) -> Result<Response> {
                     roots,
                     db,
                     opt.0.get("receipts").map(Path::new),
+                )?)),
+                "select-tests" => Ok(json(native_test_selectors::run(
+                    opt.path("repo"),
+                    opt.get("base"),
+                    opt.get("candidate"),
+                    opt.get("provider"),
+                    opt.0.get("tool").map(String::as_str),
+                    opt.0.get("focus").map(String::as_str),
+                    opt.get("trusted-local"),
                 )?)),
                 _ => refuse(format!("unknown agent command: {sub}")),
             }

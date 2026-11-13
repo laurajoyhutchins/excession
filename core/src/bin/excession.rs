@@ -365,14 +365,20 @@ fn execute(args: &[String]) -> Result<Response> {
                 };
                 let settings = excession::concepts_invariants::Settings {
                     train: integer("train", "48")?,
-                    holdout: if backtest { integer("holdout", "16")? } else { 0 },
+                    holdout: if backtest {
+                        integer("holdout", "16")?
+                    } else {
+                        0
+                    },
                     support: integer("support", "3")?,
                     confidence_percent: integer("confidence", "70")?,
                     prefix: opt.get_or("prefix", ".").to_owned(),
                 };
                 let result = if backtest {
                     excession::concepts_invariants::backtest(
-                        opt.path("repo"), opt.get("rev"), &settings,
+                        opt.path("repo"),
+                        opt.get("rev"),
+                        &settings,
                     )?
                 } else {
                     excession::concepts_invariants::propose(

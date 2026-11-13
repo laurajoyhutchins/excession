@@ -42,21 +42,18 @@ enum Response {
 impl Response {
     fn emit(self) -> Result<()> {
         let mut out = io::stdout().lock();
+        let write_error = |error: io::Error| format!("stdout write failed: {error}");
         match self {
-            Self::Json(j) => writeln!(out, "{}", j.canonical()),
+            Self::Json(j) => writeln!(out, "{}", j.canonical()).map_err(write_error),
             Self::Test(report, as_json) => {
-                let phase = report
-                    .get("status")
-                    .and_then(excession::json::Value::str)
-                    .map_err(io::Error::other)?
-                    .to_owned();
+                let phase = report.get("status")?.str()?.to_owned();
                 let message = if as_json {
                     report.canonical()
                 } else {
-                    test_summary(&report).map_err(io::Error::other)?
+                    test_summary(&report)?
                 };
-                writeln!(out, "{message}")?;
-                out.flush()?;
+                writeln!(out, "{message}").map_err(write_error)?;
+                out.flush().map_err(write_error)?;
                 if phase == "FAIL" {
                     std::process::exit(1);
                 }
@@ -64,11 +61,12 @@ impl Response {
                     std::process::exit(3);
                 }
                 Ok(())
-            },
-            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}"),
-            Self::Bytes(bytes) => out.write_all(&bytes),
+            }
+            Self::CanonicalJson(s) | Self::Message(s) => {
+                writeln!(out, "{s}").map_err(write_error)
+            }
+            Self::Bytes(bytes) => out.write_all(&bytes).map_err(write_error),
         }
-        .map_err(|e| format!("stdout write failed: {e}"))
     }
 }
 fn test_summary(report: &excession::json::Value) -> Result<String> {
@@ -81,11 +79,15 @@ fn test_summary(report: &excession::json::Value) -> Result<String> {
     let mode = report.get("mode")?.str()?;
     let base = report.get("base_commit")?.str()?;
     let head = report.get("candidate_commit")?.str()?;
-    let short = |oid: &str| &oid[..oid.len().min(12)];
+    let short = |oid: &str| oid.chars().take(12).collect::<String>();
     let changed = report.get("changed_sources")?.array_ref()?.len();
     let mut lines = vec![
         format!("Tests: {phase} ({mode}, {provider})"),
-        format!("Revision: {}..{} | {changed} changed file(s)", short(base), short(head)),
+        format!(
+            "Revision: {}..{} | {changed} changed file(s)",
+            short(base),
+            short(head)
+        ),
     ];
     for reason in report.get("blockers")?.array_ref()? {
         lines.push(format!("  Blocked: {}", reason.str()?));
@@ -561,7 +563,10 @@ fn execute(args: &[String]) -> Result<Response> {
                 run: opt.get_or("run", "false") == "true",
                 verify: opt.get_or("verify", "false") == "true",
             })?;
-            Ok(Response::Test(report, opt.get_or("json", "false") == "true"))
+            Ok(Response::Test(
+                report,
+                opt.get_or("json", "false") == "true",
+            ))
         }
         [top, sub] if top == "agent" => {
             let limit = opt

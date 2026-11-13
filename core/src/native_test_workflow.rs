@@ -3,7 +3,9 @@
 //! Running is explicit; no homegrown dependency graph is introduced.
 
 use crate::json::{Value, obj};
-use crate::{Result, agent, change_inventory, digest, discovery, git, native_test_selectors, refuse};
+use crate::{
+    Result, agent, change_inventory, digest, discovery, git, native_test_selectors, refuse,
+};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,7 +25,8 @@ impl Temporary {
             std::process::id(),
             NEXT_REPORT.fetch_add(1, Ordering::Relaxed)
         ));
-        fs::create_dir(&path).map_err(|error| format!("create test evidence directory: {error}"))?;
+        fs::create_dir(&path)
+            .map_err(|error| format!("create test evidence directory: {error}"))?;
         Ok(Self { directory: path })
     }
     fn file(&self, filename: &str) -> PathBuf {
@@ -40,7 +43,9 @@ fn default_base(root: &Path, candidate: &str, requested: Option<&str>) -> Result
     if let Some(spec) = requested {
         let base = git::rev(root, spec)?;
         if base == candidate {
-            return refuse("test base and candidate are the same commit; provide an earlier --base");
+            return refuse(
+                "test base and candidate are the same commit; provide an earlier --base",
+            );
         }
         return Ok((base, format!("explicit:{spec}")));
     }
@@ -74,7 +79,11 @@ fn has_python_tests(path: &str) -> bool {
             || path.contains("/tests/"))
 }
 
-fn detect_provider(root: &Path, commit: &str, requested: Option<&str>) -> Result<(String, Vec<String>)> {
+fn detect_provider(
+    root: &Path,
+    commit: &str,
+    requested: Option<&str>,
+) -> Result<(String, Vec<String>)> {
     if let Some(name) = requested {
         if !matches!(name, "auto" | "jest" | "pytest-testmon") {
             return refuse(format!(
@@ -123,7 +132,9 @@ fn checkout_is_clean(root: &Path, commit: &str) -> Result<bool> {
 fn test_command(provider: &str) -> &'static str {
     match provider {
         "jest" => "npm install && excession tests --run",
-        "pytest-testmon" => "python3 -m pytest --testmon --testmon-noselect && excession tests --run",
+        "pytest-testmon" => {
+            "python3 -m pytest --testmon --testmon-noselect && excession tests --run"
+        }
         _ => "excession tests --provider jest --run  # or --provider pytest-testmon",
     }
 }
@@ -155,11 +166,14 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     let (provider, detected) = detect_provider(&root, &commit, request.provider)?;
     let mut blockers = BTreeSet::<String>::new();
     if provider == "UNRESOLVED" {
-        blockers.insert(if detected.is_empty() {
-            "NO_NATIVE_PROVIDER_DETECTED"
-        } else {
-            "MULTIPLE_NATIVE_PROVIDERS"
-        }.to_owned());
+        blockers.insert(
+            if detected.is_empty() {
+                "NO_NATIVE_PROVIDER_DETECTED"
+            } else {
+                "MULTIPLE_NATIVE_PROVIDERS"
+            }
+            .to_owned(),
+        );
     }
     let changed = match native_changed_paths(&changes) {
         Ok(paths) => paths,
@@ -186,7 +200,11 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     if provider == "pytest-testmon" && !root.join(".testmondata").is_file() {
         blockers.insert("TESTMON_BASELINE_MISSING".to_owned());
     }
-    let phase = if blockers.is_empty() { "READY" } else { "BLOCKED" };
+    let phase = if blockers.is_empty() {
+        "READY"
+    } else {
+        "BLOCKED"
+    };
     if request.run && !blockers.is_empty() {
         return refuse(format!(
             "native test execution blocked: {}; next: {}",
@@ -233,7 +251,8 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
                 "EXECUTED_PASS" => "PASS",
                 "EXECUTED_FAIL" => "FAIL",
                 _ => "INCONCLUSIVE",
-            }.to_owned();
+            }
+            .to_owned();
             if status == "FAIL" {
                 // The native plugin did not promise a specific failed-test count.
                 failed = 1;
@@ -244,30 +263,52 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         if request.verify {
             let temporary = Temporary::new()?;
             let receipt_file = temporary.file("receipts.json");
-            fs::write(&receipt_file, receipts.canonical())
-                .map_err(|error| format!("write isolated native receipt for verification: {error}"))?;
-            verification = agent::verify(
-                &root, &base, &commit, 32, None, None, Some(&receipt_file)
-            )?;
+            fs::write(&receipt_file, receipts.canonical()).map_err(|error| {
+                format!("write isolated native receipt for verification: {error}")
+            })?;
+            verification =
+                agent::verify(&root, &base, &commit, 32, None, None, Some(&receipt_file))?;
         }
         selection = chosen;
     }
 
     let mut report = obj(&[
         ("schema", Value::string("excession.test-workflow.v1")),
-        ("mode", Value::string(if request.run { "RUN" } else { "PLAN" })),
+        (
+            "mode",
+            Value::string(if request.run { "RUN" } else { "PLAN" }),
+        ),
         ("status", Value::string(status)),
-        ("provider", if provider == "UNRESOLVED" { Value::Null } else { Value::string(provider.clone()) }),
-        ("detected_providers", Value::array(detected.into_iter().map(Value::string))),
+        (
+            "provider",
+            if provider == "UNRESOLVED" {
+                Value::Null
+            } else {
+                Value::string(provider.clone())
+            },
+        ),
+        (
+            "detected_providers",
+            Value::array(detected.into_iter().map(Value::string)),
+        ),
         ("repo", Value::string(root.to_string_lossy())),
         ("base_commit", Value::string(base)),
         ("base_strategy", Value::string(base_strategy)),
         ("candidate_commit", Value::string(commit)),
         ("candidate_tree", Value::string(tree)),
-        ("changed_sources", Value::array(changed.into_iter().map(Value::string))),
-        ("blockers", Value::array(blockers.into_iter().map(Value::string))),
+        (
+            "changed_sources",
+            Value::array(changed.into_iter().map(Value::string)),
+        ),
+        (
+            "blockers",
+            Value::array(blockers.into_iter().map(Value::string)),
+        ),
         ("next_command", Value::string(test_command(&provider))),
-        ("selected_test_files", Value::array(selected.into_iter().map(Value::string))),
+        (
+            "selected_test_files",
+            Value::array(selected.into_iter().map(Value::string)),
+        ),
         ("executed_test_count", Value::number(executed)),
         ("failed_test_count_lower_bound", Value::number(failed)),
         ("selection", selection),
@@ -276,7 +317,9 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
     let id = report.sha256();
-    report.entries_mut()?.insert("report_id".to_owned(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("report_id".to_owned(), Value::string(id));
     Ok(report)
 }
 
@@ -322,7 +365,9 @@ fn execute_jest(
     command.args(["--runInBand", "--runTestsByPath", "--json"]);
     command.arg(format!("--outputFile={}", report_file.display()));
     command.args(selected);
-    let result = command.output().map_err(|error| format!("run selected Jest tests: {error}"))?;
+    let result = command
+        .output()
+        .map_err(|error| format!("run selected Jest tests: {error}"))?;
     if !checkout_is_clean(root, commit)? {
         return refuse("Jest changed the candidate checkout during test execution");
     }
@@ -337,7 +382,9 @@ fn execute_jest(
     let result_json: serde_json::Value = serde_json::from_slice(&raw)
         .map_err(|error| format!("invalid Jest JSON result: {error}"))?;
     let count = |name| -> Result<usize> {
-        let n = result_json.get(name).and_then(serde_json::Value::as_u64)
+        let n = result_json
+            .get(name)
+            .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| format!("Jest JSON missing {name}"))?;
         usize::try_from(n).map_err(|_| format!("Jest JSON {name} exceeds addressable size"))
     };
@@ -348,7 +395,10 @@ fn execute_jest(
     if total == 0 || total > 100000 || passed + failed + pending > total {
         return refuse("Jest reported no tests or inconsistent execution counts");
     }
-    let code = result.status.code().ok_or("Jest exited without a status code")?;
+    let code = result
+        .status
+        .code()
+        .ok_or("Jest exited without a status code")?;
     let status = match (code, failed) {
         (0, 0) if passed > 0 => "PASS",
         (1, n) if n > 0 => "FAIL",
@@ -364,10 +414,13 @@ fn execute_jest(
             ("source_commit", Value::string(commit)),
             ("source_tree", Value::string(tree)),
             ("producer", Value::string("jest")),
-            ("command", Value::string(format!(
-                "jest --runTestsByPath [source-bound {count} test files]",
-                count = selected.len()
-            ))),
+            (
+                "command",
+                Value::string(format!(
+                    "jest --runTestsByPath [source-bound {count} test files]",
+                    count = selected.len()
+                )),
+            ),
             ("exit_code", Value::number(code)),
             ("log_sha256", Value::string(digest::sha256(&log))),
         ]));
@@ -380,13 +433,22 @@ fn execute_jest(
         ("failed_test_count", Value::number(failed)),
         ("pending_test_count", Value::number(pending)),
         ("native_exit_code", Value::number(code)),
-        ("native_stdout_sha256", Value::string(digest::sha256(&result.stdout))),
-        ("native_stderr_sha256", Value::string(digest::sha256(&result.stderr))),
+        (
+            "native_stdout_sha256",
+            Value::string(digest::sha256(&result.stdout)),
+        ),
+        (
+            "native_stderr_sha256",
+            Value::string(digest::sha256(&result.stderr)),
+        ),
         ("native_json_sha256", Value::string(digest::sha256(&raw))),
-        ("execution_receipts", obj(&[
-            ("schema", Value::string("excession.execution-receipts.v1")),
-            ("receipts", Value::array(receipts)),
-        ])),
+        (
+            "execution_receipts",
+            obj(&[
+                ("schema", Value::string("excession.execution-receipts.v1")),
+                ("receipts", Value::array(receipts)),
+            ]),
+        ),
     ]))
 }
 
@@ -398,7 +460,9 @@ mod tests {
         // Explicit provider validation happens before inspecting the checkout.
         assert!(detect_provider(Path::new("."), "x", Some("custom")).is_err());
         assert_eq!(
-            detect_provider(Path::new("."), "x", Some("jest")).unwrap().0,
+            detect_provider(Path::new("."), "x", Some("jest"))
+                .unwrap()
+                .0,
             "jest"
         );
     }

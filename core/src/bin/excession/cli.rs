@@ -824,7 +824,7 @@ mod tests {
     }
 
     #[test]
-        fn rejects_unknown_subcommands_and_duplicate_or_empty_values() {
+    fn rejects_unknown_subcommands_and_duplicate_or_empty_values() {
         assert!(parse(&strings(&["view", "not-a-command"])).is_err());
         assert!(
             parse(&strings(&[

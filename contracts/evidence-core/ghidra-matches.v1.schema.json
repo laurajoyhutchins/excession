@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/evidence-core/ghidra-matches.v1.schema.json",
+  "title": "Excession Ghidra Function ID and BSim observations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "artifact",
+    "producer",
+    "matches"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.ghidra-matches.v1"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "version",
+        "analysis_profile_sha256",
+        "native_receipt_sha256"
+      ],
+      "properties": {
+        "tool": {
+          "const": "Ghidra"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "analysis_profile_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "native_receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "matches": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entry",
+          "candidate",
+          "evidence"
+        ],
+        "properties": {
+          "entry": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "candidate": {
+            "$ref": "#/$defs/candidate"
+          },
+          "evidence": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "engine",
+                  "overall_score",
+                  "match_mode"
+                ],
+                "properties": {
+                  "engine": {
+                    "const": "FID"
+                  },
+                  "overall_score": {
+                    "type": "string"
+                  },
+                  "match_mode": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "engine",
+                  "similarity",
+                  "confidence"
+                ],
+                "properties": {
+                  "engine": {
+                    "const": "BSIM"
+                  },
+                  "similarity": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis",
+        "identity"
+      ],
+      "properties": {
+        "basis": {
+          "enum": [
+            "DECLARED_NAME",
+            "CONTENT_SHA256"
+          ]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "candidate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "engine",
+            "database",
+            "library_family",
+            "library_version",
+            "library_variant",
+            "function"
+          ],
+          "properties": {
+            "engine": {
+              "const": "FID"
+            },
+            "database": {
+              "$ref": "#/$defs/database"
+            },
+            "library_family": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "library_version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 256
+            },
+            "library_variant": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 256
+            },
+            "function": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "engine",
+            "database",
+            "executable_md5",
+            "entry",
+            "function"
+          ],
+          "properties": {
+            "engine": {
+              "const": "BSIM"
+            },
+            "database": {
+              "$ref": "#/$defs/database"
+            },
+            "executable_md5": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            },
+            "entry": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "function": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      ]
+    }
+  }
+}

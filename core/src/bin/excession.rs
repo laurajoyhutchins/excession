@@ -828,6 +828,32 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "evidence" && sub == "build-record" => {
+            let db = Db::open(opt.path("db"))?;
+            let sources = opt.get("sources").split(',').collect::<Vec<_>>();
+            Ok(json(excession::evidence::build::record(
+                &db,
+                &excession::evidence::build::BuildSpec {
+                    repo: opt.path("repo"),
+                    revision: opt.get("rev"),
+                    artifact: opt.path("artifact"),
+                    inputs: &sources,
+                    toolchain: opt.get("toolchain"),
+                    configuration: opt.get("configuration"),
+                    kind: opt.get("representation"),
+                },
+            )?))
+        }
+        [top, sub] if top == "inspect" && sub == "build-provenance" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::evidence::build::audit(
+                &db,
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.path("artifact"),
+                opt.get("snapshot"),
+            )?))
+        }
         [top, sub] if top == "evidence" && sub == "unknown-append" => {
             let expected = opt
                 .get("expected")

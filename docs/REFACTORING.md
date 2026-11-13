@@ -411,3 +411,18 @@ The stress suite exercises these conditions and compiles both an original and
 its repaired multi-function Rust program, comparing observable output.
 The separate historical Excession integration still tests real rust-analyzer,
 independent compiler errors, public API compatibility and fresh SCIP.
+
+### Upstream Rust stress corpus
+
+A separate pinned native stress gate uses source excerpts from
+`BurntSushi/ripgrep` (globset's public `escape` function at
+`178cc027`) and `serde-rs/json` (the generic `from_str` function at
+`8c535a26`). It independently obtains top-level AST ranges using the same
+upstream ast-grep executable. Both cases must generate exact byte-replayable
+re-exports; the dependency-free ripgrep function must also compile and produce
+identical output before and after extraction on representative inputs.
+serde_json's dependent function is a **syntax-only structural probe**, not a
+claim that an isolated copy of its body compiles or preserves type semantics.
+An explicit negative fixture verifies that a method inside an `impl` block
+cannot be mistaken for a top-level public function. These are additional
+repository-derived tests, not field-wide correctness claims.

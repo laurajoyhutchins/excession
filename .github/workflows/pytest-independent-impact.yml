@@ -1,0 +1,175 @@
+name: Independent pytest change-impact experiment
+on:
+  push:
+    branches:
+      - experiments/pytest-impact-20261113
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest-impact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    env:
+      OUT: /tmp/excession-pytest-independent
+      PYTEST_REPO: /tmp/pytest-independent-source
+      HEAD_SHA: dcd0e636b4ce69021a9f607b060ea0056c339fd2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build real Excession CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --release --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch and pin a real pytest bug-fix revision and its parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT" "$PYTEST_REPO"
+          git -C "$PYTEST_REPO" init -q
+          git -C "$PYTEST_REPO" remote add origin https://github.com/pytest-dev/pytest.git
+          git -C "$PYTEST_REPO" fetch -q --depth=2 origin "$HEAD_SHA"
+          git -C "$PYTEST_REPO" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$PYTEST_REPO" rev-parse HEAD)" = "$HEAD_SHA"
+          git -C "$PYTEST_REPO" rev-parse "$HEAD_SHA^" > "$OUT/base.txt"
+          git -C "$PYTEST_REPO" rev-parse "$HEAD_SHA^{tree}" > "$OUT/head-tree.txt"
+          git -C "$PYTEST_REPO" diff --name-only "$HEAD_SHA^" "$HEAD_SHA" > "$OUT/changed.txt"
+          git -C "$PYTEST_REPO" ls-tree -r --name-only HEAD | wc -l > "$OUT/total-files.txt"
+          sha256sum core/target/release/excession > "$OUT/excession.sha256"
+      - name: Independent full import-reachability oracle versus Excession
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'benchmarks/experiments')
+          from impact_heldout import evaluate
+          out = Path('/tmp/excession-pytest-independent')
+          base = (out / 'base.txt').read_text().strip()
+          try:
+              report = evaluate(
+                  Path('core/target/release/excession').resolve(),
+                  Path('/tmp/pytest-independent-source'), base,
+                  'dcd0e636b4ce69021a9f607b060ea0056c339fd2', 'src,testing')
+              report['upstream_repository'] = 'pytest-dev/pytest'
+          except Exception as exc:
+              report = {'status': 'ERROR', 'error': f'{type(exc).__name__}: {exc}'}
+          (out / 'independent-impact.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print('Independent oracle status:', report['status'])
+          if report['status'] == 'ERROR':
+              print(report['error'])
+          PY
+      - name: Cold and warm process-level performance, RSS and output
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_SHA="$(cat "$OUT/base.txt")"
+          for arm in cold warm1 warm2 warm3; do
+            /usr/bin/time -f '%e %M' -o "$OUT/$arm.time" \
+              core/target/release/excession impact "$PYTEST_REPO" \
+                --base "$BASE_SHA" --head "$HEAD_SHA" --roots src,testing \
+                --db "$OUT/perf.sqlite" --json > "$OUT/$arm.json"
+          done
+          stat -c %s "$OUT/perf.sqlite" > "$OUT/index-bytes.txt"
+      - name: Evaluate competing baselines without reading Excession edges
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, 'benchmarks/experiments')
+          from impact_heldout import independent_edges, inventory, reachable
+          out = Path('/tmp/excession-pytest-independent')
+          repo = Path('/tmp/pytest-independent-source')
+          base = (out / 'base.txt').read_text().strip()
+          head = 'dcd0e636b4ce69021a9f607b060ea0056c339fd2'
+          changed = set((out / 'changed.txt').read_text().splitlines())
+          report = json.loads((out / 'independent-impact.json').read_text())
+          cold = json.loads((out / 'cold.json').read_text())
+          tree, entries = inventory(repo, head)
+          edges, nmodules, unresolved = independent_edges(repo, head, entries, {'src', 'testing'})
+          direct = {src for src, target in edges if target in changed}
+          transitive = reachable(edges, changed)
+          produced = {
+              effect['entity']['path'] for effect in cold['effects']
+              if effect['entity']['source_commit'] == head
+          }
+          tests = {p for p in transitive if p.startswith('testing/')}
+          beyond_changed = transitive - changed
+          beyond_direct = transitive - direct - changed
+          metrics = {}
+          for name in ('cold', 'warm1', 'warm2', 'warm3'):
+              wall, kib = (out / (name + '.time')).read_text().split()
+              metrics[name] = {'wall_s': float(wall), 'peak_rss_kib': int(kib),
+                               'output_bytes': (out / (name + '.json')).stat().st_size}
+          summary = {
+              'schema': 'excession.external-pytest-impact.v1',
+              'repository': 'pytest-dev/pytest',
+              'head_commit': head, 'base_commit': base, 'head_tree': tree,
+              'changed_files': sorted(changed),
+              'independent_static_modules': nmodules,
+              'independent_static_edges': len(edges),
+              'independent_unresolved_import_sites': unresolved,
+              'independent_transitive_affected': len(transitive),
+              'independent_direct_affected': len(direct),
+              'independent_test_candidates': len(tests),
+              'oracle_test_candidates_not_in_diff': sorted(tests-changed)[:50],
+              'candidate_paths_beyond_git_diff': len(beyond_changed),
+              'candidate_paths_beyond_direct_imports': len(beyond_direct),
+              'excession_head_unique_paths': len(produced),
+              'excession_head_missing_vs_oracle': len(transitive-produced),
+              'excession_head_unexpected_vs_oracle': len(produced-transitive),
+              'excession_head_test_candidates': len(produced & tests),
+              'excession_report_truncated': cold['coverage'].get('truncated'),
+              'excession_report_coverage': cold['coverage'].get('status'),
+              'independent_full_explanation_audit': report.get('status'),
+              'independent_audit_error': report.get('error'),
+              'baseline': {
+                  'git_diff_changed_files_only': len(changed),
+                  'independent_ast_one_hop': len(direct),
+                  'independent_ast_full_reachability': len(transitive)
+              },
+              'perf': metrics,
+              'sqlite_bytes': int((out / 'index-bytes.txt').read_text()),
+              'limitations': [
+                  'Import reachability is a candidate, not demonstrated behavior breakage',
+                  'The independent AST oracle itself is bounded to literal in-tree Python imports',
+                  'The full CI test suite and native semantic indexers are not equivalent baselines',
+                  'Truncated Excession results cannot establish complete recall',
+                  'No coding-agent task success is inferred from candidate paths'
+              ],
+          }
+          (out / 'summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Independently reproduce upstream regression on old and fixed code
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          python3 -m pip install -q -e "$PYTEST_REPO" 
+          git -C "$PYTEST_REPO" show "$HEAD_SHA:testing/test_nodes.py" > "$OUT/head-test-nodes.py"
+          BASE_SHA="$(cat "$OUT/base.txt")"
+          git -C "$PYTEST_REPO" checkout -q --detach "$BASE_SHA"
+          cp "$OUT/head-test-nodes.py" "$PYTEST_REPO/testing/test_nodes.py"
+          (cd "$PYTEST_REPO" && PYTHONPATH=src python3 -m pytest testing/test_nodes.py -k test_collector_repr_failure_collect_error -q > "$OUT/base-test.log" 2>&1)
+          echo $? > "$OUT/base-test-exit.txt"
+          git -C "$PYTEST_REPO" checkout -q --detach "$HEAD_SHA"
+          (cd "$PYTEST_REPO" && PYTHONPATH=src python3 -m pytest testing/test_nodes.py -k test_collector_repr_failure_collect_error -q > "$OUT/head-test.log" 2>&1)
+          echo $? > "$OUT/head-test-exit.txt"
+          cat "$OUT/base-test-exit.txt" "$OUT/head-test-exit.txt"
+      - name: Collect independently inspectable artifacts even after failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-pytest-independent-evidence
+          path: /tmp/excession-pytest-independent/
+          if-no-files-found: warn

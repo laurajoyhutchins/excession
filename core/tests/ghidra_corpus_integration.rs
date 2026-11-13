@@ -321,10 +321,7 @@ fn two_upstream_match_families_share_pinned_git_source_in_one_corpus() {
         let sources = m.get("source_candidates").unwrap().array_ref().unwrap();
         assert_eq!(sources.len(), 1);
         let record = &sources[0];
-        assert_eq!(
-            record.get("source_git_replayed").unwrap().bool().unwrap(),
-            true
-        );
+        assert!(record.get("source_git_replayed").unwrap().bool().unwrap());
         assert_eq!(
             field(record, "binary_source_equivalence"),
             "NOT_ESTABLISHED"
@@ -401,10 +398,7 @@ fn corrupted_provider_receipts_and_artifact_identities_refuse_closed() {
     f.report(&f.first, vec![evidence(fid(), "ram:1000")]);
     fs::write(&f.native, "changed native receipts").unwrap();
     bad(f.import(&f.first));
-    assert_eq!(
-        f.candidates(&f.first, "ram:1000", "1").status.success(),
-        true
-    );
+    assert!(f.candidates(&f.first, "ram:1000", "1").status.success());
     f.report(&f.first, vec![evidence(fid(), "ram:1000")]);
     let report_json = fs::read_to_string(&f.report).unwrap();
     let broken = report_json.replace(

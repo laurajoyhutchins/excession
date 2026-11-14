@@ -361,7 +361,8 @@ fn update_segment(
         if state.reader.is_none() {
             state.reader = Some(git::BlobReader::open(state.repo)?);
         }
-        let data = match reader
+        let data = match state
+            .reader
             .as_mut()
             .ok_or("missing Git blob reader")?
             .read_capped(&entry.oid, MAX_FILE_BYTES)

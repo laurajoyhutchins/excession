@@ -198,3 +198,99 @@ pub fn adjudicate(
     report.entries_mut()?.insert("report_id".into(),Value::string(id));
     Ok(report)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    fn run(repo: &Path, args: &[&str]) -> String { git::text(repo,args).unwrap() }
+    fn commit(repo: &Path, step: usize, path: &str) {
+        let target=repo.join(path);
+        if let Some(parent)=target.parent() { fs::create_dir_all(parent).unwrap(); }
+        fs::write(target,format!("revision {step}\n")).unwrap();
+        run(repo,&["add","."]);
+        run(repo,&["-c","user.name=Fixture","-c","user.email=fixture@example.invalid",
+                   "commit","-qm","test fixture"]);
+    }
+    #[test]
+    fn adjudicator_preserves_frozen_identity_and_never_promotes_unattested_oracles() {
+        let root=std::env::temp_dir().join(format!("excession-regminer-{}-{}",
+            std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
+        fs::create_dir_all(&root).unwrap();
+        run(&root,&["init","-q"]);
+        fs::write(root.join("artifact-evaluation.md"),"published fixture\n").unwrap();
+        commit(&root,0,"src/Main.java");
+        for i in 1..=10 {
+            commit(&root,i,if i%2==0 {"src/Main.java"} else {"src/Other.java"});
+        }
+        let a=run(&root,&["rev-parse","HEAD"]);
+        commit(&root,11,"src/Main.java");
+        let b=run(&root,&["rev-parse","HEAD"]);
+        commit(&root,12,"src/test/java/CaseTest.java");
+        let c=run(&root,&["rev-parse","HEAD"]);
+        let blob=git::blob(&root,&c,"src/test/java/CaseTest.java").unwrap();
+        let manifest=obj(&[
+            ("schema",Value::string("excession.concepts.regminer-cohort.v1")),
+            ("dataset_repository",Value::string("SongXueZhi/RegMiner")),
+            ("dataset_revision",Value::string(&a)),
+            ("dataset_document",Value::string("artifact-evaluation.md")),
+            ("dataset_document_blob",Value::string(git::blob(&root,&a,"artifact-evaluation.md").unwrap())),
+            ("source_repository",Value::string("uniVocity/univocity-parsers")),
+            ("cases",Value::array([obj(&[
+                ("id",Value::string("fixture")),
+                ("working",Value::string(&a)),
+                ("regression_inducing",Value::string(&b)),
+                ("repaired",Value::string(&c)),
+                ("test",obj(&[
+                    ("path",Value::string("src/test/java/CaseTest.java")),
+                    ("class",Value::string("CaseTest")),
+                    ("method",Value::string("check")),
+                ])),
+            ])])),
+        ]);
+        let conf=crate::concepts_invariants::Settings {
+            train:8,holdout:0,support:2,confidence_percent:60,prefix:".".into(),
+        };
+        let frozen=crate::concepts_invariants::propose(&root,&a,&conf,Some(&b)).unwrap();
+        let oracle=|broken:bool| obj(&[
+            ("schema",Value::string("excession.concepts.regminer-oracle.v1")),
+            ("case_id",Value::string("fixture")),
+            ("test_blob",Value::string(&blob)),
+            ("phases",Value::array(["A","B","C"].iter().enumerate().map(|(idx,phase)| {
+                let commit=[&a,&b,&c][idx];
+                obj(&[
+                    ("phase",Value::string(*phase)),
+                    ("commit",Value::string(commit)),
+                    ("tree",Value::string(git::rev(&root,&format!("{commit}^{{tree}}")).unwrap())),
+                    ("status",Value::string(if idx==1 && !broken {"FAIL"} else {"PASS"})),
+                    ("tests_executed",Value::number(1)),
+                    ("log_sha256",Value::string("0".repeat(64))),
+                ])
+            }))),
+        ]);
+        let manifest_path=root.join("manifest.json");
+        let freeze_path=root.join("frozen.json");
+        let oracle_path=root.join("oracle.json");
+        fs::write(&manifest_path,manifest.canonical()).unwrap();
+        fs::write(&freeze_path,frozen.canonical()).unwrap();
+        fs::write(&oracle_path,oracle(false).canonical()).unwrap();
+        let report=adjudicate(&root,&root,&manifest_path,"fixture",
+            &freeze_path,&oracle_path).unwrap();
+        assert!(report.get("triple_recorded_from_supplied_oracle").unwrap().bool().unwrap());
+        assert_eq!(report.get("oracle_trust").unwrap().str().unwrap(),"CALLER_SUPPLIED_UNATTESTED");
+        assert!(!report.get("historical_test_file_prediction_comparable").unwrap().bool().unwrap());
+        fs::write(&oracle_path,oracle(true).canonical()).unwrap();
+        let negative=adjudicate(&root,&root,&manifest_path,"fixture",
+            &freeze_path,&oracle_path).unwrap();
+        assert!(!negative.get("triple_recorded_from_supplied_oracle").unwrap().bool().unwrap());
+        let mut corrupted=frozen.clone();
+        corrupted.entries_mut().unwrap().insert("training_cutoff".into(),Value::string(&b));
+        fs::write(&freeze_path,corrupted.canonical()).unwrap();
+        assert!(adjudicate(&root,&root,&manifest_path,"fixture",
+            &freeze_path,&oracle_path).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+}

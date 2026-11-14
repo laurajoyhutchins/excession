@@ -840,14 +840,18 @@ mod tests {
             ..child.clone()
         };
         assert!(!nested_rust_module(&parent.path, &unrelated.path));
-        assert!(nested_rust_module(
-            "core/src/bin/excession.rs",
-            "core/src/bin/excession/graph.rs"
-        ));
-        assert!(nested_rust_module(
-            "core/src/evidence_store.rs",
-            "core/src/evidence_store_tests.rs"
-        ));
+        // Every originally untriaged pair in the pinned self-analysis artifact
+        // has a parent/child layout, including the explicit sibling tests file.
+        for (parent, child) in [
+            ("core/src/transactions.rs", "core/src/transactions/execution.rs"),
+            ("core/src/transactions.rs", "core/src/transactions/verification.rs"),
+            ("core/src/projection.rs", "core/src/projection/composition.rs"),
+            ("core/src/projection.rs", "core/src/projection/workspace.rs"),
+            ("core/src/bin/excession.rs", "core/src/bin/excession/graph.rs"),
+            ("core/src/evidence_store.rs", "core/src/evidence_store_tests.rs"),
+        ] {
+            assert!(nested_rust_module(parent, child), "{parent} => {child}");
+        }
         assert!(!nested_rust_module(
             "core/src/transactions.rs",
             "core/src/transactions/another/nested.rs"

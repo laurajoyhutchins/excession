@@ -58,7 +58,7 @@ fn compare(
                 (Some(a), Some(b)) if a.mode != b.mode => "MODE_CHANGED",
                 _ => return None,
             };
-            let mut change = obj(&[
+            let change = obj(&[
                 ("kind", Value::string(kind)),
                 (
                     "before",
@@ -73,13 +73,8 @@ fn compare(
                         .unwrap_or(Value::Null),
                 ),
             ]);
-            let id = change.sha256();
-            // The digest identifies the observation, not a verified semantic result.
-            change
-                .entries_mut()
-                .expect("internal object")
-                .insert("change_id".into(), Value::string(id));
-            Some(change)
+            // The digest identifies the observation, not verified semantics.
+            Some(change.stamp_id("change_id").expect("internal JSON object"))
         })
         .collect()
 }
@@ -99,7 +94,7 @@ pub fn inventory(path: &Path, base: &str, head: &str) -> Result<Value> {
         &head_commit,
         &head_tree,
     );
-    let mut report = obj(&[
+    let report = obj(&[
         ("schema", Value::string("excession.change-inventory.v1")),
         ("base_commit", Value::string(&base_commit)),
         ("base_tree", Value::string(&base_tree)),
@@ -107,11 +102,7 @@ pub fn inventory(path: &Path, base: &str, head: &str) -> Result<Value> {
         ("head_tree", Value::string(&head_tree)),
         ("changes", Value::array(changes)),
     ]);
-    let id = report.sha256();
-    report
-        .entries_mut()?
-        .insert("report_id".into(), Value::string(id));
-    Ok(report)
+    report.stamp_id("report_id")
 }
 
 #[cfg(test)]

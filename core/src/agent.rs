@@ -34,12 +34,8 @@ fn gap(code: &str) -> Value {
     obj(&[("reason", Value::string(code))])
 }
 
-fn report_id(mut value: Value) -> Result<Value> {
-    let id = value.sha256();
-    value
-        .entries_mut()?
-        .insert("report_id".to_owned(), Value::string(id));
-    Ok(value)
+fn report_id(value: Value) -> Result<Value> {
+    value.stamp_id("report_id")
 }
 
 fn is_test(path: &str) -> bool {

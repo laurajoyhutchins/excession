@@ -84,12 +84,8 @@ fn symbol_evidence(symbol: &Symbol, modules: &BTreeMap<String, Module>) -> Resul
     ]))
 }
 
-fn identify(mut proposal: Value) -> Result<Value> {
-    let id = proposal.sha256();
-    proposal
-        .entries_mut()?
-        .insert("candidate_id".to_owned(), Value::string(id));
-    Ok(proposal)
+fn identify(proposal: Value) -> Result<Value> {
+    proposal.stamp_id("candidate_id")
 }
 
 /// Kosaraju with explicit stacks: a long dependency chain cannot overflow
@@ -351,7 +347,7 @@ pub fn suggest(db: &Db, name: &str, revision: &str) -> Result<Value> {
         .map_err(|_| "invalid indexed hazard count")?;
     db.foreign_keys_valid()?;
 
-    let mut report = obj(&[
+    let report = obj(&[
         ("schema", Value::string("excession.refactor-candidates.v1")),
         ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESES")),
         ("source_commit", Value::string(commit)),
@@ -381,10 +377,7 @@ pub fn suggest(db: &Db, name: &str, revision: &str) -> Result<Value> {
             Value::array(propose(&modules, &edges, &symbols)?),
         ),
     ]);
-    let report_id = report.sha256();
-    report
-        .entries_mut()?
-        .insert("report_id".to_owned(), Value::string(report_id));
+    let report = report.stamp_id("report_id")?;
     if report.canonical().len() > MAX_REPORT_BYTES {
         return refuse("refactor report exceeds 8 MiB");
     }

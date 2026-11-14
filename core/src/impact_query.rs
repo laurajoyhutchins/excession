@@ -94,16 +94,12 @@ fn walk(
                     hops.push(edge.clone());
                     hops.extend(suffix.iter().cloned());
                     let entity = edge.get("source")?.clone();
-                    let mut effect = obj(&[
+                    let effect = obj(&[
                         ("entity", entity),
                         ("assessment", Value::string("CANDIDATE_PATH")),
                         ("hops", Value::array(hops.clone())),
                     ]);
-                    let claim_id = effect.sha256();
-                    effect
-                        .entries_mut()?
-                        .insert("claim_id".to_owned(), Value::string(claim_id));
-                    effects.push(effect);
+                    effects.push(effect.stamp_id("claim_id")?);
                     if effects.len() >= MAX_EFFECTS {
                         return Ok(true);
                     }
@@ -452,11 +448,7 @@ fn run_core(
         }
         Mode::Explicit(_) => {}
     }
-    let id = result.sha256();
-    result
-        .entries_mut()?
-        .insert("report_id".to_owned(), Value::string(id));
-    Ok(result)
+    result.stamp_id("report_id")
 }
 
 pub fn human(report: &Value) -> Result<String> {

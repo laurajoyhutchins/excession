@@ -468,27 +468,41 @@ fn check_git_storage(root: &Path) -> Result<()> {
 /// tracked bytes. Otherwise native tests would run a different program than
 /// the programmer sees. This deliberately refuses unusually large repos.
 fn unchanged_content_matches(original: &Path, checkout: &Path, state: &Capture) -> Result<()> {
-    let changed = state.files.iter().map(|v| v.path.as_str()).collect::<BTreeSet<_>>();
+    let changed = state
+        .files
+        .iter()
+        .map(|v| v.path.as_str())
+        .collect::<BTreeSet<_>>();
     let entries = git::entries(original, &state.head)?;
     if entries.len() > 20000 {
-        return refuse("source repository exceeds 20000 tracked entries for exact snapshot validation");
+        return refuse(
+            "source repository exceeds 20000 tracked entries for exact snapshot validation",
+        );
     }
     let mut total = 0usize;
     for entry in entries.into_iter().filter(|v| v.kind == "blob") {
-        if changed.contains(entry.path.as_str()) { continue; }
+        if changed.contains(entry.path.as_str()) {
+            continue;
+        }
         let (source, executable) = read_file(original, &entry.path)?;
-        total = total.checked_add(source.len()).ok_or("tracked snapshot size overflow")?;
+        total = total
+            .checked_add(source.len())
+            .ok_or("tracked snapshot size overflow")?;
         if total > 256 * 1024 * 1024 {
             return refuse("unchanged source exceeds 256 MiB snapshot content verification cap");
         }
         let path = checkout.join(&entry.path);
-        let cloned = fs::read(&path)
-            .map_err(|error| format!("read independent Git checkout: {error}"))?;
+        let cloned =
+            fs::read(&path).map_err(|error| format!("read independent Git checkout: {error}"))?;
         #[cfg(unix)]
         let cloned_executable = {
             use std::os::unix::fs::PermissionsExt;
-            fs::metadata(&path).map_err(|e| format!("checkout permissions: {e}"))?
-                .permissions().mode() & 0o111 != 0
+            fs::metadata(&path)
+                .map_err(|e| format!("checkout permissions: {e}"))?
+                .permissions()
+                .mode()
+                & 0o111
+                != 0
         };
         #[cfg(not(unix))]
         let cloned_executable = false;
@@ -506,16 +520,18 @@ fn unchanged_content_matches(original: &Path, checkout: &Path, state: &Capture) 
 /// blobs transformed by .gitattributes or a clean filter during git add.
 fn modified_content_matches(checkout: &Path, commit: &str, state: &Capture) -> Result<()> {
     let entries = git::entries(checkout, commit)?;
-    let paths = entries.into_iter().filter(|v| v.kind == "blob")
-        .map(|v| (v.path, v.mode)).collect::<std::collections::BTreeMap<_, _>>();
+    let paths = entries
+        .into_iter()
+        .filter(|v| v.kind == "blob")
+        .map(|v| (v.path, v.mode))
+        .collect::<std::collections::BTreeMap<_, _>>();
     for item in &state.files {
         match &item.bytes {
             Some(bytes) => {
-                let mode = paths.get(&item.path)
-                    .ok_or_else(|| format!("missing working-tree snapshot Git blob: {:?}", item.path))?;
-                let blob = git::command(checkout, &[
-                    "show", &format!("{commit}:{}", item.path)
-                ])?;
+                let mode = paths.get(&item.path).ok_or_else(|| {
+                    format!("missing working-tree snapshot Git blob: {:?}", item.path)
+                })?;
+                let blob = git::command(checkout, &["show", &format!("{commit}:{}", item.path)])?;
                 if &blob != bytes || (mode == "100755") != item.executable {
                     return refuse(format!(
                         "snapshot Git source identity does not match working-tree bytes: {:?}",
@@ -670,10 +686,22 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
             serde_json::from_slice::<serde_json::Value>(&output.stdout)
                 .ok()
                 .is_some_and(|report| {
-                    report.pointer("/host/security/rootless").and_then(serde_json::Value::as_bool) == Some(true)
-                        && report.pointer("/host/security/seccompEnabled").and_then(serde_json::Value::as_bool) == Some(true)
-                        && report.pointer("/host/serviceIsRemote").and_then(serde_json::Value::as_bool) == Some(false)
-                        && report.pointer("/host/cgroupVersion").and_then(serde_json::Value::as_str) == Some("v2")
+                    report
+                        .pointer("/host/security/rootless")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true)
+                        && report
+                            .pointer("/host/security/seccompEnabled")
+                            .and_then(serde_json::Value::as_bool)
+                            == Some(true)
+                        && report
+                            .pointer("/host/serviceIsRemote")
+                            .and_then(serde_json::Value::as_bool)
+                            == Some(false)
+                        && report
+                            .pointer("/host/cgroupVersion")
+                            .and_then(serde_json::Value::as_str)
+                            == Some("v2")
                 })
         }
         _ => false,
@@ -777,8 +805,16 @@ struct SandboxExecution<'a> {
 
 fn execute_isolated(args: SandboxExecution<'_>) -> Result<Value> {
     let SandboxExecution {
-        checkout, directory, image, base, candidate, provider,
-        tool, focus, verify, timeout_seconds
+        checkout,
+        directory,
+        image,
+        base,
+        candidate,
+        provider,
+        tool,
+        focus,
+        verify,
+        timeout_seconds,
     } = args;
     let binary = std::env::current_exe()
         .map_err(|e| format!("current executable: {e}"))?
@@ -962,7 +998,10 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     let plan_tool = if request.provider == Some("pytest-testmon") && request.tool.is_none() {
         None
     } else {
-        Some(tool_in_image(request.tool, request.provider.unwrap_or("jest"))?)
+        Some(tool_in_image(
+            request.tool,
+            request.provider.unwrap_or("jest"),
+        )?)
     };
     let mut plan = native_test_workflow::execute(native_test_workflow::Request {
         repo: &checkout,

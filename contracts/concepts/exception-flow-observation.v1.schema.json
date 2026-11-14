@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JavaExceptionFlow JSONL per-line observation schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "excession.java.exception-flow.observation.v1"
+        },
+        "kind": {
+          "const": "SOURCE"
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^src/main/java/.+\\.java$"
+        }
+      },
+      "required": [
+        "schema",
+        "kind",
+        "source"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "excession.java.exception-flow.observation.v1"
+        },
+        "kind": {
+          "const": "CATCH"
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^src/main/java/.+\\.java$"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "catch_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2048
+        },
+        "caught": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000000
+        },
+        "direct_throw_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        },
+        "modeled_exits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "guaranteed_throw": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema",
+        "kind",
+        "source",
+        "method",
+        "catch_index",
+        "caught",
+        "line",
+        "direct_throw_count",
+        "modeled_exits",
+        "guaranteed_throw"
+      ]
+    }
+  ]
+}

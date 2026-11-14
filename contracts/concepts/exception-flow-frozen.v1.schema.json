@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "A-only sealed prospective exception-flow evidence, not semantic verification",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "excession.concepts.exception-flow-frozen.v1"
+    },
+    "report_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "source_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "producer": {
+      "const": "JDK_COMPILER_AST_PARSE_ONLY"
+    },
+    "inference": {
+      "const": "CONSERVATIVE_INTERPROCEDURAL_EXIT_SUMMARY"
+    },
+    "raw_observation_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "scanned_source_files": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 512
+    },
+    "observed_catch_handlers": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 20000
+    },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4096
+    },
+    "obligations": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "pattern": "^src/main/java/.+\\.java$"
+          },
+          "source_blob": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "catch_index": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2048
+          },
+          "caught": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2000000
+          },
+          "direct_throw_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000
+          },
+          "modeled_exits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "guaranteed_throw": {
+            "const": true
+          }
+        },
+        "required": [
+          "source",
+          "source_blob",
+          "method",
+          "catch_index",
+          "caught",
+          "line",
+          "direct_throw_count",
+          "modeled_exits",
+          "guaranteed_throw"
+        ]
+      }
+    },
+    "semantic_status": {
+      "const": "PROPOSED_NOT_VERIFIED"
+    },
+    "behavioral_oracle_seen": {
+      "const": false
+    },
+    "repair_commit_seen": {
+      "const": false
+    },
+    "observation_trust": {
+      "const": "UNATTESTED_EXTERNAL_AST_PRODUCER"
+    }
+  },
+  "required": [
+    "schema",
+    "report_id",
+    "source_commit",
+    "source_tree",
+    "producer",
+    "inference",
+    "raw_observation_sha256",
+    "scanned_source_files",
+    "observed_catch_handlers",
+    "candidate_count",
+    "obligations",
+    "semantic_status",
+    "behavioral_oracle_seen",
+    "repair_commit_seen",
+    "observation_trust"
+  ]
+}

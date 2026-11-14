@@ -103,7 +103,15 @@ fn history(repo: &Path, rev: &str, count: usize, prefix: &str) -> Result<(Vec<Ev
     let cap = count.to_string();
     let raw = git::text(
         repo,
-        &["rev-list", "--first-parent", "--no-merges", "--parents", "--max-count", &cap, &head],
+        &[
+            "rev-list",
+            "--first-parent",
+            "--no-merges",
+            "--parents",
+            "--max-count",
+            &cap,
+            &head,
+        ],
     )?;
     let mut revisions = Vec::new();
     for line in raw.lines() {
@@ -120,10 +128,16 @@ fn history(repo: &Path, rev: &str, count: usize, prefix: &str) -> Result<(Vec<Ev
     }
     revisions.reverse();
     let oldest_parent = &revisions[0].1;
-    let skipped_merges = git::text(repo, &[
-        "rev-list", "--first-parent", "--merges", "--count",
-        &format!("{oldest_parent}..{head}"),
-    ])?
+    let skipped_merges = git::text(
+        repo,
+        &[
+            "rev-list",
+            "--first-parent",
+            "--merges",
+            "--count",
+            &format!("{oldest_parent}..{head}"),
+        ],
+    )?
     .parse::<usize>()
     .map_err(|_| "Git merge count is not a nonnegative integer")?;
     let mut result = Vec::new();
@@ -136,7 +150,11 @@ fn history(repo: &Path, rev: &str, count: usize, prefix: &str) -> Result<(Vec<Ev
         } else {
             None
         };
-        result.push(Event { commit, paths, excluded });
+        result.push(Event {
+            commit,
+            paths,
+            excluded,
+        });
     }
     Ok((result, skipped_merges))
 }
@@ -292,13 +310,22 @@ fn report(
         .map(|e| e.path)
         .collect();
     let fit_events: Vec<BTreeSet<String>> = training[..fit_end]
-        .iter().filter(|e| e.excluded.is_none()).map(|e| e.paths.clone()).collect();
+        .iter()
+        .filter(|e| e.excluded.is_none())
+        .map(|e| e.paths.clone())
+        .collect();
     let validation_events: Vec<BTreeSet<String>> = training[fit_end..]
-        .iter().filter(|e| e.excluded.is_none()).map(|e| e.paths.clone()).collect();
+        .iter()
+        .filter(|e| e.excluded.is_none())
+        .map(|e| e.paths.clone())
+        .collect();
     let (selected_policy, calibration) =
         crate::concepts_policy::choose(&fit_events, &validation_events, &fit_files);
-    let frozen_events: Vec<BTreeSet<String>> = training.iter()
-        .filter(|e| e.excluded.is_none()).map(|e| e.paths.clone()).collect();
+    let frozen_events: Vec<BTreeSet<String>> = training
+        .iter()
+        .filter(|e| e.excluded.is_none())
+        .map(|e| e.paths.clone())
+        .collect();
     let frozen_paths: BTreeSet<String> = blobs.keys().cloned().collect();
     let frozen_model = crate::concepts_policy::Model::fit(&frozen_events, &frozen_paths);
     let proposals = rules
@@ -399,7 +426,8 @@ fn report(
     // a relationship for it or not. Missing predictions remain explicit.
     let future_events: Vec<BTreeSet<String>> = match &prospective {
         Some(event) => vec![event.paths.clone()],
-        None => holdout.iter()
+        None => holdout
+            .iter()
             .filter(|e| e.excluded.is_none())
             .map(|e| e.paths.clone())
             .collect(),
@@ -410,14 +438,22 @@ fn report(
         ("calibration_cutoff", Value::string(fit_commit)),
         ("fit_events", Value::number(fit_events.len())),
         ("validation_events", Value::number(validation_events.len())),
-        ("calibration", Value::array(calibration.into_iter().map(|(candidate, assessed)| obj(&[
-            ("policy", Value::string(candidate.name())),
-            ("opportunities", Value::number(assessed.opportunities)),
-            ("matches", Value::number(assessed.model_hits)),
-            ("popularity_matches", Value::number(assessed.popularity_hits)),
-            ("model_only", Value::number(assessed.model_only)),
-            ("baseline_only", Value::number(assessed.popularity_only)),
-        ])))),
+        (
+            "calibration",
+            Value::array(calibration.into_iter().map(|(candidate, assessed)| {
+                obj(&[
+                    ("policy", Value::string(candidate.name())),
+                    ("opportunities", Value::number(assessed.opportunities)),
+                    ("matches", Value::number(assessed.model_hits)),
+                    (
+                        "popularity_matches",
+                        Value::number(assessed.popularity_hits),
+                    ),
+                    ("model_only", Value::number(assessed.model_only)),
+                    ("baseline_only", Value::number(assessed.popularity_only)),
+                ])
+            })),
+        ),
         ("opportunities", Value::number(paired.opportunities)),
         ("model_matches", Value::number(paired.model_hits)),
         ("popularity_matches", Value::number(paired.popularity_hits)),
@@ -425,7 +461,10 @@ fn report(
         ("model_only", Value::number(paired.model_only)),
         ("baseline_only", Value::number(paired.popularity_only)),
         ("prediction_differences", Value::number(paired.differences)),
-        ("missing_prediction", Value::number(paired.missing_prediction)),
+        (
+            "missing_prediction",
+            Value::number(paired.missing_prediction),
+        ),
         ("predictive_only_not_semantic_validity", Value::Bool(true)),
     ]);
     let mut value = obj(&[

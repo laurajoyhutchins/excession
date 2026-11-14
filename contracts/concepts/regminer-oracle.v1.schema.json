@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Caller-supplied three-phase RegMiner execution receipt, not authenticated",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "case_id",
+    "test_blob",
+    "phases"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts.regminer-oracle.v1"
+    },
+    "case_id": {
+      "type": "string",
+      "minLength": 2
+    },
+    "test_blob": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "commit",
+            "tree",
+            "status",
+            "tests_executed",
+            "log_sha256"
+          ],
+          "properties": {
+            "phase": {
+              "const": "A"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "tree": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "status": {
+              "enum": [
+                "PASS",
+                "FAIL",
+                "UNSUPPORTED"
+              ]
+            },
+            "tests_executed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "log_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "commit",
+            "tree",
+            "status",
+            "tests_executed",
+            "log_sha256"
+          ],
+          "properties": {
+            "phase": {
+              "const": "B"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "tree": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "status": {
+              "enum": [
+                "PASS",
+                "FAIL",
+                "UNSUPPORTED"
+              ]
+            },
+            "tests_executed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "log_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "commit",
+            "tree",
+            "status",
+            "tests_executed",
+            "log_sha256"
+          ],
+          "properties": {
+            "phase": {
+              "const": "C"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "tree": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "status": {
+              "enum": [
+                "PASS",
+                "FAIL",
+                "UNSUPPORTED"
+              ]
+            },
+            "tests_executed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "log_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ],
+      "items": false
+    }
+  }
+}

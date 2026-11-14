@@ -1,0 +1,200 @@
+name: Concepts independent behavioral regression oracle
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/concepts-behavioral-pytest.yml
+      - core/src/concepts_invariants.rs
+      - core/src/concepts_policy.rs
+      - contracts/concepts/temporal-obligations.v1.schema.json
+      - benchmarks/concepts-behavioral/pytest-collecterror.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CASE: benchmarks/concepts-behavioral/pytest-collecterror.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build source-bound Rust predictor
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch frozen upstream history and test tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upstream "$RUNNER_TEMP/concepts-behavioral"
+          git -C upstream init -q
+          git -C upstream remote add origin https://github.com/pytest-dev/pytest.git
+          FIXED=$(python3 -c 'import json,os; print(json.load(open(os.environ["CASE"]))["fixed_commit"])')
+          FAULTY=$(python3 -c 'import json,os; print(json.load(open(os.environ["CASE"]))["observed_faulty_commit"])')
+          git -C upstream fetch -q --filter=blob:none --depth=1200 origin "$FIXED"
+          test "$(git -C upstream rev-parse "$FIXED^")" = "$FAULTY"
+          test "$(git -C upstream rev-list --first-parent --no-merges --count "$FIXED")" -ge 129
+          git -C upstream checkout -q --detach "$FIXED"
+          python3 -m pip -q install -e upstream 'pytest-testmon==2.3.0'
+          cat > "$RUNNER_TEMP/concepts-behavioral/probe.py" <<'PY'
+          from types import SimpleNamespace
+          from _pytest.nodes import Collector
+          collector = SimpleNamespace(
+              CollectError=Collector.CollectError,
+              config=SimpleNamespace(getoption=lambda name, default=False: False)
+          )
+          excinfo = SimpleNamespace(value=Collector.CollectError())
+          assert Collector.repr_failure(collector, excinfo) == ""
+          PY
+      - name: Prove original faulty revision fails and upstream fix passes
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXED=$(python3 -c 'import json,os; print(json.load(open(os.environ["CASE"]))["fixed_commit"])')
+          FAULTY=$(python3 -c 'import json,os; print(json.load(open(os.environ["CASE"]))["observed_faulty_commit"])')
+          OUT="$RUNNER_TEMP/concepts-behavioral"
+          git -C upstream checkout -q --detach "$FAULTY"
+          set +e
+          (cd upstream && PYTHONPATH=src python3 "$OUT/probe.py") > "$OUT/faulty.log" 2>&1
+          fault_exit=$?
+          set -e
+          test "$fault_exit" -ne 0
+          grep -q 'IndexError: tuple index out of range' "$OUT/faulty.log"
+          git -C upstream checkout -q --detach "$FIXED"
+          (cd upstream && PYTHONPATH=src python3 "$OUT/probe.py") > "$OUT/fixed.log" 2>&1
+          printf '%s\n' "$fault_exit" > "$OUT/faulty.exit"
+      - name: Prewarm independent native pytest-testmon selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/concepts-behavioral"
+          (cd upstream && PYTHONPATH=src python3 -m pytest -o minversion=0.0 \
+            --testmon --testmon-noselect \
+            testing/test_nodes.py::test_collector_repr_failure_collect_error -q) \
+            > "$OUT/testmon-prewarm.log" 2>&1
+          test -s upstream/.testmondata
+      - name: Reintroduce the upstream fault in source only and evaluate the frozen ontology
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/concepts-behavioral"
+          FIXED=$(python3 -c 'import json,os; print(json.load(open(os.environ["CASE"]))["fixed_commit"])')
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("upstream/src/_pytest/nodes.py")
+          text = source.read_text()
+          good = "            return str(excinfo.value)\n"
+          faulty = "            exc = excinfo.value\n            return str(exc.args[0])\n"
+          assert text.count(good) == 1, "pinned upstream fix not found exactly once"
+          source.write_text(text.replace(good, faulty, 1))
+          PY
+          git -C upstream add -- src/_pytest/nodes.py
+          git -C upstream -c user.name="Excession regression witness" \
+            -c user.email="regression@example.invalid" \
+            commit -qm "Controlled: reintroduce upstream CollectError crash"
+          CANDIDATE=$(git -C upstream rev-parse HEAD)
+          echo "$CANDIDATE" > "$OUT/candidate.txt"
+          test "$(git -C upstream diff --name-only "$FIXED" "$CANDIDATE")" = 'src/_pytest/nodes.py'
+          core/target/debug/excession concepts invariant-propose \
+            --repo upstream --rev "$FIXED" --candidate "$CANDIDATE" \
+            --train 128 --support 2 --confidence 60 > "$OUT/ontology.json"
+          python3 - "$OUT/ontology.json" "$CANDIDATE" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r["schema"]=="excession.concepts-temporal-obligations.v1"
+          assert r["mode"]=="PROSPECTIVE"
+          assert r["prospective_commit"]==sys.argv[2]
+          assert r["policy_evaluation"]["predictions"]
+          assert not r["safe_to_skip_unlisted_tests"]
+          assert r["behavioral_validity"]=="NOT_EVALUATED"
+          PY
+          set +e
+          (cd upstream && PYTHONPATH=src python3 "$OUT/probe.py") \
+            > "$OUT/reintroduced.log" 2>&1
+          regression_exit=$?
+          set -e
+          test "$regression_exit" -ne 0
+          grep -q 'IndexError: tuple index out of range' "$OUT/reintroduced.log"
+          printf '%s\n' "$regression_exit" > "$OUT/reintroduced.exit"
+      - name: Compare actual mature native test selection against ontology candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/concepts-behavioral"
+          set +e
+          (cd upstream && PYTHONPATH=src python3 -m pytest -o minversion=0.0 \
+            --testmon --testmon-forceselect \
+            testing/test_nodes.py::test_collector_repr_failure_collect_error -q) \
+            > "$OUT/testmon-regression.log" 2>&1
+          code=$?
+          set -e
+          test "$code" -eq 1
+          grep -q 'IndexError: tuple index out of range' "$OUT/testmon-regression.log"
+          printf '%s\n' "$code" > "$OUT/testmon-regression.exit"
+      - name: Generate independent provenance and negative control report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"concepts-behavioral"
+          case=json.load(open(os.environ["CASE"]))
+          report=json.load(open(out/"ontology.json"))
+          candidate=(out/"candidate.txt").read_text().strip()
+          source=case["changed_source"]
+          truth=case["independently_relevant_test"]
+          relevant=[p for p in report["policy_evaluation"]["predictions"]
+                    if p["changed_source"]==source and p["commit"]==candidate]
+          assert len(relevant)==1, relevant
+          prediction=relevant[0]
+          assert not prediction["selected_prediction_modified"]
+          git=lambda arg:subprocess.check_output(["git","-C","upstream","rev-parse",arg],text=True).strip()
+          assert git(candidate)==candidate
+          assert git(candidate+"^")==case["fixed_commit"]
+          assert git(case["fixed_commit"]+"^")==case["observed_faulty_commit"]
+          raw={
+            "schema":"excession.concepts.behavioral-witness.v1",
+            "case":case["id"],"source_repository":case["source_repository"],
+            "faulty_commit":case["observed_faulty_commit"],
+            "fixed_commit":case["fixed_commit"],"candidate_commit":candidate,
+            "fixed_tree":git(case["fixed_commit"]+"^{tree}"),
+            "candidate_tree":git(candidate+"^{tree}"),
+            "original_fault_reproduced":True,"upstream_fix_passed":True,
+            "controlled_regression_reproduced":True,
+            "native_testmon_detected_regression":True,
+            "changed_source":source,"independent_test":truth,
+            "selected_policy":report["policy_evaluation"]["selected"],
+            "selected_policy_found_test":prediction["selected_policy_prediction"]==truth,
+            "global_popularity_found_test":prediction["popularity_prediction"]==truth,
+            "directory_popularity_found_test":prediction["directory_prediction"]==truth,
+            "name_counterpart_found_test":prediction["name_counterpart_prediction"]==truth,
+            "frozen_policy_prediction":prediction,
+            "model_json_sha256":hashlib.sha256((out/"ontology.json").read_bytes()).hexdigest(),
+            "logs_sha256":{p.name:hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in out.glob("*.log")},
+            "status":"BEHAVIOR_REPRODUCED_AND_NATIVE_SELECTOR_CAUGHT",
+            "novel_semantic_obligation_proven":False,
+            "limitations":[
+              "Controlled synthetic regression after a real upstream fix; not an independent agent error",
+              "The model was trained at the fixed commit and therefore saw the upstream repair",
+              "Source/test companion predicted is not a proven semantic invariant",
+              "Native testmon also catches the seeded defect; no superiority claim",
+            ]
+          }
+          (out/"summary.json").write_text(json.dumps(raw,indent=2,sort_keys=True)+"\n")
+          print(json.dumps({k:raw[k] for k in ("status","selected_policy",
+            "selected_policy_found_test","global_popularity_found_test",
+            "directory_popularity_found_test","name_counterpart_found_test",
+            "native_testmon_detected_regression")},sort_keys=True))
+          PY
+      - name: Preserve all receipts, including failed or negative predictions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: concepts-pytest-behavioral-oracle
+          path: ${{ runner.temp }}/concepts-behavioral/
+          if-no-files-found: warn

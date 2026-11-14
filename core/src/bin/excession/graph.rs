@@ -48,11 +48,7 @@ pub(super) fn run(verb: &str, opt: &Options) -> Result<Value> {
         }
         "show" => {
             let (db, _) = database(opt)?;
-            graph::show(
-                &db,
-                optional(opt, "id"),
-                optional(opt, "target"),
-            )?
+            graph::show(&db, optional(opt, "id"), optional(opt, "target"))?
         }
         "deps" => {
             let (db, _) = database(opt)?;

@@ -319,6 +319,114 @@ pub fn audit(repo: &Path, saved_plan: &Path) -> Result<Value> {
     ]))
 }
 
+
+/// Inventory local refs before any attempt to rewrite ancestry. Remote-only PR
+/// heads, un-fetched tags and external evidence cannot be inferred from this.
+pub fn refs(repo: &Path, max: usize) -> Result<Value> {
+    if !(1..=100_000).contains(&max) {
+        return refuse("history refs --max-refs must be in 1..=100000");
+    }
+    git::verify_repo(repo)?;
+    let limit = format!("--count={}", max + 1);
+    let bytes = git::command(
+        repo,
+        &[
+            "for-each-ref",
+            "--sort=refname",
+            limit.as_str(),
+            "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(*objectname)",
+        ],
+    )?;
+    if bytes.len() > MAX_LOG_BYTES {
+        return refuse("history refs output exceeds 64 MiB");
+    }
+    let lines = bytes.split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let truncated = lines.len() > max;
+    let mut rows = Vec::with_capacity(lines.len().min(max));
+    let mut kinds = BTreeMap::<&str, usize>::new();
+    for line in lines.into_iter().take(max) {
+        let fields = line.split(|b| *b == 0).collect::<Vec<_>>();
+        if fields.len() != 4 {
+            return refuse("malformed Git ref inventory");
+        }
+        let part = |i: usize| {
+            std::str::from_utf8(fields[i])
+                .map_err(|_| "non-UTF-8 Git ref inventory".to_owned())
+        };
+        let name = part(0)?;
+        if !name.starts_with("refs/") {
+            return refuse("Git emitted a non-ref name");
+        }
+        let oid = git::oid(part(1)?)?;
+        let object_type = part(2)?;
+        if !matches!(object_type, "commit" | "tag" | "tree" | "blob") {
+            return refuse("unsupported Git ref object type");
+        }
+        let peeled = part(3)?;
+        let peeled = if peeled.is_empty() { None } else { Some(git::oid(peeled)?) };
+        let class = if name.starts_with("refs/heads/") {
+            "branch"
+        } else if name.starts_with("refs/tags/") {
+            "tag"
+        } else if name.starts_with("refs/remotes/") {
+            "remote"
+        } else if name.starts_with("refs/pull/") {
+            "pull_request"
+        } else {
+            "other"
+        };
+        *kinds.entry(class).or_default() += 1;
+        rows.push(obj(&[
+            ("ref", Value::string(name)),
+            ("object", Value::string(oid)),
+            ("object_type", Value::string(object_type)),
+            ("peeled_object", peeled.map(Value::string).unwrap_or(Value::Null)),
+            ("class", Value::string(class)),
+        ]));
+    }
+    let type_counts = kinds.into_iter()
+        .map(|(kind, count)| (kind.to_owned(), Value::number(count)))
+        .collect::<Vec<_>>();
+    with_id(obj(&[
+        ("schema", Value::string("excession.history-refs.v1")),
+        ("head_commit", Value::string(git::rev(repo, "HEAD^{commit}")?)),
+        ("refs", Value::array(rows)),
+        ("counts", Value::object(type_counts)),
+        ("truncated", Value::Bool(truncated)),
+        ("external_refs_complete", Value::Bool(false)),
+        ("rewrite_authorized", Value::Bool(false)),
+    ]))
+}
+
+/// Compare the reviewed target commit with a separately constructed replacement.
+/// Tree equality establishes source-tree identity, not equivalence of commit
+/// metadata, intermediate states, runtime behavior, signatures or evidence.
+pub fn verify_target(repo: &Path, target: &str, replacement: &str) -> Result<Value> {
+    git::verify_repo(repo)?;
+    let target = git::rev(repo, &format!("{target}^{{commit}}"))?;
+    let replacement = git::rev(repo, &format!("{replacement}^{{commit}}"))?;
+    let target_tree = git::rev(repo, &format!("{target}^{{tree}}"))?;
+    let replacement_tree = git::rev(repo, &format!("{replacement}^{{tree}}"))?;
+    let equal = target_tree == replacement_tree;
+    with_id(obj(&[
+        ("schema", Value::string("excession.history-target-comparison.v1")),
+        ("reviewed_target", Value::string(target)),
+        ("reviewed_target_tree", Value::string(target_tree)),
+        ("candidate_tip", Value::string(replacement)),
+        ("candidate_tree", Value::string(replacement_tree)),
+        ("exact_tree_equal", Value::Bool(equal)),
+        (
+            "status",
+            Value::string(if equal { "IDENTICAL_GIT_TREES" } else { "TREE_MISMATCH" }),
+        ),
+        ("intermediate_history", Value::string("NOT_AUDITED")),
+        ("external_receipts", Value::string("NOT_RECONCILED")),
+        ("rewrite_authorized", Value::Bool(false)),
+    ]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,6 +491,22 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+
+    #[test]
+    fn inventories_refs_and_compares_pinned_tree_identities() {
+        let root = fixture();
+        let inventory = refs(&root, 100).unwrap();
+        assert!(!inventory.get("truncated").unwrap().bool().unwrap());
+        assert!(!inventory.get("external_refs_complete").unwrap().bool().unwrap());
+        assert!(inventory.get("refs").unwrap().array_ref().unwrap().len() >= 1);
+        let bounded = refs(&root, 1).unwrap();
+        assert!(!bounded.get("rewrite_authorized").unwrap().bool().unwrap());
+        let identical = verify_target(&root, "HEAD", "HEAD").unwrap();
+        assert!(identical.get("exact_tree_equal").unwrap().bool().unwrap());
+        let mismatch = verify_target(&root, "HEAD~1", "HEAD").unwrap();
+        assert!(!mismatch.get("exact_tree_equal").unwrap().bool().unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn rejects_non_conventional_and_does_not_conflate_scopes() {
         assert_eq!(scope("feat(core): test"), Some("core".to_owned()));

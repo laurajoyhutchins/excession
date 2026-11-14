@@ -132,8 +132,10 @@ jobs:
           assert verification["replay"]["semantic_correctness"] == "NOT_EVALUATED"
           assert verification["coverage"]["status"] == "PARTIAL"
           assert "SEMANTIC_CORRECTNESS_NOT_EVALUATED" in verification["obligations"]
+          # Excession records rename as deletion + addition of exact Git paths.
+          # Disable Git's similarity heuristic in the independent path oracle.
           expected = set(filter(None, subprocess.check_output(
-              ("git", "diff", "--name-only", "-z", base, head)
+              ("git", "diff", "--no-renames", "--name-only", "-z", base, head)
           ).decode().split("\0")))
           assert verification["change_count"] == len(expected)
           if not verification["coverage"]["truncated"]:

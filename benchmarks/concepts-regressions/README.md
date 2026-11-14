@@ -82,3 +82,5 @@ Upgrading such a case to the A/B/C study requires independent discovery
 and verification of a real working A ancestor and runnable tests against
 all versions. A CI success from metadata import must not be conflated
 with a reproduced behavioral regression.
+
+- [Prospective exception-path obligations](EXCEPTION_FLOW.md): compiler-AST source evidence from A, later B inspection, and unverified change hypotheses.

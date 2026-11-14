@@ -3,10 +3,10 @@ name: Excession self-analysis (advisory)
 # Deep dogfooding is scheduled/on-demand, not a PR admission gate.
 on:
   workflow_dispatch:
-  # One advisory run when an explicit self-refactor PR opens. Avoid consuming
-  # runner minutes on every intermediate commit or ordinary unrelated PR.
+  # One advisory run at opening and an optional exact-head ready-for-review
+  # checkpoint. Avoid expensive runs on every intermediate commit.
   pull_request:
-    types: [opened]
+    types: [opened, ready_for_review]
     paths:
       - 'core/src/json.rs'
       - 'core/src/scip_refactor.rs'

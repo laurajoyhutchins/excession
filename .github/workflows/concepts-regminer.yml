@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence
-          python3 - <<'PY' >> "$GITHUB_ENV"
+          python3 - <<'PY' > evidence/case.env
           import json,os
           m=json.load(open(os.environ["COHORT"]))
           case=next(x for x in m["cases"] if x["id"]==os.environ["CASE_ID"])
@@ -64,10 +64,15 @@ jobs:
           print("TEST_CLASS="+case["test"]["class"])
           print("TEST_METHOD="+case["test"]["method"])
           PY
+          cat evidence/case.env >> "$GITHUB_ENV"
+          set -a
+          source evidence/case.env
+          set +a
           git init -q upstream
           git -C upstream remote add origin https://github.com/uniVocity/univocity-parsers.git
-          git -C upstream fetch -q --filter=blob:none --depth=250 origin "$WORKING"
-          git -C upstream fetch -q --filter=blob:none --depth=2 origin "$INDUCING"
+          # B fetch brings its parent A and sufficient strictly earlier history.
+          git -C upstream fetch -q --filter=blob:none --depth=300 origin "$INDUCING"
+          test "$(git -C upstream rev-parse "$WORKING^{commit}")" = "$WORKING"
           test "$(git -C upstream rev-parse "$INDUCING^")" = "$WORKING"
           core/target/debug/excession concepts invariant-propose \
             --repo upstream --rev "$WORKING" --candidate "$INDUCING" \

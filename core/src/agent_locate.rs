@@ -443,13 +443,16 @@ mod tests {
         // The rejection must happen before any directories are created.
         let mut forbidden = discovery::inspect(&root, "HEAD").unwrap();
         forbidden.index_path = root.join(".forbidden/index.sqlite");
-        assert!(agent_locate_cache::search(
-            &forbidden,
-            git::entries(&root, &forbidden.commit).unwrap(),
-            4,
-            "\"lease\"",
-            source_path,
-        ).is_err());
+        assert!(
+            agent_locate_cache::search(
+                &forbidden,
+                git::entries(&root, &forbidden.commit).unwrap(),
+                4,
+                "\"lease\"",
+                source_path,
+            )
+            .is_err()
+        );
         assert!(!root.join(".forbidden").exists());
 
         let first = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();

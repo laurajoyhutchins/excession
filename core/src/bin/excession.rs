@@ -578,9 +578,19 @@ fn execute(args: &[String]) -> Result<Response> {
         },
         [top] if top == "tests" || top == "test" => {
             if opt.get_or("doctor", "false") == "true" {
-                if ["run", "verify", "working-tree", "base", "candidate", "expected-snapshot", "tool", "focus", "provider"]
-                    .iter()
-                    .any(|key| opt.0.contains_key(*key))
+                if [
+                    "run",
+                    "verify",
+                    "working-tree",
+                    "base",
+                    "candidate",
+                    "expected-snapshot",
+                    "tool",
+                    "focus",
+                    "provider",
+                ]
+                .iter()
+                .any(|key| opt.0.contains_key(*key))
                 {
                     return refuse("--doctor accepts only --json and optional --sandbox-image");
                 }
@@ -590,7 +600,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 return if opt.get_or("json", "false") == "true" {
                     Ok(Response::Json(report))
                 } else {
-                    Ok(Response::Message(working_tree_tests::sandbox_doctor_summary(&report)?))
+                    Ok(Response::Message(
+                        working_tree_tests::sandbox_doctor_summary(&report)?,
+                    ))
                 };
             }
             let repo = Path::new(opt.get_or("repo", "."));

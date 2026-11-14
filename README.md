@@ -102,6 +102,18 @@ Build membership is never silently promoted to a source dependency.
 
 ## Coding-agent interface
 
+Find candidate code without knowing its paths first:
+
+```sh
+excession agent locate --repo . --task "Fix worker lease recovery" --limit 20 --json
+```
+
+The new locator uses bounded in-memory FTS5/BM25 over authenticated Git
+sources, then reuses the existing `agent context` machinery for relationships
+and test suggestions. It is lexical discovery, **not semantic proof**, and
+does not include uncommitted edits. See [agent commands](docs/AGENT_CLI.md).
+
+
 `excession agent context` returns bounded Git source identities, candidate
 relationships, coverage gaps and heuristic test suggestions for exact focus
 paths. `excession agent verify` compares an isolated candidate commit with

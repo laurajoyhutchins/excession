@@ -469,10 +469,16 @@ pub(super) fn command() -> Command {
             .help("Explicitly snapshot the uncommitted working tree (also auto-detected)"),
     )
     .arg(
+        Arg::new("doctor")
+            .long("doctor")
+            .action(clap::ArgAction::SetTrue)
+            .help("Inspect rootless sandbox prerequisites without requiring a Git checkout"),
+    )
+    .arg(
         Arg::new("run")
             .long("run")
             .action(clap::ArgAction::SetTrue)
-            .help("Execute native project tooling in this trusted checkout"),
+            .help("Execute native tests (uncommitted work runs only in the isolated sandbox)"),
     )
     .arg(
         Arg::new("verify")
@@ -835,6 +841,7 @@ mod tests {
     fn test_workflow_is_short_and_explicit_about_execution() {
         assert!(parse(&strings(&["tests"])).is_ok());
         assert!(parse(&strings(&["test", "--json"])).is_ok());
+        assert!(parse(&strings(&["tests", "--doctor", "--json"])).is_ok());
         assert!(parse(&strings(&["tests", "--run", "--verify", "--json"])).is_ok());
         assert!(
             parse(&strings(&[

@@ -141,7 +141,14 @@ pub(super) fn command() -> Command {
             ),
             leaf(
                 "regression-adjudicate",
-                &["repo", "dataset-repo", "manifest", "case", "frozen", "oracle"],
+                &[
+                    "repo",
+                    "dataset-repo",
+                    "manifest",
+                    "case",
+                    "frozen",
+                    "oracle",
+                ],
                 &[],
             ),
             leaf(

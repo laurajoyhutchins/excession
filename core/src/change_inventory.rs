@@ -58,7 +58,7 @@ fn compare(
                 (Some(a), Some(b)) if a.mode != b.mode => "MODE_CHANGED",
                 _ => return None,
             };
-            let mut change = obj(&[
+            let change = obj(&[
                 ("kind", Value::string(kind)),
                 (
                     "before",
@@ -94,7 +94,7 @@ pub fn inventory(path: &Path, base: &str, head: &str) -> Result<Value> {
         &head_commit,
         &head_tree,
     );
-    let mut report = obj(&[
+    let report = obj(&[
         ("schema", Value::string("excession.change-inventory.v1")),
         ("base_commit", Value::string(&base_commit)),
         ("base_tree", Value::string(&base_tree)),

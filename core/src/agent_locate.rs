@@ -344,6 +344,58 @@ mod tests {
     }
 
     #[test]
+    fn locates_pinned_code_without_reading_dirty_checkout() {
+        use std::fs;
+        use std::process::Command;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-locate-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        let git = |args: &[&str]| {
+            let result = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(result.status.success(), "git: {}", String::from_utf8_lossy(&result.stderr));
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join("src/lease.rs"), "pub fn renew_lease() { recover_worker(); }\n").unwrap();
+        fs::write(root.join("src/other.rs"), "pub fn render_canvas() {}\n").unwrap();
+        fs::write(root.join("src/oversize.rs"), "x".repeat(MAX_FILE_BYTES + 1)).unwrap();
+        git(&["add", "."]);
+        git(&["-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "initial"]);
+
+        let first = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
+        let ranked = first.get("candidates").unwrap().array_ref().unwrap();
+        assert!(!ranked.is_empty());
+        assert_eq!(
+            ranked[0].get("source").unwrap().get("path").unwrap().str().unwrap(),
+            "src/lease.rs"
+        );
+        assert_eq!(first.get("skipped_source_count").unwrap().integer().unwrap(), 1);
+        assert!(first.get("context").unwrap().get("coverage").is_ok());
+        assert_eq!(first.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap(), false);
+        let first_id = first.get("report_id").unwrap().str().unwrap().to_owned();
+        fs::write(root.join("src/lease.rs"), "pub fn something_else() {}\n").unwrap();
+        fs::write(root.join("src/other.rs"), "pub fn renew_lease() {}\n").unwrap();
+        let second = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
+        assert_eq!(second.get("report_id").unwrap().str().unwrap(), first_id);
+        assert_eq!(
+            second.get("candidates").unwrap().array_ref().unwrap()[0]
+                .get("source").unwrap().get("path").unwrap().str().unwrap(),
+            "src/lease.rs"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn fts5_ranks_matching_code_above_unrelated_code() {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch("CREATE VIRTUAL TABLE source_search USING fts5(path, body);")

@@ -361,7 +361,7 @@ pub fn assess(repo: &Path, candidate: &str, frozen: &Path, observations: &Path) 
         let new_blob = observed
             .files
             .get(&path)
-            .map_or(Value::Null, |s| Value::string(s));
+            .map_or(Value::Null, Value::string);
         reports.push(obj(&[
             ("source", Value::string(&path)),
             ("method", Value::string(&method)),

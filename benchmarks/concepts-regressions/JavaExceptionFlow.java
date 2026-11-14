@@ -122,6 +122,9 @@ public final class JavaExceptionFlow {
         switch(s.getKind()){
         case THROW: return THROW;
         case RETURN: return RETURN;
+        // A jump can bypass a subsequent throw. Treat it as non-throwing
+        // abrupt completion instead of incorrectly proving THROW.
+        case BREAK: case CONTINUE: return RETURN;
         case BLOCK:{
             int exits=NORMAL;
             for(StatementTree part:((BlockTree)s).getStatements()){

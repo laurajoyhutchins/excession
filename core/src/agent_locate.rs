@@ -345,22 +345,28 @@ pub fn locate(
 
     // Existing adapter supplies *observed* relationships and candidate tests
     // for the strongest lexical hits, preserving original producer receipts.
-    let context = if selected_paths.is_empty() {
+    // The existing agent context wire format uses comma-separated paths.
+    // Git names may contain commas, so omit those only from context rather
+    // than misinterpreting one source as multiple unrelated paths.
+    let context_paths = selected_paths
+        .iter()
+        .filter(|path| !path.contains(','))
+        .take(MAX_CONTEXT_FOCUS)
+        .cloned()
+        .collect::<Vec<_>>();
+    if selected_paths.iter().any(|path| path.contains(',')) {
+        gaps.push(gap("CONTEXT_UNREPRESENTABLE_COMMA_PATH"));
+    }
+    if selected_paths.len() > MAX_CONTEXT_FOCUS {
+        gaps.push(gap("CONTEXT_FOCUS_TRUNCATED_TO_16"));
+    }
+    let context = if context_paths.is_empty() {
         Value::Null
     } else {
-        let focus = selected_paths
-            .iter()
-            .take(MAX_CONTEXT_FOCUS)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(",");
-        if selected_paths.len() > MAX_CONTEXT_FOCUS {
-            gaps.push(gap("CONTEXT_FOCUS_TRUNCATED_TO_16"));
-        }
         agent::context(
             &discovered.root,
             &discovered.commit,
-            &focus,
+            &context_paths.join(","),
             Some(task),
             limit,
             roots,

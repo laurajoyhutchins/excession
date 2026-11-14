@@ -16,6 +16,21 @@ existing `agent context` report for up to the first 16 candidates, including
 its native relationships, test suggestions, and coverage gaps. Empty results
 do **not** prove the requested behavior is absent.
 
+When the existing evidence database contains source-bound SCIP observations or
+configured graph evidence for the exact commit, `agent locate` now consumes
+these through the default `agent context` analysis path. Direct, source-bound
+SCIP references and static import candidates connected to a lexical hit are
+reported separately in `relationship_candidates`, with native producer
+receipts and `OBSERVED` versus `CANDIDATE` assessments preserved. They are
+**not** folded into the BM25 ranking or promoted to verified program behavior.
+Configured graph membership retains its own source/entity meaning in context;
+it is not silently treated as a source-to-source edge.
+
+For very large, mixed-language repositories, use `--roots fs` (or another
+specific source root) to bound the auxiliary relationship analysis. The
+segmented lexical index still sees the full tracked Git source inventory,
+subject to explicit index coverage and size limits.
+
 Source paths are partitioned deterministically into **256 SHA-256(path)
 segments**. Each segment is bounded to 6000 files, 256 KiB per file, and
 32 MiB of indexed text. By default, an invocation refreshes up to eight

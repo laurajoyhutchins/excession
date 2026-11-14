@@ -1,6 +1,7 @@
 //! Thin interactive command router. Providers and evidence semantics live in Rust core.
 //! The parent clap grammar parses all options exactly once.
-use super::{Options, Response, json};
+use super::cli::Options;
+use excession::json::Value;
 use excession::sqlite::Db;
 use excession::{Result, graph};
 use std::path::Path;
@@ -21,7 +22,7 @@ fn depth(opt: &Options, default: usize) -> Result<usize> {
 fn optional<'a>(opt: &'a Options, key: &str) -> Option<&'a str> {
     opt.0.get(key).map(String::as_str)
 }
-pub(super) fn run(verb: &str, opt: &Options) -> Result<Response> {
+pub(super) fn run(verb: &str, opt: &Options) -> Result<Value> {
     Ok(match verb {
         "import" => {
             let (db, path) = database(opt)?;
@@ -39,41 +40,41 @@ pub(super) fn run(verb: &str, opt: &Options) -> Result<Response> {
             result
                 .entries_mut()?
                 .insert("database".to_owned(), excession::json::Value::string(path));
-            json(result)
+            result
         }
         "ls" => {
             let (db, _) = database(opt)?;
-            json(graph::list(&db)?)
+            graph::list(&db)?
         }
         "show" => {
             let (db, _) = database(opt)?;
-            json(graph::show(
+            graph::show(
                 &db,
                 optional(opt, "id"),
                 optional(opt, "target"),
-            )?)
+            )?
         }
         "deps" => {
             let (db, _) = database(opt)?;
-            json(graph::neighbors(
+            graph::neighbors(
                 &db,
                 optional(opt, "id"),
                 optional(opt, "target"),
                 opt.get("node"),
                 opt.get_or("direction", "out"),
                 depth(opt, 2)?,
-            )?)
+            )?
         }
         "path" => {
             let (db, _) = database(opt)?;
-            json(graph::path(
+            graph::path(
                 &db,
                 optional(opt, "id"),
                 optional(opt, "target"),
                 opt.get("from"),
                 opt.get("to"),
                 depth(opt, 8)?,
-            )?)
+            )?
         }
         _ => return excession::refuse("unknown graph verb"),
     })

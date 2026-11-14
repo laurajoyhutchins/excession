@@ -90,57 +90,55 @@ fn modified(repo: &Path, base: &str, head: &str, prefix: &str) -> Result<BTreeSe
     }
     Ok(result)
 }
-fn history(repo: &Path, rev: &str, count: usize, prefix: &str) -> Result<Vec<Event>> {
+fn history(repo: &Path, rev: &str, count: usize, prefix: &str) -> Result<(Vec<Event>, usize)> {
     git::verify_repo(repo)?;
     let head = git::rev(repo, rev)?;
     if git::text(repo, &["cat-file", "-t", &head])? != "commit" {
         return refuse("historical anchor must be a commit");
     }
-    let cap = (count + 1).to_string();
-    let mut commits: Vec<String> = git::text(
+    // Select single-parent commits on the *first-parent line*. Merely
+    // excluding merges after sampling wastes most of a merge-heavy project.
+    // Each diff is against the selected commit's ACTUAL parent, not against
+    // the previous selected non-merge (which could cross unrelated merges).
+    let cap = count.to_string();
+    let raw = git::text(
         repo,
-        &["rev-list", "--first-parent", "--max-count", &cap, &head],
-    )?
-    .lines()
-    .map(str::to_owned)
-    .collect();
-    if commits.len() != count + 1 {
-        return refuse("insufficient first-parent history for the requested training and holdout");
-    }
-    for id in &commits {
-        git::oid(id)?;
-    }
-    commits.reverse();
-    let mut result = Vec::new();
-    for pair in commits.windows(2) {
-        let commit = &pair[1];
-        let parents = git::text(repo, &["rev-list", "--parents", "-n", "1", commit])?;
-        let pieces: Vec<_> = parents.split_whitespace().collect();
-        if pieces.first() != Some(&commit.as_str()) || pieces.get(1) != Some(&pair[0].as_str()) {
-            return refuse("historical event violates the first-parent chain");
+        &["rev-list", "--first-parent", "--no-merges", "--parents", "--max-count", &cap, &head],
+    )?;
+    let mut revisions = Vec::new();
+    for line in raw.lines() {
+        let fields: Vec<_> = line.split_whitespace().collect();
+        if fields.len() != 2 {
+            return refuse("temporal history contains a root or non-single-parent event");
         }
-        let merge = pieces.len() > 2;
-        let paths = if merge {
-            BTreeSet::new()
-        } else {
-            modified(repo, &pair[0], commit, prefix)?
-        };
-        let excluded = if merge {
-            Some("MERGE")
-        } else if paths.is_empty() {
+        let commit = git::oid(fields[0])?;
+        let parent = git::oid(fields[1])?;
+        revisions.push((commit, parent));
+    }
+    if revisions.len() != count {
+        return refuse("insufficient single-parent first-parent history for training and holdout");
+    }
+    revisions.reverse();
+    let oldest_parent = &revisions[0].1;
+    let skipped_merges = git::text(repo, &[
+        "rev-list", "--first-parent", "--merges", "--count",
+        &format!("{oldest_parent}..{head}"),
+    ])?
+    .parse::<usize>()
+    .map_err(|_| "Git merge count is not a nonnegative integer")?;
+    let mut result = Vec::new();
+    for (commit, parent) in revisions {
+        let paths = modified(repo, &parent, &commit, prefix)?;
+        let excluded = if paths.is_empty() {
             Some("EMPTY_SCOPE")
         } else if paths.len() > MAX_FILES {
             Some("BULK_CHANGE")
         } else {
             None
         };
-        result.push(Event {
-            commit: commit.clone(),
-            paths,
-            excluded,
-        });
+        result.push(Event { commit, paths, excluded });
     }
-    Ok(result)
+    Ok((result, skipped_merges))
 }
 fn event_summary(events: &[Event]) -> Value {
     let mut gaps = BTreeMap::<&str, usize>::new();
@@ -266,7 +264,7 @@ fn report(
     if backtest && candidate.is_some() {
         return refuse("backtest and prospective candidate are exclusive");
     }
-    let events = history(
+    let (events, skipped_merges) = history(
         repo,
         rev,
         settings.train + settings.holdout,
@@ -398,6 +396,7 @@ fn report(
             future.map_or(Value::Null, Value::string),
         ),
         ("prefix", Value::string(&settings.prefix)),
+        ("first_parent_merges_skipped", Value::number(skipped_merges)),
         ("training", event_summary(training)),
         ("holdout", event_summary(holdout)),
         (

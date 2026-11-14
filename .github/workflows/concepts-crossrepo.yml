@@ -69,7 +69,7 @@ jobs:
           set -euo pipefail
           # Keep the cohort predetermined; small repositories use their whole
           # available first-parent history, never a manually chosen test slice.
-          available=$(($(git -C historical rev-list --first-parent --count "$PIN") - 1))
+          available=$(($(git -C historical rev-list --first-parent --no-merges --count "$PIN") - 1))
           if (( available < 40 )); then
             echo "insufficient first-parent history: $available" >&2
             exit 2
@@ -95,6 +95,7 @@ jobs:
           output = {
             "repo": os.environ["REPO"], "pin": os.environ["PIN"],
             "train": p["training"], "holdout": p["holdout"],
+            "skipped_merges":p["first_parent_merges_skipped"],
             "candidates": p["candidate_count"], "exposures": p["exposures"],
             "model_matches": p["model_matches"],
             "baseline_matches": p["baseline_matches"],

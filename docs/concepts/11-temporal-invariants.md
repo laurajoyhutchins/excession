@@ -36,8 +36,10 @@ identity and a JSON Schema shape check.
   excluding the trigger itself, so compared exposure counts are equal.
   This is not a SCIP/static call graph, test selector or LLM baseline.
 - Modified files only, not adds, deletions or renames. Only file extensions
-  identified as source are considered. First-parent merge commits, empty
-  scopes and source changes with more than 24 files are excluded and counted.
+  identified as source are considered. First-parent merge commits are skipped during sampling and their number
+  reported; each selected non-merge commit is diffed against its actual Git
+  parent. Empty scopes and source changes with more than 24 files are
+  excluded and counted.
   Evidence for unsupported languages and configurations remains unavailable.
 - No claim of causation, correctness, semantic identity, or runtime
   dependency is licensed by recurring co-changes. If a predicted file is

@@ -60,3 +60,25 @@ two-phase controls until an A revision is independently established.
 Do not manufacture A from the parent of B or call B/C evidence A/B/C.
 
 CI run and artifacts: see `.github/workflows/concepts-regminer.yml`.
+
+## BugsInPy import (B/C controls)
+
+The additional native Rust command imports BugsInPy metadata from a pinned
+Git commit and exact project.info, bug.info and run_test.sh Git blobs.
+It records the two published commits and source URL but does not execute
+the shell script, clone the source repository, or assert test outcomes.
+Import does **not** guess an A working revision, which is missing from
+the cases currently examined. The independent CI import checks three
+published BugsInPy cases in PySnooper, black and cookiecutter.
+
+```sh
+excession concepts bugsinpy-import \
+  --dataset-repo /isolated/BugsInPy \
+  --dataset-rev 11c5f1eea954a42132cfd06bf257766a7963e0fd \
+  --project PySnooper --bug 1
+```
+
+Upgrading such a case to the A/B/C study requires independent discovery
+and verification of a real working A ancestor and runnable tests against
+all versions. A CI success from metadata import must not be conflated
+with a reproduced behavioral regression.

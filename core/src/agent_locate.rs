@@ -290,7 +290,7 @@ pub fn locate(
         index
             .execute(
                 "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
-                params![files.len() + 1, entry.path, body],
+                params![(files.len() + 1) as i64, entry.path, body],
             )
             .map_err(|e| format!("FTS5 insert: {e}"))?;
         files.push(IndexedFile { entry, body });
@@ -307,7 +307,7 @@ pub fn locate(
         )
         .map_err(|e| format!("FTS5 query setup: {e}"))?;
     let rows = statement
-        .query_map(params![expression, limit], |row| row.get::<_, i64>(0))
+        .query_map(params![expression, limit as i64], |row| row.get::<_, i64>(0))
         .map_err(|e| format!("FTS5 query: {e}"))?;
     for row in rows {
         let id = row.map_err(|e| format!("FTS5 row: {e}"))?;

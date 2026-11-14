@@ -307,15 +307,19 @@ fn fingerprint(entries: &[git::Entry]) -> String {
     crate::digest::sha256(&data)
 }
 
+struct RefreshState<'a> {
+    repo: &'a std::path::Path,
+    reader: Option<git::BlobReader>,
+    reused_blobs: usize,
+    read_blobs: usize,
+}
+
 fn update_segment(
     tx: &Transaction<'_>,
     segment: usize,
     entries: &[git::Entry],
     expected: &str,
-    repo: &std::path::Path,
-    reader: &mut Option<git::BlobReader>,
-    reused_blobs: &mut usize,
-    read_blobs: &mut usize,
+    state: &mut RefreshState<'_>,
 ) -> Result<SegmentMeta> {
     let mut seen = BTreeSet::new();
     let mut files = 0usize;
@@ -341,7 +345,7 @@ fn update_segment(
                 "OK" if cached.size <= MAX_TOTAL_BYTES - bytes => {
                     files += 1;
                     bytes += cached.size;
-                    *reused_blobs += 1;
+                    state.reused_blobs += 1;
                     continue;
                 }
                 "LARGE" | "NON_UTF8" => {
@@ -354,8 +358,8 @@ fn update_segment(
         if let Some(cached) = old {
             delete_file(tx, cached.id)?;
         }
-        if reader.is_none() {
-            *reader = Some(git::BlobReader::open(repo)?);
+        if state.reader.is_none() {
+            state.reader = Some(git::BlobReader::open(state.repo)?);
         }
         let data = match reader
             .as_mut()
@@ -370,7 +374,7 @@ fn update_segment(
             }
             Err(err) => return Err(err),
         };
-        *read_blobs += 1;
+        state.read_blobs += 1;
         let Ok(body) = String::from_utf8(data) else {
             skipped += 1;
             insert_file(tx, segment, entry, None, "NON_UTF8")?;
@@ -509,9 +513,12 @@ pub(crate) fn search(
             id,
         )
     });
-    let mut reader = None;
-    let mut reused_blobs = 0usize;
-    let mut read_blobs = 0usize;
+    let mut state = RefreshState {
+        repo: &discovered.root,
+        reader: None,
+        reused_blobs: 0,
+        read_blobs: 0,
+    };
     let mut refreshed_segments = 0usize;
     for id in pending.iter().take(refresh_budget).copied() {
         let updated = update_segment(
@@ -519,17 +526,16 @@ pub(crate) fn search(
             id,
             &groups[id],
             &fingerprints[id],
-            &discovered.root,
-            &mut reader,
-            &mut reused_blobs,
-            &mut read_blobs,
+            &mut state,
         )?;
         prior[id] = Some(updated);
         refreshed_segments += 1;
     }
-    if let Some(reader) = reader {
+    if let Some(reader) = state.reader.take() {
         reader.finish()?;
     }
+    let mut reused_blobs = state.reused_blobs;
+    let read_blobs = state.read_blobs;
 
     tx.execute("DELETE FROM locator_active", [])
         .map_err(|e| sql_error("clear active segments", e))?;

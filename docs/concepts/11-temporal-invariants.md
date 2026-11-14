@@ -100,3 +100,24 @@ a demonstrated architectural invariant or a prevented regression. The
 strictly pinned seven-repository exploratory matrix is documented in
 `.github/workflows/concepts-crossrepo.yml`; definitive generalization needs
 an independently selected, later frozen cohort with no parameter tuning.
+
+## Frozen external generalization gate
+
+The seven unrelated repositories were fixed before examining their held-out
+source-change outcomes. Their exact commits are in
+`.github/workflows/concepts-external-holdout.yml`. No model parameter,
+feature, sample interval or policy rule can be altered based on this cohort
+while still describing the cohort as untouched.
+
+The gate is diagnostic, not an assertion that makes CI fail on negative results.
+Report matched opportunities, global-popularity and same-directory baselines,
+model-only hits, baseline-only hits and zero-coverage repositories. A broad
+improvement over global popularity requires **at least five of seven**
+repositories with positive per-repository match-rate deltas and a positive
+unweighted mean delta. Improvement beyond a plain layout heuristic requires
+beating **both** the popularity and same-directory baselines in at least
+five repositories. Independently reproduced behavioral regressions would
+still be required to claim actual architectural invariants or prevention.
+
+The first seven-repository matrix is development-only; none of those results
+count toward this gate. The external evaluation uses no LLM calls.

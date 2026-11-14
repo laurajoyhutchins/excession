@@ -44,8 +44,11 @@ struct Temporary {
 impl Temporary {
     #[cfg(target_os = "linux")]
     fn new() -> Result<Self> {
+        Self::new_at(&std::env::temp_dir())
+    }
+    #[cfg(target_os = "linux")]
+    fn new_at(parent: &Path) -> Result<Self> {
         use std::os::unix::ffi::OsStrExt;
-        let parent = std::env::temp_dir();
         let template = parent.join("excession-uncommitted-XXXXXX");
         let mut raw = template.as_os_str().as_bytes().to_vec();
         raw.push(0);
@@ -62,6 +65,20 @@ impl Temporary {
         refuse("uncommitted test isolation currently requires Linux with rootless Podman")
     }
 }
+/// Ensure a caller-controlled TMPDIR cannot place snapshots inside the checkout.
+fn temporary_parent_outside_checkout(root: &Path) -> Result<PathBuf> {
+    let parent = std::env::temp_dir()
+        .canonicalize()
+        .map_err(|error| format!("resolve temporary directory: {error}"))?;
+    let source = root
+        .canonicalize()
+        .map_err(|error| format!("resolve source checkout: {error}"))?;
+    if parent.starts_with(&source) {
+        return refuse("temporary directory is inside the source checkout");
+    }
+    Ok(parent)
+}
+
 impl Drop for Temporary {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);
@@ -670,7 +687,8 @@ fn confined_podman() -> Command {
     command
         .env("CONTAINERS_CONF", "/dev/null")
         .env("CONTAINERS_CONF_OVERRIDE", "/dev/null")
-        .env("CONTAINERS_MOUNTS_CONF", "/dev/null");
+        .env("CONTAINERS_MOUNTS_CONF", "/dev/null")
+        .env("TMPDIR", "/tmp");
     command
 }
 
@@ -998,7 +1016,8 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     let mut blockers = sandbox_preflight(image)
         .into_iter()
         .collect::<BTreeSet<_>>();
-    let temp = Temporary::new()?;
+    let safe_temp_parent = temporary_parent_outside_checkout(&root)?;
+    let temp = Temporary::new_at(&safe_temp_parent)?;
     let (checkout, commit, tree) = prepare_snapshot(&root, &state, &temp.path)?;
     let base = if let Some(spec) = request.base {
         git::rev(&checkout, spec)?
@@ -1335,6 +1354,17 @@ mod tests {
         assert!(tool_in_image(Some("/usr/bin/../bin/sh"), "jest").is_err());
         assert_eq!(tool_in_image(None, "jest").unwrap(), "/usr/local/bin/jest");
     }
+    #[test]
+    fn snapshot_temporary_directory_must_be_outside_source_checkout() {
+        let root = Temporary::new().unwrap();
+        let source = root.path.join("checkout");
+        fs::create_dir(&source).unwrap();
+        assert!(temporary_parent_outside_checkout(&source).is_ok());
+        let nested = source.join("scratch");
+        fs::create_dir(&nested).unwrap();
+        assert!(nested.starts_with(&source));
+    }
+
     #[test]
     fn podman_runtime_ignores_project_path_and_implicit_mount_configuration() {
         let command = confined_podman();

@@ -7,6 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 const MAX_FILES: usize = 24;
+// Prospective reviews can be larger than a single historical training event.
+// Keep a separate finite bound rather than silently rejecting realistic fixes.
+const MAX_PROSPECTIVE_FILES: usize = 128;
 const MAX_RULES: usize = 64;
 const MAX_DIFF: usize = 4 * 1024 * 1024;
 const WIRE: &str = "excession.concepts-temporal-obligations.v1";
@@ -363,8 +366,8 @@ fn report(
         }
         git::text(repo, &["merge-base", "--is-ancestor", cutoff, head])?;
         let paths = modified(repo, cutoff, head, &settings.prefix)?;
-        if paths.len() > MAX_FILES {
-            return refuse("prospective change exceeds 24-file comparison bound");
+        if paths.len() > MAX_PROSPECTIVE_FILES {
+            return refuse("prospective change exceeds 128-file comparison bound");
         }
         Some(Event {
             commit: head.clone(),

@@ -94,7 +94,7 @@ fn walk(
                     hops.push(edge.clone());
                     hops.extend(suffix.iter().cloned());
                     let entity = edge.get("source")?.clone();
-                    let mut effect = obj(&[
+                    let effect = obj(&[
                         ("entity", entity),
                         ("assessment", Value::string("CANDIDATE_PATH")),
                         ("hops", Value::array(hops.clone())),

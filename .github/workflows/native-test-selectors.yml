@@ -31,6 +31,7 @@ jobs:
           echo 'module.exports = () => 41;' > src/value.js
           echo "const value = require('../src/value'); test('value', () => expect(value()).toBe(41));" > tests/value.test.js
           git init -q
+          printf '/node_modules/\n/package-lock.json\n' >> .git/info/exclude
           git add .
           git -c user.name=Test -c user.email=test@example.invalid commit -qm base
           BASE="$(git rev-parse HEAD)"
@@ -130,6 +131,7 @@ jobs:
           printf 'def value():\n    return 41\n' > src/value.py
           printf 'from src.value import value\ndef test_value():\n    assert value() == 41\n' > tests/test_value.py
           git init -q
+          printf '/.pytest_cache/\n__pycache__/\n*.pyc\n' >> .git/info/exclude
           git add src tests
           git -c user.name=Test -c user.email=test@example.invalid commit -qm base
           BASE="$(git rev-parse HEAD)"

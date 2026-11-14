@@ -1,0 +1,76 @@
+# Excession on Excession: consolidation audit
+
+## Source and scope
+
+This refactor was guided by the archived output of Excession's own
+[successful advisory self-analysis run](https://github.com/laurajoyhutchins/excession/actions/runs/43169892817)
+on the Git commit `d105606625ea3c7c85e01ce224ce873399cbcb70`
+(November 12, 2026). Its artifact is `excession-self-analysis`, including
+`summary.json`, `scip-report.json`, `scip-audit.json`, and independently
+replayed syntax and dependency observations.
+
+The pinned report observed 194 source files, 49 conservative dependency
+candidates, and 11,854 Git-bound cross-file Rust SCIP references across
+87 indexed documents. It proposed 60 advisory refactoring hypotheses,
+of which 54 were triaged as likely crate-root/module structure links.
+**None of these numbers measures complete dependencies, build equivalence,
+or authorization to skip tests.**
+
+## What the six review candidates actually contain
+
+All six originally unclassified reciprocal-reference candidates pair
+a Rust module file with code belonging to the same module:
+
+| Module | Child file | Candidate observation |
+| --- | --- | --- |
+| `transactions.rs` | `transactions/execution.rs` | Module declaration and calls; child references shared `Spec` |
+| `transactions.rs` | `transactions/verification.rs` | Module declaration and calls; child references shared `Spec` |
+| `projection.rs` | `projection/composition.rs` | Module declaration and calls; child references parent `Plan`/`Entry` |
+| `projection.rs` | `projection/workspace.rs` | Module declaration and calls; child references parent `Plan`/`Entry` |
+| `bin/excession.rs` | `bin/excession/graph.rs` | Explicit submodule declaration plus CLI dispatch |
+| `evidence_store.rs` | `evidence_store_tests.rs` | Explicit test submodule and references to fixtures/core types |
+
+Excession now recognizes narrow *parent/child filesystem shapes* **only if**
+rust-analyzer emits a corresponding parent-to-child module-symbol reference.
+These pairs are retained with every original identity and reference, but
+prioritized as structural/module integration rather than automatically
+presented as a real dependency cycle or refactoring recommendation.
+Removing a module declaration from a fixture, changing the indexer, or
+using an unrelated path prevents this classification.
+
+## Consolidation
+
+A separate source inspection identified repeated Rust implementations of
+`sha256(canonical_unsigned_json)` followed by insertion of
+`report_id`, `candidate_id`, `claim_id`, or `change_id`.
+
+One authoritative `json::Value::stamp_id` now performs that operation,
+and `content_id_matches` validates already-stamped objects. Call sites
+in agent context, change inventory, impact, explanations, native test
+workflow, discovery, kernel, refactoring, and graph receipt ingestion use
+the shared operations. Existing field names, canonical serializer,
+SHA-256 implementation, coverage labels, and producer-trust claims are
+unchanged.
+
+## Acceptance
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --locked --all-targets -- -D warnings`
+- `cargo test --locked --all-targets`
+- Exact-head portable CLI, native selectors, impact and source-evidence tests
+- Advisory self-analysis of the PR's merged Git tree, with replay identity
+  checks, Git-bound SCIP index, and explicit unresolved relationship counts
+- The JSON tests compare new stamped wire bytes with the pre-refactor
+  canonical result, refuse double stamping, and reject mutated observations
+- The SCIP tests distinguish parent/child module integration from reciprocal
+  references without an actual module declaration
+
+**Limits:** The historical SCIP evidence is an observation from a specific
+older commit. Its structural candidates are not proof that modules are
+well designed. Forcing a new triage classification does not prove runtime
+equivalence. Full regression tests and source/receipt replay remain necessary.
+
+Existing open PR #66 proposes a mechanical Rust module-layout move.
+This consolidation changes behavior-preserving primitives and advisory
+triage, not physical module placement. Rebase or restack as needed rather
+than silently treating the two proposals as independent completed merges.

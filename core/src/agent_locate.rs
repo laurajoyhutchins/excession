@@ -5,23 +5,18 @@
 //! preserves the boundary between lexical matches and native observations.
 
 use crate::json::{Value, obj};
-use crate::{Result, agent, discovery, git, refuse};
+use crate::{Result, agent, agent_locate_cache, discovery, git, refuse};
+#[cfg(test)]
 use rusqlite::{Connection, params};
 use std::collections::BTreeSet;
 use std::path::Path;
 
-const MAX_FILES: usize = 6000;
-const MAX_FILE_BYTES: usize = 256 * 1024;
-const MAX_TOTAL_BYTES: usize = 32 * 1024 * 1024;
+#[cfg(test)]
+use agent_locate_cache::MAX_FILE_BYTES;
 const MAX_QUERY_BYTES: usize = 4096;
 const MAX_QUERY_TERMS: usize = 16;
 const MAX_EXCERPT_LINES: usize = 7;
 const MAX_CONTEXT_FOCUS: usize = 16;
-
-struct IndexedFile {
-    entry: git::Entry,
-    body: String,
-}
 
 /// Do not silently index dependencies, generated artifacts or binary payloads.
 fn source_path(path: &str) -> bool {
@@ -244,88 +239,29 @@ pub fn locate(
     let words = terms(task)?;
     let discovered = discovery::inspect(repo, rev)?;
     let entries = git::entries(&discovered.root, &discovered.commit)?;
-    let mut reader = git::BlobReader::open(&discovered.root)?;
-    let index = Connection::open_in_memory().map_err(|e| format!("FTS5 memory index: {e}"))?;
-    index
-        .execute_batch(
-            "CREATE VIRTUAL TABLE source_search USING fts5(path, body, tokenize='unicode61');",
-        )
-        .map_err(|e| format!("FTS5 unavailable: {e}"))?;
-
-    let mut files = Vec::<IndexedFile>::new();
-    let mut bytes = 0usize;
-    let mut skipped = 0usize;
-    let mut truncated = false;
-    for entry in entries {
-        if entry.kind != "blob"
-            || !matches!(entry.mode.as_str(), "100644" | "100755")
-            || !source_path(&entry.path)
-        {
-            continue;
-        }
-        if files.len() == MAX_FILES || bytes >= MAX_TOTAL_BYTES {
-            truncated = true;
-            break;
-        }
-        let data = match reader.read_capped(&entry.oid, MAX_FILE_BYTES) {
-            Ok(data) => data,
-            Err(error) if error == "Git source blob exceeds byte limit" => {
-                skipped += 1;
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        let Ok(body) = String::from_utf8(data) else {
-            skipped += 1;
-            continue;
-        };
-        if body.contains('\0') || body.len() + bytes > MAX_TOTAL_BYTES {
-            skipped += 1;
-            if body.len() + bytes > MAX_TOTAL_BYTES {
-                truncated = true;
-            }
-            continue;
-        }
-        bytes += body.len();
-        index
-            .execute(
-                "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
-                params![(files.len() + 1) as i64, entry.path, body],
-            )
-            .map_err(|e| format!("FTS5 insert: {e}"))?;
-        files.push(IndexedFile { entry, body });
-    }
-    reader.finish()?;
-
+    let index = agent_locate_cache::search(
+        &discovered,
+        entries,
+        limit,
+        &match_expression(&words),
+        source_path,
+    )?;
     let mut candidates = Vec::new();
     let mut selected_paths = Vec::new();
-    let expression = match_expression(&words);
-    let mut statement = index
-        .prepare(
-            "SELECT rowid FROM source_search WHERE source_search MATCH ?1 \
-         ORDER BY bm25(source_search, 4.0, 1.0), rowid LIMIT ?2",
-        )
-        .map_err(|e| format!("FTS5 query setup: {e}"))?;
-    let rows = statement
-        .query_map(params![expression, limit as i64], |row| row.get::<_, i64>(0))
-        .map_err(|e| format!("FTS5 query: {e}"))?;
-    for row in rows {
-        let id = row.map_err(|e| format!("FTS5 row: {e}"))?;
-        let file = files
-            .get(usize::try_from(id - 1).map_err(|_| "invalid FTS5 row ID")?)
-            .ok_or("FTS5 returned source outside indexed Git inventory")?;
-        selected_paths.push(file.entry.path.clone());
+    for hit in &index.hits {
+        selected_paths.push(hit.entry.path.clone());
         candidates.push(obj(&[
             ("rank", Value::number(candidates.len() + 1)),
-            (
-                "source",
-                source(&discovered.commit, &discovered.tree, &file.entry),
-            ),
-            ("excerpt", excerpt(&file.body, &words)),
+            ("source", source(&discovered.commit, &discovered.tree, &hit.entry)),
+            ("excerpt", excerpt(&hit.body, &words)),
             ("ranking", Value::string("FTS5_BM25_TEXT_CANDIDATE")),
             ("semantic_correctness", Value::string("UNVERIFIED")),
         ]));
     }
+    let skipped = index.skipped_files;
+    let truncated = index.truncated;
+    let bytes = index.indexed_bytes;
+    let indexed_files = index.indexed_files;
 
     let mut gaps = vec![
         gap("TASK_SEMANTICS_NOT_VERIFIED"),
@@ -382,7 +318,7 @@ pub fn locate(
         ("retrieval", Value::string("GIT_BLOB_FTS5_BM25")),
         ("candidates", Value::array(candidates)),
         ("candidate_count", Value::number(selected_paths.len())),
-        ("indexed_source_count", Value::number(files.len())),
+        ("indexed_source_count", Value::number(indexed_files)),
         ("skipped_source_count", Value::number(skipped)),
         ("indexed_bytes", Value::number(bytes)),
         ("context", context),
@@ -396,10 +332,21 @@ pub fn locate(
         ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
+    // The report identity commits to reproducible source evidence, not the
+    // incidental state of a local incremental cache.
     let report_id = output.sha256();
     output
         .entries_mut()?
         .insert("report_id".into(), Value::string(report_id));
+    output.entries_mut()?.insert(
+        "cache".into(),
+        obj(&[
+            ("kind", Value::string("PERSISTENT_SQLITE_FTS5")),
+            ("path", Value::string(index.cache_path.to_string_lossy())),
+            ("reused_blobs", Value::number(index.reused_blobs)),
+            ("read_blobs", Value::number(index.read_blobs)),
+        ]),
+    );
     Ok(output)
 }
 

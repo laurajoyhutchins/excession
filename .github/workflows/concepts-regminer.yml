@@ -112,6 +112,9 @@ jobs:
           set -euo pipefail
           for PHASE in A B C; do
             case "$PHASE" in A) COMMIT=$WORKING;; B) COMMIT=$INDUCING;; C) COMMIT=$REPAIRED;; esac
+            # Remove the previous phase's intentionally migrated untracked test
+            # before changing revisions, otherwise Git refuses checkout of C.
+            git -C upstream clean -q -ffdx
             git -C upstream checkout -q --detach "$COMMIT"
             git -C upstream clean -q -ffdx
             if [ "$PHASE" != C ]; then

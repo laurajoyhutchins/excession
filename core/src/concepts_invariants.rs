@@ -387,7 +387,7 @@ fn report(
     let mut model_only_hits = 0_usize;
     let mut baseline_only_hits = 0_usize;
     let mut observations = Vec::new();
-    for event in score_events {
+    for event in &score_events {
         for rule in &rules {
             if !event.paths.contains(&rule.trigger) {
                 continue;

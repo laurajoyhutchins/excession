@@ -438,19 +438,40 @@ fn report(
     // correctness are separate observations with separate authorities.
     let mut predictions = Vec::new();
     for event in &score_events {
-        for trigger in event.paths.iter().filter(|path| frozen_paths.contains(*path)) {
+        for trigger in event
+            .paths
+            .iter()
+            .filter(|path| frozen_paths.contains(*path))
+        {
             let choice = frozen_model.predict(trigger, selected_policy);
             let global = frozen_model.predict(trigger, crate::concepts_policy::Policy::Popularity);
-            let directory = frozen_model.predict(trigger, crate::concepts_policy::Policy::Directory);
-            let name = frozen_model.predict(trigger, crate::concepts_policy::Policy::NameCounterpart);
+            let directory =
+                frozen_model.predict(trigger, crate::concepts_policy::Policy::Directory);
+            let name =
+                frozen_model.predict(trigger, crate::concepts_policy::Policy::NameCounterpart);
             predictions.push(obj(&[
                 ("commit", Value::string(&event.commit)),
                 ("changed_source", Value::string(trigger)),
-                ("selected_policy_prediction", choice.as_ref().map_or(Value::Null, Value::string)),
-                ("popularity_prediction", global.as_ref().map_or(Value::Null, Value::string)),
-                ("directory_prediction", directory.as_ref().map_or(Value::Null, Value::string)),
-                ("name_counterpart_prediction", name.as_ref().map_or(Value::Null, Value::string)),
-                ("selected_prediction_modified", Value::Bool(choice.as_ref().is_some_and(|p| event.paths.contains(p)))),
+                (
+                    "selected_policy_prediction",
+                    choice.as_ref().map_or(Value::Null, Value::string),
+                ),
+                (
+                    "popularity_prediction",
+                    global.as_ref().map_or(Value::Null, Value::string),
+                ),
+                (
+                    "directory_prediction",
+                    directory.as_ref().map_or(Value::Null, Value::string),
+                ),
+                (
+                    "name_counterpart_prediction",
+                    name.as_ref().map_or(Value::Null, Value::string),
+                ),
+                (
+                    "selected_prediction_modified",
+                    Value::Bool(choice.as_ref().is_some_and(|p| event.paths.contains(p))),
+                ),
                 ("outcome_is_a_behavioral_test", Value::Bool(false)),
             ]));
         }

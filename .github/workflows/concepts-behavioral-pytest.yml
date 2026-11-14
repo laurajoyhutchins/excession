@@ -39,7 +39,10 @@ jobs:
           test "$(git -C upstream rev-parse "$FIXED^")" = "$FAULTY"
           test "$(git -C upstream rev-list --first-parent --no-merges --count "$FIXED")" -ge 129
           git -C upstream checkout -q --detach "$FIXED"
-          python3 -m pip -q install -e upstream 'pytest-testmon==2.3.0'
+          # Historical editable version is generated without release tags; avoid
+          # forcing its provisional version into testmon's resolver constraints.
+          python3 -m pip -q install -e upstream
+          python3 -m pip -q install 'pytest-testmon==2.3.0'
           cat > "$RUNNER_TEMP/concepts-behavioral/probe.py" <<'PY'
           from types import SimpleNamespace
           from _pytest.nodes import Collector

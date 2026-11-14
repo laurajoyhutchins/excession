@@ -1433,13 +1433,7 @@ mod tests {
             let db = Db::open(&path).unwrap();
             db.init_schema().unwrap();
         }
-        let response = execute(&strings(&[
-            "graph",
-            "ls",
-            "--db",
-            path.to_str().unwrap(),
-        ]))
-        .unwrap();
+        let response = execute(&strings(&["graph", "ls", "--db", path.to_str().unwrap()])).unwrap();
         match response {
             Response::Json(value) => {
                 assert_eq!(

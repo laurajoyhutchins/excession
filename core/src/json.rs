@@ -532,9 +532,11 @@ mod tests {
             .insert("a".into(), Value::number(2));
         assert!(!modified.content_id_matches("claim_id").unwrap());
         assert!(modified.content_id_matches("missing_id").is_err());
-        assert!(!obj(&[("claim_id", Value::string("not a digest"))])
-            .content_id_matches("claim_id")
-            .unwrap());
+        assert!(
+            !obj(&[("claim_id", Value::string("not a digest"))])
+                .content_id_matches("claim_id")
+                .unwrap()
+        );
     }
 
     #[test]

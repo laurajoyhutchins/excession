@@ -676,7 +676,7 @@ pub fn audit_with_prefix(
     source_prefix: Option<&str>,
 ) -> Result<Value> {
     let data = std::fs::read(report).map_err(|e| format!("SCIP report read: {e}"))?;
-    if data.len() > MAX_INPUT_BYTES {
+    if data.len() > MAX_REPORT_BYTES {
         return refuse("SCIP report exceeds 16 MiB");
     }
     let saved = json::parse(&data)?;

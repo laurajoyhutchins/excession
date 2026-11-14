@@ -114,7 +114,8 @@ relationships and test suggestions. The default refresh budget is eight
 segments per call; use `--index-segments 256` for an explicit full warmup.
 Partial coverage is reported instead of silently searching stale partitions.
 This is lexical discovery, **not semantic proof**, and does not include
-uncommitted edits. See [agent commands](docs/AGENT_CLI.md).
+uncommitted edits. Related Git-bound SCIP and static-import neighbors, when
+available, appear separately with original producer evidence and uncertainty. See [agent commands](docs/AGENT_CLI.md).
 
 
 `excession agent context` returns bounded Git source identities, candidate

@@ -16,17 +16,26 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Build pinned-at-run CPU inference runtime
+      - name: Restore CPU inference runtime
+        id: runtime-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/llama.cpp
+          key: llama-cpu-ubuntu2404-x64-3549c274dc22001d9118713fa56a10085b85de3b
+      - name: Provision pinned CPU inference runtime
         run: |
           python -m pip install --upgrade 'huggingface_hub==1.16.1'
-          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
-          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON
-          cmake --build /tmp/llama.cpp/build --target llama-server --parallel 4
+          if [ ! -x /tmp/llama.cpp/build/bin/llama-server ]; then
+            git clone --filter=blob:none https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
+            git -C /tmp/llama.cpp checkout 3549c274dc22001d9118713fa56a10085b85de3b
+            cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON
+            cmake --build /tmp/llama.cpp/build --target llama-server --parallel 4
+          fi
           echo "LLAMA_COMMIT=$(git -C /tmp/llama.cpp rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Run identical semantic tests on each model
         run: |
           echo "llama.cpp commit $LLAMA_COMMIT"
-          python experiments/cpu_llm/benchmark_binary.py
+          python experiments/cpu_llm/benchmark_choice.py
       - name: Retain model results and failure diagnostics
         if: always()
         uses: actions/upload-artifact@v4

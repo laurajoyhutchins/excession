@@ -73,6 +73,22 @@ the shared operations. Existing field names, canonical serializer,
 SHA-256 implementation, coverage labels, and producer-trust claims are
 unchanged.
 
+## Fresh PR self-analysis resource boundary
+
+The [November 14 exact-head attempt](https://github.com/laurajoyhutchins/excession/actions/runs/43638679564)
+successfully produced the rust-analyzer SCIP index, but Excession refused its
+decoded input because it exceeded the old 16 MiB ingestion cap. The retained
+artifact contains **20,950,375 bytes of decoded SCIP JSON**, **121 indexed
+Rust documents**, and **113,823 occurrences**. Independent inspection of the
+decoded index found 80 reciprocal source pairs before advisory triage.
+
+To process this known bounded input without disabling limits, the SCIP JSON
+ingestion cap is now 32 MiB and the occurrence cap 150,000. The 16 MiB
+*emitted report* cap remains unchanged, as do maximum source bytes, document
+count, and candidate count. Excession must still refuse over-budget input;
+higher capacity does not justify stronger semantic claims. The fresh
+run must be repeated at the final PR commit before merging.
+
 ## Acceptance
 
 - `cargo fmt --all -- --check`

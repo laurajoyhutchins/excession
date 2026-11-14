@@ -73,13 +73,8 @@ fn compare(
                         .unwrap_or(Value::Null),
                 ),
             ]);
-            let id = change.sha256();
-            // The digest identifies the observation, not a verified semantic result.
-            change
-                .entries_mut()
-                .expect("internal object")
-                .insert("change_id".into(), Value::string(id));
-            Some(change)
+            // The digest identifies the observation, not verified semantics.
+            Some(change.stamp_id("change_id").expect("internal JSON object"))
         })
         .collect()
 }
@@ -107,11 +102,7 @@ pub fn inventory(path: &Path, base: &str, head: &str) -> Result<Value> {
         ("head_tree", Value::string(&head_tree)),
         ("changes", Value::array(changes)),
     ]);
-    let id = report.sha256();
-    report
-        .entries_mut()?
-        .insert("report_id".into(), Value::string(id));
-    Ok(report)
+    report.stamp_id("report_id")
 }
 
 #[cfg(test)]

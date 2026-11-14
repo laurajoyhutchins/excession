@@ -68,6 +68,15 @@ fn external_cache(discovered: &discovery::Discovery) -> Result<PathBuf> {
     if parent.starts_with(&root) {
         return refuse("agent locate cache destination is inside the source repository");
     }
+    // Cached FTS content includes private source text. The directory is
+    // dedicated to this repository, so narrow permissions before opening any
+    // database, journal, or WAL file inside it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700))
+            .map_err(|e| sql_error("private cache directory permissions", e))?;
+    }
     if let Ok(metadata) = fs::symlink_metadata(&path)
         && (metadata.file_type().is_symlink() || !metadata.is_file())
     {

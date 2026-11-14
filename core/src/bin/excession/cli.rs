@@ -490,6 +490,11 @@ pub(super) fn command() -> Command {
         "agent",
         vec![
             leaf(
+                "locate",
+                &["repo", "task"],
+                &["rev", "limit", "roots", "db", "json"],
+            ).about("Find ranked Git-pinned source candidates for a natural-language task"),
+            leaf(
                 "context",
                 &["repo", "rev", "focus"],
                 &["task", "limit", "roots", "db"],

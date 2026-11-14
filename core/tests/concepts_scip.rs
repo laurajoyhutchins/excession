@@ -852,7 +852,7 @@ fn local_mcp_agent_lists_bounded_tools_and_can_preview_without_write_permission(
             .array_ref()
             .unwrap()
             .len(),
-        7
+        8
     );
     assert_eq!(
         lines[2].get("result").unwrap().get("isError").unwrap(),

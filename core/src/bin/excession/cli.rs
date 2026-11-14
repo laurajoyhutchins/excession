@@ -129,6 +129,16 @@ pub(super) fn command() -> Command {
     let concepts = group(
         "concepts",
         vec![
+            leaf(
+                "invariant-propose",
+                &["repo", "rev"],
+                &["train", "support", "confidence", "prefix", "candidate"],
+            ),
+            leaf(
+                "invariant-backtest",
+                &["repo", "rev"],
+                &["train", "holdout", "support", "confidence", "prefix"],
+            ),
             leaf("normalize", &["repo", "report"], &[]),
             leaf("preview", &["repo", "report"], &[]),
             leaf("compile", &["repo", "report", "db"], &[]),

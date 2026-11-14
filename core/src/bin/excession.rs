@@ -356,6 +356,40 @@ fn execute(args: &[String]) -> Result<Response> {
             Ok(Response::Bytes(Vec::new()))
         }
         [top, sub] if top == "concepts" => {
+            if matches!(sub.as_str(), "invariant-propose" | "invariant-backtest") {
+                let backtest = sub == "invariant-backtest";
+                let integer = |name: &str, default: &str| -> Result<usize> {
+                    opt.get_or(name, default)
+                        .parse::<usize>()
+                        .map_err(|_| format!("invalid temporal --{name}"))
+                };
+                let settings = excession::concepts_invariants::Settings {
+                    train: integer("train", "48")?,
+                    holdout: if backtest {
+                        integer("holdout", "16")?
+                    } else {
+                        0
+                    },
+                    support: integer("support", "3")?,
+                    confidence_percent: integer("confidence", "70")?,
+                    prefix: opt.get_or("prefix", ".").to_owned(),
+                };
+                let result = if backtest {
+                    excession::concepts_invariants::backtest(
+                        opt.path("repo"),
+                        opt.get("rev"),
+                        &settings,
+                    )?
+                } else {
+                    excession::concepts_invariants::propose(
+                        opt.path("repo"),
+                        opt.get("rev"),
+                        &settings,
+                        opt.0.get("candidate").map(String::as_str),
+                    )?
+                };
+                return Ok(json(result));
+            }
             if sub.starts_with("ontology-") {
                 let repo = opt.path("repo");
                 let rev = opt.get("rev");

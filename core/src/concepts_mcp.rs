@@ -80,6 +80,15 @@ fn specs(allow_publish: bool) -> Result<Value> {
                 "required":["query"],"properties":{"query":{"type":"object"}}}
         }),
         serde_json::json!({
+            "name":"discover_change_companions",
+            "description":"Read-only historical candidate ontology hints from strictly earlier first-parent commits. No source writes, no inferred causation, no test-skipping permission. Returns evidence commits, alternative popularity baseline and explicit coverage gaps.",
+            "inputSchema":{"type":"object","additionalProperties":false,"properties":{
+                "train":{"type":"integer","minimum":8,"maximum":128},
+                "support":{"type":"integer","minimum":2,"maximum":32},
+                "confidence_percent":{"type":"integer","minimum":50,"maximum":100}
+            }}
+        }),
+        serde_json::json!({
             "name":"compare_native_baseline",
             "description":"Compare deterministic SCIP reciprocal-reference concepts to original refactor candidates. A diagnostic, not a validation of a proposed ontology.",
             "inputSchema":{"type":"object","additionalProperties":false,"properties":{}}
@@ -253,6 +262,34 @@ fn tool(name: &str, args: &Value, config: &Config) -> Result<Value> {
             }
             concepts_query::run(&db, query)
         }
+        "discover_change_companions" => {
+            if fields
+                .keys()
+                .any(|key| !matches!(key.as_str(), "train" | "support" | "confidence_percent"))
+            {
+                return refuse("unexpected historical ontology parameter");
+            }
+            let integer = |key: &str, default: i64| -> Result<usize> {
+                let value = args
+                    .get(key)
+                    .ok()
+                    .map(Value::integer)
+                    .transpose()?
+                    .unwrap_or(default);
+                usize::try_from(value).map_err(|_| format!("invalid temporal {key}"))
+            };
+            let settings = crate::concepts_invariants::Settings {
+                train: integer("train", 48)?,
+                holdout: 0,
+                support: integer("support", 3)?,
+                confidence_percent: integer("confidence_percent", 70)?,
+                prefix: config.source_prefix.clone().unwrap_or_else(|| ".".into()),
+            };
+            if settings.train > 128 {
+                return refuse("MCP temporal discovery is bounded to 128 Git events");
+            }
+            crate::concepts_invariants::propose(repo, revision, &settings, None)
+        }
         "compare_native_baseline" => {
             if !fields.is_empty() {
                 return refuse("compare_native_baseline accepts no arguments");
@@ -402,11 +439,12 @@ mod tests {
     #[test]
     fn tools_are_curated_and_publish_requires_explicit_host_grant() {
         let list = specs(false).unwrap();
-        assert_eq!(list.array_ref().unwrap().len(), 7);
+        assert_eq!(list.array_ref().unwrap().len(), 8);
         assert!(!list.canonical().contains("\"publish_ontology\""));
         let allowed = specs(true).unwrap();
-        assert_eq!(allowed.array_ref().unwrap().len(), 8);
+        assert_eq!(allowed.array_ref().unwrap().len(), 9);
         assert!(allowed.canonical().contains("\"publish_ontology\""));
+        assert!(list.canonical().contains("\"discover_change_companions\""));
     }
     #[test]
     fn mcp_initialize_and_tools_list_are_protocol_responses() {
@@ -443,7 +481,7 @@ mod tests {
                 .array_ref()
                 .unwrap()
                 .len(),
-            7
+            8
         );
     }
     #[test]

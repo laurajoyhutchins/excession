@@ -1,0 +1,119 @@
+name: Concepts independent frozen holdout
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/concepts-external-holdout.yml
+      - core/src/concepts_invariants.rs
+      - core/src/bin/excession/cli.rs
+      - core/src/bin/excession.rs
+      - contracts/concepts/temporal-obligations.v1.schema.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  heldout:
+    name: ${{ matrix.id }} heldout
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: werkzeug
+            repo: pallets/werkzeug
+            pin: 0f43c6ebd426039e4b99ec22535c2c8a2ec2f69f
+          - id: black
+            repo: psf/black
+            pin: b10cbe43b8169e688ab86989ddcc8ad2a53ff2cd
+          - id: serde
+            repo: serde-rs/serde
+            pin: aa7913ad0211fef960df68e7812a6211145a888c
+          - id: bat
+            repo: sharkdp/bat
+            pin: 8cf33bdde9a6e4c11d0f866415b1fc867df0cd40
+          - id: trio
+            repo: python-trio/trio
+            pin: 7e0dc2d192f81a5033b740bba165de2fb243ab19
+          - id: tokio
+            repo: tokio-rs/tokio
+            pin: ab0814fc8c62b3d8be40aad068e2fed6562cfeb0
+          - id: aiohttp
+            repo: aio-libs/aiohttp
+            pin: fe099491d275ef2c21bf683e024e34d51ac05d43
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Build locked Rust CLI
+        run: |
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch historical repository and verify its pin
+        env:
+          PIN: ${{ matrix.pin }}
+          REPO: ${{ matrix.repo }}
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none --no-checkout "https://github.com/$REPO.git" historical
+          git -C historical cat-file -e "$PIN^{commit}"
+          test "$(git -C historical rev-parse "$PIN^{commit}")" = "$PIN"
+      - name: Chronological source-change evaluation
+        env:
+          PIN: ${{ matrix.pin }}
+          REPO: ${{ matrix.repo }}
+          REPO_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          # Keep the cohort predetermined; small repositories use their whole
+          # available first-parent history, never a manually chosen test slice.
+          available=$(($(git -C historical rev-list --first-parent --no-merges --count "$PIN") - 1))
+          if (( available < 40 )); then
+            echo "insufficient first-parent history: $available" >&2
+            exit 2
+          fi
+          train=256
+          holdout=96
+          if (( available < 352 )); then
+            train=$((available * 7 / 10))
+            holdout=$((available - train))
+            if (( holdout > 96 )); then holdout=96; fi
+          fi
+          core/target/debug/excession concepts invariant-backtest \
+            --repo historical --rev "$PIN" --prefix . \
+            --train "$train" --holdout "$holdout" --support 2 --confidence 60 > result.json
+          python3 - <<'PY'
+          import json, os
+          p = json.load(open("result.json"))
+          assert p["mode"] == "BACKTEST"
+          assert p["requested_commit"] == os.environ["PIN"]
+          assert p["behavioral_validity"] == "NOT_EVALUATED"
+          assert p["exposures"] >= p["model_matches"]
+          assert p["exposures"] >= p["baseline_matches"]
+          output = {
+            "repo": os.environ["REPO"], "pin": os.environ["PIN"],
+            "train": p["training"], "holdout": p["holdout"],
+            "skipped_merges":p["first_parent_merges_skipped"],
+            "selected_policy":p["policy_evaluation"]["selected"],
+            "full_cohort":p["policy_evaluation"],
+            "candidates": p["candidate_count"], "exposures": p["exposures"],
+            "model_matches": p["model_matches"],
+            "baseline_matches": p["baseline_matches"],
+            "model_only_hits": p["model_only_hits"],
+            "baseline_only_hits": p["baseline_only_hits"]
+          }
+          print(json.dumps(output,sort_keys=True))
+          print('DIAGNOSTIC_OBSERVATIONS',json.dumps(p['observations'][:40],sort_keys=True))
+          with open("summary.json","w") as f: json.dump(output,f,sort_keys=True,indent=2)
+          PY
+      - name: Retain each real result, including negative or empty coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: concepts-external-holdout-${{ matrix.id }}
+          path: |
+            result.json
+            summary.json
+          if-no-files-found: warn

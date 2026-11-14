@@ -1,0 +1,487 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://excession.dev/contracts/concepts/temporal-obligations.v1.schema.json",
+  "title": "Temporal change companion observations, never behavioral requirements",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "mode",
+    "requested_commit",
+    "training_cutoff",
+    "training_tree",
+    "prospective_commit",
+    "prefix",
+    "first_parent_merges_skipped",
+    "training",
+    "holdout",
+    "parameters",
+    "candidates",
+    "candidate_count",
+    "omitted_candidates",
+    "enumeration_complete",
+    "exposures",
+    "model_matches",
+    "baseline_matches",
+    "model_only_hits",
+    "baseline_only_hits",
+    "observations",
+    "model_precision",
+    "baseline_precision",
+    "behavioral_validity",
+    "safe_to_skip_unlisted_tests",
+    "report_id",
+    "policy_evaluation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.concepts-temporal-obligations.v1"
+    },
+    "status": {
+      "const": "UNVERIFIED_HISTORICAL_ASSOCIATIONS"
+    },
+    "mode": {
+      "enum": [
+        "DISCOVERY",
+        "BACKTEST",
+        "PROSPECTIVE"
+      ]
+    },
+    "requested_commit": {
+      "$ref": "#/$defs/oid"
+    },
+    "training_cutoff": {
+      "$ref": "#/$defs/oid"
+    },
+    "training_tree": {
+      "$ref": "#/$defs/oid"
+    },
+    "prospective_commit": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/oid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "prefix": {
+      "type": "string",
+      "minLength": 1
+    },
+    "training": {
+      "$ref": "#/$defs/summary"
+    },
+    "holdout": {
+      "$ref": "#/$defs/summary"
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "train",
+        "holdout",
+        "support",
+        "confidence_percent"
+      ],
+      "properties": {
+        "train": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 256
+        },
+        "holdout": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "support": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 32
+        },
+        "confidence_percent": {
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 100
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "omitted_candidates": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "enumeration_complete": {
+      "type": "boolean"
+    },
+    "exposures": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "model_matches": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "baseline_matches": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "commit",
+          "trigger_path",
+          "predicted_companion",
+          "companion_modified",
+          "baseline_companion",
+          "baseline_companion_modified",
+          "status"
+        ],
+        "properties": {
+          "commit": {
+            "$ref": "#/$defs/oid"
+          },
+          "trigger_path": {
+            "type": "string"
+          },
+          "predicted_companion": {
+            "type": "string"
+          },
+          "companion_modified": {
+            "type": "boolean"
+          },
+          "baseline_companion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baseline_companion_modified": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "MATCHED",
+              "NOT_OBSERVED_NOT_A_PROVEN_BUG"
+            ]
+          }
+        }
+      }
+    },
+    "model_precision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]+/[1-9][0-9]*$"
+    },
+    "baseline_precision": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9]+/[1-9][0-9]*$"
+    },
+    "behavioral_validity": {
+      "const": "NOT_EVALUATED"
+    },
+    "safe_to_skip_unlisted_tests": {
+      "const": false
+    },
+    "report_id": {
+      "$ref": "#/$defs/digest"
+    },
+    "model_only_hits": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "baseline_only_hits": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "first_parent_merges_skipped": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "policy_evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected",
+        "calibration_cutoff",
+        "fit_events",
+        "validation_events",
+        "calibration",
+        "opportunities",
+        "model_matches",
+        "popularity_matches",
+        "directory_matches",
+        "model_only",
+        "baseline_only",
+        "prediction_differences",
+        "missing_prediction",
+        "predictive_only_not_semantic_validity"
+      ],
+      "properties": {
+        "selected": {
+          "enum": [
+            "GLOBAL_POPULARITY",
+            "DIRECTORY_POPULARITY",
+            "NAME_COUNTERPART",
+            "CONDITIONAL_PAIR",
+            "RECENT_PAIR",
+            "HYBRID"
+          ]
+        },
+        "calibration_cutoff": {
+          "$ref": "#/$defs/oid"
+        },
+        "fit_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "validation_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "calibration": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/calibrationScore"
+          }
+        },
+        "opportunities": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "popularity_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "directory_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_only": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_only": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prediction_differences": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_prediction": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "predictive_only_not_semantic_validity": {
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events",
+        "eligible",
+        "gaps"
+      ],
+      "properties": {
+        "events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "eligible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "count"
+            ],
+            "properties": {
+              "code": {
+                "enum": [
+                  "MERGE",
+                  "EMPTY_SCOPE",
+                  "BULK_CHANGE"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predicate",
+        "status",
+        "trigger_path",
+        "trigger_blob",
+        "companion_path",
+        "companion_blob",
+        "source_commit",
+        "source_tree",
+        "trigger_events",
+        "companion_events",
+        "cochange_events",
+        "total_training_events",
+        "witness_commits",
+        "baseline_companion",
+        "semantic_validity"
+      ],
+      "properties": {
+        "predicate": {
+          "const": "HISTORICAL_CHANGE_COMPANION"
+        },
+        "status": {
+          "const": "PROPOSED_UNTESTED"
+        },
+        "trigger_path": {
+          "type": "string"
+        },
+        "trigger_blob": {
+          "$ref": "#/$defs/oid"
+        },
+        "companion_path": {
+          "type": "string"
+        },
+        "companion_blob": {
+          "$ref": "#/$defs/oid"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/oid"
+        },
+        "source_tree": {
+          "$ref": "#/$defs/oid"
+        },
+        "trigger_events": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "companion_events": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cochange_events": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "total_training_events": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "witness_commits": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/oid"
+          }
+        },
+        "baseline_companion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "semantic_validity": {
+          "const": "NOT_EVALUATED"
+        }
+      }
+    },
+    "calibrationScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "opportunities",
+        "matches",
+        "popularity_matches",
+        "model_only",
+        "baseline_only"
+      ],
+      "properties": {
+        "policy": {
+          "enum": [
+            "GLOBAL_POPULARITY",
+            "DIRECTORY_POPULARITY",
+            "NAME_COUNTERPART",
+            "CONDITIONAL_PAIR",
+            "RECENT_PAIR",
+            "HYBRID"
+          ]
+        },
+        "opportunities": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "popularity_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_only": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_only": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

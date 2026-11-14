@@ -517,7 +517,7 @@ mod tests {
             "-c", "user.email=test@example.com", "-c", "user.name=Test",
             "commit", "-qm", "deleted",
         ]);
-        let fourth = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
+        let fourth = locate(&root, "HEAD", "renew", 4, None, None).unwrap();
         assert!(fourth.get("candidates").unwrap().array_ref().unwrap().is_empty());
         let cache_file = fourth.get("cache").unwrap().get("path").unwrap().str().unwrap();
         let cache_dir = std::path::Path::new(cache_file).parent().unwrap();

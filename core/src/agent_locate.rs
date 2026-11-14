@@ -8,7 +8,7 @@ use crate::json::{Value, obj};
 use crate::{Result, agent, agent_locate_cache, discovery, git, refuse};
 #[cfg(test)]
 use rusqlite::{Connection, params};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 #[cfg(test)]
@@ -220,6 +220,105 @@ fn gap(reason: &str) -> Value {
     obj(&[("reason", Value::string(reason))])
 }
 
+/// Return only direct neighbors of lexical hits in the existing source-bound
+/// dependency graph. A relation is *evidence*, not a new BM25 score or proof of
+/// runtime behavior. Preserve the producer's original assessment and receipt.
+fn related_sources(
+    context: &Value,
+    lexical_paths: &BTreeSet<String>,
+    inventory: &BTreeMap<String, git::Entry>,
+    commit: &str,
+    tree: &str,
+    limit: usize,
+) -> Result<Vec<Value>> {
+    if context == &Value::Null {
+        return Ok(Vec::new());
+    }
+    if context.get("source_commit")?.str()? != commit
+        || context.get("source_tree")?.str()? != tree
+    {
+        return refuse("agent locate relation context belongs to another Git tree");
+    }
+    let mut neighbors = Vec::new();
+    let mut seen = BTreeSet::new();
+    for relation in context.get("relationships")?.array_ref()? {
+        let kind = relation.get("kind")?.str()?;
+        // Configured graph membership uses a different source/entity domain,
+        // and is not silently interpreted as a source-to-source dependency.
+        if !matches!(kind, "SCIP_REFERENCE" | "STATIC_IMPORT") {
+            continue;
+        }
+        let from = relation.get("source")?;
+        let to = relation.get("target")?;
+        let from_path = from.get("path")?.str()?;
+        let to_path = to.get("path")?.str()?;
+        let from_selected = lexical_paths.contains(from_path);
+        let to_selected = lexical_paths.contains(to_path);
+        if from_selected == to_selected {
+            continue;
+        }
+        // Both endpoints must still match this exact tracked Git tree.
+        for endpoint in [from, to] {
+            let path = endpoint.get("path")?.str()?;
+            let file = inventory
+                .get(path)
+                .ok_or("relationship endpoint absent from current Git source tree")?;
+            if endpoint.get("blob")?.str()? != file.oid
+                || endpoint.get("mode")?.str()? != file.mode
+                || endpoint.get("source_commit")?.str()? != commit
+                || endpoint.get("source_tree")?.str()? != tree
+            {
+                return refuse("relationship endpoint differs from current Git source tree");
+            }
+        }
+        let evidence = relation.get("evidence")?.array_ref()?;
+        if evidence.is_empty() {
+            return refuse("related source has no producer evidence");
+        }
+        let expected = if kind == "SCIP_REFERENCE" {
+            "OBSERVED"
+        } else {
+            "CANDIDATE"
+        };
+        if evidence
+            .iter()
+            .any(|row| row.get("assessment").and_then(Value::str).ok() != Some(expected))
+        {
+            return refuse("related source carries incompatible evidence assessment");
+        }
+        let neighbor = if from_selected { to } else { from };
+        let neighbor_path = neighbor.get("path")?.str()?;
+        let key = (
+            neighbor_path.to_owned(),
+            kind.to_owned(),
+            from_path.to_owned(),
+            to_path.to_owned(),
+        );
+        if !seen.insert(key) {
+            continue;
+        }
+        if neighbors.len() >= limit {
+            break;
+        }
+        neighbors.push(obj(&[
+            ("source", neighbor.clone()),
+            ("relation", relation.clone()),
+            ("discovery", Value::string("SOURCE_BOUND_GRAPH_NEIGHBOR")),
+            ("assessment", Value::string(expected)),
+            (
+                "direction",
+                Value::string(if from_selected {
+                    "LEXICAL_SOURCE_TO_NEIGHBOR"
+                } else {
+                    "NEIGHBOR_TO_LEXICAL_SOURCE"
+                }),
+            ),
+            ("semantic_correctness", Value::string("UNVERIFIED")),
+        ]));
+    }
+    Ok(neighbors)
+}
+
 /// Locate candidate source files without requiring an initial --focus path.
 ///
 /// No working-tree reads or checkout changes occur. Cached native observations
@@ -261,6 +360,13 @@ pub fn locate_with_budget(
     let words = terms(task)?;
     let discovered = discovery::inspect(repo, rev)?;
     let entries = git::entries(&discovered.root, &discovered.commit)?;
+    let inventory = entries
+        .iter()
+        .filter(|entry| {
+            entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755")
+        })
+        .map(|entry| (entry.path.clone(), entry.clone()))
+        .collect::<BTreeMap<_, _>>();
     let index = agent_locate_cache::search(
         &discovered,
         entries,
@@ -339,6 +445,22 @@ pub fn locate_with_budget(
         )?
     };
 
+    let lexical = selected_paths.iter().cloned().collect::<BTreeSet<_>>();
+    let related = related_sources(
+        &context,
+        &lexical,
+        &inventory,
+        &discovered.commit,
+        &discovered.tree,
+        limit,
+    )?;
+    if context != Value::Null
+        && context.get("relationship_count")?.integer()?
+            > context.get("relationships")?.array_ref()?.len() as i64
+    {
+        gaps.push(gap("RELATIONSHIP_CONTEXT_TRUNCATED"));
+    }
+
     let mut output = obj(&[
         ("schema", Value::string("excession.agent-locate.v1")),
         ("source_commit", Value::string(&discovered.commit)),
@@ -347,6 +469,7 @@ pub fn locate_with_budget(
         ("retrieval", Value::string("GIT_BLOB_FTS5_BM25")),
         ("candidates", Value::array(candidates)),
         ("candidate_count", Value::number(selected_paths.len())),
+        ("relationship_candidates", Value::array(related)),
         ("indexed_source_count", Value::number(indexed_files)),
         ("skipped_source_count", Value::number(skipped)),
         ("indexed_bytes", Value::number(bytes)),

@@ -802,14 +802,35 @@ mod tests {
         assert!(parse(&strings(&["agent", "locate", "--repo", "x"])).is_err());
         assert!(parse(&strings(&["agent", "locate", "--task", "worker lease"])).is_err());
         let ParseOutcome::Command(parsed) = parse(&strings(&[
-            "agent", "locate", "--repo", "x", "--task", "worker lease",
-            "--rev", "HEAD", "--limit", "8", "--json",
-        ])).unwrap() else { panic!("expected a command"); };
+            "agent",
+            "locate",
+            "--repo",
+            "x",
+            "--task",
+            "worker lease",
+            "--rev",
+            "HEAD",
+            "--limit",
+            "8",
+            "--json",
+        ]))
+        .unwrap() else {
+            panic!("expected a command");
+        };
         assert_eq!(parsed.path, ["agent", "locate"]);
         assert_eq!(parsed.options.get("task"), "worker lease");
-        assert!(parse(&strings(&[
-            "agent", "locate", "--repo", "x", "--task", "lease", "--unknown",
-        ])).is_err());
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "lease",
+                "--unknown",
+            ]))
+            .is_err()
+        );
     }
 
     #[test]

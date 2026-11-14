@@ -439,6 +439,19 @@ mod tests {
             "initial",
         ]);
 
+        // A caller cannot redirect the cache into a repository directory.
+        // The rejection must happen before any directories are created.
+        let mut forbidden = discovery::inspect(&root, "HEAD").unwrap();
+        forbidden.index_path = root.join(".forbidden/index.sqlite");
+        assert!(agent_locate_cache::search(
+            &forbidden,
+            git::entries(&root, &forbidden.commit).unwrap(),
+            4,
+            "\"lease\"",
+            source_path,
+        ).is_err());
+        assert!(!root.join(".forbidden").exists());
+
         let first = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
         let ranked = first.get("candidates").unwrap().array_ref().unwrap();
         assert!(!ranked.is_empty());
@@ -581,6 +594,14 @@ mod tests {
             .str()
             .unwrap();
         let cache_dir = std::path::Path::new(cache_file).parent().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(cache_dir).unwrap().permissions().mode() & 0o077,
+                0
+            );
+        }
         // Clear the fixture cache after exercising pinned revision transitions.
         std::fs::remove_dir_all(cache_dir).unwrap();
 

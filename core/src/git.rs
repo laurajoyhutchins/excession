@@ -164,7 +164,8 @@ impl BlobReader {
             )
             .map_err(|e| format!("draining oversized Git blob: {e}"))?;
             let mut terminator = [0u8; 1];
-            self.stdout.read_exact(&mut terminator)
+            self.stdout
+                .read_exact(&mut terminator)
                 .map_err(|e| format!("missing oversized Git blob separator: {e}"))?;
             if drained != size as u64 || terminator != *b"\n" {
                 return refuse("invalid oversized Git batch framing");
@@ -373,7 +374,10 @@ mod tests {
         assert_eq!(reader.read(&a).unwrap(), first);
         assert_eq!(reader.read(&b).unwrap(), second);
         assert_eq!(reader.read(&a).unwrap(), first);
-        assert_eq!(reader.read_capped(&a, 1).unwrap_err(), "Git source blob exceeds byte limit");
+        assert_eq!(
+            reader.read_capped(&a, 1).unwrap_err(),
+            "Git source blob exceeds byte limit"
+        );
         // The next response must still begin with its own exact OID header.
         assert_eq!(reader.read(&b).unwrap(), second);
         reader.finish().unwrap();

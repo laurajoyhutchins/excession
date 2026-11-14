@@ -147,7 +147,6 @@ fn meta(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
 pub(crate) fn search(
     discovered: &discovery::Discovery,
     entries: Vec<git::Entry>,
-    words: &[String],
     limit: usize,
     expression: &str,
     source_path: impl Fn(&str) -> bool,
@@ -156,9 +155,9 @@ pub(crate) fn search(
     let mut db = Connection::open(&path).map_err(|e| sql_error("open", e))?;
     db.busy_timeout(std::time::Duration::from_secs(15))
         .map_err(|e| sql_error("busy timeout", e))?;
-    initialize(&db)?;
     let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| sql_error("begin", e))?;
+    initialize(&tx)?;
     let mut reader: Option<git::BlobReader> = None;
     let mut seen = BTreeSet::<String>::new();
     let mut indexed_files = 0usize;
@@ -266,11 +265,11 @@ pub(crate) fn search(
     let mut hits = Vec::new();
     {
         let mut stmt = tx.prepare(
-            "SELECT f.path,f.blob,f.mode,s.body
-             FROM source_search s
-             JOIN locator_files f ON f.id=s.rowid
+            "SELECT f.path,f.blob,f.mode,source_search.body
+             FROM source_search
+             JOIN locator_files f ON f.id=source_search.rowid
              WHERE source_search MATCH ?1
-             ORDER BY bm25(source_search,4.0,1.0), s.rowid LIMIT ?2",
+             ORDER BY bm25(source_search,4.0,1.0), source_search.rowid LIMIT ?2",
         ).map_err(|e| sql_error("rank prepare", e))?;
         let rows = stmt.query_map(params![expression, limit as i64], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?,

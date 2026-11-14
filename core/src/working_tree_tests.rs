@@ -1073,6 +1073,7 @@ if [ "$1" = pytest-testmon ] && [ ! -f .testmondata ]; then
     && /usr/local/bin/python3 -m pytest --testmon --testmon-noselect -q >/tmp/excession-baseline.log 2>&1 \
     && test -s .testmondata \
     && git -c core.hooksPath=/dev/null -c core.fsmonitor=false checkout -qf --detach "$3" \
+    && git -c core.hooksPath=/dev/null clean -ffdx -e .testmondata \
     || { echo 'isolated pytest baseline generation failed or was incomplete' >&2; exit 2; }
 fi
 shift 3

@@ -356,6 +356,24 @@ fn execute(args: &[String]) -> Result<Response> {
             Ok(Response::Bytes(Vec::new()))
         }
         [top, sub] if top == "concepts" => {
+            if sub == "bugsinpy-import" {
+                return Ok(json(excession::concepts_regressions::bugsinpy_import(
+                    opt.path("dataset-repo"),
+                    opt.get("dataset-rev"),
+                    opt.get("project"),
+                    opt.get("bug"),
+                )?));
+            }
+            if sub == "regression-adjudicate" {
+                return Ok(json(excession::concepts_regressions::adjudicate(
+                    opt.path("repo"),
+                    opt.path("dataset-repo"),
+                    opt.path("manifest"),
+                    opt.get("case"),
+                    opt.path("frozen"),
+                    opt.path("oracle"),
+                )?));
+            }
             if matches!(sub.as_str(), "invariant-propose" | "invariant-backtest") {
                 let backtest = sub == "invariant-backtest";
                 let integer = |name: &str, default: &str| -> Result<usize> {

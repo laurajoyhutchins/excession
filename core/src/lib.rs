@@ -14,6 +14,7 @@ pub mod concepts_mcp;
 pub mod concepts_normalize;
 pub mod concepts_policy;
 pub mod concepts_query;
+pub mod concepts_regressions;
 pub mod concepts_review;
 pub mod concepts_scip;
 pub mod concepts_store;

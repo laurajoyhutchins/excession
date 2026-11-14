@@ -1,0 +1,64 @@
+name: BugsInPy pinned B/C import without invented working revision
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/concepts-bugsinpy.yml
+      - core/src/concepts_regressions.rs
+      - core/src/bin/excession.rs
+      - core/src/bin/excession/cli.rs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PIN: 11c5f1eea954a42132cfd06bf257766a7963e0fd
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Rust native core
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --lib concepts_regressions
+          cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch exact published BugsInPy metadata
+        run: |
+          set -euo pipefail
+          git init -q bugsinpy
+          git -C bugsinpy remote add origin https://github.com/soarsmu/BugsInPy.git
+          git -C bugsinpy fetch -q --depth=1 --filter=blob:none origin "$PIN"
+          test "$(git -C bugsinpy rev-parse "$PIN^{commit}")" = "$PIN"
+      - name: Import three real project metadata records without executing scripts
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          for project in PySnooper black cookiecutter; do
+            core/target/debug/excession concepts bugsinpy-import \
+              --dataset-repo bugsinpy --dataset-rev "$PIN" \
+              --project "$project" --bug 1 > "evidence/$project.json"
+            python3 - "evidence/$project.json" <<'PY'
+          import json,sys
+          record=json.load(open(sys.argv[1]))
+          assert record["schema"]=="excession.concepts.bugsinpy-import.v1"
+          assert record["status"]=="B_C_METADATA_ONLY_A_NOT_ESTABLISHED"
+          assert record["working_commit_A"] is None
+          assert not record["source_commits_verified"]
+          assert not record["behavioral_oracle_executed"]
+          assert not record["script_executed"]
+          assert not record["semantic_invariant_proven"]
+          assert len(record["dataset_bug_info_blob"])==40
+          print("METADATA",record["case"],record["buggy_commit_B"],record["fixed_commit_C"])
+          PY
+          done
+      - name: Preserve exact imported dataset evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bugsinpy-pinned-source-metadata
+          path: evidence/
+          if-no-files-found: warn

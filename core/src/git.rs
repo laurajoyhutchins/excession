@@ -155,6 +155,20 @@ impl BlobReader {
             return refuse("unexpected Git batch header fields");
         }
         if size > max_bytes {
+            // Drain the oversized object without allocating it. A batch reader
+            // must consume the entire framed response before the next OID.
+            // Skipped payloads are never asserted as authenticated source.
+            let drained = std::io::copy(
+                &mut self.stdout.by_ref().take(size as u64),
+                &mut std::io::sink(),
+            )
+            .map_err(|e| format!("draining oversized Git blob: {e}"))?;
+            let mut terminator = [0u8; 1];
+            self.stdout.read_exact(&mut terminator)
+                .map_err(|e| format!("missing oversized Git blob separator: {e}"))?;
+            if drained != size as u64 || terminator != *b"\n" {
+                return refuse("invalid oversized Git batch framing");
+            }
             return refuse("Git source blob exceeds byte limit");
         }
 

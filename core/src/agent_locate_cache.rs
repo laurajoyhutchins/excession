@@ -47,13 +47,17 @@ fn external_cache(discovered: &discovery::Discovery) -> Result<PathBuf> {
     // create files inside the checkout, even when its final component does
     // not exist yet or an existing ancestor is a symlink into the checkout.
     if !parent.is_absolute()
-        || parent.components().any(|c| matches!(c, std::path::Component::ParentDir))
+        || parent
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
     {
         return refuse("agent locate cache directory must be absolute without parent traversal");
     }
     let mut ancestor = parent;
     while !ancestor.exists() {
-        ancestor = ancestor.parent().ok_or("no existing cache directory ancestor")?;
+        ancestor = ancestor
+            .parent()
+            .ok_or("no existing cache directory ancestor")?;
     }
     let ancestor = fs::canonicalize(ancestor).map_err(|e| sql_error("ancestor canonicalize", e))?;
     if ancestor.starts_with(&root) || parent.starts_with(&root) {
@@ -87,16 +91,23 @@ fn initialize(db: &Connection) -> Result<()> {
          );
          CREATE VIRTUAL TABLE IF NOT EXISTS source_search
              USING fts5(path, body, tokenize='unicode61');",
-    ).map_err(|e| sql_error("initialize", e))?;
-    let version: Option<String> = db.query_row(
-        "SELECT value FROM locator_meta WHERE key='version'", [], |row| row.get(0),
-    ).optional().map_err(|e| sql_error("version", e))?;
+    )
+    .map_err(|e| sql_error("initialize", e))?;
+    let version: Option<String> = db
+        .query_row(
+            "SELECT value FROM locator_meta WHERE key='version'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| sql_error("version", e))?;
     match version.as_deref() {
         Some(CACHE_VERSION) => {}
         None => {
             // Newly created cache must have no unversioned source records.
             // This file name is dedicated to this feature, not the evidence DB.
-            let count: i64 = db.query_row("SELECT COUNT(*) FROM locator_files", [], |row| row.get(0))
+            let count: i64 = db
+                .query_row("SELECT COUNT(*) FROM locator_files", [], |row| row.get(0))
                 .map_err(|e| sql_error("initialization count", e))?;
             if count != 0 {
                 return refuse("unversioned agent locate cache contains source records");
@@ -104,14 +115,18 @@ fn initialize(db: &Connection) -> Result<()> {
             db.execute(
                 "INSERT INTO locator_meta(key,value) VALUES('version',?1)",
                 params![CACHE_VERSION],
-            ).map_err(|e| sql_error("version insert", e))?;
+            )
+            .map_err(|e| sql_error("version insert", e))?;
         }
         Some(_) => return refuse("unsupported agent locate cache version"),
     }
     Ok(())
 }
 
-fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<(i64, String, String, usize, String)>> {
+fn previous(
+    tx: &Transaction<'_>,
+    path: &str,
+) -> Result<Option<(i64, String, String, usize, String)>> {
     tx.query_row(
         "SELECT id,blob,mode,bytes,status FROM locator_files WHERE path=?1",
         params![path],
@@ -125,7 +140,8 @@ fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<(i64, String, Str
     .map(|(id, blob, mode, size, status)| {
         let size = usize::try_from(size).map_err(|_| "negative cached source size")?;
         Ok((id, blob, mode, size, status))
-    }).transpose()
+    })
+    .transpose()
 }
 
 fn remove(tx: &Transaction<'_>, id: i64) -> Result<()> {
@@ -136,17 +152,24 @@ fn remove(tx: &Transaction<'_>, id: i64) -> Result<()> {
     Ok(())
 }
 
-fn insert(tx: &Transaction<'_>, entry: &git::Entry, body: Option<&str>, status: &str) -> Result<()> {
+fn insert(
+    tx: &Transaction<'_>,
+    entry: &git::Entry,
+    body: Option<&str>,
+    status: &str,
+) -> Result<()> {
     let size = body.map_or(0usize, str::len);
     tx.execute(
         "INSERT INTO locator_files(path,blob,mode,bytes,status) VALUES(?1,?2,?3,?4,?5)",
         params![&entry.path, &entry.oid, &entry.mode, size as i64, status],
-    ).map_err(|e| sql_error("insert source", e))?;
+    )
+    .map_err(|e| sql_error("insert source", e))?;
     if let Some(body) = body {
         tx.execute(
             "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
             params![tx.last_insert_rowid(), &entry.path, body],
-        ).map_err(|e| sql_error("insert FTS row", e))?;
+        )
+        .map_err(|e| sql_error("insert FTS row", e))?;
     }
     Ok(())
 }
@@ -156,7 +179,8 @@ fn meta(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
         "INSERT INTO locator_meta(key,value) VALUES(?1,?2)
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         params![key, value],
-    ).map_err(|e| sql_error("snapshot metadata", e))?;
+    )
+    .map_err(|e| sql_error("snapshot metadata", e))?;
     Ok(())
 }
 
@@ -171,7 +195,8 @@ pub(crate) fn search(
     let mut db = Connection::open(&path).map_err(|e| sql_error("open", e))?;
     db.busy_timeout(std::time::Duration::from_secs(15))
         .map_err(|e| sql_error("busy timeout", e))?;
-    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)
+    let tx = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| sql_error("begin", e))?;
     initialize(&tx)?;
     let mut reader: Option<git::BlobReader> = None;
@@ -219,7 +244,9 @@ pub(crate) fn search(
         if reader.is_none() {
             reader = Some(git::BlobReader::open(&discovered.root)?);
         }
-        let data = match reader.as_mut().ok_or("missing Git reader")?
+        let data = match reader
+            .as_mut()
+            .ok_or("missing Git reader")?
             .read_capped(&entry.oid, MAX_FILE_BYTES)
         {
             Ok(data) => data,
@@ -260,9 +287,13 @@ pub(crate) fn search(
     // that were excluded because the memory/source-count budget was reached.
     let mut stale = Vec::new();
     {
-        let mut stmt = tx.prepare("SELECT id,path FROM locator_files")
+        let mut stmt = tx
+            .prepare("SELECT id,path FROM locator_files")
             .map_err(|e| sql_error("stale scan", e))?;
-        let ids = stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        let ids = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
             .map_err(|e| sql_error("stale query", e))?;
         for row in ids {
             let (id, path) = row.map_err(|e| sql_error("stale row", e))?;
@@ -280,31 +311,50 @@ pub(crate) fn search(
     // cannot interleave and produce a mixed-revision result.
     let mut hits = Vec::new();
     {
-        let mut stmt = tx.prepare(
-            "SELECT f.path,f.blob,f.mode,source_search.body
+        let mut stmt = tx
+            .prepare(
+                "SELECT f.path,f.blob,f.mode,source_search.body
              FROM source_search
              JOIN locator_files f ON f.id=source_search.rowid
              WHERE source_search MATCH ?1
              ORDER BY bm25(source_search,4.0,1.0), source_search.rowid LIMIT ?2",
-        ).map_err(|e| sql_error("rank prepare", e))?;
-        let rows = stmt.query_map(params![expression, limit as i64], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?, row.get::<_, String>(3)?))
-        }).map_err(|e| sql_error("rank query", e))?;
+            )
+            .map_err(|e| sql_error("rank prepare", e))?;
+        let rows = stmt
+            .query_map(params![expression, limit as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(|e| sql_error("rank query", e))?;
         for row in rows {
             let (path, blob, mode, body) = row.map_err(|e| sql_error("rank row", e))?;
             if crate::digest::git_blob(body.as_bytes()) != blob {
                 return refuse("cached FTS source failed Git blob identity verification");
             }
             hits.push(Hit {
-                entry: git::Entry { path, oid: blob, mode, kind: "blob".into() },
+                entry: git::Entry {
+                    path,
+                    oid: blob,
+                    mode,
+                    kind: "blob".into(),
+                },
                 body,
             });
         }
     }
     tx.commit().map_err(|e| sql_error("commit", e))?;
     Ok(Search {
-        hits, indexed_files, indexed_bytes, skipped_files, truncated,
-        reused_blobs, read_blobs, cache_path: path,
+        hits,
+        indexed_files,
+        indexed_bytes,
+        skipped_files,
+        truncated,
+        reused_blobs,
+        read_blobs,
+        cache_path: path,
     })
 }

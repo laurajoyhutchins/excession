@@ -1,0 +1,20 @@
+{
+  "schema": "excession.concepts.behavioral-case.v1",
+  "id": "pytest-empty-collect-error",
+  "source_repository": "pytest-dev/pytest",
+  "observed_faulty_commit": "bc14038c406563b18a03e15453a10b9eee969e42",
+  "fixed_commit": "dcd0e636b4ce69021a9f607b060ea0056c339fd2",
+  "changed_source": "src/_pytest/nodes.py",
+  "independently_relevant_test": "testing/test_nodes.py",
+  "targeted_test": "testing/test_nodes.py::test_collector_repr_failure_collect_error",
+  "witness": "Collector.repr_failure(CollectError()) must return empty string",
+  "expected_fault_exception": "IndexError: tuple index out of range",
+  "expected": "BEFORE_FIX_FAILS_AFTER_FIX_PASSES_AND_CONTROLLED_REINTRODUCTION_FAILS",
+  "origin": "upstream history verified in Excession PR 194; controlled reintroduction reuses the original faulty expression",
+  "limitations": [
+    "This is a paired upstream fault/fix and a controlled reintroduction, not a genuine upstream A/B/C introduction history.",
+    "No independent coding agent performed the reintroduction.",
+    "Source companions are not verified semantic invariants.",
+    "A prewarmed pytest-testmon run is the strong native selector control."
+  ]
+}

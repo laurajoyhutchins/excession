@@ -191,10 +191,40 @@ binary. There is no image pull, dependency installation, or fallback to host
 execution.
 
 ~~~sh
+# Install a rootless Podman runtime separately, then do this once:
+sh tools/bootstrap-test-sandbox.sh
+
+# Check prerequisites anywhere (no Git repository needed):
+excession tests --doctor
+excession tests --doctor --json
+
+# In the project with staged/unstaged/untracked edits:
 excession tests --json
-excession tests --sandbox-image registry.example/test@sha256:FULL_DIGEST
-excession tests --run --sandbox-image registry.example/test@sha256:FULL_DIGEST --json
+excession tests --run --json
 ~~~
+
+The setup script builds a labeled image containing **git**, **pytest**,
+**pytest-testmon**, **pytest-json-report** and **Jest**. Its build context is
+only `tools/sandbox/`, not the project being reviewed. Setup is **opt-in**
+and uses the network to fetch packages; it does not run project code.
+A developer may instead provide their own preinstalled, pinned image via
+`--sandbox-image sha256:<local-image-id>` or
+`--sandbox-image registry/name@sha256:<digest>`.
+
+Without an explicit image, the CLI inspects only the local tag
+`localhost/excession-test-sandbox:latest` and requires the image's
+`io.excession.sandbox=v1` label. It resolves the tag to a SHA-256 image
+ID **before** execution and includes that ID in `next_argv`; no tag or
+unpinned image is executed. A missing tag or unsafe Podman configuration
+blocks instead of falling back to host execution. `--sandbox-image auto`
+forces the same local discovery; `--doctor --json` explains missing
+prerequisites in a machine-readable form.
+
+On a clean committed checkout, the pre-existing `excession tests --run`
+workflow still runs installed native tools in the trusted checkout. The
+rootless sandbox requirement applies to **uncommitted** work. The current
+native pytest selector still requires a previous `.testmondata` coverage
+baseline; there is no implicit host-side baseline generation.
 
 In the sandbox, the source snapshot is bind-mounted **read-only** at /input.
 A fresh copy is made into a **size-limited, writable tmpfs** at /work.

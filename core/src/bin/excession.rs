@@ -1420,6 +1420,41 @@ mod tests {
         x.iter().map(|s| (*s).to_owned()).collect()
     }
     #[test]
+    fn graph_route_serializes_domain_json_at_cli_boundary() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "excession-self-graph-route-{}-{unique}.sqlite",
+            std::process::id()
+        ));
+        {
+            let db = Db::open(&path).unwrap();
+            db.init_schema().unwrap();
+        }
+        let response = execute(&strings(&[
+            "graph",
+            "ls",
+            "--db",
+            path.to_str().unwrap(),
+        ]))
+        .unwrap();
+        match response {
+            Response::Json(value) => {
+                assert_eq!(
+                    value.get("schema").unwrap().str().unwrap(),
+                    "excession.graph-list.v1"
+                );
+                assert_eq!(value.get("count").unwrap().integer().unwrap(), 0);
+                assert!(value.get("graphs").unwrap().array_ref().unwrap().is_empty());
+            }
+            _ => panic!("graph ls must remain a canonical JSON response"),
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn options_are_validated_once_by_clap() {
         assert!(
             execute(&strings(&[

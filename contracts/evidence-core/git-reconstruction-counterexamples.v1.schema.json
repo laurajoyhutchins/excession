@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Unattested counterexample hints for reconstruction synthesis",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "failures"],
+  "properties": {
+    "schema": {"const": "excession.git-reconstruction-counterexamples.v1"},
+    "failures": {"type": "array", "maxItems": 256, "items": {
+      "type": "object", "additionalProperties": false, "required": ["contract", "tree", "oracle_sha256"],
+      "properties": {
+        "contract": {"type": "string", "minLength": 1},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "oracle_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }}
+  }
+}

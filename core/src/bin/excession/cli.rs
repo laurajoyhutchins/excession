@@ -660,8 +660,12 @@ pub(super) fn command() -> Command {
                 leaf("history", &["db", "target"], &["limit"]),
                 leaf("auto", &["db", "target", "out", "trusted-local"], &["compiler", "objcopy", "objdump", "nm", "max-candidates", "time-budget-seconds"]),
                 leaf("searches", &["db", "target"], &["limit"]),
+                leaf("git", &["repo", "plan"], &[]),
+                leaf("git-synthesize", &["repo", "seed", "output"], &["max-candidates", "feedback"]),
+                leaf("git-evidence", &["repo", "plan", "db", "evidence"], &[]),
+                leaf("git-oracles", &["repo", "plan", "db", "evidence", "checks", "trusted-local"], &[]),
             ],
-        ).about("Trusted-local compiler feedback for C object-code reconstruction"))
+        ).about("Read-only Git reconstruction and trusted-local C compiler feedback"))
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)

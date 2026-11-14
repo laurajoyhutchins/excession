@@ -8,11 +8,13 @@ on:
       - 'core/src/kernel.rs'
       - 'core/src/kernel_links.rs'
       - 'core/src/adapter.rs'
-      - 'core/src/bin/excession.rs'
-      - 'core/src/lib.rs'
       - 'tests/test_kernel_parsers.py'
       - 'tests/kernel_linux_probe.py'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

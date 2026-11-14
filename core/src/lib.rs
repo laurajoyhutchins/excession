@@ -8,6 +8,7 @@ pub mod agent_locate;
 mod agent_locate_cache;
 pub mod analyze;
 pub mod benchmark;
+#[path = "source/change_inventory.rs"]
 pub mod change_inventory;
 pub mod compiler_clang;
 pub mod configured_store;
@@ -22,11 +23,23 @@ pub mod evidence_coverage;
 pub mod evidence_query;
 pub mod evidence_store;
 pub mod explain;
+#[path = "source/git.rs"]
 pub mod git;
+#[path = "source/git_reconstruction.rs"]
+pub mod git_reconstruction;
+#[path = "evidence/git_reconstruction_evidence.rs"]
+pub mod git_reconstruction_evidence;
+#[path = "actions/git_reconstruction_oracles.rs"]
+pub mod git_reconstruction_oracles;
+#[path = "actions/git_reconstruction_synthesis.rs"]
+pub mod git_reconstruction_synthesis;
 pub mod graph;
 pub mod graph_assembly;
 pub mod graph_baseline;
 pub mod historical;
+#[path = "source/history.rs"]
+pub mod history;
+#[path = "source/identity.rs"]
 pub mod identity;
 pub mod impact;
 pub mod impact_query;

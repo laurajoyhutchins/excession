@@ -29,5 +29,6 @@ second project or CLI. New code should use `excession` naming and versioned
 `excession.*` interfaces.
 
 The active Rust crate/package and sole binary are named **`excession`**.
-Research operations with historical positional arguments are accessed via
-`excession research ...`; see [the migration guide](MIGRATION.md).
+The old positional research entry point is retired and unavailable in the current
+CLI. Reproduce historical protocols from their pinned Git revisions instead;
+see [the migration guide](MIGRATION.md).

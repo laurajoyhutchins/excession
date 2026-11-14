@@ -9,11 +9,14 @@ on:
       - 'tests/fixtures/rust-api/**'
       - 'core/src/agent.rs'
       - 'contracts/agent/**'
-      - 'core/src/bin/excession.rs'
-      - 'core/src/bin/excession/cli.rs'
       - 'tests/refactor_codegen_replay.sh'
       - '.github/workflows/refactor-codegen.yml'
+      - 'core/tests/refactor_contracts.rs'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

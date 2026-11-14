@@ -7,7 +7,7 @@
   "required": [
     "schema", "source_commit", "source_tree", "task", "retrieval",
     "candidates", "candidate_count", "indexed_source_count", "skipped_source_count",
-    "indexed_bytes", "context", "coverage", "safe_to_skip_unlisted_tests", "report_id"
+    "indexed_bytes", "context", "coverage", "cache", "safe_to_skip_unlisted_tests", "report_id"
   ],
   "properties": {
     "schema": { "const": "excession.agent-locate.v1" },
@@ -84,6 +84,18 @@
           }
         }
       }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "reused_blobs", "read_blobs"],
+      "properties": {
+        "kind": { "const": "PERSISTENT_SQLITE_FTS5" },
+        "path": { "type": "string", "minLength": 1 },
+        "reused_blobs": { "type": "integer", "minimum": 0 },
+        "read_blobs": { "type": "integer", "minimum": 0 }
+      },
+      "description": "Operational diagnostic, excluded from the deterministic report_id."
     },
     "safe_to_skip_unlisted_tests": { "const": false }
   },

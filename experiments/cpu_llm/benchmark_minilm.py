@@ -29,6 +29,9 @@ from tokenizers import Tokenizer
 
 MODEL_ID = "Xenova/ms-marco-MiniLM-L-6-v2"
 MODEL_FILE = "onnx/model_quantized.onnx"
+MODEL_REVISION = "a09144355adeed5f58c8ed011d209bf8ee5a1fec"
+MODEL_SHA256 = "e9d8ebf845c413e981c175bfe49a3bfa9b3dcce2a3ba54875ee5df5a58639fbe"
+TOKENIZER_SHA256 = "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
 MAX_LENGTH = 256
 ROOT = pathlib.Path("cpu_llm_results")
 ROOT.mkdir(exist_ok=True)
@@ -220,12 +223,14 @@ def main():
     report={"benchmark":"excession-minilm-cross-encoder-v1","model":MODEL_ID,"model_file":MODEL_FILE,
         "target_split":SPLIT,"model_claims_are_unreviewed":True,
         "label_review_status":"AUTHOR_SEEDED_NOT_INDEPENDENTLY_ADJUDICATED","rows":[]}
-    model_revision=os.environ.get("MINILM_REVISION") or HfApi().model_info(MODEL_ID).sha
+    model_revision=MODEL_REVISION
     weights = hf_hub_download(MODEL_ID,MODEL_FILE,revision=model_revision)
     tokens = hf_hub_download(MODEL_ID,"tokenizer.json",revision=model_revision)
     report["model_revision"]=model_revision
     report["weights_sha256"]=sha_file(weights)
     report["tokenizer_sha256"]=sha_file(tokens)
+    if report["weights_sha256"]!=MODEL_SHA256 or report["tokenizer_sha256"]!=TOKENIZER_SHA256:
+        raise RuntimeError("pinned model or tokenizer digest mismatch")
     report["weights_bytes"]=pathlib.Path(weights).stat().st_size
     tok=Tokenizer.from_file(tokens)
     tok.enable_truncation(max_length=MAX_LENGTH)

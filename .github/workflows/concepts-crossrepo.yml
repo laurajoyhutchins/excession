@@ -67,9 +67,23 @@ jobs:
           REPO_ID: ${{ matrix.id }}
         run: |
           set -euo pipefail
+          # Keep the cohort predetermined; small repositories use their whole
+          # available first-parent history, never a manually chosen test slice.
+          available=$(($(git -C historical rev-list --first-parent --count "$PIN") - 1))
+          if (( available < 40 )); then
+            echo "insufficient first-parent history: $available" >&2
+            exit 2
+          fi
+          train=256
+          holdout=96
+          if (( available < 352 )); then
+            train=$((available * 7 / 10))
+            holdout=$((available - train))
+            if (( holdout > 96 )); then holdout=96; fi
+          fi
           core/target/debug/excession concepts invariant-backtest \
             --repo historical --rev "$PIN" --prefix . \
-            --train 256 --holdout 96 --support 2 --confidence 60 > result.json
+            --train "$train" --holdout "$holdout" --support 2 --confidence 60 > result.json
           python3 - <<'PY'
           import json, os
           p = json.load(open("result.json"))
@@ -88,6 +102,7 @@ jobs:
             "baseline_only_hits": p["baseline_only_hits"]
           }
           print(json.dumps(output,sort_keys=True))
+          print('DIAGNOSTIC_OBSERVATIONS',json.dumps(p['observations'][:40],sort_keys=True))
           with open("summary.json","w") as f: json.dump(output,f,sort_keys=True,indent=2)
           PY
       - name: Retain each real result, including negative or empty coverage

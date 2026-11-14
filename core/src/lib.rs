@@ -27,6 +27,7 @@ pub mod graph;
 pub mod graph_assembly;
 pub mod graph_baseline;
 pub mod historical;
+pub mod history;
 pub mod identity;
 pub mod impact;
 pub mod impact_query;

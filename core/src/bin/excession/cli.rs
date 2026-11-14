@@ -682,6 +682,13 @@ pub(super) fn command() -> Command {
         .subcommand(security)
         .subcommand(evidence)
         .subcommand(group(
+            "history",
+            vec![
+                leaf("plan", &["repo"], &["rev", "base", "max-commits"]),
+                leaf("audit", &["repo", "plan"], &[]),
+            ],
+        ).about("Read-only Git history consolidation plans and exact source-DAG replay"))
+        .subcommand(group(
             "reconstruct",
             vec![
                 leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),

@@ -3,6 +3,7 @@
 
 use excession::agent;
 use excession::agent_locate;
+use excession::history;
 use excession::analyze;
 use excession::change_inventory;
 use excession::discovery;
@@ -626,6 +627,22 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get_or("json", "false") == "true",
             ))
         }
+        [top, sub] if top == "history" => match sub.as_str() {
+            "plan" => {
+                let max = opt
+                    .get_or("max-commits", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-commits must be an integer from 1 to 100000")?;
+                Ok(json(history::plan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.0.get("base").map(String::as_str),
+                    max,
+                )?))
+            }
+            "audit" => Ok(json(history::audit(opt.path("repo"), opt.path("plan"))?)),
+            _ => refuse(format!("unknown history command {sub}")),
+        },
         [top, sub] if top == "agent" => {
             let limit = opt
                 .get_or("limit", "32")

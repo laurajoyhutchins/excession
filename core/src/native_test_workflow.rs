@@ -402,7 +402,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         request.tool,
         request.focus,
     );
-    let mut report = obj(&[
+    let report = obj(&[
         ("schema", Value::string("excession.test-workflow.v1")),
         (
             "mode",
@@ -451,11 +451,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         ("verification", verification),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
-    let id = report.sha256();
-    report
-        .entries_mut()?
-        .insert("report_id".to_owned(), Value::string(id));
-    Ok(report)
+    report.stamp_id("report_id")
 }
 
 fn native_changed_paths(changes: &Value) -> Result<Vec<String>> {

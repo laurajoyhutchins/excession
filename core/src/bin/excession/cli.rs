@@ -492,8 +492,15 @@ pub(super) fn command() -> Command {
             leaf(
                 "locate",
                 &["repo", "task"],
-                &["rev", "limit", "roots", "db", "json"],
-            ).about("Find ranked Git-pinned source candidates for a natural-language task"),
+                &["rev", "limit", "roots", "db"],
+            )
+            .about("Find ranked Git-pinned source candidates for a natural-language task")
+            .arg(
+                Arg::new("json")
+                    .long("json")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Emit canonical JSON (also the default for agent locate)"),
+            ),
             leaf(
                 "context",
                 &["repo", "rev", "focus"],

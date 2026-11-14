@@ -331,3 +331,82 @@ pub fn assess(repo: &Path, candidate: &str, frozen: &Path, observations: &Path) 
     validate_contract(&sealed, REVIEW_CONTRACT)?;
     Ok(sealed)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize,Ordering};
+    static NEXT: AtomicUsize=AtomicUsize::new(0);
+
+    fn git_cmd(root:&Path,args:&[&str])->String{
+        git::text(root,args).unwrap()
+    }
+    fn commit(root:&Path,text:&str){
+        fs::write(root.join("src/main/java/Foo.java"),text).unwrap();
+        git_cmd(root,&["add","."]);
+        git_cmd(root,&[
+            "-c","user.name=Regression Fixture",
+            "-c","user.email=fixture@example.invalid",
+            "commit","-qm","fixture",
+        ]);
+    }
+    fn observations(modeled_exits:i64,direct_throws:i64,guaranteed:bool)->String{
+        let header=obj(&[
+            ("schema",Value::string(OBS_SCHEMA)),
+            ("kind",Value::string("SOURCE")),
+            ("source",Value::string("src/main/java/Foo.java")),
+        ]);
+        let catch=obj(&[
+            ("schema",Value::string(OBS_SCHEMA)),
+            ("kind",Value::string("CATCH")),
+            ("source",Value::string("src/main/java/Foo.java")),
+            ("method",Value::string("Foo#parse()")),
+            ("catch_index",Value::number(0)),
+            ("caught",Value::string("Throwable")),
+            ("line",Value::number(3)),
+            ("modeled_exits",Value::number(modeled_exits)),
+            ("direct_throw_count",Value::number(direct_throws)),
+            ("guaranteed_throw",Value::Bool(guaranteed)),
+        ]);
+        format!("{}\n{}\n",header.canonical(),catch.canonical())
+    }
+    #[test]
+    fn freeze_before_change_and_detect_interprocedural_loss_with_no_inline_throw() {
+        let root=std::env::temp_dir().join(format!(
+            "excession-exception-flow-{}-{}",
+            std::process::id(),NEXT.fetch_add(1,Ordering::Relaxed)));
+        fs::create_dir_all(root.join("src/main/java")).unwrap();
+        git_cmd(&root,&["init","-q"]);
+        commit(&root,"class Foo { void parse() { throw new IllegalStateException(); } }\n");
+        let a=git_cmd(&root,&["rev-parse","HEAD"]);
+        let ar=root.join("a.jsonl");
+        fs::write(&ar,observations(2,0,true)).unwrap();
+        let frozen=freeze(&root,&a,&ar).unwrap();
+        assert_eq!(frozen.get("candidate_count").unwrap().integer().unwrap(),1);
+        let frozen_path=root.join("frozen.json");
+        fs::write(&frozen_path,frozen.canonical()).unwrap();
+        commit(&root,"class Foo { void parse() {} }\n");
+        let b=git_cmd(&root,&["rev-parse","HEAD"]);
+        let br=root.join("b.jsonl");
+        fs::write(&br,observations(1,0,false)).unwrap();
+        let review=assess(&root,&b,&frozen_path,&br).unwrap();
+        assert_eq!(review.get("lost_modeled_throw_guarantees").unwrap().integer().unwrap(),1);
+        assert_eq!(review.get("simple_local_throw_removals").unwrap().integer().unwrap(),0);
+        assert_eq!(review.get("model_only_handler_warnings").unwrap().integer().unwrap(),1);
+        assert!(!review.get("semantic_invariant_proven").unwrap().bool().unwrap());
+        fs::write(&br,observations(1,0,true)).unwrap();
+        assert!(assess(&root,&b,&frozen_path,&br).is_err());
+        fs::write(&br,observations(1,0,false)).unwrap();
+        let mut forged=frozen.clone();
+        forged.entries_mut().unwrap().insert(
+            "source_commit".into(),Value::string(&b));
+        fs::write(&frozen_path,forged.canonical()).unwrap();
+        assert!(assess(&root,&b,&frozen_path,&br).is_err());
+        // A complete source scan must never silently omit one tracked file.
+        fs::write(&ar,"").unwrap();
+        assert!(freeze(&root,&a,&ar).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+}

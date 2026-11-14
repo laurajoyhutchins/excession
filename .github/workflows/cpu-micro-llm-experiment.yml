@@ -1,0 +1,37 @@
+name: CPU micro-LLM Excession experiment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cpu-micro-llm-experiment.yml'
+      - 'experiments/cpu_llm/**'
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned-at-run CPU inference runtime
+        run: |
+          python -m pip install --upgrade 'huggingface_hub==1.16.1'
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
+          cmake -S /tmp/llama.cpp -B /tmp/llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON
+          cmake --build /tmp/llama.cpp/build --target llama-server --parallel 4
+          echo "LLAMA_COMMIT=$(git -C /tmp/llama.cpp rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Run identical semantic tests on each model
+        run: |
+          echo "llama.cpp commit $LLAMA_COMMIT"
+          python experiments/cpu_llm/benchmark_cpu_llms.py
+      - name: Retain model results and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-cpu-llm-results
+          path: cpu_llm_results/
+          if-no-files-found: warn
+          retention-days: 7

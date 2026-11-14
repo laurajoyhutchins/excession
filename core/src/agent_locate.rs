@@ -589,13 +589,19 @@ mod tests {
         assert!(related_sources(&context, &lexical, &inventory, &"f".repeat(40), &tree, 4).is_err());
 
         // Static imports remain explicitly candidates, never observations.
-        let mut static_relation = context.clone();
-        let relationships = static_relation.entries_mut().unwrap().get_mut("relationships").unwrap();
-        let relation = &mut relationships.array_mut().unwrap()[0];
-        relation.entries_mut().unwrap().insert("kind".into(), Value::string("STATIC_IMPORT"));
-        let evidence = relation.entries_mut().unwrap().get_mut("evidence").unwrap();
-        evidence.array_mut().unwrap()[0].entries_mut().unwrap()
-            .insert("assessment".into(), Value::string("CANDIDATE"));
+        let static_relation = obj(&[
+            ("source_commit", Value::string(&commit)),
+            ("source_tree", Value::string(&tree)),
+            ("relationships", Value::array([obj(&[
+                ("source", source(&commit, &tree, &a)),
+                ("target", source(&commit, &tree, &b)),
+                ("kind", Value::string("STATIC_IMPORT")),
+                ("evidence", Value::array([obj(&[
+                    ("assessment", Value::string("CANDIDATE")),
+                    ("observation_kind", Value::string("STATIC_IMPORT_CANDIDATE")),
+                ])])),
+            ])])),
+        ]);
         let candidate = related_sources(&static_relation, &lexical, &inventory, &commit, &tree, 4).unwrap();
         assert_eq!(candidate[0].get("assessment").unwrap().str().unwrap(), "CANDIDATE");
     }

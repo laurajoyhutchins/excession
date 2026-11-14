@@ -64,6 +64,10 @@ impl Temporary {
     fn new() -> Result<Self> {
         refuse("uncommitted test isolation currently requires Linux with rootless Podman")
     }
+    #[cfg(not(target_os = "linux"))]
+    fn new_at(_parent: &Path) -> Result<Self> {
+        refuse("uncommitted test isolation currently requires Linux with rootless Podman")
+    }
 }
 /// Ensure a caller-controlled TMPDIR cannot place snapshots inside the checkout.
 fn temporary_parent_outside_checkout(root: &Path) -> Result<PathBuf> {

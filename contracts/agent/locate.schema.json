@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/agent/locate.schema.json",
+  "title": "Excession task-to-source lexical candidate report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "source_commit", "source_tree", "task", "retrieval",
+    "candidates", "candidate_count", "indexed_source_count", "skipped_source_count",
+    "indexed_bytes", "context", "coverage", "safe_to_skip_unlisted_tests", "report_id"
+  ],
+  "properties": {
+    "schema": { "const": "excession.agent-locate.v1" },
+    "report_id": { "$ref": "#/$defs/sha256" },
+    "source_commit": { "$ref": "#/$defs/sha1" },
+    "source_tree": { "$ref": "#/$defs/sha1" },
+    "task": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "retrieval": { "const": "GIT_BLOB_FTS5_BM25" },
+    "candidates": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rank", "source", "excerpt", "ranking", "semantic_correctness"],
+        "properties": {
+          "rank": { "type": "integer", "minimum": 1, "maximum": 64 },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_commit", "source_tree", "path", "blob", "mode"],
+            "properties": {
+              "source_commit": { "$ref": "#/$defs/sha1" },
+              "source_tree": { "$ref": "#/$defs/sha1" },
+              "path": { "type": "string", "minLength": 1 },
+              "blob": { "$ref": "#/$defs/sha1" },
+              "mode": { "enum": ["100644", "100755"] }
+            }
+          },
+          "excerpt": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start_line", "end_line", "text", "method"],
+            "properties": {
+              "start_line": { "type": "integer", "minimum": 1 },
+              "end_line": { "type": "integer", "minimum": 1 },
+              "text": { "type": "string", "maxLength": 1600 },
+              "method": { "const": "TEXT_LINE_HEURISTIC" }
+            }
+          },
+          "ranking": { "const": "FTS5_BM25_TEXT_CANDIDATE" },
+          "semantic_correctness": { "const": "UNVERIFIED" }
+        }
+      }
+    },
+    "candidate_count": { "type": "integer", "minimum": 0, "maximum": 64 },
+    "indexed_source_count": { "type": "integer", "minimum": 0, "maximum": 6000 },
+    "skipped_source_count": { "type": "integer", "minimum": 0 },
+    "indexed_bytes": { "type": "integer", "minimum": 0, "maximum": 33554432 },
+    "context": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["schema", "source_commit", "source_tree", "relationships", "test_candidates", "coverage", "report_id"],
+          "properties": { "schema": { "const": "excession.agent-context.v1" } }
+        }
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "truncated", "gaps"],
+      "properties": {
+        "status": { "const": "PARTIAL" },
+        "truncated": { "type": "boolean" },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["reason"],
+            "properties": { "reason": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "safe_to_skip_unlisted_tests": { "const": false }
+  },
+  "$defs": {
+    "sha1": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

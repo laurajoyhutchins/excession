@@ -1,0 +1,15 @@
+# Explicit setup image for native Jest and pytest-testmon workflows.
+# Build context is only tools/sandbox, never the project under test.
+# Setup may download packages; tests are run separately with --pull=never and --network=none.
+FROM docker.io/library/ubuntu:24.04
+LABEL io.excession.sandbox="v1"
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+        git coreutils ca-certificates python3 python3-pip nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+RUN python3 -m pip install --break-system-packages --no-cache-dir \
+        pytest==8.4.2 pytest-testmon==2.3.0 pytest-json-report==1.5.0 \
+    && npm install --global --ignore-scripts --no-audit --no-fund jest@30.2.0 \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python3 \
+    && test -x /usr/local/bin/jest

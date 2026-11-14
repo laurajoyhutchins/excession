@@ -151,12 +151,8 @@ fn range_line(occ: &Value, lines: &[usize], encoding: usize) -> Result<usize> {
     Ok(start_line)
 }
 
-fn candidate(mut value: Value) -> Result<Value> {
-    let id = value.sha256();
-    value
-        .entries_mut()?
-        .insert("candidate_id".into(), Value::string(id));
-    Ok(value)
+fn candidate(value: Value) -> Result<Value> {
+    value.stamp_id("candidate_id")
 }
 
 fn source(document: &Document) -> Value {
@@ -602,10 +598,7 @@ fn analyze_bytes(
             ),
         );
     }
-    let id = report.sha256();
-    report
-        .entries_mut()?
-        .insert("report_id".into(), Value::string(id));
+    let report = report.stamp_id("report_id")?;
     if report.canonical().len() > MAX_INDEX_BYTES {
         return refuse("SCIP refactor report exceeds 16 MiB");
     }

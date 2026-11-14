@@ -821,6 +821,57 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn refuses_cached_valid_blob_under_wrong_git_path() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-cache-identity-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        fs::write(
+            root.join("src/a.rs"),
+            "pub fn a() { let needle = 1; }\n",
+        ).unwrap();
+        let second_body = "pub fn b() { let needle = 2; }\n";
+        fs::write(root.join("src/b.rs"), second_body).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "initial",
+        ]);
+        let first = run(&root, "HEAD", SEGMENT_COUNT);
+        assert_eq!(first.hits.len(), 2);
+        let blob_b = git::blob(&root, "HEAD", "src/b.rs").unwrap();
+        let db = Connection::open(&first.cache_path).unwrap();
+        let id: i64 = db.query_row(
+            "SELECT id FROM locator_files WHERE path='src/a.rs'",
+            [], |row| row.get(0),
+        ).unwrap();
+        db.execute(
+            "UPDATE locator_files SET blob=?1 WHERE id=?2",
+            params![blob_b, id],
+        ).unwrap();
+        db.execute(
+            "UPDATE source_search SET body=?1 WHERE rowid=?2",
+            params![second_body, id],
+        ).unwrap();
+        drop(db);
+        let discovered = discovery::inspect(&root, "HEAD").unwrap();
+        let result = search(
+            &discovered,
+            git::entries(&root, &discovered.commit).unwrap(),
+            64,
+            "\"needle\"",
+            1,
+            |path| path.ends_with(".rs"),
+        );
+        assert!(result.is_err());
+        fs::remove_dir_all(first.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     #[ignore = "large real-Git stress fixture; run in dedicated deep CI"]
     fn indexes_more_than_the_previous_repository_wide_cap() {
         let root = std::env::temp_dir().join(format!(

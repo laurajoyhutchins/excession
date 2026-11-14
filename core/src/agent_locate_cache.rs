@@ -279,6 +279,23 @@ fn segment_for(path: &str) -> usize {
     usize::from(u8::from_str_radix(&digest[..2], 16).expect("hex digest"))
 }
 
+/// Prefer cold partitions with lexical evidence in their Git paths.
+/// Only refresh order changes; evidence and completeness remain Git-bound.
+fn path_priority(entries: &[git::Entry], query: &str) -> usize {
+    let words = query
+        .split(" OR ")
+        .map(|word| word.trim_matches('"'))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    entries
+        .iter()
+        .map(|entry| {
+            let path = entry.path.to_ascii_lowercase();
+            words.iter().filter(|word| path.contains(**word)).count()
+        })
+        .sum()
+}
+
 fn fingerprint(entries: &[git::Entry]) -> String {
     let mut data = Vec::new();
     for entry in entries {
@@ -485,7 +502,13 @@ pub(crate) fn search(
                 || (prior[id].is_none() && !groups[id].is_empty())
         })
         .collect::<Vec<_>>();
-    pending.sort_by_key(|&id| (groups[id].is_empty(), id));
+    pending.sort_by_key(|&id| {
+        (
+            groups[id].is_empty(),
+            std::cmp::Reverse(path_priority(&groups[id], expression)),
+            id,
+        )
+    });
     let mut reader = None;
     let mut reused_blobs = 0usize;
     let mut read_blobs = 0usize;
@@ -634,6 +657,21 @@ mod tests {
             .map(|number| segment_for(&format!("src/module_{number:04}.rs")))
             .collect::<BTreeSet<_>>();
         assert!(partitions.len() > 64);
+        let mut distribution = [0usize; SEGMENT_COUNT];
+        for number in 0..20_000 {
+            distribution[segment_for(&format!("src/module_{number:05}.rs"))] += 1;
+        }
+        assert_eq!(distribution.iter().sum::<usize>(), 20_000);
+        assert!(distribution.iter().all(|count| *count < MAX_FILES));
+        assert!(path_priority(
+            &[git::Entry {
+                path: "src/lease_recovery.rs".into(),
+                mode: "100644".into(),
+                kind: "blob".into(),
+                oid: "0".repeat(40),
+            }],
+            "\"lease\" OR \"recover\"",
+        ) > 0);
     }
 
     #[test]

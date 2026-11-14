@@ -1,5 +1,35 @@
 # Agent-facing CLI v1
 
+## Locate source from a task (Git-pinned, heuristic)
+
+```sh
+excession agent locate --repo /work/project \
+  --task "Fix worker lease recovery" --rev HEAD --limit 20 --json
+```
+
+`agent locate` accepts natural-language tasks without requiring prior exact
+file paths. It maintains a **persistent, incrementally updated SQLite FTS5 index** from
+authenticated regular Git source blobs and ranks candidates using BM25.
+Each candidate carries an exact commit, tree, path, blob, file mode, and a
+1-based **heuristic** source line window. The result also contains the
+existing `agent context` report for up to the first 16 candidates, including
+its native relationships, test suggestions, and coverage gaps. Empty results
+do **not** prove the requested behavior is absent.
+
+The source scan is bounded to 6000 regular source files, 256 KiB per file,
+and 32 MiB total text; larger sources, non-UTF-8 files, skipped paths,
+incomplete dependency coverage and other limits are explicitly reported.
+It does not inspect uncommitted files or execute repository code. The index is stored alongside Excession's external SQLite evidence cache as
+`agent-locate.sqlite`, never in the repository. Repeated queries reuse
+unchanged Git blobs, while changed and deleted paths are synchronized in one
+SQLite transaction. The report's `cache` object exposes per-invocation
+read/reuse counts; those incidental performance diagnostics are excluded from
+`report_id`. Neural inference is not performed. It does not claim semantic correctness, verified relationships,
+or safety to skip tests. Use `--roots` and `--db` for the existing context
+analysis only, not to change the full Git-tree lexical scan. The output
+contract is `contracts/agent/locate.schema.json`.
+
+
 Excession exposes two bounded JSON commands for coding agents. Both reuse the
 existing Git, SQLite, static analysis and impact computation. They do not start
 agents, execute tests or builds, perform semantic ontology inference, or merge

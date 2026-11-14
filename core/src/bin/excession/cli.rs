@@ -490,6 +490,18 @@ pub(super) fn command() -> Command {
         "agent",
         vec![
             leaf(
+                "locate",
+                &["repo", "task"],
+                &["rev", "limit", "roots", "db"],
+            )
+            .about("Find ranked Git-pinned source candidates for a natural-language task")
+            .arg(
+                Arg::new("json")
+                    .long("json")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Emit canonical JSON (also the default for agent locate)"),
+            ),
+            leaf(
                 "context",
                 &["repo", "rev", "focus"],
                 &["task", "limit", "roots", "db"],
@@ -783,6 +795,42 @@ mod tests {
             panic!("help expected");
         };
         assert!(syntax.contains("native-audit"));
+    }
+
+    #[test]
+    fn agent_locate_requires_task_and_supports_explicit_revision() {
+        assert!(parse(&strings(&["agent", "locate", "--repo", "x"])).is_err());
+        assert!(parse(&strings(&["agent", "locate", "--task", "worker lease"])).is_err());
+        let ParseOutcome::Command(parsed) = parse(&strings(&[
+            "agent",
+            "locate",
+            "--repo",
+            "x",
+            "--task",
+            "worker lease",
+            "--rev",
+            "HEAD",
+            "--limit",
+            "8",
+            "--json",
+        ]))
+        .unwrap() else {
+            panic!("expected a command");
+        };
+        assert_eq!(parsed.path, ["agent", "locate"]);
+        assert_eq!(parsed.options.get("task"), "worker lease");
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "lease",
+                "--unknown",
+            ]))
+            .is_err()
+        );
     }
 
     #[test]

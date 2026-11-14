@@ -4,6 +4,8 @@
 
 pub mod adapter;
 pub mod agent;
+pub mod agent_locate;
+mod agent_locate_cache;
 pub mod analyze;
 pub mod benchmark;
 pub mod change_inventory;

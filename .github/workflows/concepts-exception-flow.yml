@@ -1,0 +1,113 @@
+name: Concepts pre-regression Java exception-path hypotheses
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/concepts-exception-flow.yml
+      - core/src/concepts_exception_flow.rs
+      - core/src/bin/excession/cli.rs
+      - core/src/bin/excession.rs
+      - contracts/concepts/exception-flow-*.json
+      - benchmarks/concepts-regressions/JavaExceptionFlow.java
+      - benchmarks/concepts-regressions/test_java_exception_flow.sh
+      - benchmarks/concepts-regressions/fixtures/exception-flow/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-java:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    env:
+      COHORT: benchmarks/concepts-regressions/regminer-2022-demo.v1.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Java compiler-AST A/B/C and negative controls
+        run: bash benchmarks/concepts-regressions/test_java_exception_flow.sh
+      - name: Locked Rust-native tests and CLI
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 test --locked --offline --manifest-path core/Cargo.toml \
+            --lib concepts_exception_flow::tests
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Compile read-only Java AST observer
+        run: |
+          mkdir -p adapter-classes evidence
+          javac -source 8 -target 8 -Xlint:-options -d adapter-classes \
+            benchmarks/concepts-regressions/JavaExceptionFlow.java
+      - name: Freeze A first, inspect B later, never fetch repair C
+        shell: bash
+        run: |
+          set -euo pipefail
+          for CASE_ID in ticket-13 github-309 github-24; do
+            echo "::group::RegMiner source-only case $CASE_ID"
+            WORKING=$(jq -r --arg id "$CASE_ID" '.cases[]|select(.id==$id)|.working' "$COHORT")
+            INDUCING=$(jq -r --arg id "$CASE_ID" '.cases[]|select(.id==$id)|.regression_inducing' "$COHORT")
+            REPAIRED=$(jq -r --arg id "$CASE_ID" '.cases[]|select(.id==$id)|.repaired' "$COHORT")
+            test -n "$WORKING" && test -n "$INDUCING" && test -n "$REPAIRED"
+            OUT="$GITHUB_WORKSPACE/evidence/$CASE_ID"
+            mkdir -p "$OUT"
+            rm -rf upstream
+            git init -q upstream
+            git -C upstream remote add origin https://github.com/uniVocity/univocity-parsers.git
+            git -C upstream fetch -q --filter=blob:none --depth=1 origin "$WORKING"
+            git -C upstream checkout -q --detach "$WORKING"
+            mapfile -d '' -t JAVA_FILES < <(git -C upstream ls-files -z -- src/main/java | grep -zE '\.java$')
+            test "${#JAVA_FILES[@]}" -gt 0
+            (cd upstream && java -cp "$GITHUB_WORKSPACE/adapter-classes" \
+              JavaExceptionFlow "${JAVA_FILES[@]}") > "$OUT/A.jsonl"
+            core/target/debug/excession concepts exception-freeze \
+              --repo upstream --rev "$WORKING" --observations "$OUT/A.jsonl" > "$OUT/frozen.json"
+            jq -e --arg a "$WORKING" '
+              .source_commit==$a and .behavioral_oracle_seen==false and
+              .repair_commit_seen==false and .semantic_status=="PROPOSED_NOT_VERIFIED"
+            ' "$OUT/frozen.json" > /dev/null
+            sha256sum "$OUT/frozen.json" > "$OUT/frozen.sha256"
+            git -C upstream fetch -q --filter=blob:none --depth=2 origin "$INDUCING"
+            test "$(git -C upstream rev-parse "$INDUCING^")" = "$WORKING"
+            # An ordinary cat-file -e on a promisor clone can itself fetch C.
+            # Disable lazy object fetching while testing local object absence.
+            if GIT_NO_LAZY_FETCH=1 git -C upstream cat-file -e "$REPAIRED^{commit}" 2>/dev/null; then
+              echo "future repair leaked into prospective workspace" >&2; exit 1
+            fi
+            git -C upstream checkout -q --detach "$INDUCING"
+            mapfile -d '' -t JAVA_FILES < <(git -C upstream ls-files -z -- src/main/java | grep -zE '\.java$')
+            test "${#JAVA_FILES[@]}" -gt 0
+            (cd upstream && java -cp "$GITHUB_WORKSPACE/adapter-classes" \
+              JavaExceptionFlow "${JAVA_FILES[@]}") > "$OUT/B.jsonl"
+            core/target/debug/excession concepts exception-assess \
+              --repo upstream --candidate "$INDUCING" \
+              --frozen "$OUT/frozen.json" --observations "$OUT/B.jsonl" > "$OUT/review.json"
+            jq -e --arg a "$WORKING" --arg b "$INDUCING" '
+              .source_commit==$a and .candidate_commit==$b and
+              .behavioral_oracle_seen==false and .repair_commit_seen==false and
+              .semantic_invariant_proven==false and .superior_bug_prevention_proven==false
+            ' "$OUT/review.json" > /dev/null
+            jq -c --arg id "$CASE_ID" '{
+              case:$id,frozen:.frozen_obligations,modified:.modified_obligations,
+              lost:.lost_modeled_throw_guarantees,
+              simple_baseline:.simple_local_throw_removals,
+              model_only_handler_warnings:.model_only_handler_warnings
+            }' "$OUT/review.json"
+            if [ "$CASE_ID" = github-24 ]; then
+              jq -e '.lost_modeled_throw_guarantees >= 1' "$OUT/review.json" >/dev/null
+            fi
+            echo "::endgroup::"
+          done
+      - name: Preserve frozen source reports, negative and unsupported outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: concepts-exception-flow-regminer-A-before-B
+          path: evidence/
+          if-no-files-found: warn

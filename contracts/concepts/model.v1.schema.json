@@ -280,6 +280,11 @@
           },
           "minItems": 1,
           "uniqueItems": true
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         }
       },
       "allOf": [
@@ -425,6 +430,21 @@
             "minLength": 1
           },
           "uniqueItems": true
+        },
+        "origin": {
+          "enum": [
+            "LLM_PROPOSAL"
+          ]
+        },
+        "author_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
         }
       }
     },

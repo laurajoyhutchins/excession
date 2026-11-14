@@ -339,7 +339,141 @@ fn execute(args: &[String]) -> Result<Response> {
     };
     let opt = &parsed.options;
     match parsed.path.as_slice() {
+        [top, sub] if top == "mcp" && sub == "serve" => {
+            let grant = match opt.0.get("allow-publish").map(String::as_str) {
+                None | Some("false") => false,
+                Some("true") => true,
+                _ => return refuse("--allow-publish must be true or false"),
+            };
+            excession::concepts_mcp::serve(&excession::concepts_mcp::Config {
+                repo: opt.path("repo").to_path_buf(),
+                revision: opt.get("rev").to_owned(),
+                index: opt.path("index").to_path_buf(),
+                source_prefix: opt.0.get("source-prefix").cloned(),
+                db: opt.path("db").to_path_buf(),
+                allow_publish: grant,
+            })?;
+            Ok(Response::Bytes(Vec::new()))
+        }
         [top, sub] if top == "concepts" => {
+            if sub == "bugsinpy-import" {
+                return Ok(json(excession::concepts_regressions::bugsinpy_import(
+                    opt.path("dataset-repo"),
+                    opt.get("dataset-rev"),
+                    opt.get("project"),
+                    opt.get("bug"),
+                )?));
+            }
+            if sub == "regression-adjudicate" {
+                return Ok(json(excession::concepts_regressions::adjudicate(
+                    opt.path("repo"),
+                    opt.path("dataset-repo"),
+                    opt.path("manifest"),
+                    opt.get("case"),
+                    opt.path("frozen"),
+                    opt.path("oracle"),
+                )?));
+            }
+            if matches!(sub.as_str(), "invariant-propose" | "invariant-backtest") {
+                let backtest = sub == "invariant-backtest";
+                let integer = |name: &str, default: &str| -> Result<usize> {
+                    opt.get_or(name, default)
+                        .parse::<usize>()
+                        .map_err(|_| format!("invalid temporal --{name}"))
+                };
+                let settings = excession::concepts_invariants::Settings {
+                    train: integer("train", "48")?,
+                    holdout: if backtest {
+                        integer("holdout", "16")?
+                    } else {
+                        0
+                    },
+                    support: integer("support", "3")?,
+                    confidence_percent: integer("confidence", "70")?,
+                    prefix: opt.get_or("prefix", ".").to_owned(),
+                };
+                let result = if backtest {
+                    excession::concepts_invariants::backtest(
+                        opt.path("repo"),
+                        opt.get("rev"),
+                        &settings,
+                    )?
+                } else {
+                    excession::concepts_invariants::propose(
+                        opt.path("repo"),
+                        opt.get("rev"),
+                        &settings,
+                        opt.0.get("candidate").map(String::as_str),
+                    )?
+                };
+                return Ok(json(result));
+            }
+            if sub.starts_with("ontology-") {
+                let repo = opt.path("repo");
+                let rev = opt.get("rev");
+                let index = opt.path("index");
+                let prefix = opt.0.get("source-prefix").map(String::as_str);
+                if sub == "ontology-list" {
+                    let offset = opt
+                        .0
+                        .get("offset")
+                        .map(|x| x.parse::<usize>())
+                        .transpose()
+                        .map_err(|_| "ontology offset must be a nonnegative integer")?
+                        .unwrap_or(0);
+                    return Ok(json(excession::concepts_author::list_sources(
+                        repo,
+                        rev,
+                        index,
+                        prefix,
+                        opt.get_or("search", ""),
+                        offset,
+                    )?));
+                }
+                if sub == "ontology-context" {
+                    let line = opt
+                        .0
+                        .get("first-line")
+                        .map(|x| x.parse::<usize>())
+                        .transpose()
+                        .map_err(|_| "ontology first-line must be a positive integer")?
+                        .unwrap_or(1);
+                    return Ok(json(excession::concepts_author::context(
+                        repo,
+                        rev,
+                        index,
+                        prefix,
+                        opt.get("path"),
+                        line,
+                    )?));
+                }
+                let draft = excession::concepts_author::read_draft(opt.path("draft"))?;
+                return match sub.as_str() {
+                    "ontology-preview" => Ok(json(excession::concepts_author::preview(
+                        repo, rev, index, prefix, &draft,
+                    )?)),
+                    "ontology-publish" => {
+                        let db = Db::open(opt.path("db"))?;
+                        Ok(json(excession::concepts_author::publish(
+                            &db, repo, rev, index, prefix, &draft,
+                        )?))
+                    }
+                    "ontology-audit" => {
+                        let db = Db::open(opt.path("db"))?;
+                        Ok(json(excession::concepts_author::audit(
+                            &db,
+                            repo,
+                            rev,
+                            index,
+                            prefix,
+                            &draft,
+                            opt.get("snapshot"),
+                        )?))
+                    }
+                    _ => refuse(format!("unsupported ontology command {sub}")),
+                };
+            }
+
             if sub == "scip-value" {
                 return Ok(json(excession::concepts_value::compare_index(
                     opt.path("repo"),

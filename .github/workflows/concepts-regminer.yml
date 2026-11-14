@@ -1,0 +1,198 @@
+name: RegMiner published A/B/C regression replay
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/concepts-regminer.yml
+      - benchmarks/concepts-regressions/**
+      - contracts/concepts/regminer-*.json
+      - core/src/concepts_regressions.rs
+      - core/src/bin/excession.rs
+      - core/src/bin/excession/cli.rs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regminer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        case: [ticket-13, github-309, github-24]
+    env:
+      COHORT: benchmarks/concepts-regressions/regminer-2022-demo.v1.json
+      CASE_ID: ${{ matrix.case }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Rust 1.99.1
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Locked Rust build and regression module tests
+        run: |
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --lib concepts_regressions::tests
+          cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch immutable published dataset documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q dataset
+          git -C dataset remote add origin https://github.com/SongXueZhi/RegMiner.git
+          DATASET_SHA=$(python3 -c 'import json,os; print(json.load(open(os.environ["COHORT"]))["dataset_revision"])')
+          git -C dataset fetch --depth=1 -q origin "$DATASET_SHA"
+          test "$(git -C dataset rev-parse "$DATASET_SHA^{commit}")" = "$DATASET_SHA"
+          DOC_SHA=$(python3 -c 'import json,os; print(json.load(open(os.environ["COHORT"]))["dataset_document_blob"])')
+          test "$(git -C dataset rev-parse "$DATASET_SHA:artifact-evaluation.md")" = "$DOC_SHA"
+      - name: Freeze prediction at A before fetching repair C
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          python3 - <<'PY' > evidence/case.env
+          import json,os
+          m=json.load(open(os.environ["COHORT"]))
+          case=next(x for x in m["cases"] if x["id"]==os.environ["CASE_ID"])
+          for name,key in [("WORKING","working"),("INDUCING","regression_inducing"),
+                           ("REPAIRED","repaired")]:
+              print(name+"="+case[key])
+          print("TEST_PATH="+case["test"]["path"])
+          print("TEST_CLASS="+case["test"]["class"])
+          print("TEST_METHOD="+case["test"]["method"])
+          PY
+          cat evidence/case.env >> "$GITHUB_ENV"
+          set -a
+          source evidence/case.env
+          set +a
+          git init -q upstream
+          git -C upstream remote add origin https://github.com/uniVocity/univocity-parsers.git
+          # B fetch brings its parent A and sufficient strictly earlier history.
+          git -C upstream fetch -q --filter=blob:none --depth=300 origin "$INDUCING"
+          test "$(git -C upstream rev-parse "$WORKING^{commit}")" = "$WORKING"
+          test "$(git -C upstream rev-parse "$INDUCING^")" = "$WORKING"
+          core/target/debug/excession concepts invariant-propose \
+            --repo upstream --rev "$WORKING" --candidate "$INDUCING" \
+            --train 12 --support 2 --confidence 60 > evidence/frozen.json
+          python3 - <<'PY'
+          import json,os
+          p=json.load(open("evidence/frozen.json"))
+          assert p["requested_commit"]==os.environ["WORKING"]
+          assert p["training_cutoff"]==os.environ["WORKING"]
+          assert p["prospective_commit"]==os.environ["INDUCING"]
+          assert p["behavioral_validity"]=="NOT_EVALUATED"
+          assert not p["safe_to_skip_unlisted_tests"]
+          PY
+          sha256sum evidence/frozen.json > evidence/frozen.sha256
+      - name: Fetch C and record the exact migrated TestNG test blob
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C upstream fetch -q --filter=blob:none --depth=2500 origin "$REPAIRED"
+          git -C upstream merge-base --is-ancestor "$INDUCING" "$REPAIRED"
+          git -C upstream cat-file -e "$REPAIRED:$TEST_PATH"
+          if git -C upstream cat-file -e "$WORKING:$TEST_PATH" 2>/dev/null; then
+            echo "test unexpectedly present at working A" >&2; exit 1
+          fi
+          if git -C upstream cat-file -e "$INDUCING:$TEST_PATH" 2>/dev/null; then
+            echo "test unexpectedly present at inducing B" >&2; exit 1
+          fi
+          git -C upstream rev-parse "$REPAIRED:$TEST_PATH" > evidence/test-blob.txt
+          git -C upstream cat-file blob "$REPAIRED:$TEST_PATH" > evidence/migrated-test.java
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Execute migrated TestNG method in all three pinned revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for PHASE in A B C; do
+            case "$PHASE" in A) COMMIT=$WORKING;; B) COMMIT=$INDUCING;; C) COMMIT=$REPAIRED;; esac
+            # Remove the previous phase's intentionally migrated untracked test
+            # before changing revisions, otherwise Git refuses checkout of C.
+            git -C upstream clean -q -ffdx
+            git -C upstream checkout -q --detach "$COMMIT"
+            git -C upstream clean -q -ffdx
+            if [ "$PHASE" != C ]; then
+              mkdir -p "upstream/$(dirname "$TEST_PATH")"
+              cp evidence/migrated-test.java "upstream/$TEST_PATH"
+            fi
+            test "$(git -C upstream hash-object "$TEST_PATH")" = "$(cat evidence/test-blob.txt)"
+            mkdir -p "evidence/$PHASE"
+            set +e
+            (cd upstream && timeout 210s mvn -B -ntp \
+              -Dtest="$TEST_CLASS#$TEST_METHOD" \
+              -DfailIfNoTests=true test) > "evidence/$PHASE/maven.log" 2>&1
+            CODE=$?
+            set -e
+            echo "$CODE" > "evidence/$PHASE/exit.txt"
+            python3 - "$PHASE" "$COMMIT" <<'PY'
+          import hashlib,json,os,pathlib,subprocess,sys,xml.etree.ElementTree as ET
+          phase,commit=sys.argv[1:]
+          root=pathlib.Path("evidence")/phase
+          reports=list(pathlib.Path("upstream/target/surefire-reports").glob("TEST-*.xml"))
+          selected=[]
+          for report in reports:
+              try: suite=ET.parse(report).getroot()
+              except ET.ParseError: continue
+              for test in suite.iter("testcase"):
+                  if (test.attrib.get("classname")==os.environ["TEST_CLASS"]
+                      and test.attrib.get("name")==os.environ["TEST_METHOD"]):
+                      selected.append(test)
+          code=int((root/"exit.txt").read_text())
+          errors=sum(any(child.tag in ("failure","error") for child in t) for t in selected)
+          if not selected or (code!=0 and errors==0):
+              status,tests="UNSUPPORTED",0
+          elif errors:
+              status,tests="FAIL",len(selected)
+          elif code==0:
+              status,tests="PASS",len(selected)
+          else:
+              status,tests="UNSUPPORTED",0
+          tree=subprocess.check_output(["git","-C","upstream","rev-parse",commit+"^{tree}"],text=True).strip()
+          item={"phase":phase,"commit":commit,"tree":tree,"status":status,
+                "tests_executed":tests,"log_sha256":hashlib.sha256((root/"maven.log").read_bytes()).hexdigest()}
+          (root/"phase.json").write_text(json.dumps(item,sort_keys=True,indent=2)+"\n")
+          print("ORACLE",json.dumps(item,sort_keys=True))
+          PY
+          done
+      - name: Rust adjudication and explicit unsupported evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,pathlib
+          phases=[json.loads((pathlib.Path("evidence")/p/"phase.json").read_text()) for p in ("A","B","C")]
+          oracle={"schema":"excession.concepts.regminer-oracle.v1",
+                  "case_id":os.environ["CASE_ID"],
+                  "test_blob":pathlib.Path("evidence/test-blob.txt").read_text().strip(),
+                  "phases":phases}
+          pathlib.Path("evidence/oracle.json").write_text(json.dumps(oracle,sort_keys=True,indent=2)+"\n")
+          PY
+          core/target/debug/excession concepts regression-adjudicate \
+            --repo upstream --dataset-repo dataset \
+            --manifest "$COHORT" --case "$CASE_ID" \
+            --frozen evidence/frozen.json --oracle evidence/oracle.json \
+            > evidence/adjudication.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open("evidence/adjudication.json"))
+          assert r["oracle_trust"]=="CALLER_SUPPLIED_UNATTESTED"
+          assert r["historical_test_file_prediction_comparable"] is False
+          assert not r["semantic_invariant_proven"]
+          assert not r["better_than_native_selectors"]
+          print("RESULT",json.dumps({"case":r["case_id"],"status":r["status"],
+             "oracle":[x["status"] for x in r["oracle_phases"]],
+             "source_prediction_count":len(r["source_predictions"])}))
+          PY
+      - name: Retain all findings including negative or unsupported cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regminer-abc-${{ matrix.case }}
+          path: evidence/
+          if-no-files-found: warn

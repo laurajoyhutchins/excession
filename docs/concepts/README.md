@@ -33,3 +33,7 @@ Observation normalization, immutable snapshot persistence, deterministic compila
 ## Initial TDD contract
 
 `python3 -m unittest tests.test_concepts_contracts -v` validates the draft schema and negative fixtures. Behavioral TDD cases in downstream PRs remain explicitly skipped until the corresponding Rust implementation exists. Do not count skipped tests as established functionality.
+
+- [Temporal change-companion hypotheses](11-temporal-invariants.md): pinned historical associations, heldout predictions, independent popularity comparator (never verified behavior).
+
+- [Existing RegMiner regression cohort](../../benchmarks/concepts-regressions/README.md): pinned A/B/C history, migrated tests, and independent oracle replay.

@@ -129,6 +129,33 @@ pub(super) fn command() -> Command {
     let concepts = group(
         "concepts",
         vec![
+            leaf(
+                "invariant-propose",
+                &["repo", "rev"],
+                &["train", "support", "confidence", "prefix", "candidate"],
+            ),
+            leaf(
+                "bugsinpy-import",
+                &["dataset-repo", "dataset-rev", "project", "bug"],
+                &[],
+            ),
+            leaf(
+                "regression-adjudicate",
+                &[
+                    "repo",
+                    "dataset-repo",
+                    "manifest",
+                    "case",
+                    "frozen",
+                    "oracle",
+                ],
+                &[],
+            ),
+            leaf(
+                "invariant-backtest",
+                &["repo", "rev"],
+                &["train", "holdout", "support", "confidence", "prefix"],
+            ),
             leaf("normalize", &["repo", "report"], &[]),
             leaf("preview", &["repo", "report"], &[]),
             leaf("compile", &["repo", "report", "db"], &[]),
@@ -137,6 +164,31 @@ pub(super) fn command() -> Command {
             leaf("review", &["db", "event", "trusted-local"], &[]),
             leaf("reviews", &["db", "snapshot", "concept"], &[]),
             leaf("annotate-refactor", &["db", "name", "rev", "snapshot"], &[]),
+            leaf(
+                "ontology-list",
+                &["repo", "rev", "index"],
+                &["source-prefix", "search", "offset"],
+            ),
+            leaf(
+                "ontology-context",
+                &["repo", "rev", "index", "path"],
+                &["source-prefix", "first-line"],
+            ),
+            leaf(
+                "ontology-preview",
+                &["repo", "rev", "index", "draft"],
+                &["source-prefix"],
+            ),
+            leaf(
+                "ontology-publish",
+                &["repo", "rev", "index", "draft", "db"],
+                &["source-prefix"],
+            ),
+            leaf(
+                "ontology-audit",
+                &["repo", "rev", "index", "draft", "db", "snapshot"],
+                &["source-prefix"],
+            ),
             leaf(
                 "scip-normalize",
                 &["repo", "rev", "index"],
@@ -189,6 +241,15 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Query indexed Git relationships");
+    let mcp = group(
+        "mcp",
+        vec![leaf(
+            "serve",
+            &["repo", "rev", "index", "db"],
+            &["source-prefix", "allow-publish"],
+        )],
+    )
+    .about("Local Rust MCP stdio server for source-bound LLM ontology tools");
     let benchmark = group(
         "benchmark",
         vec![
@@ -304,6 +365,7 @@ pub(super) fn command() -> Command {
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)
+        .subcommand(mcp)
         .subcommand(configured_graph)
         .subcommand(analyze)
         .subcommand(kernel)

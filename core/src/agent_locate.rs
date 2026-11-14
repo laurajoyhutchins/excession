@@ -461,13 +461,12 @@ mod tests {
             1
         );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
-        assert_eq!(
-            first
+        assert!(
+            !first
                 .get("safe_to_skip_unlisted_tests")
                 .unwrap()
                 .bool()
-                .unwrap(),
-            false
+                .unwrap()
         );
         let first_id = first.get("report_id").unwrap().str().unwrap().to_owned();
         assert_eq!(

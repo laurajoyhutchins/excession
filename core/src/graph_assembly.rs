@@ -106,6 +106,7 @@ fn validate_receipt(
     {
         return refuse("compiler receipt has incompatible source revision or schema");
     }
+    let id = raw.get("report_id")?.str()?.to_owned();
     if !raw.content_id_matches("report_id")? {
         return refuse("compiler receipt report_id does not match canonical payload");
     }

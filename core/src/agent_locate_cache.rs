@@ -291,7 +291,7 @@ fn path_priority(entries: &[git::Entry], query: &str) -> usize {
         .iter()
         .map(|entry| {
             let path = entry.path.to_ascii_lowercase();
-            words.iter().filter(|word| path.contains(**word)).count()
+            words.iter().filter(|word| path.contains(*word)).count()
         })
         .sum()
 }

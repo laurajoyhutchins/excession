@@ -146,7 +146,7 @@ pub fn explain(
             return refuse("claim explanation has no supporting observation");
         }
     }
-    let mut out = obj(&[
+    let out = obj(&[
         ("schema", Value::string("excession.explanation.v1")),
         ("claim_id", Value::string(claim_id)),
         ("source_commit", Value::string(commit)),
@@ -164,7 +164,7 @@ pub fn audit(
     db: Option<&str>,
 ) -> Result<Value> {
     let explanation = explain(repo, saved_report, claim_id, roots, db)?;
-    let mut result = obj(&[
+    let result = obj(&[
         ("schema", Value::string("excession.audit-result.v1")),
         ("schema_validation", Value::string("NOT_RUN")),
         ("git_authentication", Value::string("PASS")),

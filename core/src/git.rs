@@ -373,6 +373,9 @@ mod tests {
         assert_eq!(reader.read(&a).unwrap(), first);
         assert_eq!(reader.read(&b).unwrap(), second);
         assert_eq!(reader.read(&a).unwrap(), first);
+        assert_eq!(reader.read_capped(&a, 1).unwrap_err(), "Git source blob exceeds byte limit");
+        // The next response must still begin with its own exact OID header.
+        assert_eq!(reader.read(&b).unwrap(), second);
         reader.finish().unwrap();
 
         let mut reader = BlobReader::open(&root).unwrap();

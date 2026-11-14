@@ -635,7 +635,8 @@ fn execute(args: &[String]) -> Result<Response> {
             let db = opt.0.get("db").map(String::as_str);
             match sub.as_str() {
                 "locate" => {
-                    let budget = opt.get_or("index-segments", "8")
+                    let budget = opt
+                        .get_or("index-segments", "8")
                         .parse::<usize>()
                         .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
                     Ok(json(agent_locate::locate_with_budget(
@@ -647,7 +648,7 @@ fn execute(args: &[String]) -> Result<Response> {
                         db,
                         budget,
                     )?))
-                },
+                }
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),
                     opt.get("rev"),

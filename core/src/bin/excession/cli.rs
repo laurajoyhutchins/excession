@@ -140,6 +140,16 @@ pub(super) fn command() -> Command {
                 &[],
             ),
             leaf(
+                "exception-freeze",
+                &["repo", "rev", "observations"],
+                &[],
+            ),
+            leaf(
+                "exception-assess",
+                &["repo", "candidate", "frozen", "observations"],
+                &[],
+            ),
+            leaf(
                 "regression-adjudicate",
                 &[
                     "repo",

@@ -663,6 +663,17 @@ fn valid_image(value: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
+/// Use the distribution-installed runtime, not an executable from the project's PATH.
+/// Ignore user-provided OCI configuration that could inject writable host mounts.
+fn confined_podman() -> Command {
+    let mut command = Command::new("/usr/bin/podman");
+    command
+        .env("CONTAINERS_CONF", "/dev/null")
+        .env("CONTAINERS_CONF_OVERRIDE", "/dev/null")
+        .env("CONTAINERS_MOUNTS_CONF", "/dev/null");
+    command
+}
+
 fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
     let mut blocked = Vec::new();
     let Some(image) = image else {
@@ -678,7 +689,7 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
         blocked.push("ROOTLESS_PODMAN_LINUX_REQUIRED".to_owned());
         return blocked;
     }
-    let info = Command::new("podman")
+    let info = confined_podman()
         .args(["--remote=false", "info", "--format", "json"])
         .output();
     let secure = match info {
@@ -709,7 +720,7 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
     if !secure {
         blocked.push("ROOTLESS_LOCAL_PODMAN_SECCOMP_CGROUP_V2_REQUIRED".to_owned());
     }
-    let image_found = Command::new("podman")
+    let image_found = confined_podman()
         .args(["--remote=false", "image", "exists", image])
         .output()
         .is_ok_and(|output| output.status.success());
@@ -754,7 +765,7 @@ fn podman_stop(cidfile: &Path) {
     if let Ok(id) = fs::read_to_string(cidfile) {
         let id = id.trim();
         if id.len() == 64 && id.bytes().all(|c| c.is_ascii_hexdigit()) {
-            let _ = Command::new("podman")
+            let _ = confined_podman()
                 .args(["--remote=false", "rm", "--force", "--ignore", id])
                 .output();
         }
@@ -824,7 +835,7 @@ fn execute_isolated(args: SandboxExecution<'_>) -> Result<Value> {
         return refuse("no regular Excession binary to mount");
     }
     let cidfile = directory.join("sandbox.cid");
-    let mut command = Command::new("podman");
+    let mut command = confined_podman();
     command.env("CONTAINERS_MOUNTS_CONF", "/dev/null");
     command.args([
         "--remote=false",
@@ -1324,6 +1335,21 @@ mod tests {
         assert!(tool_in_image(Some("/usr/bin/../bin/sh"), "jest").is_err());
         assert_eq!(tool_in_image(None, "jest").unwrap(), "/usr/local/bin/jest");
     }
+    #[test]
+    fn podman_runtime_ignores_project_path_and_implicit_mount_configuration() {
+        let command = confined_podman();
+        assert_eq!(command.get_program(), "/usr/bin/podman");
+        for key in [
+            "CONTAINERS_CONF",
+            "CONTAINERS_CONF_OVERRIDE",
+            "CONTAINERS_MOUNTS_CONF",
+        ] {
+            assert!(command.get_envs().any(|(name, value)| {
+                name == key && value == Some(std::ffi::OsStr::new("/dev/null"))
+            }));
+        }
+    }
+
     #[test]
     fn any_missing_isolation_prerequisite_blocks() {
         assert!(sandbox_preflight(None).contains(&"PINNED_SANDBOX_IMAGE_REQUIRED".to_owned()));

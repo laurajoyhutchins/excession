@@ -634,14 +634,21 @@ fn execute(args: &[String]) -> Result<Response> {
             let roots = opt.0.get("roots").map(String::as_str);
             let db = opt.0.get("db").map(String::as_str);
             match sub.as_str() {
-                "locate" => Ok(json(agent_locate::locate(
-                    opt.path("repo"),
-                    opt.get_or("rev", "HEAD"),
-                    opt.get("task"),
-                    limit,
-                    roots,
-                    db,
-                )?)),
+                "locate" => {
+                    let budget = opt
+                        .get_or("index-segments", "8")
+                        .parse::<usize>()
+                        .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
+                    Ok(json(agent_locate::locate_with_budget(
+                        opt.path("repo"),
+                        opt.get_or("rev", "HEAD"),
+                        opt.get("task"),
+                        limit,
+                        roots,
+                        db,
+                        budget,
+                    )?))
+                }
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),
                     opt.get("rev"),

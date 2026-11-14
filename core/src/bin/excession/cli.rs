@@ -492,7 +492,7 @@ pub(super) fn command() -> Command {
             leaf(
                 "locate",
                 &["repo", "task"],
-                &["rev", "limit", "roots", "db"],
+                &["rev", "limit", "roots", "db", "index-segments"],
             )
             .about("Find ranked Git-pinned source candidates for a natural-language task")
             .arg(
@@ -819,6 +819,19 @@ mod tests {
         };
         assert_eq!(parsed.path, ["agent", "locate"]);
         assert_eq!(parsed.options.get("task"), "worker lease");
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "worker lease",
+                "--index-segments",
+                "256",
+            ]))
+            .is_ok()
+        );
         assert!(
             parse(&strings(&[
                 "agent",

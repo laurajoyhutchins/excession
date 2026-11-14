@@ -233,6 +233,28 @@ pub fn locate(
     roots: Option<&str>,
     db: Option<&str>,
 ) -> Result<Value> {
+    locate_with_budget(
+        repo,
+        rev,
+        task,
+        limit,
+        roots,
+        db,
+        agent_locate_cache::DEFAULT_REFRESH_SEGMENTS,
+    )
+}
+
+/// Incrementally index at most index_segments stale source partitions.
+/// Unindexed partitions are explicitly excluded from retrieval results.
+pub fn locate_with_budget(
+    repo: &Path,
+    rev: &str,
+    task: &str,
+    limit: usize,
+    roots: Option<&str>,
+    db: Option<&str>,
+    index_segments: usize,
+) -> Result<Value> {
     if !(1..=64).contains(&limit) {
         return refuse("agent locate --limit must be 1..=64");
     }
@@ -244,6 +266,7 @@ pub fn locate(
         entries,
         limit,
         &match_expression(&words),
+        index_segments,
         source_path,
     )?;
     let mut candidates = Vec::new();
@@ -277,6 +300,9 @@ pub fn locate(
     }
     if truncated {
         gaps.push(gap("INDEX_BUDGET_EXHAUSTED"));
+    }
+    if index.pending_segments > 0 {
+        gaps.push(gap("SEGMENT_INDEX_INCOMPLETE"));
     }
     if candidates.is_empty() {
         gaps.push(gap("NO_LEXICAL_MATCH_DOES_NOT_PROVE_ABSENCE"));
@@ -324,6 +350,26 @@ pub fn locate(
         ("indexed_source_count", Value::number(indexed_files)),
         ("skipped_source_count", Value::number(skipped)),
         ("indexed_bytes", Value::number(bytes)),
+        (
+            "index",
+            obj(&[
+                ("segmentation", Value::string("PATH_SHA256_PREFIX_BYTE")),
+                (
+                    "total_source_files",
+                    Value::number(index.total_source_files),
+                ),
+                (
+                    "populated_segments",
+                    Value::number(index.populated_segments),
+                ),
+                ("ready_segments", Value::number(index.ready_segments)),
+                ("pending_segments", Value::number(index.pending_segments)),
+                (
+                    "complete",
+                    Value::Bool(index.pending_segments == 0 && skipped == 0 && !truncated),
+                ),
+            ]),
+        ),
         ("context", context),
         (
             "coverage",
@@ -348,6 +394,10 @@ pub fn locate(
             ("path", Value::string(index.cache_path.to_string_lossy())),
             ("reused_blobs", Value::number(index.reused_blobs)),
             ("read_blobs", Value::number(index.read_blobs)),
+            (
+                "refreshed_segments",
+                Value::number(index.refreshed_segments),
+            ),
         ]),
     );
     Ok(output)
@@ -449,6 +499,7 @@ mod tests {
                 git::entries(&root, &forbidden.commit).unwrap(),
                 4,
                 "\"lease\"",
+                agent_locate_cache::DEFAULT_REFRESH_SEGMENTS,
                 source_path,
             )
             .is_err()

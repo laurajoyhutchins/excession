@@ -108,10 +108,13 @@ Find candidate code without knowing its paths first:
 excession agent locate --repo . --task "Fix worker lease recovery" --limit 20 --json
 ```
 
-The new locator uses bounded, incrementally cached FTS5/BM25 over authenticated Git
-sources, then reuses the existing `agent context` machinery for relationships
-and test suggestions. It is lexical discovery, **not semantic proof**, and
-does not include uncommitted edits. See [agent commands](docs/AGENT_CLI.md).
+The locator now uses an incrementally cached, **256-segment** FTS5/BM25
+index over authenticated Git sources and reuses `agent context` for
+relationships and test suggestions. The default refresh budget is eight
+segments per call; use `--index-segments 256` for an explicit full warmup.
+Partial coverage is reported instead of silently searching stale partitions.
+This is lexical discovery, **not semantic proof**, and does not include
+uncommitted edits. See [agent commands](docs/AGENT_CLI.md).
 
 
 `excession agent context` returns bounded Git source identities, candidate

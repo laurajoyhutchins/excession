@@ -16,17 +16,32 @@ existing `agent context` report for up to the first 16 candidates, including
 its native relationships, test suggestions, and coverage gaps. Empty results
 do **not** prove the requested behavior is absent.
 
-The source scan is bounded to 6000 regular source files, 256 KiB per file,
-and 32 MiB total text; larger sources, non-UTF-8 files, skipped paths,
-incomplete dependency coverage and other limits are explicitly reported.
-It does not inspect uncommitted files or execute repository code. The index is stored alongside Excession's external SQLite evidence cache as
-`agent-locate.sqlite`, never in the repository. Repeated queries reuse
-unchanged Git blobs, while changed and deleted paths are synchronized in one
-SQLite transaction. The report's `cache` object exposes per-invocation
-read/reuse counts; those incidental performance diagnostics are excluded from
-`report_id`. Neural inference is not performed. It does not claim semantic correctness, verified relationships,
-or safety to skip tests. Use `--roots` and `--db` for the existing context
-analysis only, not to change the full Git-tree lexical scan. The output
+Source paths are partitioned deterministically into **256 SHA-256(path)
+segments**. Each segment is bounded to 6000 files, 256 KiB per file, and
+32 MiB of indexed text. By default, an invocation refreshes up to eight
+changed or missing segments. To bootstrap all segments in one foreground run:
+
+```sh
+excession agent locate --repo /work/project \
+  --task "worker lease recovery" --index-segments 256 --json
+```
+
+A cold or revision-switched index may be **partial**. The `index` output
+records populated, ready and pending segments and whether source indexing is
+complete. `SEGMENT_INDEX_INCOMPLETE` is reported when additional calls are
+needed. Stale segments are excluded from results, and an empty candidate set
+never proves that behavior is absent. A fully refreshed index still reports
+unsupported source, non-UTF-8, oversized, and semantic verification gaps.
+
+The cache lives outside the source checkout in
+`agent-locate-segments.sqlite` alongside Excession's existing SQLite
+cache. It reuses unchanged Git blobs, updates changed/deleted paths within
+transactions and verifies the blob identity of returned evidence.
+`cache` records local read/reuse/refreshed counts; these incidental values
+are excluded from `report_id`. The working tree remains unread and
+unmodified. No neural inference is performed. `--roots` and `--db`
+affect existing relationship/context analysis, not the whole-tree lexical
+inventory. See `contracts/agent/locate.schema.json` for the output contract. The output
 contract is `contracts/agent/locate.schema.json`.
 
 

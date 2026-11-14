@@ -5,82 +5,202 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema", "source_commit", "source_tree", "task", "retrieval",
-    "candidates", "candidate_count", "indexed_source_count", "skipped_source_count",
-    "indexed_bytes", "context", "coverage", "cache", "safe_to_skip_unlisted_tests", "report_id"
+    "schema",
+    "source_commit",
+    "source_tree",
+    "task",
+    "retrieval",
+    "candidates",
+    "candidate_count",
+    "indexed_source_count",
+    "skipped_source_count",
+    "indexed_bytes",
+    "context",
+    "coverage",
+    "cache",
+    "safe_to_skip_unlisted_tests",
+    "report_id",
+    "index"
   ],
   "properties": {
-    "schema": { "const": "excession.agent-locate.v1" },
-    "report_id": { "$ref": "#/$defs/sha256" },
-    "source_commit": { "$ref": "#/$defs/sha1" },
-    "source_tree": { "$ref": "#/$defs/sha1" },
-    "task": { "type": "string", "minLength": 1, "maxLength": 4096 },
-    "retrieval": { "const": "GIT_BLOB_FTS5_BM25" },
+    "schema": {
+      "const": "excession.agent-locate.v1"
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "source_commit": {
+      "$ref": "#/$defs/sha1"
+    },
+    "source_tree": {
+      "$ref": "#/$defs/sha1"
+    },
+    "task": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "retrieval": {
+      "const": "GIT_BLOB_FTS5_BM25"
+    },
     "candidates": {
       "type": "array",
       "maxItems": 64,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["rank", "source", "excerpt", "ranking", "semantic_correctness"],
+        "required": [
+          "rank",
+          "source",
+          "excerpt",
+          "ranking",
+          "semantic_correctness"
+        ],
         "properties": {
-          "rank": { "type": "integer", "minimum": 1, "maximum": 64 },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
           "source": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["source_commit", "source_tree", "path", "blob", "mode"],
+            "required": [
+              "source_commit",
+              "source_tree",
+              "path",
+              "blob",
+              "mode"
+            ],
             "properties": {
-              "source_commit": { "$ref": "#/$defs/sha1" },
-              "source_tree": { "$ref": "#/$defs/sha1" },
-              "path": { "type": "string", "minLength": 1 },
-              "blob": { "$ref": "#/$defs/sha1" },
-              "mode": { "enum": ["100644", "100755"] }
+              "source_commit": {
+                "$ref": "#/$defs/sha1"
+              },
+              "source_tree": {
+                "$ref": "#/$defs/sha1"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "blob": {
+                "$ref": "#/$defs/sha1"
+              },
+              "mode": {
+                "enum": [
+                  "100644",
+                  "100755"
+                ]
+              }
             }
           },
           "excerpt": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["start_line", "end_line", "text", "method"],
+            "required": [
+              "start_line",
+              "end_line",
+              "text",
+              "method"
+            ],
             "properties": {
-              "start_line": { "type": "integer", "minimum": 1 },
-              "end_line": { "type": "integer", "minimum": 1 },
-              "text": { "type": "string", "maxLength": 1600 },
-              "method": { "const": "TEXT_LINE_HEURISTIC" }
+              "start_line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "end_line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 1600
+              },
+              "method": {
+                "const": "TEXT_LINE_HEURISTIC"
+              }
             }
           },
-          "ranking": { "const": "FTS5_BM25_TEXT_CANDIDATE" },
-          "semantic_correctness": { "const": "UNVERIFIED" }
+          "ranking": {
+            "const": "FTS5_BM25_TEXT_CANDIDATE"
+          },
+          "semantic_correctness": {
+            "const": "UNVERIFIED"
+          }
         }
       }
     },
-    "candidate_count": { "type": "integer", "minimum": 0, "maximum": 64 },
-    "indexed_source_count": { "type": "integer", "minimum": 0, "maximum": 6000 },
-    "skipped_source_count": { "type": "integer", "minimum": 0 },
-    "indexed_bytes": { "type": "integer", "minimum": 0, "maximum": 33554432 },
+    "candidate_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "indexed_source_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1536000
+    },
+    "skipped_source_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "indexed_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 8589934592
+    },
     "context": {
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
-          "required": ["schema", "source_commit", "source_tree", "relationships", "test_candidates", "coverage", "report_id"],
-          "properties": { "schema": { "const": "excession.agent-context.v1" } }
+          "required": [
+            "schema",
+            "source_commit",
+            "source_tree",
+            "relationships",
+            "test_candidates",
+            "coverage",
+            "report_id"
+          ],
+          "properties": {
+            "schema": {
+              "const": "excession.agent-context.v1"
+            }
+          }
         }
       ]
     },
     "coverage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "truncated", "gaps"],
+      "required": [
+        "status",
+        "truncated",
+        "gaps"
+      ],
       "properties": {
-        "status": { "const": "PARTIAL" },
-        "truncated": { "type": "boolean" },
+        "status": {
+          "const": "PARTIAL"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
         "gaps": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["reason"],
-            "properties": { "reason": { "type": "string" } }
+            "required": [
+              "reason"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              }
+            }
           }
         }
       }
@@ -88,19 +208,88 @@
     "cache": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "path", "reused_blobs", "read_blobs"],
+      "required": [
+        "kind",
+        "path",
+        "reused_blobs",
+        "read_blobs",
+        "refreshed_segments"
+      ],
       "properties": {
-        "kind": { "const": "PERSISTENT_SQLITE_FTS5" },
-        "path": { "type": "string", "minLength": 1 },
-        "reused_blobs": { "type": "integer", "minimum": 0 },
-        "read_blobs": { "type": "integer", "minimum": 0 }
+        "kind": {
+          "const": "PERSISTENT_SQLITE_FTS5"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reused_blobs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "read_blobs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refreshed_segments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        }
       },
       "description": "Operational diagnostic, excluded from the deterministic report_id."
     },
-    "safe_to_skip_unlisted_tests": { "const": false }
+    "safe_to_skip_unlisted_tests": {
+      "const": false
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "segmentation",
+        "total_source_files",
+        "populated_segments",
+        "ready_segments",
+        "pending_segments",
+        "complete"
+      ],
+      "properties": {
+        "segmentation": {
+          "const": "PATH_SHA256_PREFIX_BYTE"
+        },
+        "total_source_files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "populated_segments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "ready_segments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "pending_segments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    }
   },
   "$defs": {
-    "sha1": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
-    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    "sha1": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
   }
 }

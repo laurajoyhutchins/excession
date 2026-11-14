@@ -663,7 +663,14 @@ mod tests {
                 .bool()
                 .unwrap()
         );
-        assert!(!inventory.get("refs").unwrap().array_ref().unwrap().is_empty());
+        assert!(
+            !inventory
+                .get("refs")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
         let bounded = refs(&root, 1).unwrap();
         assert!(!bounded.get("rewrite_authorized").unwrap().bool().unwrap());
         let identical = verify_target(&root, "HEAD", "HEAD").unwrap();

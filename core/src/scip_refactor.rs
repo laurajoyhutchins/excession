@@ -6,9 +6,13 @@ use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const MAX_INDEX_BYTES: usize = 16 * 1024 * 1024;
+// The 2026-11-14 self-index contains 20,950,375 decoded JSON bytes.
+// Bound ingestion separately from the existing 16 MiB report output cap.
+const MAX_INPUT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_REPORT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_DOCUMENTS: usize = 1500;
-const MAX_OCCURRENCES: usize = 100_000;
+// The pinned self-index has 113,823 occurrences across 121 documents.
+const MAX_OCCURRENCES: usize = 150_000;
 const MAX_BLOB_BYTES: usize = 512 * 1024;
 const MAX_SOURCE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CANDIDATES: usize = 128;
@@ -320,8 +324,8 @@ fn analyze_bytes(
         return refuse("SCIP revision must be a commit");
     }
     let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
-    if bytes.len() > MAX_INDEX_BYTES {
-        return refuse("SCIP JSON exceeds 16 MiB, narrow the source index");
+    if bytes.len() > MAX_INPUT_BYTES {
+        return refuse("SCIP JSON exceeds 32 MiB, narrow the source index");
     }
     let parsed = json::parse(bytes)?;
     let metadata = parsed.get("metadata")?;
@@ -654,7 +658,7 @@ fn analyze_bytes(
         );
     }
     let report = report.stamp_id("report_id")?;
-    if report.canonical().len() > MAX_INDEX_BYTES {
+    if report.canonical().len() > MAX_REPORT_BYTES {
         return refuse("SCIP refactor report exceeds 16 MiB");
     }
     Ok(report)

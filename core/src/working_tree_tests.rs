@@ -42,7 +42,7 @@ struct Temporary {
     path: PathBuf,
 }
 impl Temporary {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", test))]
     fn new() -> Result<Self> {
         Self::new_at(&std::env::temp_dir())
     }
@@ -60,7 +60,7 @@ impl Temporary {
             path: PathBuf::from(std::ffi::OsStr::from_bytes(&raw[..raw.len() - 1])),
         })
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(all(not(target_os = "linux"), test))]
     fn new() -> Result<Self> {
         refuse("uncommitted test isolation currently requires Linux with rootless Podman")
     }

@@ -27,7 +27,7 @@ a Rust module file with code belonging to the same module:
 | `transactions.rs` | `transactions/verification.rs` | Module declaration and calls; child references shared `Spec` |
 | `projection.rs` | `projection/composition.rs` | Module declaration and calls; child references parent `Plan`/`Entry` |
 | `projection.rs` | `projection/workspace.rs` | Module declaration and calls; child references parent `Plan`/`Entry` |
-| `bin/excession.rs` | `bin/excession/graph.rs` | Explicit submodule declaration plus CLI dispatch |
+| `bin/excession.rs` | `bin/excession/graph.rs` | Real parent response/presentation dependency; removed below |
 | `evidence_store.rs` | `evidence_store_tests.rs` | Explicit test submodule and references to fixtures/core types |
 
 Excession now recognizes narrow *parent/child filesystem shapes* **only if**
@@ -37,6 +37,27 @@ prioritized as structural/module integration rather than automatically
 presented as a real dependency cycle or refactoring recommendation.
 Removing a module declaration from a fixture, changing the indexer, or
 using an unrelated path prevents this classification.
+
+## Refactor driven by an actual SCIP reverse edge
+
+The archived SCIP candidate for `core/src/bin/excession.rs` versus
+`core/src/bin/excession/graph.rs` contained eight child-to-parent symbol
+references: six to the parent's `json()` adapter and two to `Response`.
+Unlike a source-bound module declaration, these are avoidable
+presentation-layer dependencies.
+
+The graph router now returns `Result<json::Value>`, importing its CLI
+options explicitly from its sibling `cli` module. The top-level CLI
+alone converts the domain JSON to `Response::Json`. This removes the
+child's references to parent presentation symbols without changing the
+graph CLI's output or graph persistence semantics. A CLI regression test
+initializes a SQLite schema and verifies that `graph ls` still returns the
+expected canonical JSON response.
+
+The historical six-review-candidate count is a baseline, **not** the
+expected post-refactor count. A fresh SCIP analysis should no longer show
+the `excession.rs ↔ graph.rs` reciprocal parent-response pair; newly
+indexed source may produce other hypotheses independently.
 
 ## Consolidation
 
@@ -58,6 +79,7 @@ unchanged.
 - `cargo clippy --locked --all-targets -- -D warnings`
 - `cargo test --locked --all-targets`
 - Exact-head portable CLI, native selectors, impact and source-evidence tests
+- Graph CLI JSON regression; no parent `Response` or `json()` use in child router
 - Advisory self-analysis of the PR's merged Git tree, with replay identity
   checks, Git-bound SCIP index, and explicit unresolved relationship counts
 - The JSON tests compare new stamped wire bytes with the pre-refactor

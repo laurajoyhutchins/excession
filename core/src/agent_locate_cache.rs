@@ -9,7 +9,7 @@ use crate::{Result, discovery, git, refuse};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 const CACHE_VERSION: &str = "agent-locate-fts5-v1";
 pub(crate) const MAX_FILES: usize = 6000;
@@ -68,10 +68,10 @@ fn external_cache(discovered: &discovery::Discovery) -> Result<PathBuf> {
     if parent.starts_with(&root) {
         return refuse("agent locate cache destination is inside the source repository");
     }
-    if let Ok(metadata) = fs::symlink_metadata(&path) {
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return refuse("agent locate cache destination is a symlink or non-file");
-        }
+    if let Ok(metadata) = fs::symlink_metadata(&path)
+        && (metadata.file_type().is_symlink() || !metadata.is_file())
+    {
+        return refuse("agent locate cache destination is a symlink or non-file");
     }
     Ok(path)
 }
@@ -123,10 +123,15 @@ fn initialize(db: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn previous(
-    tx: &Transaction<'_>,
-    path: &str,
-) -> Result<Option<(i64, String, String, usize, String)>> {
+struct CachedFile {
+    id: i64,
+    blob: String,
+    mode: String,
+    size: usize,
+    status: String,
+}
+
+fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<CachedFile>> {
     tx.query_row(
         "SELECT id,blob,mode,bytes,status FROM locator_files WHERE path=?1",
         params![path],
@@ -139,7 +144,13 @@ fn previous(
     .map_err(|e| sql_error("select cached path", e))?
     .map(|(id, blob, mode, size, status)| {
         let size = usize::try_from(size).map_err(|_| "negative cached source size")?;
-        Ok((id, blob, mode, size, status))
+        Ok(CachedFile {
+            id,
+            blob,
+            mode,
+            size,
+            status,
+        })
     })
     .transpose()
 }
@@ -221,25 +232,26 @@ pub(crate) fn search(
         }
         seen.insert(entry.path.clone());
         let prior = previous(&tx, &entry.path)?;
-        if let Some((_, ref blob, ref mode, len, ref status)) = prior {
-            if blob == &entry.oid && mode == &entry.mode {
-                match status.as_str() {
-                    "OK" if len <= MAX_TOTAL_BYTES - indexed_bytes => {
-                        indexed_bytes += len;
-                        indexed_files += 1;
-                        reused_blobs += 1;
-                        continue;
-                    }
-                    "LARGE" | "NON_UTF8" => {
-                        skipped_files += 1;
-                        continue;
-                    }
-                    _ => {}
+        if let Some(ref cached) = prior
+            && cached.blob == entry.oid
+            && cached.mode == entry.mode
+        {
+            match cached.status.as_str() {
+                "OK" if cached.size <= MAX_TOTAL_BYTES - indexed_bytes => {
+                    indexed_bytes += cached.size;
+                    indexed_files += 1;
+                    reused_blobs += 1;
+                    continue;
                 }
+                "LARGE" | "NON_UTF8" => {
+                    skipped_files += 1;
+                    continue;
+                }
+                _ => {}
             }
         }
-        if let Some((id, _, _, _, _)) = prior {
-            remove(&tx, id)?;
+        if let Some(cached) = prior {
+            remove(&tx, cached.id)?;
         }
         if reader.is_none() {
             reader = Some(git::BlobReader::open(&discovered.root)?);

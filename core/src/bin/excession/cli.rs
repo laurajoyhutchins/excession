@@ -135,6 +135,11 @@ pub(super) fn command() -> Command {
                 &["train", "support", "confidence", "prefix", "candidate"],
             ),
             leaf(
+                "bugsinpy-import",
+                &["dataset-repo", "dataset-rev", "project", "bug"],
+                &[],
+            ),
+            leaf(
                 "regression-adjudicate",
                 &["repo", "dataset-repo", "manifest", "case", "frozen", "oracle"],
                 &[],

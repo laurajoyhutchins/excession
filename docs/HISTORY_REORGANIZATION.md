@@ -30,6 +30,23 @@ The plan includes the original tip and tree SHA-1, original parents and tree SHA
 
 Scope grouping is a *review hint* based on commit subjects and adjacency, not evidence that two commits can be squashed safely. It will not treat unscoped messages as an architectural group. Truncation and shallow-clone ancestry are explicit. A scan of 100,000 commits is allowed, but a truncated or shallow scan cannot authorize a rewrite. Commit metadata and report output are bounded to 64 MiB. The command does not inspect working-tree edits.
 
+## Synthesis already available on this target branch
+
+The verified reconstruction work from PR #187 is integrated. It can materialize
+source-identical candidate histories in a separate output Git repository:
+
+```sh
+excession reconstruct git-synthesize --repo . --seed /tmp/seed.json \
+  --output /tmp/excession-candidate-history --max-candidates 2
+excession reconstruct git --repo /tmp/excession-candidate-history/repository \
+  --plan /tmp/excession-candidate-history/plan.json
+```
+
+This synthesizes declared capability histories, not a faithful reordered history
+of the actual original commits. It is currently bounded to 60 contracts, 20,000
+tracked source entries and eight candidate histories. It must not silently
+replace original authorship, tags, external receipts or active PR references.
+
 ## Full history-rewrite acceptance contract (next phase)
 
 1. Freeze and independently verify the target source tree. Record its exact tree ID and proof receipts.

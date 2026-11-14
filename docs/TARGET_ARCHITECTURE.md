@@ -1,6 +1,6 @@
 # Excession target architecture
 
-Status: target design on architecture/consolidated-history-engine-20261114. The current tree remains operational; this document does not claim all moves are implemented.
+Status: executable target branch in progress. The source, evidence, and action module ownership moves below are implemented, while broader root-module consolidation and historical rewriting remain unfinished.
 
 ## Product invariant
 
@@ -41,6 +41,14 @@ Independent verification + REA + build provenance
 Dependencies must flow from lower authority to derived views: actions depend on analysis and evidence, evidence refers to source/artifact IDs, and native producers own their interpretations. No cyclic dependency from an authoritative identity layer into an optional intelligence layer.
 
 The implementation can retain a single Rust crate. The target is modular ownership, not a workspace full of mostly empty crates.
+
+## Implemented on this architecture branch
+
+- Git, source identity, exact change inventory, commit DAG planning and reconstruction replay live under core/src/source while preserving their existing public Rust module names.
+- Git reconstruction evidence replay is under core/src/evidence.
+- Isolated history synthesis and explicitly trusted local oracle execution are under core/src/actions.
+- Verified work from PR #187 (Git reconstruction) and PR #207 (CLI/evidence identity consolidation) is integrated with preserved merge ancestry.
+- History planning, replay audit, locally available ref inventory and exact target-tree comparison are implemented as read-only commands. Their output cannot authorize a rewrite.
 
 ## How the current code migrates
 

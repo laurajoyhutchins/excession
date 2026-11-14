@@ -25,9 +25,13 @@ pub mod evidence_store;
 pub mod explain;
 #[path = "source/git.rs"]
 pub mod git;
+#[path = "source/git_reconstruction.rs"]
 pub mod git_reconstruction;
+#[path = "evidence/git_reconstruction_evidence.rs"]
 pub mod git_reconstruction_evidence;
+#[path = "actions/git_reconstruction_oracles.rs"]
 pub mod git_reconstruction_oracles;
+#[path = "actions/git_reconstruction_synthesis.rs"]
 pub mod git_reconstruction_synthesis;
 pub mod graph;
 pub mod graph_assembly;

@@ -378,3 +378,42 @@ pub fn bugsinpy_import(
     report.entries_mut()?.insert("report_id".into(),Value::string(id));
     Ok(report)
 }
+
+
+#[cfg(test)]
+mod bugsinpy_tests {
+    use super::*;
+    use std::fs;
+    #[test]
+    fn imported_metadata_preserves_missing_a_and_does_not_execute_test_script() {
+        let root=std::env::temp_dir().join(format!(
+            "excession-bugsinpy-import-{}",std::process::id()));
+        if root.exists() { fs::remove_dir_all(&root).unwrap(); }
+        let info=root.join("projects/PySnooper/bugs/1");
+        fs::create_dir_all(&info).unwrap();
+        fs::write(root.join("projects/PySnooper/project.info"),
+            "github_url=\"https://github.com/cool-RR/PySnooper\"\nstatus=\"OK\"\n").unwrap();
+        fs::write(info.join("bug.info"),concat!(
+            "python_version=\"3.8.1\"\n",
+            "buggy_commit_id=\"e21a31162f4c54be693d8ca8260e42393b39abd3\"\n",
+            "fixed_commit_id=\"56f22f8ffe1c6b2be4d2cf3ad1987fdb66113da2\"\n",
+            "test_file=\"tests/test_chinese.py\"\n")).unwrap();
+        fs::write(info.join("run_test.sh"),"exit 71\n").unwrap();
+        git::text(&root,&["init","-q"]).unwrap();
+        git::text(&root,&["add","."]).unwrap();
+        git::text(&root,&[
+            "-c","user.name=Fixture","-c","user.email=fixture@example.invalid",
+            "commit","-qm","published metadata",
+        ]).unwrap();
+        let revision=git::rev(&root,"HEAD").unwrap();
+        let imported=bugsinpy_import(&root,&revision,"PySnooper","1").unwrap();
+        assert_eq!(imported.get("working_commit_A").unwrap(),&Value::Null);
+        assert_eq!(imported.get("status").unwrap().str().unwrap(),
+            "B_C_METADATA_ONLY_A_NOT_ESTABLISHED");
+        assert!(!imported.get("script_executed").unwrap().bool().unwrap());
+        assert_eq!(imported.get("buggy_commit_B").unwrap().str().unwrap(),
+            "e21a31162f4c54be693d8ca8260e42393b39abd3");
+        assert!(bugsinpy_import(&root,&revision,"../PySnooper","1").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+}

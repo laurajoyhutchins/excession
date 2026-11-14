@@ -30,10 +30,17 @@ image_id=$(env CONTAINERS_CONF=/dev/null CONTAINERS_CONF_OVERRIDE=/dev/null \
   CONTAINERS_MOUNTS_CONF=/dev/null TMPDIR=/tmp \
   /usr/bin/podman --remote=false image inspect --format '{{.Id}}' "$image")
 
-case "$image_id" in
-  sha256:????????????????????????????????????????????????????????????????) ;;
-  *) printf 'Unexpected Podman image ID: %s\n' "$image_id" >&2; exit 2 ;;
-esac
+image_id=${image_id#sha256:}
+if ! printf '%s\n' "$image_id" | grep -Eq '^[0-9a-f]{64}
+
+printf '%s\n' "Installed image ID: $image_id"
+printf '%s\n' "Next: excession tests --doctor"
+printf '%s\n' "Then: excession tests; excession tests --run"
+; then
+  printf 'Unexpected Podman image ID: %s\n' "$image_id" >&2
+  exit 2
+fi
+image_id="sha256:$image_id"
 
 printf '%s\n' "Installed image ID: $image_id"
 printf '%s\n' "Next: excession tests --doctor"

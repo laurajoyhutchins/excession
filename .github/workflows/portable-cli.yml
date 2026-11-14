@@ -2,19 +2,7 @@ name: Portable CLI
 
 on:
   pull_request:
-    paths:
-      - "core/**"
-      - "tools/package_release.py"
-      - "tools/release_manifest.py"
-      - "tests/test_release_manifest.py"
-      - "contracts/product/release-manifest.v1.schema.json"
-      - "tools/test_portable_archive.py"
-      - "tools/test_release_candidate.py"
-      - "benchmarks/experiments/real_fixtures.py"
-      - "docs/PORTABILITY.md"
-      - ".github/workflows/portable-cli.yml"
-      - "package-lock.json"
-      - "rust-toolchain.toml"
+    types: [opened, reopened, synchronize, labeled]
   push:
     tags:
       - "v*"
@@ -30,13 +18,14 @@ permissions:
 jobs:
   portability:
     name: Build and smoke (${{ matrix.os }})
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full-portability')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # Fast Linux smoke on ordinary PRs; full matrix on labeled PRs/tags/manual runs.
+      # Full matrix only for tagged releases, explicit PR labels, release branches, or manual runs.
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:full-portability') && '[{"os":"ubuntu-24.04","executable":"excession"}]' || '[{"os":"ubuntu-24.04","executable":"excession"},{"os":"ubuntu-24.04-arm","executable":"excession"},{"os":"macos-15","executable":"excession"},{"os":"macos-15-intel","executable":"excession"},{"os":"windows-2025","executable":"excession.exe"}]') }}
+        include: ${{ fromJSON(github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && !contains(github.event.pull_request.labels.*.name, 'ci:full-portability') && '[{"os":"ubuntu-24.04","executable":"excession"}]' || '[{"os":"ubuntu-24.04","executable":"excession"},{"os":"ubuntu-24.04-arm","executable":"excession"},{"os":"macos-15","executable":"excession"},{"os":"macos-15-intel","executable":"excession"},{"os":"windows-2025","executable":"excession.exe"}]') }}
     steps:
       - uses: actions/checkout@v4
       - name: Select pinned Rust toolchain
@@ -59,18 +48,12 @@ jobs:
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib
       - name: Installed CLI test in independent checkout
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --test portability
-      # PRs smoke the same portable archive contract using the already-built
-      # debug profile; the expensive LTO release build remains on tags/manual.
-      - name: Build executable for archive smoke
+      - name: Build release executable for archive smoke
         shell: bash
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
-            echo "EXCESSION_BIN=core/target/debug/${{ matrix.executable }}" >> "$GITHUB_ENV"
-          else
-            cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
-            echo "EXCESSION_BIN=core/target/release/${{ matrix.executable }}" >> "$GITHUB_ENV"
-          fi
+          set -euo pipefail
+          cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
+          echo "EXCESSION_BIN=core/target/release/${{ matrix.executable }}" >> "$GITHUB_ENV"
       - name: Check dynamic libraries on Unix
         if: runner.os != 'Windows'
         shell: bash
@@ -100,7 +83,7 @@ jobs:
 
   musl:
     name: Minimal Linux (x86-64 musl)
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:full-portability')
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'release/') || contains(github.event.pull_request.labels.*.name, 'ci:full-portability')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

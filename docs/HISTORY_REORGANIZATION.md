@@ -13,6 +13,19 @@ excession history audit --repo . --plan /tmp/excession-history-plan.json
 
 Use --base BASE to exclude everything reachable from an ancestral commit. Omit it for the complete reachable ancestry of the selected tip.
 
+Additional read-only inspection commands:
+
+```sh
+excession history refs --repo . --max-refs 10000
+excession history verify-target --repo . --target architecture-target --replacement reconstructed
+```
+
+The refs report inventories *locally available* Git refs and explicitly refuses
+to claim external GitHub PR heads, unfetched tags or third-party receipts are
+complete. verify-target checks the exact Git tree identity of two pinned commits.
+Even an identical tree does not prove an equivalent historical process, build,
+review or evidentiary chain.
+
 The plan includes the original tip and tree SHA-1, original parents and tree SHA-1 per commit, declared subject scope, first-parent unchanged-tree signals where known, merge boundaries and adjacent same-scope groups. The canonical report_id binds the report contents. The audit re-reads the exact pinned ancestry and refuses modified or inconsistent plans, even if their report_id is recomputed.
 
 Scope grouping is a *review hint* based on commit subjects and adjacency, not evidence that two commits can be squashed safely. It will not treat unscoped messages as an architectural group. Truncation remains explicit. A scan of 100,000 commits is allowed, but a truncated scan cannot authorize a rewrite. Commit metadata and report output are bounded to 64 MiB. The command does not inspect working-tree edits.

@@ -686,6 +686,8 @@ pub(super) fn command() -> Command {
             vec![
                 leaf("plan", &["repo"], &["rev", "base", "max-commits"]),
                 leaf("audit", &["repo", "plan"], &[]),
+                leaf("refs", &["repo"], &["max-refs"]),
+                leaf("verify-target", &["repo", "target", "replacement"], &[]),
             ],
         ).about("Read-only Git history consolidation plans and exact source-DAG replay"))
         .subcommand(group(

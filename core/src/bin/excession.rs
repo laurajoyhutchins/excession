@@ -641,6 +641,18 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
             "audit" => Ok(json(history::audit(opt.path("repo"), opt.path("plan"))?)),
+            "refs" => {
+                let max = opt
+                    .get_or("max-refs", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-refs must be an integer from 1 to 100000")?;
+                Ok(json(history::refs(opt.path("repo"), max)?))
+            }
+            "verify-target" => Ok(json(history::verify_target(
+                opt.path("repo"),
+                opt.get("target"),
+                opt.get("replacement"),
+            )?)),
             _ => refuse(format!("unknown history command {sub}")),
         },
         [top, sub] if top == "agent" => {

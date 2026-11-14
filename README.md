@@ -63,6 +63,24 @@ objects even when the working tree is dirty; they do not include uncommitted
 edits. Default SQLite caches live outside the repository. Exact-output workflows
 also support `--json` and explicit revisions/roots.
 
+## Plan a Git history consolidation
+
+Excession can inventory a local Git SHA-1 history, audit the resulting read-only plan,
+enumerate local refs, and verify that a separately reconstructed history has the
+same exact source tree as a frozen architectural target:
+
+```sh
+excession history plan --repo . --rev HEAD --max-commits 10000 > /tmp/history-plan.json
+excession history audit --repo . --plan /tmp/history-plan.json
+excession history refs --repo . --max-refs 10000
+excession history verify-target --repo . --target main --replacement curated-branch
+```
+
+These commands do not rewrite Git history or authorize a ref update. Adjacent
+commit-message scopes are only proposals for review, not correctness proofs.
+See [target architecture](docs/TARGET_ARCHITECTURE.md) and
+[history safety contract](docs/HISTORY_REORGANIZATION.md).
+
 ## Test what changed
 
 Run Excession inside a Git checkout. Its default is a read-only

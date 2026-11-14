@@ -791,6 +791,21 @@ mod tests {
     }
 
     #[test]
+    fn agent_locate_requires_task_and_supports_explicit_revision() {
+        assert!(parse(&strings(&["agent", "locate", "--repo", "x"])).is_err());
+        assert!(parse(&strings(&["agent", "locate", "--task", "worker lease"])).is_err());
+        let ParseOutcome::Command(parsed) = parse(&strings(&[
+            "agent", "locate", "--repo", "x", "--task", "worker lease",
+            "--rev", "HEAD", "--limit", "8", "--json",
+        ])).unwrap() else { panic!("expected a command"); };
+        assert_eq!(parsed.path, ["agent", "locate"]);
+        assert_eq!(parsed.options.get("task"), "worker lease");
+        assert!(parse(&strings(&[
+            "agent", "locate", "--repo", "x", "--task", "lease", "--unknown",
+        ])).is_err());
+    }
+
+    #[test]
     fn agent_grammar_requires_pinned_focus_or_candidate() {
         assert!(
             parse(&strings(&[

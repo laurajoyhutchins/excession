@@ -39,6 +39,9 @@ fn scope(subject: &str) -> Option<String> {
     ) {
         return None;
     }
+    if area == kind && matches!(kind, "feat" | "fix" | "refactor" | "test" | "docs" | "ci" | "build" | "perf" | "chore") {
+        return None;
+    }
     if area.is_empty()
         || !area
             .bytes()
@@ -109,7 +112,11 @@ fn load(repo: &Path, tip: &str, base: Option<&str>, max: usize) -> Result<(Vec<C
     ];
     let mut commits = parse_log(&git::command(repo, &args)?)?;
     let truncated = commits.len() > max;
-    commits.truncate(max);
+    if truncated {
+        // Git applies max-count before --reverse: retain the selected tip,
+        // not the oldest entry in the bounded suffix.
+        commits.remove(0);
+    }
     Ok((commits, truncated))
 }
 
@@ -333,11 +340,14 @@ mod tests {
         git(&["init", "-q"]);
         fs::write(root.join("a"), "one").unwrap();
         git(&["add", "."]);
-        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "feat(core): first"]);
+        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "initial"]);
         fs::write(root.join("a"), "two").unwrap();
         git(&["add", "."]);
-        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "feat(core): second"]);
+        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "feat(core): first"]);
         fs::write(root.join("b"), "three").unwrap();
+        git(&["add", "."]);
+        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "feat(core): second"]);
+        fs::write(root.join("c"), "four").unwrap();
         git(&["add", "."]);
         git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "fix(core): third"]);
         root
@@ -347,7 +357,7 @@ mod tests {
     fn proposes_only_linear_declared_scope_and_never_authorizes_rewrite() {
         let root = fixture();
         let report = plan(&root, "HEAD", None, 20).unwrap();
-        assert_eq!(report.get("commit_count").unwrap().integer().unwrap(), 3);
+        assert_eq!(report.get("commit_count").unwrap().integer().unwrap(), 4);
         assert_eq!(report.get("candidate_groups").unwrap().array_ref().unwrap().len(), 1);
         assert_eq!(report.get("safety").unwrap().get("rewrite_authorized").unwrap().bool().unwrap(), false);
         assert_eq!(report.get("coverage").unwrap().get("commit_range").unwrap().str().unwrap(), "COMPLETE");
@@ -379,6 +389,7 @@ mod tests {
         assert_eq!(scope("fix(core): test"), Some("core".to_owned()));
         assert_eq!(scope("feat(agent): test"), Some("agent".to_owned()));
         assert_eq!(scope("unrelated message"), None);
+        assert_eq!(scope("feat: unspecified"), None);
         assert_eq!(scope("feat(a b): bad"), None);
     }
 }

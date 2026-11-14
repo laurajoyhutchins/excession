@@ -38,9 +38,7 @@ fn find_claim<'a>(report: &'a Value, id: &str) -> Result<&'a Value> {
     let mut found = None;
     for effect in report.get("effects")?.array_ref()? {
         let actual = effect.get("claim_id")?.str()?;
-        let mut unsigned = effect.clone();
-        unsigned.entries_mut()?.remove("claim_id");
-        if unsigned.sha256() != actual {
+        if !effect.content_id_matches("claim_id")? {
             return refuse("impact claim identifier disagrees with its content");
         }
         if actual == id && found.replace(effect).is_some() {
@@ -155,10 +153,7 @@ pub fn explain(
         ("steps", steps),
         ("coverage", report.get("coverage")?.clone()),
     ]);
-    let report_id = out.sha256();
-    out.entries_mut()?
-        .insert("report_id".into(), Value::string(report_id));
-    Ok(out)
+    out.stamp_id("report_id")
 }
 
 pub fn audit(
@@ -179,11 +174,7 @@ pub fn audit(
     // Replaying the source authenticates the supported observation path,
     // but independent semantic truth remains deliberately unassessed.
     let _ = explanation.get("report_id")?;
-    let id = result.sha256();
-    result
-        .entries_mut()?
-        .insert("report_id".into(), Value::string(id));
-    Ok(result)
+    result.stamp_id("report_id")
 }
 
 pub fn human(explanation: &Value) -> Result<String> {

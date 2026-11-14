@@ -2,6 +2,7 @@
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
 use excession::agent;
+use excession::agent_locate;
 use excession::analyze;
 use excession::change_inventory;
 use excession::discovery;
@@ -633,6 +634,14 @@ fn execute(args: &[String]) -> Result<Response> {
             let roots = opt.0.get("roots").map(String::as_str);
             let db = opt.0.get("db").map(String::as_str);
             match sub.as_str() {
+                "locate" => Ok(json(agent_locate::locate(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.get("task"),
+                    limit,
+                    roots,
+                    db,
+                )?)),
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),
                     opt.get("rev"),

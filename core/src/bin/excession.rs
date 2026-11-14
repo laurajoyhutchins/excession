@@ -1432,6 +1432,12 @@ mod tests {
         {
             let db = Db::open(&path).unwrap();
             db.init_schema().unwrap();
+            // The configured-graph tables are provisioned by the graph
+            // importer, not by the general Excession evidence schema.
+            db.exec(
+                "CREATE TABLE configured_graph (graph_id TEXT PRIMARY KEY, target TEXT, document TEXT)",
+            )
+            .unwrap();
         }
         let response = execute(&strings(&["graph", "ls", "--db", path.to_str().unwrap()])).unwrap();
         match response {

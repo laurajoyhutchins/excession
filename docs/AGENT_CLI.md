@@ -8,7 +8,7 @@ excession agent locate --repo /work/project \
 ```
 
 `agent locate` accepts natural-language tasks without requiring prior exact
-file paths. It builds a **temporary in-memory SQLite FTS5 index** from
+file paths. It maintains a **persistent, incrementally updated SQLite FTS5 index** from
 authenticated regular Git source blobs and ranks candidates using BM25.
 Each candidate carries an exact commit, tree, path, blob, file mode, and a
 1-based **heuristic** source line window. The result also contains the
@@ -19,9 +19,12 @@ do **not** prove the requested behavior is absent.
 The source scan is bounded to 6000 regular source files, 256 KiB per file,
 and 32 MiB total text; larger sources, non-UTF-8 files, skipped paths,
 incomplete dependency coverage and other limits are explicitly reported.
-It does not inspect uncommitted files or execute repository code. This
-initial implementation does not persist an FTS index or perform neural
-inference. It does not claim semantic correctness, verified relationships,
+It does not inspect uncommitted files or execute repository code. The index is stored alongside Excession's external SQLite evidence cache as
+`agent-locate.sqlite`, never in the repository. Repeated queries reuse
+unchanged Git blobs, while changed and deleted paths are synchronized in one
+SQLite transaction. The report's `cache` object exposes per-invocation
+read/reuse counts; those incidental performance diagnostics are excluded from
+`report_id`. Neural inference is not performed. It does not claim semantic correctness, verified relationships,
 or safety to skip tests. Use `--roots` and `--db` for the existing context
 analysis only, not to change the full Git-tree lexical scan. The output
 contract is `contracts/agent/locate.schema.json`.

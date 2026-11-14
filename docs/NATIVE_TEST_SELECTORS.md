@@ -222,9 +222,14 @@ prerequisites in a machine-readable form.
 
 On a clean committed checkout, the pre-existing `excession tests --run`
 workflow still runs installed native tools in the trusted checkout. The
-rootless sandbox requirement applies to **uncommitted** work. The current
-native pytest selector still requires a previous `.testmondata` coverage
-baseline; there is no implicit host-side baseline generation.
+rootless sandbox requirement applies to **uncommitted** work. For uncommitted Python work without an existing `.testmondata`, Excession
+runs the full pytest-testmon baseline from the committed base **inside** the
+same isolated container, then checks out the ephemeral candidate and runs the
+native selector. This first run may take longer; increase `--timeout` (maximum
+600 seconds) if the suite needs it. Baseline data does not enter the original
+checkout and is not treated as a durable receipt. A failing or unavailable
+baseline refuses execution, rather than attempting host execution. The clean
+committed-checkout path still requires a pre-existing baseline.
 
 In the sandbox, the source snapshot is bind-mounted **read-only** at /input.
 A fresh copy is made into a **size-limited, writable tmpfs** at /work.

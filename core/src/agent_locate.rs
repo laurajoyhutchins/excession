@@ -481,6 +481,7 @@ mod tests {
                 git::entries(&root, &forbidden.commit).unwrap(),
                 4,
                 "\"lease\"",
+                agent_locate_cache::DEFAULT_REFRESH_SEGMENTS,
                 source_path,
             )
             .is_err()

@@ -28,17 +28,42 @@ fn source_path(path: &str) -> bool {
     if path.split('/').any(|part| {
         matches!(
             part,
-            ".git" | "target" | "node_modules" | "vendor" | ".venv" | "__pycache__"
-                | "dist" | "build"
+            ".git"
+                | "target"
+                | "node_modules"
+                | "vendor"
+                | ".venv"
+                | "__pycache__"
+                | "dist"
+                | "build"
         )
     }) {
         return false;
     }
     matches!(
         path.rsplit('.').next().unwrap_or(""),
-        "rs" | "py" | "pyi" | "go" | "js" | "jsx" | "ts" | "tsx" | "c" | "h"
-            | "cc" | "cpp" | "hpp" | "java" | "kt" | "scala" | "rb" | "swift"
-            | "cs" | "sh" | "sql" | "proto" | "lean"
+        "rs" | "py"
+            | "pyi"
+            | "go"
+            | "js"
+            | "jsx"
+            | "ts"
+            | "tsx"
+            | "c"
+            | "h"
+            | "cc"
+            | "cpp"
+            | "hpp"
+            | "java"
+            | "kt"
+            | "scala"
+            | "rb"
+            | "swift"
+            | "cs"
+            | "sh"
+            | "sql"
+            | "proto"
+            | "lean"
     )
 }
 
@@ -62,9 +87,33 @@ fn terms(task: &str) -> Result<Vec<String>> {
         }
     }
     const STOP: &[&str] = &[
-        "a", "an", "and", "are", "by", "for", "from", "how", "in", "into",
-        "is", "of", "on", "or", "the", "this", "to", "what", "where", "which",
-        "with", "fix", "find", "implement", "code", "source", "file",
+        "a",
+        "an",
+        "and",
+        "are",
+        "by",
+        "for",
+        "from",
+        "how",
+        "in",
+        "into",
+        "is",
+        "of",
+        "on",
+        "or",
+        "the",
+        "this",
+        "to",
+        "what",
+        "where",
+        "which",
+        "with",
+        "fix",
+        "find",
+        "implement",
+        "code",
+        "source",
+        "file",
     ];
     found.retain(|term| !STOP.contains(&term.as_str()));
     found.truncate(MAX_QUERY_TERMS);
@@ -121,7 +170,10 @@ fn excerpt(body: &str, words: &[String]) -> Value {
     let mut best = (i32::MIN, 0usize);
     for (i, line) in lines.iter().enumerate() {
         let normalized = line_tokens(line);
-        let hits = words.iter().filter(|word| normalized.contains(word.as_str())).count();
+        let hits = words
+            .iter()
+            .filter(|word| normalized.contains(word.as_str()))
+            .count();
         if hits == 0 {
             continue;
         }
@@ -130,9 +182,17 @@ fn excerpt(body: &str, words: &[String]) -> Value {
             || trimmed.starts_with('#')
             || trimmed.starts_with("/*")
             || trimmed.starts_with('*');
-        let declaration = ["fn ", "pub fn ", "def ", "class ", "func ", "struct ", "interface "]
-            .iter()
-            .any(|keyword| trimmed.starts_with(keyword));
+        let declaration = [
+            "fn ",
+            "pub fn ",
+            "def ",
+            "class ",
+            "func ",
+            "struct ",
+            "interface ",
+        ]
+        .iter()
+        .any(|keyword| trimmed.starts_with(keyword));
         let score = hits as i32 * 10 + i32::from(declaration) * 3 - i32::from(comment) * 12;
         if score > best.0 {
             best = (score, i);
@@ -227,10 +287,12 @@ pub fn locate(
             continue;
         }
         bytes += body.len();
-        index.execute(
-            "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
-            params![files.len() + 1, entry.path, body],
-        ).map_err(|e| format!("FTS5 insert: {e}"))?;
+        index
+            .execute(
+                "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
+                params![files.len() + 1, entry.path, body],
+            )
+            .map_err(|e| format!("FTS5 insert: {e}"))?;
         files.push(IndexedFile { entry, body });
     }
     reader.finish()?;
@@ -238,20 +300,27 @@ pub fn locate(
     let mut candidates = Vec::new();
     let mut selected_paths = Vec::new();
     let expression = match_expression(&words);
-    let mut statement = index.prepare(
-        "SELECT rowid FROM source_search WHERE source_search MATCH ?1 \
+    let mut statement = index
+        .prepare(
+            "SELECT rowid FROM source_search WHERE source_search MATCH ?1 \
          ORDER BY bm25(source_search, 4.0, 1.0), rowid LIMIT ?2",
-    ).map_err(|e| format!("FTS5 query setup: {e}"))?;
-    let rows = statement.query_map(params![expression, limit], |row| row.get::<_, i64>(0))
+        )
+        .map_err(|e| format!("FTS5 query setup: {e}"))?;
+    let rows = statement
+        .query_map(params![expression, limit], |row| row.get::<_, i64>(0))
         .map_err(|e| format!("FTS5 query: {e}"))?;
     for row in rows {
         let id = row.map_err(|e| format!("FTS5 row: {e}"))?;
-        let file = files.get(usize::try_from(id - 1).map_err(|_| "invalid FTS5 row ID")?)
+        let file = files
+            .get(usize::try_from(id - 1).map_err(|_| "invalid FTS5 row ID")?)
             .ok_or("FTS5 returned source outside indexed Git inventory")?;
         selected_paths.push(file.entry.path.clone());
         candidates.push(obj(&[
             ("rank", Value::number(candidates.len() + 1)),
-            ("source", source(&discovered.commit, &discovered.tree, &file.entry)),
+            (
+                "source",
+                source(&discovered.commit, &discovered.tree, &file.entry),
+            ),
             ("excerpt", excerpt(&file.body, &words)),
             ("ranking", Value::string("FTS5_BM25_TEXT_CANDIDATE")),
             ("semantic_correctness", Value::string("UNVERIFIED")),
@@ -279,12 +348,24 @@ pub fn locate(
     let context = if selected_paths.is_empty() {
         Value::Null
     } else {
-        let focus = selected_paths.iter().take(MAX_CONTEXT_FOCUS)
-            .cloned().collect::<Vec<_>>().join(",");
+        let focus = selected_paths
+            .iter()
+            .take(MAX_CONTEXT_FOCUS)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(",");
         if selected_paths.len() > MAX_CONTEXT_FOCUS {
             gaps.push(gap("CONTEXT_FOCUS_TRUNCATED_TO_16"));
         }
-        agent::context(&discovered.root, &discovered.commit, &focus, Some(task), limit, roots, db)?
+        agent::context(
+            &discovered.root,
+            &discovered.commit,
+            &focus,
+            Some(task),
+            limit,
+            roots,
+            db,
+        )?
     };
 
     let mut output = obj(&[
@@ -299,15 +380,20 @@ pub fn locate(
         ("skipped_source_count", Value::number(skipped)),
         ("indexed_bytes", Value::number(bytes)),
         ("context", context),
-        ("coverage", obj(&[
-            ("status", Value::string("PARTIAL")),
-            ("truncated", Value::Bool(truncated)),
-            ("gaps", Value::array(gaps)),
-        ])),
+        (
+            "coverage",
+            obj(&[
+                ("status", Value::string("PARTIAL")),
+                ("truncated", Value::Bool(truncated)),
+                ("gaps", Value::array(gaps)),
+            ]),
+        ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
     let report_id = output.sha256();
-    output.entries_mut()?.insert("report_id".into(), Value::string(report_id));
+    output
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(report_id));
     Ok(output)
 }
 
@@ -319,7 +405,10 @@ mod tests {
     fn match_operators_cannot_escape_fts5_terms() {
         let words = terms("\"lease\" OR * NOT ; -- recovery").unwrap();
         assert_eq!(words, ["lease", "not", "recovery"]);
-        assert_eq!(match_expression(&words), "\"lease\" OR \"not\" OR \"recovery\"");
+        assert_eq!(
+            match_expression(&words),
+            "\"lease\" OR \"not\" OR \"recovery\""
+        );
         assert!(terms("***").is_err());
         assert!(terms(&"x".repeat(4097)).is_err());
     }
@@ -340,7 +429,14 @@ mod tests {
         let value = excerpt(source, &["recover_lease".into()]);
         assert_eq!(value.get("start_line").unwrap().integer().unwrap(), 1);
         assert_eq!(value.get("end_line").unwrap().integer().unwrap(), 4);
-        assert!(value.get("text").unwrap().str().unwrap().contains("recover_lease"));
+        assert!(
+            value
+                .get("text")
+                .unwrap()
+                .str()
+                .unwrap()
+                .contains("recover_lease")
+        );
     }
 
     #[test]
@@ -362,26 +458,61 @@ mod tests {
                 .args(args)
                 .output()
                 .unwrap();
-            assert!(result.status.success(), "git: {}", String::from_utf8_lossy(&result.stderr));
+            assert!(
+                result.status.success(),
+                "git: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
         };
         git(&["init", "-q"]);
-        fs::write(root.join("src/lease.rs"), "pub fn renew_lease() { recover_worker(); }\n").unwrap();
+        fs::write(
+            root.join("src/lease.rs"),
+            "pub fn renew_lease() { recover_worker(); }\n",
+        )
+        .unwrap();
         fs::write(root.join("src/other.rs"), "pub fn render_canvas() {}\n").unwrap();
         fs::write(root.join("src/oversize.rs"), "x".repeat(MAX_FILE_BYTES + 1)).unwrap();
         git(&["add", "."]);
-        git(&["-c", "user.email=test@example.com", "-c", "user.name=Test",
-            "commit", "-qm", "initial"]);
+        git(&[
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-qm",
+            "initial",
+        ]);
 
         let first = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
         let ranked = first.get("candidates").unwrap().array_ref().unwrap();
         assert!(!ranked.is_empty());
         assert_eq!(
-            ranked[0].get("source").unwrap().get("path").unwrap().str().unwrap(),
+            ranked[0]
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "src/lease.rs"
         );
-        assert_eq!(first.get("skipped_source_count").unwrap().integer().unwrap(), 1);
+        assert_eq!(
+            first
+                .get("skipped_source_count")
+                .unwrap()
+                .integer()
+                .unwrap(),
+            1
+        );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
-        assert_eq!(first.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap(), false);
+        assert_eq!(
+            first
+                .get("safe_to_skip_unlisted_tests")
+                .unwrap()
+                .bool()
+                .unwrap(),
+            false
+        );
         let first_id = first.get("report_id").unwrap().str().unwrap().to_owned();
         fs::write(root.join("src/lease.rs"), "pub fn something_else() {}\n").unwrap();
         fs::write(root.join("src/other.rs"), "pub fn renew_lease() {}\n").unwrap();
@@ -389,7 +520,12 @@ mod tests {
         assert_eq!(second.get("report_id").unwrap().str().unwrap(), first_id);
         assert_eq!(
             second.get("candidates").unwrap().array_ref().unwrap()[0]
-                .get("source").unwrap().get("path").unwrap().str().unwrap(),
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "src/lease.rs"
         );
         fs::remove_dir_all(root).unwrap();
@@ -400,16 +536,24 @@ mod tests {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch("CREATE VIRTUAL TABLE source_search USING fts5(path, body);")
             .unwrap();
-        db.execute("INSERT INTO source_search(path,body) VALUES(?1,?2)",
-            params!["src/other.rs","fn unrelated() { println!(\"ok\"); }"]).unwrap();
-        db.execute("INSERT INTO source_search(path,body) VALUES(?1,?2)",
-            params!["src/lease.rs","fn recover_lease() { restore_worker(); }"]).unwrap();
-        let best: String = db.query_row(
-            "SELECT path FROM source_search WHERE source_search MATCH ?1 \
+        db.execute(
+            "INSERT INTO source_search(path,body) VALUES(?1,?2)",
+            params!["src/other.rs", "fn unrelated() { println!(\"ok\"); }"],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO source_search(path,body) VALUES(?1,?2)",
+            params!["src/lease.rs", "fn recover_lease() { restore_worker(); }"],
+        )
+        .unwrap();
+        let best: String = db
+            .query_row(
+                "SELECT path FROM source_search WHERE source_search MATCH ?1 \
              ORDER BY bm25(source_search, 4.0, 1.0), rowid LIMIT 1",
-            params![match_expression(&terms("recover lease").unwrap())],
-            |row| row.get(0),
-        ).unwrap();
+                params![match_expression(&terms("recover lease").unwrap())],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(best, "src/lease.rs");
     }
 }

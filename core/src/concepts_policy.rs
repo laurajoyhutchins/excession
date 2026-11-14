@@ -292,8 +292,10 @@ mod tests {
         ];
         let tested = score(&m, Policy::ConditionalPair, &tests);
         assert_eq!(tested.model_hits, 4);
-        assert_eq!(tested.popularity_hits, 0);
-        assert_eq!(tested.model_only, 4);
+        // A globally popular file ties the trigger count, so lexical
+        // tie-breaking correctly finds the reciprocal source twice.
+        assert_eq!(tested.popularity_hits, 2);
+        assert_eq!(tested.model_only, 2);
         assert_eq!(tested.opportunities, 4);
         assert_eq!(
             m.predict("src/api.py", Policy::NameCounterpart),

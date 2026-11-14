@@ -35,7 +35,7 @@ jobs:
       - name: Run identical semantic tests on each model
         run: |
           echo "llama.cpp commit $LLAMA_COMMIT"
-          python experiments/cpu_llm/benchmark_choice.py
+          python experiments/cpu_llm/benchmark_reranker.py
       - name: Retain model results and failure diagnostics
         if: always()
         uses: actions/upload-artifact@v4

@@ -42,9 +42,25 @@ fn sql_error(where_: &str, error: impl std::fmt::Display) -> String {
 fn external_cache(discovered: &discovery::Discovery) -> Result<PathBuf> {
     let path = discovered.index_path.with_file_name("agent-locate.sqlite");
     let parent = path.parent().ok_or("agent locate cache missing parent")?;
+    let root = fs::canonicalize(&discovered.root).map_err(|e| sql_error("root canonicalize", e))?;
+    // Check *before* mkdir: a user-specified cache directory must never
+    // create files inside the checkout, even when its final component does
+    // not exist yet or an existing ancestor is a symlink into the checkout.
+    if !parent.is_absolute()
+        || parent.components().any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return refuse("agent locate cache directory must be absolute without parent traversal");
+    }
+    let mut ancestor = parent;
+    while !ancestor.exists() {
+        ancestor = ancestor.parent().ok_or("no existing cache directory ancestor")?;
+    }
+    let ancestor = fs::canonicalize(ancestor).map_err(|e| sql_error("ancestor canonicalize", e))?;
+    if ancestor.starts_with(&root) || parent.starts_with(&root) {
+        return refuse("agent locate cache destination is inside the source repository");
+    }
     fs::create_dir_all(parent).map_err(|e| sql_error("directory", e))?;
     let parent = fs::canonicalize(parent).map_err(|e| sql_error("directory canonicalize", e))?;
-    let root = fs::canonicalize(&discovered.root).map_err(|e| sql_error("root canonicalize", e))?;
     if parent.starts_with(&root) {
         return refuse("agent locate cache destination is inside the source repository");
     }

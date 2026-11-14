@@ -48,7 +48,8 @@ jobs:
           RUN python3 -m pip install --break-system-packages --no-cache-dir pytest==8.4.2 pytest-testmon==2.3.0 pytest-json-report==1.5.0
           DOCKERFILE
           podman build --pull=always --network=host -t excession-snapshot-test "$RUNNER_TEMP/sandbox-image"
-          podman image inspect --format '{{.Id}}' excession-snapshot-test > "$RUNNER_TEMP/sandbox-image-id"
+          IMAGE_ID="$(podman image inspect --format '{{.Id}}' excession-snapshot-test)"
+          printf 'sha256:%s\n' "${IMAGE_ID#sha256:}" > "$RUNNER_TEMP/sandbox-image-id"
           grep -E '^sha256:[0-9a-f]{64}$' "$RUNNER_TEMP/sandbox-image-id"
       - name: Test actual isolated changed source without original checkout mutation
         shell: bash

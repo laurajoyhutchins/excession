@@ -106,10 +106,7 @@ fn validate_receipt(
     {
         return refuse("compiler receipt has incompatible source revision or schema");
     }
-    let id = raw.get("report_id")?.str()?.to_owned();
-    let mut body = raw.entries()?.clone();
-    body.remove("report_id");
-    if Value::Object(body).sha256() != id {
+    if !raw.content_id_matches("report_id")? {
         return refuse("compiler receipt report_id does not match canonical payload");
     }
     let obs = raw.get("observation")?;

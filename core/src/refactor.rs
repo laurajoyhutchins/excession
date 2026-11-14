@@ -347,7 +347,7 @@ pub fn suggest(db: &Db, name: &str, revision: &str) -> Result<Value> {
         .map_err(|_| "invalid indexed hazard count")?;
     db.foreign_keys_valid()?;
 
-    let mut report = obj(&[
+    let report = obj(&[
         ("schema", Value::string("excession.refactor-candidates.v1")),
         ("status", Value::string("UNVERIFIED_REFACTOR_HYPOTHESES")),
         ("source_commit", Value::string(commit)),

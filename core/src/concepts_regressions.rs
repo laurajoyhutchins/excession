@@ -147,14 +147,18 @@ pub fn adjudicate(
     }
     let reproduced=status==["PASS","FAIL","PASS"];
     let proposals=frozen.get("policy_evaluation")?.get("predictions")?.array_ref()?;
-    let visible: Vec<Value> = proposals.iter()
-        .filter(|v| string(v,"commit").ok()==Some(b))
-        .map(|v| obj(&[
-            ("changed_source",v.get("changed_source").unwrap().clone()),
-            ("model",v.get("selected_policy_prediction").unwrap().clone()),
-            ("global_popularity",v.get("popularity_prediction").unwrap().clone()),
-            ("same_directory",v.get("directory_prediction").unwrap().clone()),
-        ])).collect();
+    let mut visible = Vec::new();
+    for prediction in proposals {
+        if string(prediction, "commit")? != b {
+            continue;
+        }
+        visible.push(obj(&[
+            ("changed_source", prediction.get("changed_source")?.clone()),
+            ("model", prediction.get("selected_policy_prediction")?.clone()),
+            ("global_popularity", prediction.get("popularity_prediction")?.clone()),
+            ("same_directory", prediction.get("directory_prediction")?.clone()),
+        ]));
+    }
     let mut report=obj(&[
         ("schema",Value::string("excession.concepts.regminer-adjudication.v1")),
         ("case_id",Value::string(case_id)),

@@ -89,11 +89,11 @@ fn parse_log(bytes: &[u8]) -> Result<Vec<Commit>> {
     let fields = bytes[..bytes.len() - 1]
         .split(|b| *b == 0)
         .collect::<Vec<_>>();
-    if fields.len() % 4 != 0 {
+    let (rows, remainder) = fields.as_chunks::<4>();
+    if !remainder.is_empty() {
         return refuse("malformed NUL-delimited Git history");
     }
-    fields
-        .chunks_exact(4)
+    rows.iter()
         .map(|row| {
             let field = |index: usize| {
                 std::str::from_utf8(row[index])
@@ -663,7 +663,7 @@ mod tests {
                 .bool()
                 .unwrap()
         );
-        assert!(inventory.get("refs").unwrap().array_ref().unwrap().len() >= 1);
+        assert!(!inventory.get("refs").unwrap().array_ref().unwrap().is_empty());
         let bounded = refs(&root, 1).unwrap();
         assert!(!bounded.get("rewrite_authorized").unwrap().bool().unwrap());
         let identical = verify_target(&root, "HEAD", "HEAD").unwrap();

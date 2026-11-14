@@ -28,7 +28,7 @@ review or evidentiary chain.
 
 The plan includes the original tip and tree SHA-1, original parents and tree SHA-1 per commit, declared subject scope, first-parent unchanged-tree signals where known, merge boundaries and adjacent same-scope groups. The canonical report_id binds the report contents. The audit re-reads the exact pinned ancestry and refuses modified or inconsistent plans, even if their report_id is recomputed.
 
-Scope grouping is a *review hint* based on commit subjects and adjacency, not evidence that two commits can be squashed safely. It will not treat unscoped messages as an architectural group. Truncation remains explicit. A scan of 100,000 commits is allowed, but a truncated scan cannot authorize a rewrite. Commit metadata and report output are bounded to 64 MiB. The command does not inspect working-tree edits.
+Scope grouping is a *review hint* based on commit subjects and adjacency, not evidence that two commits can be squashed safely. It will not treat unscoped messages as an architectural group. Truncation and shallow-clone ancestry are explicit. A scan of 100,000 commits is allowed, but a truncated or shallow scan cannot authorize a rewrite. Commit metadata and report output are bounded to 64 MiB. The command does not inspect working-tree edits.
 
 ## Full history-rewrite acceptance contract (next phase)
 

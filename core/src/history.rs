@@ -32,14 +32,38 @@ fn scope(subject: &str) -> Option<String> {
     };
     if !matches!(
         kind,
-        "feat" | "fix" | "refactor" | "test" | "docs" | "ci" | "build"
-            | "perf" | "chore" | "core" | "graph" | "syntax" | "analysis"
-            | "security" | "views" | "observe" | "release" | "contracts"
-            | "evidence" | "kernel" | "cli" | "inspect" | "bench"
+        "feat"
+            | "fix"
+            | "refactor"
+            | "test"
+            | "docs"
+            | "ci"
+            | "build"
+            | "perf"
+            | "chore"
+            | "core"
+            | "graph"
+            | "syntax"
+            | "analysis"
+            | "security"
+            | "views"
+            | "observe"
+            | "release"
+            | "contracts"
+            | "evidence"
+            | "kernel"
+            | "cli"
+            | "inspect"
+            | "bench"
     ) {
         return None;
     }
-    if area == kind && matches!(kind, "feat" | "fix" | "refactor" | "test" | "docs" | "ci" | "build" | "perf" | "chore") {
+    if area == kind
+        && matches!(
+            kind,
+            "feat" | "fix" | "refactor" | "test" | "docs" | "ci" | "build" | "perf" | "chore"
+        )
+    {
         return None;
     }
     if area.is_empty()
@@ -129,9 +153,14 @@ fn candidate_group(commits: &[Commit]) -> Value {
         ("kind", Value::string("ADJACENT_SCOPE_REVIEW")),
         (
             "reason",
-            Value::string("Same declared commit-message scope and linear parent chain; behavior unverified"),
+            Value::string(
+                "Same declared commit-message scope and linear parent chain; behavior unverified",
+            ),
         ),
-        ("declared_scope", Value::string(commits[0].scope.as_deref().unwrap_or(""))),
+        (
+            "declared_scope",
+            Value::string(commits[0].scope.as_deref().unwrap_or("")),
+        ),
         ("commits", array(commits.iter().map(|c| c.oid.clone()))),
         ("original_parent", Value::string(&commits[0].parents[0])),
         ("original_tip", Value::string(&commits.last().unwrap().oid)),
@@ -165,7 +194,9 @@ fn groups(commits: &[Commit]) -> Vec<Value> {
 
 fn with_id(mut report: Value) -> Result<Value> {
     let id = report.sha256();
-    report.entries_mut()?.insert("report_id".to_owned(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("report_id".to_owned(), Value::string(id));
     Ok(report)
 }
 
@@ -184,6 +215,11 @@ pub fn plan(repo: &Path, rev: &str, base: Option<&str>, max: usize) -> Result<Va
             Some(b)
         }
         None => None,
+    };
+    let shallow = match git::text(repo, &["rev-parse", "--is-shallow-repository"])?.as_str() {
+        "true" => true,
+        "false" => false,
+        _ => return refuse("Git returned an invalid shallow-repository state"),
     };
     let tip_tree = git::rev(repo, &format!("{tip}^{{tree}}"))?;
     let base_tree = match &base {
@@ -224,7 +260,11 @@ pub fn plan(repo: &Path, rev: &str, base: Option<&str>, max: usize) -> Result<Va
             ("subject", Value::string(&commit.subject)),
             (
                 "declared_scope",
-                commit.scope.as_deref().map(Value::string).unwrap_or(Value::Null),
+                commit
+                    .scope
+                    .as_deref()
+                    .map(Value::string)
+                    .unwrap_or(Value::Null),
             ),
             (
                 "first_parent_tree_unchanged",
@@ -252,7 +292,10 @@ pub fn plan(repo: &Path, rev: &str, base: Option<&str>, max: usize) -> Result<Va
             obj(&[
                 ("merge_commits", Value::number(merges)),
                 ("same_tree_as_first_parent", Value::number(no_tree_change)),
-                ("unresolved_first_parent_trees", Value::number(unresolved_parents)),
+                (
+                    "unresolved_first_parent_trees",
+                    Value::number(unresolved_parents),
+                ),
             ]),
         ),
         (
@@ -260,9 +303,16 @@ pub fn plan(repo: &Path, rev: &str, base: Option<&str>, max: usize) -> Result<Va
             obj(&[
                 (
                     "commit_range",
-                    Value::string(if truncated { "TRUNCATED" } else { "COMPLETE" }),
+                    Value::string(if truncated {
+                        "TRUNCATED"
+                    } else if shallow {
+                        "SHALLOW"
+                    } else {
+                        "COMPLETE"
+                    }),
                 ),
                 ("truncated", Value::Bool(truncated)),
+                ("shallow_repository", Value::Bool(shallow)),
                 ("semantic_equivalence", Value::string("NOT_ASSESSED")),
                 ("evidence_receipts", Value::string("NOT_INVENTORIED")),
             ]),
@@ -272,8 +322,14 @@ pub fn plan(repo: &Path, rev: &str, base: Option<&str>, max: usize) -> Result<Va
             obj(&[
                 ("read_only", Value::Bool(true)),
                 ("rewrite_authorized", Value::Bool(false)),
-                ("source_tree_preservation", Value::string("REQUIRED_NOT_PROVEN")),
-                ("external_refs_and_receipts", Value::string("NOT_YET_RECONCILED")),
+                (
+                    "source_tree_preservation",
+                    Value::string("REQUIRED_NOT_PROVEN"),
+                ),
+                (
+                    "external_refs_and_receipts",
+                    Value::string("NOT_YET_RECONCILED"),
+                ),
                 ("merges_preserved_by_default", Value::Bool(true)),
             ]),
         ),
@@ -312,13 +368,15 @@ pub fn audit(repo: &Path, saved_plan: &Path) -> Result<Value> {
         ("schema", Value::string("excession.history-audit.v1")),
         ("plan_id", Value::string(id)),
         ("original_tip", provided.get("original_tip")?.clone()),
-        ("original_tip_tree", provided.get("original_tip_tree")?.clone()),
+        (
+            "original_tip_tree",
+            provided.get("original_tip_tree")?.clone(),
+        ),
         ("status", Value::string("SOURCE_DAG_REPLAY_VERIFIED")),
         ("rewrite_authorized", Value::Bool(false)),
         ("semantic_equivalence", Value::string("NOT_ASSESSED")),
     ]))
 }
-
 
 /// Inventory local refs before any attempt to rewrite ancestry. Remote-only PR
 /// heads, un-fetched tags and external evidence cannot be inferred from this.
@@ -340,7 +398,8 @@ pub fn refs(repo: &Path, max: usize) -> Result<Value> {
     if bytes.len() > MAX_LOG_BYTES {
         return refuse("history refs output exceeds 64 MiB");
     }
-    let lines = bytes.split(|b| *b == b'\n')
+    let lines = bytes
+        .split(|b| *b == b'\n')
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>();
     let truncated = lines.len() > max;
@@ -352,8 +411,7 @@ pub fn refs(repo: &Path, max: usize) -> Result<Value> {
             return refuse("malformed Git ref inventory");
         }
         let part = |i: usize| {
-            std::str::from_utf8(fields[i])
-                .map_err(|_| "non-UTF-8 Git ref inventory".to_owned())
+            std::str::from_utf8(fields[i]).map_err(|_| "non-UTF-8 Git ref inventory".to_owned())
         };
         let name = part(0)?;
         if !name.starts_with("refs/") {
@@ -365,7 +423,11 @@ pub fn refs(repo: &Path, max: usize) -> Result<Value> {
             return refuse("unsupported Git ref object type");
         }
         let peeled = part(3)?;
-        let peeled = if peeled.is_empty() { None } else { Some(git::oid(peeled)?) };
+        let peeled = if peeled.is_empty() {
+            None
+        } else {
+            Some(git::oid(peeled)?)
+        };
         let class = if name.starts_with("refs/heads/") {
             "branch"
         } else if name.starts_with("refs/tags/") {
@@ -382,16 +444,23 @@ pub fn refs(repo: &Path, max: usize) -> Result<Value> {
             ("ref", Value::string(name)),
             ("object", Value::string(oid)),
             ("object_type", Value::string(object_type)),
-            ("peeled_object", peeled.map(Value::string).unwrap_or(Value::Null)),
+            (
+                "peeled_object",
+                peeled.map(Value::string).unwrap_or(Value::Null),
+            ),
             ("class", Value::string(class)),
         ]));
     }
-    let type_counts = kinds.into_iter()
+    let type_counts = kinds
+        .into_iter()
         .map(|(kind, count)| (kind.to_owned(), Value::number(count)))
         .collect::<Vec<_>>();
     with_id(obj(&[
         ("schema", Value::string("excession.history-refs.v1")),
-        ("head_commit", Value::string(git::rev(repo, "HEAD^{commit}")?)),
+        (
+            "head_commit",
+            Value::string(git::rev(repo, "HEAD^{commit}")?),
+        ),
         ("refs", Value::array(rows)),
         ("counts", Value::object(type_counts)),
         ("truncated", Value::Bool(truncated)),
@@ -411,7 +480,10 @@ pub fn verify_target(repo: &Path, target: &str, replacement: &str) -> Result<Val
     let replacement_tree = git::rev(repo, &format!("{replacement}^{{tree}}"))?;
     let equal = target_tree == replacement_tree;
     with_id(obj(&[
-        ("schema", Value::string("excession.history-target-comparison.v1")),
+        (
+            "schema",
+            Value::string("excession.history-target-comparison.v1"),
+        ),
         ("reviewed_target", Value::string(target)),
         ("reviewed_target_tree", Value::string(target_tree)),
         ("candidate_tip", Value::string(replacement)),
@@ -419,7 +491,11 @@ pub fn verify_target(repo: &Path, target: &str, replacement: &str) -> Result<Val
         ("exact_tree_equal", Value::Bool(equal)),
         (
             "status",
-            Value::string(if equal { "IDENTICAL_GIT_TREES" } else { "TREE_MISMATCH" }),
+            Value::string(if equal {
+                "IDENTICAL_GIT_TREES"
+            } else {
+                "TREE_MISMATCH"
+            }),
         ),
         ("intermediate_history", Value::string("NOT_AUDITED")),
         ("external_receipts", Value::string("NOT_RECONCILED")),
@@ -442,22 +518,63 @@ mod tests {
         ));
         fs::create_dir_all(&root).unwrap();
         let git = |args: &[&str]| {
-            let out = Command::new("git").arg("-C").arg(&root).args(args).output().unwrap();
-            assert!(out.status.success(), "git: {}", String::from_utf8_lossy(&out.stderr));
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "git: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         };
         git(&["init", "-q"]);
         fs::write(root.join("a"), "one").unwrap();
         git(&["add", "."]);
-        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "initial"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-qm",
+            "initial",
+        ]);
         fs::write(root.join("a"), "two").unwrap();
         git(&["add", "."]);
-        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "feat(core): first"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-qm",
+            "feat(core): first",
+        ]);
         fs::write(root.join("b"), "three").unwrap();
         git(&["add", "."]);
-        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "feat(core): second"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-qm",
+            "feat(core): second",
+        ]);
         fs::write(root.join("c"), "four").unwrap();
         git(&["add", "."]);
-        git(&["-c", "user.name=Test", "-c", "user.email=t@example.com", "commit", "-qm", "fix(core): third"]);
+        git(&[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-qm",
+            "fix(core): third",
+        ]);
         root
     }
 
@@ -466,14 +583,47 @@ mod tests {
         let root = fixture();
         let report = plan(&root, "HEAD", None, 20).unwrap();
         assert_eq!(report.get("commit_count").unwrap().integer().unwrap(), 4);
-        assert_eq!(report.get("candidate_groups").unwrap().array_ref().unwrap().len(), 1);
-        assert_eq!(report.get("safety").unwrap().get("rewrite_authorized").unwrap().bool().unwrap(), false);
-        assert_eq!(report.get("coverage").unwrap().get("commit_range").unwrap().str().unwrap(), "COMPLETE");
+        assert_eq!(
+            report
+                .get("candidate_groups")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            !report
+                .get("safety")
+                .unwrap()
+                .get("rewrite_authorized")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
+        assert_eq!(
+            report
+                .get("coverage")
+                .unwrap()
+                .get("commit_range")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "COMPLETE"
+        );
         fs::write(root.join("a"), "uncommitted edit").unwrap();
         assert_eq!(plan(&root, "HEAD", None, 20).unwrap(), report);
         let saved = root.join("plan.json");
         fs::write(&saved, report.canonical()).unwrap();
-        assert_eq!(audit(&root, &saved).unwrap().get("status").unwrap().str().unwrap(), "SOURCE_DAG_REPLAY_VERIFIED");
+        assert_eq!(
+            audit(&root, &saved)
+                .unwrap()
+                .get("status")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "SOURCE_DAG_REPLAY_VERIFIED"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -481,23 +631,38 @@ mod tests {
     fn truncation_and_tampering_are_explicit() {
         let root = fixture();
         let small = plan(&root, "HEAD", None, 1).unwrap();
-        assert!(small.get("coverage").unwrap().get("truncated").unwrap().bool().unwrap());
+        assert!(
+            small
+                .get("coverage")
+                .unwrap()
+                .get("truncated")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
         let saved = root.join("plan.json");
         let mut bad = plan(&root, "HEAD", None, 20).unwrap();
-        bad.entries_mut().unwrap().insert("commit_count".into(), Value::number(22));
+        bad.entries_mut()
+            .unwrap()
+            .insert("commit_count".into(), Value::number(22));
         fs::write(&saved, bad.canonical()).unwrap();
         assert!(audit(&root, &saved).is_err());
         assert!(plan(&root, "HEAD", Some("HEAD~10"), 20).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 
-
     #[test]
     fn inventories_refs_and_compares_pinned_tree_identities() {
         let root = fixture();
         let inventory = refs(&root, 100).unwrap();
         assert!(!inventory.get("truncated").unwrap().bool().unwrap());
-        assert!(!inventory.get("external_refs_complete").unwrap().bool().unwrap());
+        assert!(
+            !inventory
+                .get("external_refs_complete")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
         assert!(inventory.get("refs").unwrap().array_ref().unwrap().len() >= 1);
         let bounded = refs(&root, 1).unwrap();
         assert!(!bounded.get("rewrite_authorized").unwrap().bool().unwrap());

@@ -3,13 +3,13 @@
 
 use excession::agent;
 use excession::agent_locate;
-use excession::history;
 use excession::analyze;
 use excession::change_inventory;
 use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
+use excession::history;
 use excession::impact_query;
 use excession::native_test_selectors;
 use excession::native_test_workflow;

@@ -5,79 +5,244 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema", "original_tip", "original_tip_tree", "excluded_base",
-    "max_commits", "commit_count", "commits", "candidate_groups",
-    "summary", "coverage", "safety", "report_id"
+    "schema",
+    "original_tip",
+    "original_tip_tree",
+    "excluded_base",
+    "max_commits",
+    "commit_count",
+    "commits",
+    "candidate_groups",
+    "summary",
+    "coverage",
+    "safety",
+    "report_id"
   ],
   "properties": {
-    "schema": {"const": "excession.history-plan.v1"},
-    "original_tip": {"$ref": "#/$defs/oid"},
-    "original_tip_tree": {"$ref": "#/$defs/oid"},
-    "excluded_base": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/oid"}]},
-    "max_commits": {"type": "integer", "minimum": 1, "maximum": 100000},
-    "commit_count": {"type": "integer", "minimum": 0},
-    "commits": {"type": "array", "items": {"$ref": "#/$defs/commit"}},
-    "candidate_groups": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+    "schema": {
+      "const": "excession.history-plan.v1"
+    },
+    "original_tip": {
+      "$ref": "#/$defs/oid"
+    },
+    "original_tip_tree": {
+      "$ref": "#/$defs/oid"
+    },
+    "excluded_base": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/oid"
+        }
+      ]
+    },
+    "max_commits": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    },
+    "commit_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "commits": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/commit"
+      }
+    },
+    "candidate_groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
     "summary": {
-      "type": "object", "additionalProperties": false,
-      "required": ["merge_commits", "same_tree_as_first_parent", "unresolved_first_parent_trees"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "merge_commits",
+        "same_tree_as_first_parent",
+        "unresolved_first_parent_trees"
+      ],
       "properties": {
-        "merge_commits": {"type": "integer", "minimum": 0},
-        "same_tree_as_first_parent": {"type": "integer", "minimum": 0},
-        "unresolved_first_parent_trees": {"type": "integer", "minimum": 0}
+        "merge_commits": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "same_tree_as_first_parent": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_first_parent_trees": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "coverage": {
-      "type": "object", "additionalProperties": false,
-      "required": ["commit_range", "truncated", "semantic_equivalence", "evidence_receipts"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit_range",
+        "truncated",
+        "semantic_equivalence",
+        "evidence_receipts",
+        "shallow_repository"
+      ],
       "properties": {
-        "commit_range": {"enum": ["COMPLETE", "TRUNCATED"]},
-        "truncated": {"type": "boolean"},
-        "semantic_equivalence": {"const": "NOT_ASSESSED"},
-        "evidence_receipts": {"const": "NOT_INVENTORIED"}
+        "commit_range": {
+          "enum": [
+            "COMPLETE",
+            "TRUNCATED",
+            "SHALLOW"
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "semantic_equivalence": {
+          "const": "NOT_ASSESSED"
+        },
+        "evidence_receipts": {
+          "const": "NOT_INVENTORIED"
+        },
+        "shallow_repository": {
+          "type": "boolean"
+        }
       }
     },
     "safety": {
-      "type": "object", "additionalProperties": false,
-      "required": ["read_only", "rewrite_authorized", "source_tree_preservation", "external_refs_and_receipts", "merges_preserved_by_default"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "read_only",
+        "rewrite_authorized",
+        "source_tree_preservation",
+        "external_refs_and_receipts",
+        "merges_preserved_by_default"
+      ],
       "properties": {
-        "read_only": {"const": true},
-        "rewrite_authorized": {"const": false},
-        "source_tree_preservation": {"const": "REQUIRED_NOT_PROVEN"},
-        "external_refs_and_receipts": {"const": "NOT_YET_RECONCILED"},
-        "merges_preserved_by_default": {"const": true}
+        "read_only": {
+          "const": true
+        },
+        "rewrite_authorized": {
+          "const": false
+        },
+        "source_tree_preservation": {
+          "const": "REQUIRED_NOT_PROVEN"
+        },
+        "external_refs_and_receipts": {
+          "const": "NOT_YET_RECONCILED"
+        },
+        "merges_preserved_by_default": {
+          "const": true
+        }
       }
     },
-    "report_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    "report_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
   },
   "$defs": {
-    "oid": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "oid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
     "commit": {
-      "type": "object", "additionalProperties": false,
-      "required": ["commit", "tree", "parents", "subject", "declared_scope", "first_parent_tree_unchanged", "merge"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "tree",
+        "parents",
+        "subject",
+        "declared_scope",
+        "first_parent_tree_unchanged",
+        "merge"
+      ],
       "properties": {
-        "commit": {"$ref": "#/$defs/oid"},
-        "tree": {"$ref": "#/$defs/oid"},
-        "parents": {"type": "array", "items": {"$ref": "#/$defs/oid"}},
-        "subject": {"type": "string"},
-        "declared_scope": {"type": ["string", "null"]},
-        "first_parent_tree_unchanged": {"type": ["boolean", "null"]},
-        "merge": {"type": "boolean"}
+        "commit": {
+          "$ref": "#/$defs/oid"
+        },
+        "tree": {
+          "$ref": "#/$defs/oid"
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/oid"
+          }
+        },
+        "subject": {
+          "type": "string"
+        },
+        "declared_scope": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "first_parent_tree_unchanged": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "merge": {
+          "type": "boolean"
+        }
       }
     },
     "candidate": {
-      "type": "object", "additionalProperties": false,
-      "required": ["kind", "reason", "declared_scope", "commits", "original_parent", "original_tip", "result_tree", "semantic_equivalence", "approved"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reason",
+        "declared_scope",
+        "commits",
+        "original_parent",
+        "original_tip",
+        "result_tree",
+        "semantic_equivalence",
+        "approved"
+      ],
       "properties": {
-        "kind": {"const": "ADJACENT_SCOPE_REVIEW"},
-        "reason": {"type": "string"},
-        "declared_scope": {"type": "string"},
-        "commits": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/oid"}},
-        "original_parent": {"$ref": "#/$defs/oid"},
-        "original_tip": {"$ref": "#/$defs/oid"},
-        "result_tree": {"$ref": "#/$defs/oid"},
-        "semantic_equivalence": {"const": "UNVERIFIED"},
-        "approved": {"const": false}
+        "kind": {
+          "const": "ADJACENT_SCOPE_REVIEW"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "declared_scope": {
+          "type": "string"
+        },
+        "commits": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/oid"
+          }
+        },
+        "original_parent": {
+          "$ref": "#/$defs/oid"
+        },
+        "original_tip": {
+          "$ref": "#/$defs/oid"
+        },
+        "result_tree": {
+          "$ref": "#/$defs/oid"
+        },
+        "semantic_equivalence": {
+          "const": "UNVERIFIED"
+        },
+        "approved": {
+          "const": false
+        }
       }
     }
   }

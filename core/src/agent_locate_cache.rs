@@ -811,4 +811,67 @@ mod tests {
         fs::remove_dir_all(cache_dir).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    #[ignore = "large real-Git stress fixture; run in dedicated deep CI"]
+    fn indexes_more_than_the_previous_repository_wide_cap() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-large-locate-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        for number in 0..6_400 {
+            fs::write(
+                root.join(format!("src/module_{number:05}.rs")),
+                format!("pub fn module_{number:05}() {{ let needle = 1; }}\n"),
+            ).unwrap();
+        }
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "large initial commit",
+        ]);
+        let started = std::time::Instant::now();
+        let cold = run(&root, "HEAD", SEGMENT_COUNT);
+        let cold_time = started.elapsed();
+        assert_eq!(cold.total_source_files, 6_400);
+        assert_eq!(cold.indexed_files, 6_400);
+        assert_eq!(cold.read_blobs, 6_400);
+        assert_eq!(cold.pending_segments, 0);
+        assert!(!cold.truncated);
+        assert_eq!(cold.hits.len(), 64);
+
+        let started = std::time::Instant::now();
+        let warm = run(&root, "HEAD", DEFAULT_REFRESH_SEGMENTS);
+        let warm_time = started.elapsed();
+        assert_eq!(warm.indexed_files, 6_400);
+        assert_eq!(warm.read_blobs, 0);
+        assert_eq!(warm.reused_blobs, 6_400);
+        assert_eq!(warm.pending_segments, 0);
+
+        fs::write(
+            root.join("src/module_06399.rs"),
+            "pub fn module_06399() { let needle = 2; }\n",
+        ).unwrap();
+        git_at(&root, &["add", "src/module_06399.rs"]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "one source edit",
+        ]);
+        let started = std::time::Instant::now();
+        let changed = run(&root, "HEAD", 1);
+        let changed_time = started.elapsed();
+        assert_eq!(changed.indexed_files, 6_400);
+        assert_eq!(changed.read_blobs, 1);
+        assert_eq!(changed.pending_segments, 0);
+        eprintln!(
+            "segment-scale files=6400 cold_ms={} warm_ms={} changed_ms={} cold_blobs={} warm_blobs={} changed_blobs={}",
+            cold_time.as_millis(), warm_time.as_millis(), changed_time.as_millis(),
+            cold.read_blobs, warm.read_blobs, changed.read_blobs
+        );
+        fs::remove_dir_all(changed.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
 }

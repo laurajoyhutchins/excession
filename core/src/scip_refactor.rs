@@ -205,7 +205,10 @@ fn nested_rust_module(parent: &str, child: &str) -> bool {
     let Some(stem) = name.strip_suffix(".rs") else {
         return false;
     };
-    let Some(sibling) = child.strip_prefix(directory).and_then(|s| s.strip_prefix('/')) else {
+    let Some(sibling) = child
+        .strip_prefix(directory)
+        .and_then(|s| s.strip_prefix('/'))
+    else {
         return false;
     };
     if stem != "mod" && sibling == format!("{stem}_tests.rs") {
@@ -214,10 +217,7 @@ fn nested_rust_module(parent: &str, child: &str) -> bool {
     let nested = if stem == "mod" {
         sibling
     } else {
-        let Some(nested) = sibling
-            .strip_prefix(stem)
-            .and_then(|s| s.strip_prefix('/'))
-        else {
+        let Some(nested) = sibling.strip_prefix(stem).and_then(|s| s.strip_prefix('/')) else {
             return false;
         };
         nested
@@ -843,12 +843,27 @@ mod tests {
         // Every originally untriaged pair in the pinned self-analysis artifact
         // has a parent/child layout, including the explicit sibling tests file.
         for (parent, child) in [
-            ("core/src/transactions.rs", "core/src/transactions/execution.rs"),
-            ("core/src/transactions.rs", "core/src/transactions/verification.rs"),
-            ("core/src/projection.rs", "core/src/projection/composition.rs"),
+            (
+                "core/src/transactions.rs",
+                "core/src/transactions/execution.rs",
+            ),
+            (
+                "core/src/transactions.rs",
+                "core/src/transactions/verification.rs",
+            ),
+            (
+                "core/src/projection.rs",
+                "core/src/projection/composition.rs",
+            ),
             ("core/src/projection.rs", "core/src/projection/workspace.rs"),
-            ("core/src/bin/excession.rs", "core/src/bin/excession/graph.rs"),
-            ("core/src/evidence_store.rs", "core/src/evidence_store_tests.rs"),
+            (
+                "core/src/bin/excession.rs",
+                "core/src/bin/excession/graph.rs",
+            ),
+            (
+                "core/src/evidence_store.rs",
+                "core/src/evidence_store_tests.rs",
+            ),
         ] {
             assert!(nested_rust_module(parent, child), "{parent} => {child}");
         }

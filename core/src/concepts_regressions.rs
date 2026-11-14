@@ -294,3 +294,87 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+
+/// Import a published BugsInPy B/C pair from exact Git blob metadata.
+/// BugsInPy does not supply a proven pre-regression A revision. This command
+/// records that gap explicitly and NEVER executes dataset shell scripts.
+pub fn bugsinpy_import(
+    dataset: &Path, revision: &str, project: &str, bug_id: &str,
+) -> Result<Value> {
+    git::verify_repo(dataset)?;
+    oid_commit(dataset,revision)?;
+    if project.is_empty() || project.len() > 64
+        || !project.bytes().all(|c| c.is_ascii_alphanumeric() || c==b'-' || c==b'_')
+        || bug_id.parse::<u16>().ok().filter(|v| *v > 0).is_none() {
+        return refuse("invalid bounded BugsInPy project or bug identifier");
+    }
+    let project_path=format!("projects/{project}/project.info");
+    let info_path=format!("projects/{project}/bugs/{bug_id}/bug.info");
+    let test_path=format!("projects/{project}/bugs/{bug_id}/run_test.sh");
+    let mut reader=git::BlobReader::open(dataset)?;
+    let project_blob=git::blob(dataset,revision,&project_path)?;
+    let info_blob=git::blob(dataset,revision,&info_path)?;
+    let test_blob=git::blob(dataset,revision,&test_path)?;
+    let project_info=reader.read_capped(&project_blob,4096)?;
+    let bug_info=reader.read_capped(&info_blob,4096)?;
+    reader.finish()?;
+    let parse=|bytes: &[u8]| -> Result<std::collections::BTreeMap<String,String>> {
+        let text=std::str::from_utf8(bytes).map_err(|_| "non-UTF8 BugsInPy metadata")?;
+        let mut fields=std::collections::BTreeMap::new();
+        for line in text.lines() {
+            let line=line.trim();
+            if line.is_empty() || line.starts_with('#') { continue; }
+            let (key,raw)=line.split_once('=').ok_or("invalid BugsInPy metadata assignment")?;
+            if key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphabetic() || b==b'_')
+                || !raw.starts_with('"') || !raw.ends_with('"') || raw.len()<2
+                || raw[1..raw.len()-1].contains('"') {
+                return refuse("unsupported BugsInPy metadata syntax");
+            }
+            if fields.insert(key.to_owned(),raw[1..raw.len()-1].to_owned()).is_some() {
+                return refuse("duplicate BugsInPy metadata key");
+            }
+        }
+        Ok(fields)
+    };
+    let project_info=parse(&project_info)?;
+    let bug_info=parse(&bug_info)?;
+    let get=|key: &str| -> Result<&str> {
+        bug_info.get(key).map(String::as_str)
+            .ok_or_else(|| format!("BugsInPy bug missing {key}"))
+    };
+    let buggy=get("buggy_commit_id")?;
+    let fixed=get("fixed_commit_id")?;
+    git::oid(buggy)?;
+    git::oid(fixed)?;
+    if buggy==fixed { return refuse("BugsInPy buggy and fixed commits must differ"); }
+    let url=project_info.get("github_url").ok_or("BugsInPy project lacks source repository URL")?;
+    if !url.starts_with("https://github.com/") || url.len() > 256
+        || url.chars().any(|c| c.is_ascii_control() || c.is_whitespace()) {
+        return refuse("BugsInPy upstream URL is not a supported GitHub URL");
+    }
+    let case=format!("{project}-{bug_id}");
+    let mut report=obj(&[
+        ("schema",Value::string("excession.concepts.bugsinpy-import.v1")),
+        ("status",Value::string("B_C_METADATA_ONLY_A_NOT_ESTABLISHED")),
+        ("dataset_repository",Value::string("soarsmu/BugsInPy")),
+        ("dataset_revision",Value::string(revision)),
+        ("case",Value::string(case)),
+        ("source_repository_url",Value::string(url)),
+        ("working_commit_A",Value::Null),
+        ("buggy_commit_B",Value::string(buggy)),
+        ("fixed_commit_C",Value::string(fixed)),
+        ("test_files",Value::string(get("test_file")?)),
+        ("python_version",Value::string(get("python_version")?)),
+        ("dataset_project_info_blob",Value::string(project_blob)),
+        ("dataset_bug_info_blob",Value::string(info_blob)),
+        ("dataset_test_script_blob",Value::string(test_blob)),
+        ("script_executed",Value::Bool(false)),
+        ("source_commits_verified",Value::Bool(false)),
+        ("behavioral_oracle_executed",Value::Bool(false)),
+        ("semantic_invariant_proven",Value::Bool(false)),
+    ]);
+    let id=report.sha256();
+    report.entries_mut()?.insert("report_id".into(),Value::string(id));
+    Ok(report)
+}

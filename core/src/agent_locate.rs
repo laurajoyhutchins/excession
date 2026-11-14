@@ -234,7 +234,12 @@ pub fn locate(
     db: Option<&str>,
 ) -> Result<Value> {
     locate_with_budget(
-        repo, rev, task, limit, roots, db,
+        repo,
+        rev,
+        task,
+        limit,
+        roots,
+        db,
         agent_locate_cache::DEFAULT_REFRESH_SEGMENTS,
     )
 }
@@ -345,16 +350,26 @@ pub fn locate_with_budget(
         ("indexed_source_count", Value::number(indexed_files)),
         ("skipped_source_count", Value::number(skipped)),
         ("indexed_bytes", Value::number(bytes)),
-        ("index", obj(&[
-            ("segmentation", Value::string("PATH_SHA256_PREFIX_BYTE")),
-            ("total_source_files", Value::number(index.total_source_files)),
-            ("populated_segments", Value::number(index.populated_segments)),
-            ("ready_segments", Value::number(index.ready_segments)),
-            ("pending_segments", Value::number(index.pending_segments)),
-            ("complete", Value::Bool(
-                index.pending_segments == 0 && skipped == 0 && !truncated
-            )),
-        ])),
+        (
+            "index",
+            obj(&[
+                ("segmentation", Value::string("PATH_SHA256_PREFIX_BYTE")),
+                (
+                    "total_source_files",
+                    Value::number(index.total_source_files),
+                ),
+                (
+                    "populated_segments",
+                    Value::number(index.populated_segments),
+                ),
+                ("ready_segments", Value::number(index.ready_segments)),
+                ("pending_segments", Value::number(index.pending_segments)),
+                (
+                    "complete",
+                    Value::Bool(index.pending_segments == 0 && skipped == 0 && !truncated),
+                ),
+            ]),
+        ),
         ("context", context),
         (
             "coverage",
@@ -379,7 +394,10 @@ pub fn locate_with_budget(
             ("path", Value::string(index.cache_path.to_string_lossy())),
             ("reused_blobs", Value::number(index.reused_blobs)),
             ("read_blobs", Value::number(index.read_blobs)),
-            ("refreshed_segments", Value::number(index.refreshed_segments)),
+            (
+                "refreshed_segments",
+                Value::number(index.refreshed_segments),
+            ),
         ]),
     );
     Ok(output)

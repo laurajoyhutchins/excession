@@ -234,8 +234,7 @@ fn related_sources(
     if context == &Value::Null {
         return Ok(Vec::new());
     }
-    if context.get("source_commit")?.str()? != commit
-        || context.get("source_tree")?.str()? != tree
+    if context.get("source_commit")?.str()? != commit || context.get("source_tree")?.str()? != tree
     {
         return refuse("agent locate relation context belongs to another Git tree");
     }
@@ -362,9 +361,7 @@ pub fn locate_with_budget(
     let entries = git::entries(&discovered.root, &discovered.commit)?;
     let inventory = entries
         .iter()
-        .filter(|entry| {
-            entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755")
-        })
+        .filter(|entry| entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755"))
         .map(|entry| (entry.path.clone(), entry.clone()))
         .collect::<BTreeMap<_, _>>();
     let index = agent_locate_cache::search(
@@ -544,21 +541,21 @@ mod tests {
         };
         let a = file("src/a.rs", &blob_a);
         let b = file("src/b.rs", &blob_b);
-        let inventory = BTreeMap::from([
-            (a.path.clone(), a.clone()),
-            (b.path.clone(), b.clone()),
-        ]);
+        let inventory = BTreeMap::from([(a.path.clone(), a.clone()), (b.path.clone(), b.clone())]);
         let lexical = BTreeSet::from(["src/a.rs".to_owned()]);
         let relation = obj(&[
             ("source", source(&commit, &tree, &a)),
             ("target", source(&commit, &tree, &b)),
             ("kind", Value::string("SCIP_REFERENCE")),
-            ("evidence", Value::array([obj(&[
-                ("receipt_id", Value::string("e".repeat(64))),
-                ("producer", Value::string("scip:unit-test")),
-                ("assessment", Value::string("OBSERVED")),
-                ("observation_kind", Value::string("SCIP_REFERENCE")),
-            ])])),
+            (
+                "evidence",
+                Value::array([obj(&[
+                    ("receipt_id", Value::string("e".repeat(64))),
+                    ("producer", Value::string("scip:unit-test")),
+                    ("assessment", Value::string("OBSERVED")),
+                    ("observation_kind", Value::string("SCIP_REFERENCE")),
+                ])]),
+            ),
         ]);
         let context = obj(&[
             ("source_commit", Value::string(&commit)),
@@ -567,43 +564,89 @@ mod tests {
         ]);
         let found = related_sources(&context, &lexical, &inventory, &commit, &tree, 4).unwrap();
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].get("source").unwrap().get("path").unwrap().str().unwrap(), "src/b.rs");
-        assert_eq!(found[0].get("assessment").unwrap().str().unwrap(), "OBSERVED");
-        assert_eq!(found[0].get("relation").unwrap().get("evidence").unwrap().array_ref().unwrap()[0]
-            .get("receipt_id").unwrap().str().unwrap(), "e".repeat(64));
-        assert_eq!(found[0].get("semantic_correctness").unwrap().str().unwrap(), "UNVERIFIED");
+        assert_eq!(
+            found[0]
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/b.rs"
+        );
+        assert_eq!(
+            found[0].get("assessment").unwrap().str().unwrap(),
+            "OBSERVED"
+        );
+        assert_eq!(
+            found[0]
+                .get("relation")
+                .unwrap()
+                .get("evidence")
+                .unwrap()
+                .array_ref()
+                .unwrap()[0]
+                .get("receipt_id")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "e".repeat(64)
+        );
+        assert_eq!(
+            found[0].get("semantic_correctness").unwrap().str().unwrap(),
+            "UNVERIFIED"
+        );
 
         let mutated = obj(&[
             ("source_commit", Value::string(&commit)),
             ("source_tree", Value::string(&tree)),
-            ("relationships", Value::array([obj(&[
-                ("source", source(&commit, &tree, &a)),
-                ("target", source(&commit, &tree, &file("src/b.rs", &"f".repeat(40)))),
-                ("kind", Value::string("SCIP_REFERENCE")),
-                ("evidence", Value::array([obj(&[
-                    ("assessment", Value::string("OBSERVED")),
-                ])])),
-            ])])),
+            (
+                "relationships",
+                Value::array([obj(&[
+                    ("source", source(&commit, &tree, &a)),
+                    (
+                        "target",
+                        source(&commit, &tree, &file("src/b.rs", &"f".repeat(40))),
+                    ),
+                    ("kind", Value::string("SCIP_REFERENCE")),
+                    (
+                        "evidence",
+                        Value::array([obj(&[("assessment", Value::string("OBSERVED"))])]),
+                    ),
+                ])]),
+            ),
         ]);
         assert!(related_sources(&mutated, &lexical, &inventory, &commit, &tree, 4).is_err());
-        assert!(related_sources(&context, &lexical, &inventory, &"f".repeat(40), &tree, 4).is_err());
+        assert!(
+            related_sources(&context, &lexical, &inventory, &"f".repeat(40), &tree, 4).is_err()
+        );
 
         // Static imports remain explicitly candidates, never observations.
         let static_relation = obj(&[
             ("source_commit", Value::string(&commit)),
             ("source_tree", Value::string(&tree)),
-            ("relationships", Value::array([obj(&[
-                ("source", source(&commit, &tree, &a)),
-                ("target", source(&commit, &tree, &b)),
-                ("kind", Value::string("STATIC_IMPORT")),
-                ("evidence", Value::array([obj(&[
-                    ("assessment", Value::string("CANDIDATE")),
-                    ("observation_kind", Value::string("STATIC_IMPORT_CANDIDATE")),
-                ])])),
-            ])])),
+            (
+                "relationships",
+                Value::array([obj(&[
+                    ("source", source(&commit, &tree, &a)),
+                    ("target", source(&commit, &tree, &b)),
+                    ("kind", Value::string("STATIC_IMPORT")),
+                    (
+                        "evidence",
+                        Value::array([obj(&[
+                            ("assessment", Value::string("CANDIDATE")),
+                            ("observation_kind", Value::string("STATIC_IMPORT_CANDIDATE")),
+                        ])]),
+                    ),
+                ])]),
+            ),
         ]);
-        let candidate = related_sources(&static_relation, &lexical, &inventory, &commit, &tree, 4).unwrap();
-        assert_eq!(candidate[0].get("assessment").unwrap().str().unwrap(), "CANDIDATE");
+        let candidate =
+            related_sources(&static_relation, &lexical, &inventory, &commit, &tree, 4).unwrap();
+        assert_eq!(
+            candidate[0].get("assessment").unwrap().str().unwrap(),
+            "CANDIDATE"
+        );
     }
 
     #[test]

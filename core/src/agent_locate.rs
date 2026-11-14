@@ -467,6 +467,14 @@ mod tests {
             false
         );
         let first_id = first.get("report_id").unwrap().str().unwrap().to_owned();
+        assert_eq!(
+            first.get("cache").unwrap().get("kind").unwrap().str().unwrap(),
+            "PERSISTENT_SQLITE_FTS5"
+        );
+        assert_eq!(
+            first.get("cache").unwrap().get("read_blobs").unwrap().integer().unwrap(),
+            2
+        );
         fs::write(root.join("src/lease.rs"), "pub fn something_else() {}\n").unwrap();
         fs::write(root.join("src/other.rs"), "pub fn renew_lease() {}\n").unwrap();
         let second = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
@@ -481,6 +489,41 @@ mod tests {
                 .unwrap(),
             "src/lease.rs"
         );
+        assert_eq!(
+            second.get("cache").unwrap().get("read_blobs").unwrap().integer().unwrap(),
+            0
+        );
+        assert_eq!(
+            second.get("cache").unwrap().get("reused_blobs").unwrap().integer().unwrap(),
+            2
+        );
+        git(&["add", "src/lease.rs", "src/other.rs"]);
+        git(&[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "modified",
+        ]);
+        let third = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
+        assert_eq!(
+            third.get("candidates").unwrap().array_ref().unwrap()[0]
+                .get("source").unwrap().get("path").unwrap().str().unwrap(),
+            "src/other.rs"
+        );
+        assert_eq!(
+            third.get("cache").unwrap().get("read_blobs").unwrap().integer().unwrap(),
+            2
+        );
+        git(&["rm", "-q", "src/other.rs"]);
+        git(&[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "deleted",
+        ]);
+        let fourth = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
+        assert!(fourth.get("candidates").unwrap().array_ref().unwrap().is_empty());
+        let cache_file = fourth.get("cache").unwrap().get("path").unwrap().str().unwrap();
+        let cache_dir = std::path::Path::new(cache_file).parent().unwrap();
+        // Clear the fixture cache after exercising pinned revision transitions.
+        std::fs::remove_dir_all(cache_dir).unwrap();
+
         fs::remove_dir_all(root).unwrap();
     }
 

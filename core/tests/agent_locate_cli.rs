@@ -70,7 +70,10 @@ fn agent_locate_cli_returns_exact_git_sources_and_excludes_dirty_edits() {
     let before: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
     assert_eq!(before["schema"], "excession.agent-locate.v1");
     assert_eq!(before["candidates"][0]["source"]["path"], "src/lease.rs");
-    assert_eq!(before["candidates"][0]["semantic_correctness"], "UNVERIFIED");
+    assert_eq!(
+        before["candidates"][0]["semantic_correctness"],
+        "UNVERIFIED"
+    );
     assert_eq!(before["context"]["schema"], "excession.agent-context.v1");
     assert_eq!(before["safe_to_skip_unlisted_tests"], false);
     assert_eq!(before["source_commit"].as_str().unwrap().len(), 40);
@@ -86,8 +89,14 @@ fn agent_locate_cli_returns_exact_git_sources_and_excludes_dirty_edits() {
 
     let invalid = Command::new(env!("CARGO_BIN_EXE_excession"))
         .args([
-            "agent", "locate", "--repo", root.to_str().unwrap(),
-            "--task", "renew lease", "--limit", "0",
+            "agent",
+            "locate",
+            "--repo",
+            root.to_str().unwrap(),
+            "--task",
+            "renew lease",
+            "--limit",
+            "0",
         ])
         .output()
         .unwrap();

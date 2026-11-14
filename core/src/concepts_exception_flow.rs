@@ -10,6 +10,26 @@ use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+const FROZEN_CONTRACT: &str =
+    include_str!("../../contracts/concepts/exception-flow-frozen.v1.schema.json");
+const REVIEW_CONTRACT: &str =
+    include_str!("../../contracts/concepts/exception-flow-review.v1.schema.json");
+const OBSERVATION_CONTRACT: &str =
+    include_str!("../../contracts/concepts/exception-flow-observation.v1.schema.json");
+
+fn validate_contract(value: &Value, schema: &str) -> Result<()> {
+    let contract: serde_json::Value =
+        serde_json::from_str(schema).map_err(|e| format!("invalid bundled exception contract: {e}"))?;
+    let actual: serde_json::Value =
+        serde_json::from_str(&value.canonical()).map_err(|e| e.to_string())?;
+    let check = jsonschema::draft202012::new(&contract)
+        .map_err(|e| format!("cannot compile exception contract: {e}"))?;
+    if let Err(error) = check.validate(&actual) {
+        return refuse(format!("exception-flow contract violation: {error}"));
+    }
+    Ok(())
+}
+
 const PREFIX: &str = "src/main/java/";
 const OBS_SCHEMA: &str = "excession.java.exception-flow.observation.v1";
 const FROZEN_SCHEMA: &str = "excession.concepts.exception-flow-frozen.v1";
@@ -102,6 +122,7 @@ fn snapshot(repo: &Path, rev: &str, path: &Path) -> Result<Snapshot> {
         if index >= MAX_ROWS { return refuse("too many AST observations"); }
         if line.is_empty() { return refuse("empty AST observation record"); }
         let item = json::parse(line.as_bytes())?;
+        validate_contract(&item, OBSERVATION_CONTRACT)?;
         if row_text(&item, "schema")? != OBS_SCHEMA {
             return refuse("unsupported Java AST producer receipt");
         }
@@ -172,7 +193,7 @@ pub fn freeze(repo: &Path, rev: &str, observations: &Path) -> Result<Value> {
     if obligations.len() > MAX_OBLIGATIONS {
         return refuse("too many exception-propagation obligations");
     }
-    seal(obj(&[
+    let frozen = seal(obj(&[
         ("schema", Value::string(FROZEN_SCHEMA)),
         ("source_commit", Value::string(&source.commit)),
         ("source_tree", Value::string(&source.tree)),
@@ -187,7 +208,9 @@ pub fn freeze(repo: &Path, rev: &str, observations: &Path) -> Result<Value> {
         ("behavioral_oracle_seen", Value::Bool(false)),
         ("repair_commit_seen", Value::Bool(false)),
         ("observation_trust", Value::string("UNATTESTED_EXTERNAL_AST_PRODUCER")),
-    ]))
+    ]))?;
+    validate_contract(&frozen, FROZEN_CONTRACT)?;
+    Ok(frozen)
 }
 fn modified(repo: &Path, a: &str, b: &str) -> Result<BTreeSet<String>> {
     let bytes = git::command(repo, &[
@@ -204,6 +227,7 @@ pub fn assess(repo: &Path, candidate: &str, frozen: &Path, observations: &Path) 
     let data = bounded_input(frozen)?;
     let base = json::parse(&data)?;
     verify_seal(&base)?;
+    validate_contract(&base, FROZEN_CONTRACT)?;
     if row_text(&base, "schema")? != FROZEN_SCHEMA
         || row_text(&base, "semantic_status")? != "PROPOSED_NOT_VERIFIED"
         || row_text(&base, "producer")? != "JDK_COMPILER_AST_PARSE_ONLY"
@@ -303,5 +327,7 @@ pub fn assess(repo: &Path, candidate: &str, frozen: &Path, observations: &Path) 
         ("semantic_invariant_proven", Value::Bool(false)),
         ("superior_bug_prevention_proven", Value::Bool(false)),
     ]);
-    seal(report)
+    let sealed = seal(report)?;
+    validate_contract(&sealed, REVIEW_CONTRACT)?;
+    Ok(sealed)
 }

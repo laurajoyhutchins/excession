@@ -819,10 +819,19 @@ mod tests {
         };
         assert_eq!(parsed.path, ["agent", "locate"]);
         assert_eq!(parsed.options.get("task"), "worker lease");
-        assert!(parse(&strings(&[
-            "agent", "locate", "--repo", "x", "--task", "worker lease",
-            "--index-segments", "256",
-        ])).is_ok());
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "worker lease",
+                "--index-segments",
+                "256",
+            ]))
+            .is_ok()
+        );
         assert!(
             parse(&strings(&[
                 "agent",

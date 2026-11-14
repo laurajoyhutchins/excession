@@ -68,3 +68,35 @@ and mature test-selector baselines under equal budgets.
 
 The current result is a proposal and discovery/backtest input only. See
 [issue #105](https://github.com/laurajoyhutchins/excession/issues/105).
+
+## Fair frozen-policy comparison (new)
+
+The rule list above is a hypothesis feed and is allowed to be sparse. It is
+**not** the primary performance score. A separate source-companion prediction
+comparison now counts **every** eligible heldout modified source present at the
+training cutoff, including triggers for which no exact historical rule exists.
+
+The experiment evaluates six predetermined policies: global popularity
+(simple baseline), same-directory popularity, exact normalized source/test
+stem, conditional co-edit, recently observed conditional co-edit, and a
+hybrid of these hints. A fixed first 75% of the training history fits all
+policies. The last 25% of training is an internal chronological validation
+window; the policy is selected there using paired improvements over the
+global baseline, requiring at least eight eligible predictions and a
+strictly positive improvement. Popularity wins ties. No future holdout
+observation influences policy selection.
+
+Once selected, the policy is re-fit on **all** training events and compared
+on the untouched holdout at exactly one prediction per eligible modified
+source. The report preserves the internal calibration candidates, selected
+policy, prediction differences, non-predictions, and model-only/baseline-only
+successes. Same-directory frequency is reported as an additional
+more demanding comparator. The original stricter cochange-rule metric is
+retained separately for backward comparability.
+
+The name and directory heuristics are **unverified lexical hints**, not
+authenticated semantic relationships. A successful co-edit prediction is not
+a demonstrated architectural invariant or a prevented regression. The
+strictly pinned seven-repository exploratory matrix is documented in
+`.github/workflows/concepts-crossrepo.yml`; definitive generalization needs
+an independently selected, later frozen cohort with no parameter tuning.

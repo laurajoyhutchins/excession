@@ -278,7 +278,29 @@ fn report(
         .filter(|e| e.kind == "blob" && is_source(&e.path) && in_scope(&e.path, &settings.prefix))
         .map(|e| (e.path, e.oid))
         .collect();
+
     let (rules, counts, eligible, dropped) = train(training, &blobs, settings);
+
+    // Choose the predictive policy on an INTERNAL chronological slice only.
+    // Even the set of available source paths for this choice is pinned to the
+    // earlier calibration cutoff, not the repository tree after calibration.
+    let fit_end = (training.len() * 3 / 4).max(8);
+    let fit_commit = &training[fit_end - 1].commit;
+    let fit_files: BTreeSet<String> = git::entries(repo, fit_commit)?
+        .into_iter()
+        .filter(|e| e.kind == "blob" && is_source(&e.path) && in_scope(&e.path, &settings.prefix))
+        .map(|e| e.path)
+        .collect();
+    let fit_events: Vec<BTreeSet<String>> = training[..fit_end]
+        .iter().filter(|e| e.excluded.is_none()).map(|e| e.paths.clone()).collect();
+    let validation_events: Vec<BTreeSet<String>> = training[fit_end..]
+        .iter().filter(|e| e.excluded.is_none()).map(|e| e.paths.clone()).collect();
+    let (selected_policy, calibration) =
+        crate::concepts_policy::choose(&fit_events, &validation_events, &fit_files);
+    let frozen_events: Vec<BTreeSet<String>> = training.iter()
+        .filter(|e| e.excluded.is_none()).map(|e| e.paths.clone()).collect();
+    let frozen_paths: BTreeSet<String> = blobs.keys().cloned().collect();
+    let frozen_model = crate::concepts_policy::Model::fit(&frozen_events, &frozen_paths);
     let proposals = rules
         .iter()
         .map(|rule| {
@@ -372,7 +394,42 @@ fn report(
             ]));
         }
     }
+    // Fair comparison: every eligible modified source at the frozen cutoff
+    // gets the same opportunity, whether the original rule learner proposed
+    // a relationship for it or not. Missing predictions remain explicit.
+    let future_events: Vec<BTreeSet<String>> = match &prospective {
+        Some(event) => vec![event.paths.clone()],
+        None => holdout.iter()
+            .filter(|e| e.excluded.is_none())
+            .map(|e| e.paths.clone())
+            .collect(),
+    };
+    let paired = crate::concepts_policy::score(&frozen_model, selected_policy, &future_events);
+    let policy_report = obj(&[
+        ("selected", Value::string(selected_policy.name())),
+        ("calibration_cutoff", Value::string(fit_commit)),
+        ("fit_events", Value::number(fit_events.len())),
+        ("validation_events", Value::number(validation_events.len())),
+        ("calibration", Value::array(calibration.into_iter().map(|(candidate, assessed)| obj(&[
+            ("policy", Value::string(candidate.name())),
+            ("opportunities", Value::number(assessed.opportunities)),
+            ("matches", Value::number(assessed.model_hits)),
+            ("popularity_matches", Value::number(assessed.popularity_hits)),
+            ("model_only", Value::number(assessed.model_only)),
+            ("baseline_only", Value::number(assessed.popularity_only)),
+        ])))),
+        ("opportunities", Value::number(paired.opportunities)),
+        ("model_matches", Value::number(paired.model_hits)),
+        ("popularity_matches", Value::number(paired.popularity_hits)),
+        ("directory_matches", Value::number(paired.directory_hits)),
+        ("model_only", Value::number(paired.model_only)),
+        ("baseline_only", Value::number(paired.popularity_only)),
+        ("prediction_differences", Value::number(paired.differences)),
+        ("missing_prediction", Value::number(paired.missing_prediction)),
+        ("predictive_only_not_semantic_validity", Value::Bool(true)),
+    ]);
     let mut value = obj(&[
+        ("policy_evaluation", policy_report),
         ("schema", Value::string(WIRE)),
         (
             "status",

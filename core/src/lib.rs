@@ -11,6 +11,7 @@ pub mod concepts_author;
 pub mod concepts_compile;
 pub mod concepts_invariants;
 pub mod concepts_mcp;
+pub mod concepts_policy;
 pub mod concepts_normalize;
 pub mod concepts_query;
 pub mod concepts_review;

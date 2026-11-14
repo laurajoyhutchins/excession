@@ -220,9 +220,9 @@ mod tests {
         let tests = vec![event(&["src/api.py", "src/handler.py"]),
             event(&["src/api.py", "src/handler.py"])];
         let tested = score(&m, Policy::ConditionalPair, &tests);
-        assert_eq!(tested.model_hits, 2);
+        assert_eq!(tested.model_hits, 4);
         assert_eq!(tested.popularity_hits, 0);
-        assert_eq!(tested.model_only, 2);
+        assert_eq!(tested.model_only, 4);
         assert_eq!(tested.opportunities, 4);
         assert_eq!(m.predict("src/api.py", Policy::NameCounterpart), Some("src/popular.py".into()));
     }

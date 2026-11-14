@@ -96,6 +96,8 @@ jobs:
             "repo": os.environ["REPO"], "pin": os.environ["PIN"],
             "train": p["training"], "holdout": p["holdout"],
             "skipped_merges":p["first_parent_merges_skipped"],
+            "selected_policy":p["policy_evaluation"]["selected"],
+            "full_cohort":p["policy_evaluation"],
             "candidates": p["candidate_count"], "exposures": p["exposures"],
             "model_matches": p["model_matches"],
             "baseline_matches": p["baseline_matches"],

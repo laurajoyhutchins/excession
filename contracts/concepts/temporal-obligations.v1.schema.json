@@ -31,7 +31,8 @@
     "baseline_precision",
     "behavioral_validity",
     "safe_to_skip_unlisted_tests",
-    "report_id"
+    "report_id",
+    "policy_evaluation"
   ],
   "properties": {
     "schema": {
@@ -218,6 +219,92 @@
     "first_parent_merges_skipped": {
       "type": "integer",
       "minimum": 0
+    },
+    "policy_evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected",
+        "calibration_cutoff",
+        "fit_events",
+        "validation_events",
+        "calibration",
+        "opportunities",
+        "model_matches",
+        "popularity_matches",
+        "directory_matches",
+        "model_only",
+        "baseline_only",
+        "prediction_differences",
+        "missing_prediction",
+        "predictive_only_not_semantic_validity"
+      ],
+      "properties": {
+        "selected": {
+          "enum": [
+            "GLOBAL_POPULARITY",
+            "DIRECTORY_POPULARITY",
+            "NAME_COUNTERPART",
+            "CONDITIONAL_PAIR",
+            "RECENT_PAIR",
+            "HYBRID"
+          ]
+        },
+        "calibration_cutoff": {
+          "$ref": "#/$defs/oid"
+        },
+        "fit_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "validation_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "calibration": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/calibrationScore"
+          }
+        },
+        "opportunities": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "popularity_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "directory_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_only": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_only": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prediction_differences": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing_prediction": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "predictive_only_not_semantic_validity": {
+          "const": true
+        }
+      }
     }
   },
   "$defs": {
@@ -349,6 +436,50 @@
         },
         "semantic_validity": {
           "const": "NOT_EVALUATED"
+        }
+      }
+    },
+    "calibrationScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "opportunities",
+        "matches",
+        "popularity_matches",
+        "model_only",
+        "baseline_only"
+      ],
+      "properties": {
+        "policy": {
+          "enum": [
+            "GLOBAL_POPULARITY",
+            "DIRECTORY_POPULARITY",
+            "NAME_COUNTERPART",
+            "CONDITIONAL_PAIR",
+            "RECENT_PAIR",
+            "HYBRID"
+          ]
+        },
+        "opportunities": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "popularity_matches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "model_only": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_only": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

@@ -47,7 +47,9 @@ fn sql_error(operation: &str, error: impl std::fmt::Display) -> String {
 /// Refuse any cache inside the checkout, including symlinked ancestors.
 fn external_cache(discovered: &discovery::Discovery) -> Result<PathBuf> {
     // New filename leaves the v1 index untouched during the schema upgrade.
-    let path = discovered.index_path.with_file_name("agent-locate-segments.sqlite");
+    let path = discovered
+        .index_path
+        .with_file_name("agent-locate-segments.sqlite");
     let parent = path.parent().ok_or("agent locate cache missing parent")?;
     let root = fs::canonicalize(&discovered.root).map_err(|e| sql_error("root canonicalize", e))?;
     if !parent.is_absolute()
@@ -116,10 +118,15 @@ fn initialize(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS locator_active(
             segment INTEGER PRIMARY KEY
         );",
-    ).map_err(|e| sql_error("initialize", e))?;
+    )
+    .map_err(|e| sql_error("initialize", e))?;
 
     let version: Option<String> = db
-        .query_row("SELECT value FROM locator_meta WHERE key='version'", [], |row| row.get(0))
+        .query_row(
+            "SELECT value FROM locator_meta WHERE key='version'",
+            [],
+            |row| row.get(0),
+        )
         .optional()
         .map_err(|e| sql_error("version", e))?;
     match version.as_deref() {
@@ -134,7 +141,8 @@ fn initialize(db: &Connection) -> Result<()> {
             db.execute(
                 "INSERT INTO locator_meta(key,value) VALUES('version',?1)",
                 params![CACHE_VERSION],
-            ).map_err(|e| sql_error("version insert", e))?;
+            )
+            .map_err(|e| sql_error("version insert", e))?;
             Ok(())
         }
         Some(_) => refuse("unsupported agent locate cache version"),
@@ -166,28 +174,50 @@ fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<CachedFile>> {
         .query_row(
             "SELECT id,blob,mode,bytes,status FROM locator_files WHERE path=?1",
             params![path],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()
         .map_err(|e| sql_error("select cached path", e))?;
     row.map(|(id, blob, mode, size, status)| {
-        Ok(CachedFile { id, blob, mode, size: nonnegative(size)?, status })
-    }).transpose()
+        Ok(CachedFile {
+            id,
+            blob,
+            mode,
+            size: nonnegative(size)?,
+            status,
+        })
+    })
+    .transpose()
 }
 
 fn prior_segments(tx: &Transaction<'_>) -> Result<Vec<Option<SegmentMeta>>> {
     let mut result = (0..SEGMENT_COUNT).map(|_| None).collect::<Vec<_>>();
-    let mut stmt = tx.prepare(
-        "SELECT segment,fingerprint,indexed_files,indexed_bytes,skipped_files,truncated
+    let mut stmt = tx
+        .prepare(
+            "SELECT segment,fingerprint,indexed_files,indexed_bytes,skipped_files,truncated
          FROM locator_segments",
-    ).map_err(|e| sql_error("segment prepare", e))?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?, row.get::<_, String>(1)?,
-            row.get::<_, i64>(2)?, row.get::<_, i64>(3)?,
-            row.get::<_, i64>(4)?, row.get::<_, i64>(5)?,
-        ))
-    }).map_err(|e| sql_error("segment read", e))?;
+        )
+        .map_err(|e| sql_error("segment prepare", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })
+        .map_err(|e| sql_error("segment read", e))?;
     for row in rows {
         let (id, fingerprint, files, bytes, skipped, truncated) =
             row.map_err(|e| sql_error("segment record", e))?;
@@ -196,9 +226,11 @@ fn prior_segments(tx: &Transaction<'_>) -> Result<Vec<Option<SegmentMeta>>> {
             return refuse("invalid or duplicate cached segment");
         }
         result[id] = Some(SegmentMeta {
-            fingerprint, indexed_files: nonnegative(files)?,
+            fingerprint,
+            indexed_files: nonnegative(files)?,
             indexed_bytes: nonnegative(bytes)?,
-            skipped_files: nonnegative(skipped)?, truncated: truncated != 0,
+            skipped_files: nonnegative(skipped)?,
+            truncated: truncated != 0,
         });
     }
     Ok(result)
@@ -223,15 +255,21 @@ fn insert_file(
         "INSERT INTO locator_files(segment,path,blob,mode,bytes,status)
          VALUES(?1,?2,?3,?4,?5,?6)",
         params![
-            segment as i64, &entry.path, &entry.oid, &entry.mode,
-            body.map_or(0usize, str::len) as i64, status
+            segment as i64,
+            &entry.path,
+            &entry.oid,
+            &entry.mode,
+            body.map_or(0usize, str::len) as i64,
+            status
         ],
-    ).map_err(|e| sql_error("insert cached file", e))?;
+    )
+    .map_err(|e| sql_error("insert cached file", e))?;
     if let Some(text) = body {
         tx.execute(
             "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
             params![tx.last_insert_rowid(), &entry.path, text],
-        ).map_err(|e| sql_error("insert FTS row", e))?;
+        )
+        .map_err(|e| sql_error("insert FTS row", e))?;
     }
     Ok(())
 }
@@ -279,7 +317,8 @@ fn update_segment(
         }
         let old = previous(tx, &entry.path)?;
         if let Some(ref cached) = old
-            && cached.blob == entry.oid && cached.mode == entry.mode
+            && cached.blob == entry.oid
+            && cached.mode == entry.mode
         {
             match cached.status.as_str() {
                 "OK" if cached.size <= MAX_TOTAL_BYTES - bytes => {
@@ -301,7 +340,8 @@ fn update_segment(
         if reader.is_none() {
             *reader = Some(git::BlobReader::open(repo)?);
         }
-        let data = match reader.as_mut()
+        let data = match reader
+            .as_mut()
             .ok_or("missing Git blob reader")?
             .read_capped(&entry.oid, MAX_FILE_BYTES)
         {
@@ -337,12 +377,14 @@ fn update_segment(
 
     let mut stale_ids = Vec::new();
     {
-        let mut stmt = tx.prepare(
-            "SELECT id,path FROM locator_files WHERE segment=?1",
-        ).map_err(|e| sql_error("stale segment scan", e))?;
-        let rows = stmt.query_map(params![segment as i64], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        }).map_err(|e| sql_error("stale segment query", e))?;
+        let mut stmt = tx
+            .prepare("SELECT id,path FROM locator_files WHERE segment=?1")
+            .map_err(|e| sql_error("stale segment scan", e))?;
+        let rows = stmt
+            .query_map(params![segment as i64], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| sql_error("stale segment query", e))?;
         for row in rows {
             let (id, path) = row.map_err(|e| sql_error("stale segment row", e))?;
             if !seen.contains(path.as_str()) {
@@ -364,13 +406,21 @@ fn update_segment(
          skipped_files=excluded.skipped_files,
          truncated=excluded.truncated",
         params![
-            segment as i64, expected, files as i64, bytes as i64,
-            skipped as i64, if truncated { 1_i64 } else { 0_i64 },
+            segment as i64,
+            expected,
+            files as i64,
+            bytes as i64,
+            skipped as i64,
+            if truncated { 1_i64 } else { 0_i64 },
         ],
-    ).map_err(|e| sql_error("segment commit metadata", e))?;
+    )
+    .map_err(|e| sql_error("segment commit metadata", e))?;
     Ok(SegmentMeta {
-        fingerprint: expected.to_owned(), indexed_files: files,
-        indexed_bytes: bytes, skipped_files: skipped, truncated,
+        fingerprint: expected.to_owned(),
+        indexed_files: files,
+        indexed_bytes: bytes,
+        skipped_files: skipped,
+        truncated,
     })
 }
 
@@ -379,7 +429,8 @@ fn put_meta(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
         "INSERT INTO locator_meta(key,value) VALUES(?1,?2)
          ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         params![key, value],
-    ).map_err(|e| sql_error("snapshot metadata", e))?;
+    )
+    .map_err(|e| sql_error("snapshot metadata", e))?;
     Ok(())
 }
 
@@ -412,18 +463,27 @@ pub(crate) fn search(
     }
     let total_source_files = groups.iter().map(Vec::len).sum();
     let populated_segments = groups.iter().filter(|x| !x.is_empty()).count();
-    let fingerprints = groups.iter().map(|group| fingerprint(group)).collect::<Vec<_>>();
+    let fingerprints = groups
+        .iter()
+        .map(|group| fingerprint(group))
+        .collect::<Vec<_>>();
 
     let path = external_cache(discovered)?;
     let mut db = Connection::open(&path).map_err(|e| sql_error("open", e))?;
-    db.busy_timeout(Duration::from_secs(15)).map_err(|e| sql_error("busy timeout", e))?;
-    let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)
+    db.busy_timeout(Duration::from_secs(15))
+        .map_err(|e| sql_error("busy timeout", e))?;
+    let tx = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| sql_error("begin", e))?;
     initialize(&tx)?;
     let mut prior = prior_segments(&tx)?;
     let mut pending = (0..SEGMENT_COUNT)
-        .filter(|&id| prior[id].as_ref().is_some_and(|row| row.fingerprint != fingerprints[id])
-            || (prior[id].is_none() && !groups[id].is_empty()))
+        .filter(|&id| {
+            prior[id]
+                .as_ref()
+                .is_some_and(|row| row.fingerprint != fingerprints[id])
+                || (prior[id].is_none() && !groups[id].is_empty())
+        })
         .collect::<Vec<_>>();
     pending.sort_by_key(|&id| (groups[id].is_empty(), id));
     let mut reader = None;
@@ -432,8 +492,14 @@ pub(crate) fn search(
     let mut refreshed_segments = 0usize;
     for id in pending.iter().take(refresh_budget).copied() {
         let updated = update_segment(
-            &tx, id, &groups[id], &fingerprints[id], &discovered.root,
-            &mut reader, &mut reused_blobs, &mut read_blobs,
+            &tx,
+            id,
+            &groups[id],
+            &fingerprints[id],
+            &discovered.root,
+            &mut reader,
+            &mut reused_blobs,
+            &mut read_blobs,
         )?;
         prior[id] = Some(updated);
         refreshed_segments += 1;
@@ -456,7 +522,8 @@ pub(crate) fn search(
             tx.execute(
                 "INSERT INTO locator_active(segment) VALUES(?1)",
                 params![id as i64],
-            ).map_err(|e| sql_error("activate segment", e))?;
+            )
+            .map_err(|e| sql_error("activate segment", e))?;
             if !groups[id].is_empty() {
                 ready_segments += 1;
             }
@@ -474,40 +541,60 @@ pub(crate) fn search(
 
     let mut hits = Vec::new();
     {
-        let mut stmt = tx.prepare(
-            "SELECT f.path,f.blob,f.mode,source_search.body
+        let mut stmt = tx
+            .prepare(
+                "SELECT f.path,f.blob,f.mode,source_search.body
              FROM source_search
              JOIN locator_files f ON f.id=source_search.rowid
              JOIN locator_active a ON a.segment=f.segment
              WHERE source_search MATCH ?1
              ORDER BY bm25(source_search,4.0,1.0), source_search.rowid
              LIMIT ?2",
-        ).map_err(|e| sql_error("ranking prepare", e))?;
-        let rows = stmt.query_map(params![expression, limit as i64], |row| {
-            Ok((
-                row.get::<_, String>(0)?, row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?, row.get::<_, String>(3)?,
-            ))
-        }).map_err(|e| sql_error("ranking query", e))?;
+            )
+            .map_err(|e| sql_error("ranking prepare", e))?;
+        let rows = stmt
+            .query_map(params![expression, limit as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(|e| sql_error("ranking query", e))?;
         for row in rows {
             let (name, blob, mode, body) = row.map_err(|e| sql_error("ranked row", e))?;
             if crate::digest::git_blob(body.as_bytes()) != blob {
                 return refuse("cached FTS source failed Git blob identity verification");
             }
             hits.push(Hit {
-                entry: git::Entry { path: name, oid: blob, mode, kind: "blob".into() },
+                entry: git::Entry {
+                    path: name,
+                    oid: blob,
+                    mode,
+                    kind: "blob".into(),
+                },
                 body,
             });
         }
     }
     tx.commit().map_err(|e| sql_error("commit", e))?;
     Ok(Search {
-        hits, indexed_files, indexed_bytes, skipped_files, truncated,
-        reused_blobs, read_blobs, cache_path: path, total_source_files,
-        populated_segments, ready_segments, pending_segments, refreshed_segments,
+        hits,
+        indexed_files,
+        indexed_bytes,
+        skipped_files,
+        truncated,
+        reused_blobs,
+        read_blobs,
+        cache_path: path,
+        total_source_files,
+        populated_segments,
+        ready_segments,
+        pending_segments,
+        refreshed_segments,
     })
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -562,13 +649,22 @@ mod tests {
             fs::write(
                 root.join(format!("src/module_{number:02}.rs")),
                 format!("pub fn module_{number:02}() {{ let needle = 1; }}\n"),
-            ).unwrap();
+            )
+            .unwrap();
         }
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com", "-c", "user.name=Test",
-            "commit", "-qm", "initial",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "initial",
+            ],
+        );
         let first = run(&root, "HEAD", 1);
         assert_eq!(first.total_source_files, 24);
         assert!(first.pending_segments > 8);
@@ -581,7 +677,9 @@ mod tests {
 
         let mut remaining = first.pending_segments;
         for _ in 0..64 {
-            if remaining == 0 { break; }
+            if remaining == 0 {
+                break;
+            }
             let next = run(&root, "HEAD", 1);
             assert_eq!(next.pending_segments + 1, remaining);
             remaining = next.pending_segments;
@@ -599,12 +697,21 @@ mod tests {
         fs::write(
             root.join("src/module_23.rs"),
             "pub fn module_23() { let unrelated = 3; }\n",
-        ).unwrap();
+        )
+        .unwrap();
         git_at(&root, &["add", "src/module_23.rs"]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com", "-c", "user.name=Test",
-            "commit", "-qm", "update source",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "update source",
+            ],
+        );
         let changed = run(&root, "HEAD", 1);
         assert_eq!(changed.pending_segments, 0);
         assert_eq!(changed.read_blobs, 1);
@@ -615,17 +722,26 @@ mod tests {
         fs::write(
             root.join("src/module_23.rs"),
             "pub fn module_23() { let needle = 1; }\n",
-        ).unwrap();
+        )
+        .unwrap();
         let dirty = run(&root, "HEAD", 1);
         assert_eq!(dirty.read_blobs, 0);
         assert_eq!(dirty.hits.len(), 23);
 
         // A deleted file must disappear from the next transaction's results.
         git_at(&root, &["rm", "-q", "src/module_22.rs"]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com", "-c", "user.name=Test",
-            "commit", "-qm", "delete source",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "delete source",
+            ],
+        );
         let deleted = run(&root, "HEAD", 1);
         assert_eq!(deleted.pending_segments, 0);
         assert_eq!(deleted.total_source_files, 23);
@@ -641,7 +757,12 @@ mod tests {
 
         // No caller-controlled cache is written inside the Git checkout.
         let discovered = discovery::inspect(&root, "HEAD").unwrap();
-        assert!(!discovered.root.join("agent-locate-segments.sqlite").exists());
+        assert!(
+            !discovered
+                .root
+                .join("agent-locate-segments.sqlite")
+                .exists()
+        );
         let cache_dir = old.cache_path.parent().unwrap();
         fs::remove_dir_all(cache_dir).unwrap();
         fs::remove_dir_all(root).unwrap();

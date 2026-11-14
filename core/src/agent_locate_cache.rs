@@ -507,3 +507,143 @@ pub(crate) fn search(
         populated_segments, ready_segments, pending_segments, refreshed_segments,
     })
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    fn git_at(root: &std::path::Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .expect("start git");
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn run(root: &std::path::Path, rev: &str, budget: usize) -> Search {
+        let discovered = discovery::inspect(root, rev).expect("discover");
+        let entries = git::entries(root, &discovered.commit).expect("Git entries");
+        search(&discovered, entries, 64, "\"needle\"", budget, |path| {
+            path.ends_with(".rs")
+        })
+        .expect("indexed lookup")
+    }
+
+    #[test]
+    fn partition_digest_is_stable_and_distributed() {
+        assert_eq!(segment_for("src/alpha.rs"), segment_for("src/alpha.rs"));
+        let partitions = (0..128)
+            .map(|number| segment_for(&format!("src/module_{number:04}.rs")))
+            .collect::<BTreeSet<_>>();
+        assert!(partitions.len() > 64);
+    }
+
+    #[test]
+    fn progresses_across_partitions_and_rejects_stale_revisions() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-segment-index-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        for number in 0..24 {
+            fs::write(
+                root.join(format!("src/module_{number:02}.rs")),
+                format!("pub fn module_{number:02}() {{ let needle = 1; }}\n"),
+            ).unwrap();
+        }
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "initial",
+        ]);
+        let first = run(&root, "HEAD", 1);
+        assert_eq!(first.total_source_files, 24);
+        assert!(first.pending_segments > 8);
+        assert!(first.ready_segments < first.populated_segments);
+        assert!(first.truncated);
+        assert!(first.indexed_files < 24);
+        assert_eq!(first.read_blobs, first.indexed_files);
+        // No stale segment may appear in returned evidence.
+        assert_eq!(first.hits.len(), first.indexed_files);
+
+        let mut remaining = first.pending_segments;
+        for _ in 0..64 {
+            if remaining == 0 { break; }
+            let next = run(&root, "HEAD", 1);
+            assert_eq!(next.pending_segments + 1, remaining);
+            remaining = next.pending_segments;
+        }
+        assert_eq!(remaining, 0);
+        let complete = run(&root, "HEAD", 1);
+        assert_eq!(complete.indexed_files, 24);
+        assert_eq!(complete.hits.len(), 24);
+        assert_eq!(complete.read_blobs, 0);
+        assert_eq!(complete.reused_blobs, 24);
+        assert!(!complete.truncated);
+        assert_eq!(complete.ready_segments, complete.populated_segments);
+
+        // Only the changed partition needs a new Git blob read.
+        fs::write(
+            root.join("src/module_23.rs"),
+            "pub fn module_23() { let unrelated = 3; }\n",
+        ).unwrap();
+        git_at(&root, &["add", "src/module_23.rs"]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "update source",
+        ]);
+        let changed = run(&root, "HEAD", 1);
+        assert_eq!(changed.pending_segments, 0);
+        assert_eq!(changed.read_blobs, 1);
+        assert_eq!(changed.indexed_files, 24);
+        assert_eq!(changed.hits.len(), 23);
+
+        // Dirty edits are never read. The exact source tree is unchanged.
+        fs::write(
+            root.join("src/module_23.rs"),
+            "pub fn module_23() { let needle = 1; }\n",
+        ).unwrap();
+        let dirty = run(&root, "HEAD", 1);
+        assert_eq!(dirty.read_blobs, 0);
+        assert_eq!(dirty.hits.len(), 23);
+
+        // A deleted file must disappear from the next transaction's results.
+        git_at(&root, &["rm", "-q", "src/module_22.rs"]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com", "-c", "user.name=Test",
+            "commit", "-qm", "delete source",
+        ]);
+        let deleted = run(&root, "HEAD", 1);
+        assert_eq!(deleted.pending_segments, 0);
+        assert_eq!(deleted.total_source_files, 23);
+        assert_eq!(deleted.indexed_files, 23);
+        assert_eq!(deleted.hits.len(), 22);
+
+        // Old revisions are independently authenticated and reindexed.
+        let old = run(&root, "HEAD~2", 1);
+        assert_eq!(old.pending_segments, 1);
+        let old = run(&root, "HEAD~2", 1);
+        assert_eq!(old.pending_segments, 0);
+        assert_eq!(old.hits.len(), 24);
+
+        // No caller-controlled cache is written inside the Git checkout.
+        let discovered = discovery::inspect(&root, "HEAD").unwrap();
+        assert!(!discovered.root.join("agent-locate-segments.sqlite").exists());
+        let cache_dir = old.cache_path.parent().unwrap();
+        fs::remove_dir_all(cache_dir).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+}

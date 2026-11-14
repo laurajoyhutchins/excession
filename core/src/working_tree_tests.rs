@@ -707,7 +707,9 @@ fn local_image_id(raw: &[u8]) -> Option<String> {
         .as_array()
         .and_then(|images| images.first())
         .unwrap_or(&inspected);
-    let labels = image.get("Labels").or_else(|| image.pointer("/Config/Labels"))?;
+    let labels = image
+        .get("Labels")
+        .or_else(|| image.pointer("/Config/Labels"))?;
     if labels.get(LOCAL_SANDBOX_LABEL)?.as_str()? != LOCAL_SANDBOX_LABEL_VALUE {
         return None;
     }
@@ -807,7 +809,12 @@ fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
         }
         if valid
             && !confined_podman()
-                .args(["--remote=false", "image", "exists", image.unwrap_or_default()])
+                .args([
+                    "--remote=false",
+                    "image",
+                    "exists",
+                    image.unwrap_or_default(),
+                ])
                 .output()
                 .is_ok_and(|output| output.status.success())
         {
@@ -826,16 +833,31 @@ pub fn sandbox_doctor(requested: Option<&str>) -> Value {
     if cfg!(not(target_os = "linux")) {
         guidance.push("Use a Linux machine or isolated Linux worker for rootless test execution");
     }
-    if blockers.iter().any(|v| v == "ROOTLESS_LOCAL_PODMAN_SECCOMP_CGROUP_V2_REQUIRED") {
-        guidance.push("Install Linux rootless Podman with seccomp and cgroup v2; check podman info");
+    if blockers
+        .iter()
+        .any(|v| v == "ROOTLESS_LOCAL_PODMAN_SECCOMP_CGROUP_V2_REQUIRED")
+    {
+        guidance
+            .push("Install Linux rootless Podman with seccomp and cgroup v2; check podman info");
     }
-    if blockers.iter().any(|v| v == "PINNED_SANDBOX_IMAGE_REQUIRED") {
-        guidance.push("Once per machine: sh tools/bootstrap-test-sandbox.sh from an Excession checkout");
+    if blockers
+        .iter()
+        .any(|v| v == "PINNED_SANDBOX_IMAGE_REQUIRED")
+    {
+        guidance.push(
+            "Once per machine: sh tools/bootstrap-test-sandbox.sh from an Excession checkout",
+        );
     }
-    if blockers.iter().any(|v| v == "SANDBOX_IMAGE_MUST_BE_PINNED_SHA256") {
+    if blockers
+        .iter()
+        .any(|v| v == "SANDBOX_IMAGE_MUST_BE_PINNED_SHA256")
+    {
         guidance.push("Use a local sha256:<64-hex-ID> or registry/name@sha256:<64-hex-digest>");
     }
-    if blockers.iter().any(|v| v == "PREINSTALLED_PINNED_IMAGE_REQUIRED_NO_PULL") {
+    if blockers
+        .iter()
+        .any(|v| v == "PREINSTALLED_PINNED_IMAGE_REQUIRED_NO_PULL")
+    {
         guidance.push("Install the selected pinned image locally; execution never pulls images");
     }
     if blockers.is_empty() {
@@ -843,9 +865,19 @@ pub fn sandbox_doctor(requested: Option<&str>) -> Value {
     }
     obj(&[
         ("schema", Value::string("excession.sandbox-doctor.v1")),
-        ("status", Value::string(if blockers.is_empty() { "READY" } else { "BLOCKED" })),
+        (
+            "status",
+            Value::string(if blockers.is_empty() {
+                "READY"
+            } else {
+                "BLOCKED"
+            }),
+        ),
         ("local_image_alias", Value::string(LOCAL_SANDBOX_TAG)),
-        ("image", image.as_ref().map(Value::string).unwrap_or(Value::Null)),
+        (
+            "image",
+            image.as_ref().map(Value::string).unwrap_or(Value::Null),
+        ),
         (
             "image_source",
             Value::string(if matches!(requested, Some(v) if v != "auto") {
@@ -856,8 +888,14 @@ pub fn sandbox_doctor(requested: Option<&str>) -> Value {
                 "NONE"
             }),
         ),
-        ("blockers", Value::array(blockers.into_iter().map(Value::string))),
-        ("setup", Value::array(guidance.into_iter().map(Value::string))),
+        (
+            "blockers",
+            Value::array(blockers.into_iter().map(Value::string)),
+        ),
+        (
+            "setup",
+            Value::array(guidance.into_iter().map(Value::string)),
+        ),
         ("network_used", Value::Bool(false)),
         ("project_code_executed", Value::Bool(false)),
     ])
@@ -867,7 +905,11 @@ pub fn sandbox_doctor_summary(report: &Value) -> Result<String> {
     let mut lines = vec![format!("Sandbox: {}", report.get("status")?.str()?)];
     match report.get("image")? {
         Value::Null => lines.push("Image: no labeled, preinstalled local image found".to_owned()),
-        value => lines.push(format!("Image: {} ({})", value.str()?, report.get("image_source")?.str()?)),
+        value => lines.push(format!(
+            "Image: {} ({})",
+            value.str()?,
+            report.get("image_source")?.str()?
+        )),
     }
     for blocker in report.get("blockers")?.array_ref()? {
         lines.push(format!("  Blocked: {}", blocker.str()?));
@@ -1542,22 +1584,33 @@ mod tests {
     #[test]
     fn labeled_local_sandbox_must_have_pinned_id() {
         let digest = "a".repeat(64);
-        let image = format!(
-            r#"[{{"Id":"sha256:{digest}","Labels":{{"io.excession.sandbox":"v1"}}}}]"#
+        let image =
+            format!(r#"[{{"Id":"sha256:{digest}","Labels":{{"io.excession.sandbox":"v1"}}}}]"#);
+        assert_eq!(
+            local_image_id(image.as_bytes()),
+            Some(format!("sha256:{digest}"))
         );
-        assert_eq!(local_image_id(image.as_bytes()), Some(format!("sha256:{digest}")));
         let untrusted = image.replace(r#""v1""#, r#""other""#);
         assert!(local_image_id(untrusted.as_bytes()).is_none());
-        assert!(local_image_id(br#"[{"Id":"latest","Labels":{"io.excession.sandbox":"v1"}}]"#).is_none());
+        assert!(
+            local_image_id(br#"[{"Id":"latest","Labels":{"io.excession.sandbox":"v1"}}]"#)
+                .is_none()
+        );
     }
 
     #[test]
     fn sandbox_doctor_is_machine_readable_and_never_runs_project_code() {
         let id = format!("sha256:{}", "f".repeat(64));
         let report = sandbox_doctor(Some(&id));
-        assert_eq!(report.get("schema").unwrap().str().unwrap(), "excession.sandbox-doctor.v1");
+        assert_eq!(
+            report.get("schema").unwrap().str().unwrap(),
+            "excession.sandbox-doctor.v1"
+        );
         assert_eq!(report.get("image").unwrap().str().unwrap(), id);
-        assert_eq!(report.get("image_source").unwrap().str().unwrap(), "EXPLICIT");
+        assert_eq!(
+            report.get("image_source").unwrap().str().unwrap(),
+            "EXPLICIT"
+        );
         assert!(!report.get("project_code_executed").unwrap().bool().unwrap());
         assert!(!report.get("network_used").unwrap().bool().unwrap());
     }

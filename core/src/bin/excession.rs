@@ -588,6 +588,8 @@ fn execute(args: &[String]) -> Result<Response> {
                     "tool",
                     "focus",
                     "provider",
+                    "repo",
+                    "timeout",
                 ]
                 .iter()
                 .any(|key| opt.0.contains_key(*key))

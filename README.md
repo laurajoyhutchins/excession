@@ -92,8 +92,9 @@ the setup script; normal tests never download or install dependencies.
 Excession chooses the revision comparison and detects installed Jest or a
 Python pytest-testmon project. Jest discovers **and runs** related tests;
 pytest-testmon selects and runs tests from a previous coverage baseline.
-\`--run\` deliberately executes trusted project tools; in agent workflows
-use an isolated checkout. Failing tests return exit code 1, an inconclusive
+\`--run\` executes a dirty working tree only inside rootless Podman, without
+modifying the original checkout. Clean committed checkouts retain trusted
+native execution. A first-run Python baseline is built inside the sandbox. Failing tests return exit code 1, an inconclusive
 run returns 3, and setup refusals return 2. JSON includes source identity,
 executed test IDs, and optional verification obligations.
 

@@ -139,11 +139,7 @@ pub(super) fn command() -> Command {
                 &["dataset-repo", "dataset-rev", "project", "bug"],
                 &[],
             ),
-            leaf(
-                "exception-freeze",
-                &["repo", "rev", "observations"],
-                &[],
-            ),
+            leaf("exception-freeze", &["repo", "rev", "observations"], &[]),
             leaf(
                 "exception-assess",
                 &["repo", "candidate", "frozen", "observations"],

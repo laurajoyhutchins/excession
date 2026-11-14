@@ -366,13 +366,17 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             if sub == "exception-freeze" {
                 return Ok(json(excession::concepts_exception_flow::freeze(
-                    opt.path("repo"), opt.get("rev"), opt.path("observations"),
+                    opt.path("repo"),
+                    opt.get("rev"),
+                    opt.path("observations"),
                 )?));
             }
             if sub == "exception-assess" {
                 return Ok(json(excession::concepts_exception_flow::assess(
-                    opt.path("repo"), opt.get("candidate"),
-                    opt.path("frozen"), opt.path("observations"),
+                    opt.path("repo"),
+                    opt.get("candidate"),
+                    opt.path("frozen"),
+                    opt.path("observations"),
                 )?));
             }
             if sub == "regression-adjudicate" {

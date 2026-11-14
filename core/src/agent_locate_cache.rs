@@ -522,13 +522,7 @@ pub(crate) fn search(
     };
     let mut refreshed_segments = 0usize;
     for id in pending.iter().take(refresh_budget).copied() {
-        let updated = update_segment(
-            &tx,
-            id,
-            &groups[id],
-            &fingerprints[id],
-            &mut state,
-        )?;
+        let updated = update_segment(&tx, id, &groups[id], &fingerprints[id], &mut state)?;
         prior[id] = Some(updated);
         refreshed_segments += 1;
     }
@@ -678,15 +672,17 @@ mod tests {
         }
         assert_eq!(distribution.iter().sum::<usize>(), 20_000);
         assert!(distribution.iter().all(|count| *count < MAX_FILES));
-        assert!(path_priority(
-            &[git::Entry {
-                path: "src/lease_recovery.rs".into(),
-                mode: "100644".into(),
-                kind: "blob".into(),
-                oid: "0".repeat(40),
-            }],
-            "\"lease\" OR \"recover\"",
-        ) > 0);
+        assert!(
+            path_priority(
+                &[git::Entry {
+                    path: "src/lease_recovery.rs".into(),
+                    mode: "100644".into(),
+                    kind: "blob".into(),
+                    oid: "0".repeat(40),
+                }],
+                "\"lease\" OR \"recover\"",
+            ) > 0
+        );
     }
 
     #[test]
@@ -829,33 +825,43 @@ mod tests {
         ));
         fs::create_dir_all(root.join("src")).unwrap();
         git_at(&root, &["init", "-q"]);
-        fs::write(
-            root.join("src/a.rs"),
-            "pub fn a() { let needle = 1; }\n",
-        ).unwrap();
+        fs::write(root.join("src/a.rs"), "pub fn a() { let needle = 1; }\n").unwrap();
         let second_body = "pub fn b() { let needle = 2; }\n";
         fs::write(root.join("src/b.rs"), second_body).unwrap();
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com", "-c", "user.name=Test",
-            "commit", "-qm", "initial",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "initial",
+            ],
+        );
         let first = run(&root, "HEAD", SEGMENT_COUNT);
         assert_eq!(first.hits.len(), 2);
         let blob_b = git::blob(&root, "HEAD", "src/b.rs").unwrap();
         let db = Connection::open(&first.cache_path).unwrap();
-        let id: i64 = db.query_row(
-            "SELECT id FROM locator_files WHERE path='src/a.rs'",
-            [], |row| row.get(0),
-        ).unwrap();
+        let id: i64 = db
+            .query_row(
+                "SELECT id FROM locator_files WHERE path='src/a.rs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         db.execute(
             "UPDATE locator_files SET blob=?1 WHERE id=?2",
             params![blob_b, id],
-        ).unwrap();
+        )
+        .unwrap();
         db.execute(
             "UPDATE source_search SET body=?1 WHERE rowid=?2",
             params![second_body, id],
-        ).unwrap();
+        )
+        .unwrap();
         drop(db);
         let discovered = discovery::inspect(&root, "HEAD").unwrap();
         let result = search(
@@ -885,13 +891,22 @@ mod tests {
             fs::write(
                 root.join(format!("src/module_{number:05}.rs")),
                 format!("pub fn module_{number:05}() {{ let needle = 1; }}\n"),
-            ).unwrap();
+            )
+            .unwrap();
         }
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com", "-c", "user.name=Test",
-            "commit", "-qm", "large initial commit",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "large initial commit",
+            ],
+        );
         let started = std::time::Instant::now();
         let cold = run(&root, "HEAD", SEGMENT_COUNT);
         let cold_time = started.elapsed();
@@ -913,12 +928,21 @@ mod tests {
         fs::write(
             root.join("src/module_06399.rs"),
             "pub fn module_06399() { let needle = 2; }\n",
-        ).unwrap();
+        )
+        .unwrap();
         git_at(&root, &["add", "src/module_06399.rs"]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com", "-c", "user.name=Test",
-            "commit", "-qm", "one source edit",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "one source edit",
+            ],
+        );
         let started = std::time::Instant::now();
         let changed = run(&root, "HEAD", 1);
         let changed_time = started.elapsed();
@@ -927,11 +951,14 @@ mod tests {
         assert_eq!(changed.pending_segments, 0);
         eprintln!(
             "segment-scale files=6400 cold_ms={} warm_ms={} changed_ms={} cold_blobs={} warm_blobs={} changed_blobs={}",
-            cold_time.as_millis(), warm_time.as_millis(), changed_time.as_millis(),
-            cold.read_blobs, warm.read_blobs, changed.read_blobs
+            cold_time.as_millis(),
+            warm_time.as_millis(),
+            changed_time.as_millis(),
+            cold.read_blobs,
+            warm.read_blobs,
+            changed.read_blobs
         );
         fs::remove_dir_all(changed.cache_path.parent().unwrap()).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
-
 }

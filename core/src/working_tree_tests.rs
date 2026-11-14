@@ -1023,10 +1023,33 @@ fn execute_isolated(args: SandboxExecution<'_>) -> Result<Value> {
         binary.display()
     ));
     command.arg(image);
-    command.args(["-c",
-        "mkdir -p /work/repo && cp -a /input/. /work/repo/ && cd /work/repo && exec /usr/local/bin/excession \"$@\"",
-        "sh", "tests", "--run", "--json", "--repo", "/work/repo",
-        "--base", base, "--candidate", candidate, "--provider", provider,
+    command.args([
+        "-c",
+        r#"mkdir -p /work/repo && cp -a /input/. /work/repo/ && cd /work/repo || exit 2
+if [ "$1" = pytest-testmon ] && [ ! -f .testmondata ]; then
+  git -c core.hooksPath=/dev/null -c core.fsmonitor=false checkout -qf --detach "$2" \
+    && /usr/local/bin/python3 -m pytest --testmon --testmon-noselect -q >/tmp/excession-baseline.log 2>&1 \
+    && test -s .testmondata \
+    && git -c core.hooksPath=/dev/null -c core.fsmonitor=false checkout -qf --detach "$3" \
+    || { echo 'isolated pytest baseline generation failed or was incomplete' >&2; exit 2; }
+fi
+shift 3
+exec /usr/local/bin/excession "$@""#,
+        "sh",
+        provider,
+        base,
+        candidate,
+        "tests",
+        "--run",
+        "--json",
+        "--repo",
+        "/work/repo",
+        "--base",
+        base,
+        "--candidate",
+        candidate,
+        "--provider",
+        provider,
     ]);
     if let Some(tool) = tool {
         command.args(["--tool", tool]);
@@ -1183,7 +1206,12 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     };
     for reason in plan.get("blockers")?.array_ref()? {
         let name = reason.str()?;
-        if name != "JEST_NOT_INSTALLED" {
+        // A missing Python baseline is built from the committed base inside
+        // the isolated container, never by running project code on the host.
+        if name != "JEST_NOT_INSTALLED"
+            && !(name == "TESTMON_BASELINE_MISSING"
+                && provider.as_deref() == Some("pytest-testmon"))
+        {
             blockers.insert(name.to_owned());
         }
     }

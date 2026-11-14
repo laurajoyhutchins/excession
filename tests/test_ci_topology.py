@@ -73,6 +73,13 @@ class CiTopology(unittest.TestCase):
             "Verify source tag and all downloaded archive digests",
         ):
             self.assertIn(required, source, required)
+        # Explicit full qualification must retain its archive receipts and
+        # independent upstream acceptance, not only launch platform builds.
+        self.assertGreaterEqual(
+            source.count("contains(github.event.pull_request.labels.*.name, 'ci:full-portability')"),
+            4,
+        )
+        self.assertIn("name: Installed Linux archive vs independent pinned upstream source", source)
 
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):

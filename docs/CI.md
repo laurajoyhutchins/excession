@@ -15,7 +15,7 @@ PR concurrency is grouped by workflow and PR number. Superseding pushes cancel s
 
 ## Release gate remains mandatory
 
-Ordinary feature PRs do not run full portability. Add the ci:full-portability label to any PR for an immediate full-matrix run, use a release/ branch, or dispatch Portable CLI manually. Version tags v* always run the full matrix, musl and extracted-archive acceptance. Publication requires all three gates, verified source manifest and archive digests, and refusal to overwrite an existing release.
+Ordinary feature PRs do not run full portability. Add the ci:full-portability label to any PR for an immediate full-matrix run and independent extracted-archive acceptance, use a release/ branch, or dispatch Portable CLI manually. Version tags v* always run the full matrix, musl and extracted-archive acceptance. Publication requires all three gates, verified source manifest and archive digests, and refusal to overwrite an existing release.
 
 The full platform and upstream acceptance tests are not replaced by a passing general Verify job.
 

@@ -550,7 +550,7 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown syntax command {sub}")),
         },
         [top, sub] if top == "graph" => match sub.as_str() {
-            "import" | "ls" | "show" | "deps" | "path" => graph_cli::run(sub, opt),
+            "import" | "ls" | "show" | "deps" | "path" => Ok(json(graph_cli::run(sub, opt)?)),
             "kbuild" => {
                 let db = Db::open(opt.path("db"))?;
                 Ok(json(kbuild_graph::assemble(

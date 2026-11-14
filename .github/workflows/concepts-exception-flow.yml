@@ -75,7 +75,9 @@ jobs:
             sha256sum "$OUT/frozen.json" > "$OUT/frozen.sha256"
             git -C upstream fetch -q --filter=blob:none --depth=2 origin "$INDUCING"
             test "$(git -C upstream rev-parse "$INDUCING^")" = "$WORKING"
-            if git -C upstream cat-file -e "$REPAIRED^{commit}" 2>/dev/null; then
+            # An ordinary cat-file -e on a promisor clone can itself fetch C.
+            # Disable lazy object fetching while testing local object absence.
+            if GIT_NO_LAZY_FETCH=1 git -C upstream cat-file -e "$REPAIRED^{commit}" 2>/dev/null; then
               echo "future repair leaked into prospective workspace" >&2; exit 1
             fi
             git -C upstream checkout -q --detach "$INDUCING"

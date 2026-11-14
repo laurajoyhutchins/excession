@@ -594,6 +594,14 @@ pub(crate) fn search(
             .map_err(|e| sql_error("ranking query", e))?;
         for row in rows {
             let (name, blob, mode, body) = row.map_err(|e| sql_error("ranked row", e))?;
+            let segment = segment_for(&name);
+            let pinned = groups[segment]
+                .binary_search_by(|entry| entry.path.as_str().cmp(name.as_str()))
+                .map(|index| &groups[segment][index])
+                .map_err(|_| "cached FTS source absent from pinned Git tree")?;
+            if pinned.oid != blob || pinned.mode != mode {
+                return refuse("cached FTS path/blob/mode differs from pinned Git tree");
+            }
             if crate::digest::git_blob(body.as_bytes()) != blob {
                 return refuse("cached FTS source failed Git blob identity verification");
             }

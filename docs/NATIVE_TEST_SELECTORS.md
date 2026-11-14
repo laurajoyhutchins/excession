@@ -170,3 +170,52 @@ the native test report and returns \`verification.status=UNAVAILABLE\` with
 \`ready_to_merge=false\`. A native PASS then has overall status INCONCLUSIVE
 and exit code 3 rather than falsely claiming verification. A real native
 test failure remains FAIL with exit code 1.
+
+
+## Uncommitted changes: safe, fail-closed isolation
+
+The ordinary \`excession tests\` command detects staged, unstaged and
+non-ignored untracked source changes. It constructs an **independent
+temporary Git clone** with an ephemeral commit representing the exact current
+bytes, preserving the original HEAD and index. It never runs a native project
+tool on the source checkout. Git conflicts, source symlinks, submodules,
+nonregular files, oversized changes, and risky untracked credential names
+are refused. Ignored files are never copied, except a bounded local testmon
+coverage baseline, which stays untracked in the temporary clone.
+
+For actual execution, uncommitted code requires **Linux rootless Podman with
+seccomp enabled**, and an **already installed image pinned by SHA-256**.
+The image must contain the project's runtime, required native testing
+dependencies, Git, POSIX sh/cp, and libc compatible with the mounted Excession
+binary. There is no image pull, dependency installation, or fallback to host
+execution.
+
+~~~sh
+excession tests --json
+excession tests --sandbox-image registry.example/test@sha256:FULL_DIGEST
+excession tests --run --sandbox-image registry.example/test@sha256:FULL_DIGEST --json
+~~~
+
+In the sandbox, the source snapshot is bind-mounted **read-only** at /input.
+A fresh copy is made into a **size-limited, writable tmpfs** at /work.
+The host Excession executable is mounted read-only; no source checkout,
+credential directories, Docker socket, or host HOME is mounted. Podman runs
+with no network, no new privileges, dropped capabilities, a read-only
+container root, private PID/IPC/UTS namespaces, and bounded memory, CPU,
+process count, output, and wall time. Failure to establish *all* runtime
+prerequisites refuses execution.
+
+Plans include a SHA-256 content fingerprint and a complete \`next_argv\`
+vector with \`--expected-snapshot\` to detect changes between approval and
+execution. Tests execute against the generated **ephemeral** Git commit;
+they cannot be represented as a permanent recorded commit in the user's
+repository. The report explicitly labels evidence as
+\`EPHEMERAL_LOCAL_SANDBOX_UNATTESTED\` and
+\`replayable_after_completion=false\`; no claim of test completeness or
+safe test elision follows.
+
+The source checkout is never altered by Excession's snapshot construction.
+This protects against accidental native commands and limits untrusted code's
+filesystem and network access. It is not a promise that containers eliminate
+all kernel vulnerabilities. For potentially hostile projects, use a
+separately provisioned isolated worker or VM as an additional boundary.

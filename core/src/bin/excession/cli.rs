@@ -448,10 +448,26 @@ pub(super) fn command() -> Command {
     let tests = leaf(
         "tests",
         &[],
-        &["repo", "base", "candidate", "provider", "tool", "focus"],
+        &[
+            "repo",
+            "base",
+            "candidate",
+            "provider",
+            "tool",
+            "focus",
+            "sandbox-image",
+            "expected-snapshot",
+            "timeout",
+        ],
     )
     .visible_alias("test")
-    .about("Plan native test selection or run selected tests on a committed candidate")
+    .about("Plan and run native tests for committed or safely sandboxed uncommitted code")
+    .arg(
+        Arg::new("working-tree")
+            .long("working-tree")
+            .action(clap::ArgAction::SetTrue)
+            .help("Explicitly snapshot the uncommitted working tree (also auto-detected)"),
+    )
     .arg(
         Arg::new("run")
             .long("run")
@@ -820,6 +836,16 @@ mod tests {
         assert!(parse(&strings(&["tests"])).is_ok());
         assert!(parse(&strings(&["test", "--json"])).is_ok());
         assert!(parse(&strings(&["tests", "--run", "--verify", "--json"])).is_ok());
+        assert!(
+            parse(&strings(&[
+                "tests",
+                "--run",
+                "--sandbox-image",
+                "example@sha256:abc",
+                "--working-tree"
+            ]))
+            .is_ok()
+        );
         assert!(parse(&strings(&["tests", "--unknown"])).is_err());
     }
 

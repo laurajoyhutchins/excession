@@ -65,13 +65,14 @@ also support `--json` and explicit revisions/roots.
 
 ## Test what changed
 
-Run Excession inside a committed Git checkout. Its default is a read-only
+Run Excession inside a Git checkout. Its default is a read-only
 test plan, not an unexpected execution of project configuration:
 
 ~~~sh
 excession tests
 excession tests --run
 excession tests --run --verify --json
+excession tests --run --sandbox-image registry.example/test@sha256:DIGEST
 ~~~
 
 Excession chooses the revision comparison and detects installed Jest or a

@@ -69,6 +69,7 @@ pub mod syntax_resolution;
 pub mod transactions;
 pub mod transform;
 pub mod views;
+pub mod working_tree_tests;
 
 pub type Result<T> = std::result::Result<T, String>;
 

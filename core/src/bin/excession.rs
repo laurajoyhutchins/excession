@@ -1091,6 +1091,19 @@ fn execute(args: &[String]) -> Result<Response> {
             }))
         }
         [top, sub] if top == "improve" => match sub.as_str() {
+            "trial" => Ok(json(improve::trial(&improve::Trial {
+                repo: opt.path("repo"),
+                revision: opt.get("rev"),
+                index: opt.path("index"),
+                report: opt.path("report"),
+                plan: opt.path("plan"),
+                candidate_id: opt.get("candidate"),
+                symbol: opt.0.get("symbol").map(String::as_str),
+                ast_grep: Path::new(opt.get_or("ast-grep", "ast-grep")),
+                source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                output: opt.0.get("output").map(Path::new),
+                trusted_local: opt.get("trusted-local"),
+            })?)),
             "plan" => Ok(json(improve::plan(
                 opt.path("repo"),
                 opt.get("rev"),

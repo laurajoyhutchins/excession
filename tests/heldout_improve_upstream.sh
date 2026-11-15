@@ -13,10 +13,10 @@ EXCESSION_ROOT="$1"
 BASE_REPO="$2"
 CANDIDATE="$3"
 RECEIPTS="$4"
-SOURCE="packages/core/src/machine/types.ts"
-PIN="78c6a78b8a367c2c19398b05d39274ea3bcacadb"
-OWNER="piyushrav1/ai-interview-v.01"
-UPSTREAM_FIX="dea7976fcf620fc19c9731edef06a3d294f0451c"
+SOURCE="packages/reactivity/__tests__/computed.spec.ts"
+PIN="d16a2138a33b106b9e1499bbb9e1c67790370c97"
+OWNER="vuejs/core"
+UPSTREAM_FIX="492a720fd00750d6d4eef6db1cda5d3c911dafe0"
 mkdir -p "$RECEIPTS"
 
 if [[ "$(git -C "$BASE_REPO" rev-parse HEAD)" != "$PIN" ]]; then
@@ -36,7 +36,7 @@ EXCESSION="$EXCESSION_ROOT/core/target/debug/excession"
 # independently of the developer's uncommitted changes or workspace modules.
 node "$EXCESSION_ROOT/core/adapters/improve_typescript.cjs" \
   --repo "$BASE_REPO" --rev "$PIN" --source "$SOURCE" \
-  --symbol Turn --plan-out "$PLAN" --edits-out "$EDITS" \
+  --symbol ReactiveEffect --plan-out "$PLAN" --edits-out "$EDITS" \
   > "$RECEIPTS/native-proposal.json"
 
 jq -e --arg pin "$PIN" --arg path "$SOURCE" '
@@ -46,7 +46,7 @@ jq -e --arg pin "$PIN" --arg path "$SOURCE" '
   .ready_to_merge == false and
   (.candidate_count == 1) and
   (.candidates[0].finding.locations[0].path == $path) and
-  (.candidates[0].finding.locations[0].symbol == "Turn")
+  (.candidates[0].finding.locations[0].symbol == "ReactiveEffect")
 ' "$PLAN" > /dev/null
 jq -e --arg pin "$PIN" --arg path "$SOURCE" '
   .schema == "excession.improvement-native-edits.v1" and
@@ -87,12 +87,12 @@ const fs = require('node:fs');
 const [oldPath, newPath, reportPath, pin, owner, fix] = process.argv.slice(2);
 const oldSource = fs.readFileSync(oldPath, 'utf8');
 const newSource = fs.readFileSync(newPath, 'utf8');
-assert.equal((oldSource.match(/\bTurn\b/g) || []).length, 1);
-assert.equal((newSource.match(/\bTurn\b/g) || []).length, 0);
-for (const name of ['Phase', 'CodeSnapshot', 'Interview', 'InterviewState']) {
+assert.equal((oldSource.match(/\bReactiveEffect\b/g) || []).length, 1);
+assert.equal((newSource.match(/\bReactiveEffect\b/g) || []).length, 0);
+for (const name of ['ITERATE_KEY', 'TrackOpTypes', 'TriggerOpTypes', 'computed', 'reactive', 'WritableComputedRef']) {
   assert.ok(newSource.includes(name), `preserved binding disappeared: ${name}`);
 }
-assert.ok(newSource.includes('from "@testmeman/contracts"'));
+assert.ok(newSource.includes("from '../src'"));
 const before = Buffer.byteLength(oldSource);
 const after = Buffer.byteLength(newSource);
 assert.ok(after < before, 'native edit must delete actual bytes');
@@ -104,7 +104,7 @@ const receipt = {
   before_bytes: before,
   after_bytes: after,
   removed_bytes: before - after,
-  deleted_import_binding: 'Turn',
+  deleted_import_binding: 'ReactiveEffect',
   new_source_files: 0,
   changed_files: 1,
   code_compiles_and_tests: 'NOT_YET_RUN',
@@ -121,33 +121,26 @@ pnpm --dir "$BASE_REPO" install --frozen-lockfile --ignore-scripts \
 pnpm --dir "$CANDIDATE" install --frozen-lockfile --ignore-scripts \
   > "$RECEIPTS/candidate-dependencies.log" 2>&1
 
-# Use the upstream project's tsconfig and tests. The historical
-# pnpm lock resolves TypeScript 5.9.3 despite its declared ^5.6.0 range;
-# TS5.9 rejects the pre-existing baseUrl option in BOTH trees. A separately
-# installed 5.6.3 compiler, inside that published range and independent of
-# Excession's 5.8.3 edit producer, checks both revisions without modifying
-# either source tree or the upstream package-lock contract.
-: "${HELDOUT_TSC:?require independently pinned TS compiler path}"
-test -f "$HELDOUT_TSC"
-node "$HELDOUT_TSC" --version > "$RECEIPTS/independent-compiler.txt"
+# Use Vue 3.4.14's own pinned TypeScript toolchain and real computed
+# reactivity unit suite. Both Git trees independently install the exact
+# upstream pnpm lockfile. These commands must run in the repository root.
 (
   cd "$BASE_REPO"
-  node "$HELDOUT_TSC" --noEmit --project packages/core/tsconfig.json
+  pnpm exec tsc --noEmit --project tsconfig.json
 ) > "$RECEIPTS/baseline-build.log" 2>&1
 (
   cd "$CANDIDATE"
-  node "$HELDOUT_TSC" --noEmit --project packages/core/tsconfig.json
+  pnpm exec tsc --noEmit --project tsconfig.json
 ) > "$RECEIPTS/candidate-build.log" 2>&1
-# Upstream's vitest.config.ts defines test discovery relative to the
-# workspace root, not packages/core. Invoke it there with an explicit core
-# test filter; pnpm --filter @testmeman/core test would find zero tests.
 (
   cd "$BASE_REPO"
-  pnpm exec vitest run packages/core/test
+  pnpm exec vitest run --config vitest.unit.config.ts \
+    packages/reactivity/__tests__/computed.spec.ts --maxWorkers=2 --minWorkers=1
 ) > "$RECEIPTS/baseline-test.log" 2>&1
 (
   cd "$CANDIDATE"
-  pnpm exec vitest run packages/core/test
+  pnpm exec vitest run --config vitest.unit.config.ts \
+    packages/reactivity/__tests__/computed.spec.ts --maxWorkers=2 --minWorkers=1
 ) > "$RECEIPTS/candidate-test.log" 2>&1
 
 if [[ "$(git -C "$CANDIDATE" diff --name-only)" != "$SOURCE" ]]; then
@@ -162,7 +155,7 @@ node - "$RECEIPTS/measurement.json" <<'NODE'
 const fs = require('node:fs');
 const path = process.argv[2];
 const result = JSON.parse(fs.readFileSync(path, 'utf8'));
-result.code_compiles_and_tests = 'BOTH_BASELINE_AND_CANDIDATE_PASSED_UPSTREAM_CORE_CHECKS';
+result.code_compiles_and_tests = 'BOTH_BASELINE_AND_CANDIDATE_PASSED_VUE_TYPES_AND_COMPUTED_TESTS';
 fs.writeFileSync(path, JSON.stringify(result, null, 2) + '\n');
 console.log(JSON.stringify(result));
 NODE

@@ -5,8 +5,8 @@ use crate::evidence::identity::{SourceRef, Subject};
 use crate::evidence_store::{self, Batch, Observation, Receipt};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
-use crate::{Result, git, native_boundary, refuse};
-use std::collections::BTreeMap;
+use crate::{Result, digest, git, native_boundary, refuse};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 const MAX_REPORT_BYTES: u64 = 4 * 1024 * 1024;
@@ -24,6 +24,16 @@ fn source_ref(repo: &Path, commit: &str, tree: &str, item: &Value) -> Result<Sou
         return refuse("native source differs from immutable Git object identity");
     }
     Ok(expected)
+}
+
+fn source_value(input: &SourceRef) -> Value {
+    obj(&[
+        ("source_commit", Value::string(&input.commit)),
+        ("source_tree", Value::string(&input.tree)),
+        ("path", Value::string(&input.path)),
+        ("blob", Value::string(&input.blob)),
+        ("mode", Value::string(&input.mode)),
+    ])
 }
 
 /// Validate a producer report and rebuild every immutable observation from
@@ -151,16 +161,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             subject_id: Subject::Source(input.clone()).id()?,
             native_kind: "NATIVE_SELECTED_INPUT".to_owned(),
             payload: obj(&[
-                (
-                    "source",
-                    obj(&[
-                        ("source_commit", Value::string(&input.commit)),
-                        ("source_tree", Value::string(&input.tree)),
-                        ("path", Value::string(&input.path)),
-                        ("blob", Value::string(&input.blob)),
-                        ("mode", Value::string(&input.mode)),
-                    ]),
-                ),
+                ("source", source_value(&input)),
                 ("subject", subject.clone()),
                 ("role", Value::string(role)),
                 ("scope", Value::string(scope)),
@@ -177,6 +178,51 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
         let headers = ast.get("dependencies")?.array_ref()?;
         if symbols.len() > 5000 || calls.len() > 5000 || headers.len() > 2048 {
             return refuse("Clang native observation exceeded safe import bounds");
+        }
+        // Promote only path-specific, hash-matching *tracked* header
+        // observations. External/generated headers stay in the original
+        // receipt without a fabricated Git identity or dependency edge.
+        let mut observed_headers = BTreeSet::new();
+        let mut blobs = git::BlobReader::open(repo)?;
+        for header in headers {
+            let path = match header.get("repo_path")? {
+                Value::String(path) => path.as_str(),
+                Value::Null => continue,
+                _ => return refuse("native Clang header path must be a string or null"),
+            };
+            git::validate_path(path)?;
+            if path == subject_path || !observed_headers.insert(path.to_owned()) {
+                continue;
+            }
+            let sha = header.get("sha256")?.str()?;
+            if sha.len() != 64 || !sha.bytes().all(|ch|
+                ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
+            {
+                return refuse("native Clang header has invalid content digest");
+            }
+            let reference = match SourceRef::from_git(repo, &commit, path) {
+                Ok(reference) => reference,
+                // A generated or untracked header cannot carry a Git source
+                // identity, even if a native producer reported its contents.
+                Err(_) => continue,
+            };
+            let contents = blobs.read_capped(&reference.blob, 4 * 1024 * 1024)?;
+            if digest::sha256(&contents) != sha {
+                return refuse("tracked Clang header content differs from Git blob");
+            }
+            observations.push(Observation {
+                receipt_id: receipt_id.clone(),
+                subject_id: Subject::Source(reference.clone()).id()?,
+                native_kind: "NATIVE_CONFIGURED_HEADER".to_owned(),
+                payload: obj(&[
+                    ("source", source_value(&reference)),
+                    ("subject", subject.clone()),
+                    ("scope", Value::string(scope)),
+                    ("producer", Value::string(producer)),
+                    ("role", Value::string("header")),
+                    ("sha256", Value::string(sha)),
+                ]),
+            });
         }
         observations.push(Observation {
             receipt_id: receipt_id.clone(),

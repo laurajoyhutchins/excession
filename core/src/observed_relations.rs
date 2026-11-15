@@ -345,7 +345,7 @@ fn select_native(
         "SELECT document FROM evidence_observation_v1 WHERE snapshot_id=? ORDER BY observation_id",
         &[Param::Text(snapshot)],
     )?;
-    if obs.len() > 1024 {
+    if obs.len() > 4096 {
         return refuse("selected native observations exceed composition budget");
     }
     for row in obs {
@@ -356,7 +356,10 @@ fn select_native(
                 .as_bytes(),
         )?;
         let kind = entry.get("native_kind")?.str()?;
-        if !matches!(kind, "NATIVE_SELECTED_INPUT" | "NATIVE_CONFIGURED_TU") {
+        if !matches!(
+            kind,
+            "NATIVE_SELECTED_INPUT" | "NATIVE_CONFIGURED_TU" | "NATIVE_CONFIGURED_HEADER"
+        ) {
             return refuse("unknown selected native observation kind");
         }
         let payload = entry.get("payload")?;

@@ -137,8 +137,11 @@ content-hashed headers. Both produce `excession.native-analysis.v1`,
 including the selected Git commit/tree and source blob, producer evidence,
 input inventory, an explicit partial-coverage status, and a consistent
 human summary. Go's declared input membership is **not a symbol call graph**.
-Clang's external compilation database, system/generated headers and
-compiler configuration are **not independently Git-authenticated**.
+Clang's **tracked** header observations are admitted only when the
+reported SHA-256 matches the historical Git blob. They appear as
+configuration-scoped observations for impact and agent context, never as
+invented direct-call edges. External/generated headers and the compilation
+database remain **not independently Git-authenticated**.
 Results are trusted-local observations rather than independently attested
 build receipts. No source code or build process is executed without
 `--trusted-local`; this is not a sandbox.

@@ -166,24 +166,7 @@ pub(crate) fn plan_from_report(report: &Value) -> Result<Value> {
         if !found_locations.insert(finding.clone()) {
             return refuse("duplicate producer candidate locations");
         }
-        let rust_action = provider == "scip"
-            && item.get("kind")?.str()? == "reciprocal_symbol_references"
-            && report
-                .get("indexer")
-                .ok()
-                .and_then(|value| value.get("name").ok())
-                .and_then(|value| value.str().ok())
-                == Some("rust-analyzer")
-            && item
-                .get("sources")?
-                .array_ref()?
-                .iter()
-                .all(|source| source.get("language").and_then(Value::str).ok() == Some("rust"));
-        let operation = if rust_action {
-            "RUST_AST_EXTRACTION_IF_SUPPORTED"
-        } else {
-            "NO_NATIVE_EDIT_PRODUCER"
-        };
+        let operation = crate::improve::edit_capability(report, item)?;
         candidates.push(obj(&[
             ("candidate_id", Value::string(id)),
             ("kind", item.get("kind")?.clone()),

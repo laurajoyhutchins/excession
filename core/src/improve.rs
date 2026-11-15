@@ -1,247 +1,16 @@
-//! Bounded improvement planning and measured structural deltas.
-//! These are Git-bound observations, never proofs of dead code or safe edits.
+//! Improvement orchestration over native, source-bound evidence producers.
+//! The normalized candidate and evaluation model is language-neutral.
 use crate::json::{self, Value, obj};
-use crate::{Result, change_inventory, git, refuse, scip_refactor};
+use crate::improve_generic::{evaluate_reports, plan_from_report, report_ids as ids, MAX_PLAN_BYTES};
+use crate::sqlite::Db;
+use crate::{Result, change_inventory, git, refactor, refuse, scip_refactor};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
-type Pair = (String, String);
-
-fn ids(report: &Value, field: &str) -> Result<BTreeSet<String>> {
-    let mut result = BTreeSet::new();
-    for id in report.get("triage")?.get(field)?.array_ref()? {
-        if !result.insert(id.str()?.to_owned()) {
-            return refuse("duplicate native triage candidate ID");
-        }
-    }
-    Ok(result)
-}
-
-fn pairs(report: &Value) -> Result<BTreeSet<Pair>> {
-    if report.get("schema")?.str()? != "excession.scip-refactor.v1" {
-        return refuse("improvement requires the native SCIP refactor report");
-    }
-    let mut result = BTreeSet::new();
-    for candidate in report.get("candidates")?.array_ref()? {
-        if candidate.get("kind")?.str()? != "reciprocal_symbol_references" {
-            continue;
-        }
-        let sources = candidate.get("sources")?.array_ref()?;
-        if sources.len() != 2 {
-            return refuse("reciprocal candidate must have two sources");
-        }
-        let left = sources[0].get("path")?.str()?;
-        let right = sources[1].get("path")?.str()?;
-        if left == right {
-            return refuse("reciprocal candidate contains the same source twice");
-        }
-        let pair = if left < right {
-            (left.to_owned(), right.to_owned())
-        } else {
-            (right.to_owned(), left.to_owned())
-        };
-        if !result.insert(pair) {
-            return refuse("duplicate reciprocal source pair in SCIP report");
-        }
-    }
-    Ok(result)
-}
-
-fn coverage_count(report: &Value, field: &str) -> Result<i64> {
-    let value = report.get("coverage")?.get(field)?.integer()?;
-    if value < 0 {
-        return refuse("negative SCIP coverage count");
-    }
-    Ok(value)
-}
-
-/// Rank real native observations without inventing semantic confidence.
-/// Candidate IDs and source evidence are preserved verbatim.
-fn plan_from_report(report: &Value) -> Result<Value> {
-    let review = ids(report, "review_candidate_ids")?;
-    let structural = ids(report, "likely_structural_module_candidate_ids")?;
-    if !review.is_disjoint(&structural) {
-        return refuse("native triage partitions overlap");
-    }
-    let mut found = BTreeSet::new();
-    let mut proposals = Vec::new();
-    for candidate in report.get("candidates")?.array_ref()? {
-        let id = candidate.get("candidate_id")?.str()?;
-        if !found.insert(id.to_owned()) {
-            return refuse("duplicate native candidate identity");
-        }
-        if !review.contains(id) && !structural.contains(id) {
-            return refuse("native candidate missing from triage");
-        }
-        let priority = if review.contains(id) {
-            "REVIEW_NATIVE_REFERENCES"
-        } else {
-            "LIKELY_MODULE_DECLARATION"
-        };
-        proposals.push(obj(&[
-            ("candidate_id", Value::string(id)),
-            ("kind", candidate.get("kind")?.clone()),
-            ("priority", Value::string(priority)),
-            ("native_evidence", candidate.clone()),
-            ("automatic_deletion_authorized", Value::Bool(false)),
-            ("next_action", Value::string("Select a supported native refactor action and verify its result in an isolated candidate; never delete on reference absence alone.")),
-        ]));
-    }
-    if found.len() != review.len() + structural.len() {
-        return refuse("native triage contains an absent candidate ID");
-    }
-    proposals.sort_by_key(|item| {
-        let priority = item.get("priority").and_then(Value::str).unwrap_or("");
-        (priority != "REVIEW_NATIVE_REFERENCES", item.canonical())
-    });
-    let plan = obj(&[
-        ("schema", Value::string("excession.improvement-plan.v1")),
-        (
-            "status",
-            Value::string("OBSERVATIONS_REQUIRE_TRANSFORMATION"),
-        ),
-        ("source_commit", report.get("source_commit")?.clone()),
-        ("source_tree", report.get("source_tree")?.clone()),
-        ("native_report_id", report.get("report_id")?.clone()),
-        ("coverage", report.get("coverage")?.clone()),
-        ("candidate_count", Value::number(proposals.len())),
-        ("candidates", Value::array(proposals)),
-        ("automatic_deletion_authorized", Value::Bool(false)),
-        ("ready_to_merge", Value::Bool(false)),
-    ])
-    .stamp_id("plan_id")?;
-    if plan.canonical().len() > MAX_PLAN_BYTES {
-        return refuse("improvement plan exceeds 4 MiB; narrow the source index");
-    }
-    Ok(plan)
-}
-
 pub fn plan(repo: &Path, revision: &str, index: &Path, prefix: Option<&str>) -> Result<Value> {
     let report = scip_refactor::suggest_with_prefix(repo, revision, index, prefix)?;
     plan_from_report(&report)
-}
-
-fn changed_paths(inventory: &Value) -> Result<BTreeSet<String>> {
-    let mut paths = BTreeSet::new();
-    for item in inventory.get("changes")?.array_ref()? {
-        for field in ["before", "after"] {
-            let source = item.get(field)?;
-            if source != &Value::Null {
-                paths.insert(source.get("path")?.str()?.to_owned());
-            }
-        }
-    }
-    Ok(paths)
-}
-
-fn pair_values(pairs: impl IntoIterator<Item = Pair>) -> Value {
-    Value::array(
-        pairs
-            .into_iter()
-            .map(|(left, right)| Value::array([Value::string(left), Value::string(right)])),
-    )
-}
-
-/// Compare stable path pairs, not content-derived IDs that necessarily change
-/// when a source blob changes. Reindexing can make relationships disappear, so
-/// we report a structural observation with remaining verification obligations.
-fn evaluate_reports(
-    before: &Value,
-    after: &Value,
-    inventory: &Value,
-    original_plan: &Value,
-) -> Result<Value> {
-    let expected = plan_from_report(before)?;
-    if &expected != original_plan || !original_plan.content_id_matches("plan_id")? {
-        return refuse("improvement plan does not match replayed base SCIP evidence");
-    }
-    if before.get("source_commit")? != inventory.get("base_commit")?
-        || before.get("source_tree")? != inventory.get("base_tree")?
-        || after.get("source_commit")? != inventory.get("head_commit")?
-        || after.get("source_tree")? != inventory.get("head_tree")?
-    {
-        return refuse("native source revisions do not match Git change inventory");
-    }
-    let old = pairs(before)?;
-    let new = pairs(after)?;
-    let modified = changed_paths(inventory)?;
-    // Moving one endpoint to a new source file can erase a reciprocal pair
-    // without eliminating an implementation or reducing maintenance debt.
-    let mut added_rust_sources = BTreeSet::new();
-    for change in inventory.get("changes")?.array_ref()? {
-        if change.get("kind")?.str()? == "ADDED" {
-            let added = change.get("after")?.get("path")?.str()?;
-            git::validate_path(added)?;
-            if added.ends_with(".rs") {
-                added_rust_sources.insert(added.to_owned());
-            }
-        }
-    }
-    let removed: BTreeSet<_> = old.difference(&new).cloned().collect();
-    let added: BTreeSet<_> = new.difference(&old).cloned().collect();
-    let unexplained = removed
-        .iter()
-        .filter(|(a, b)| !modified.contains(a) && !modified.contains(b))
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let before_documents = coverage_count(before, "indexed_documents")?;
-    let after_documents = coverage_count(after, "indexed_documents")?;
-    let before_unresolved = coverage_count(before, "unresolved_references")?;
-    let after_unresolved = coverage_count(after, "unresolved_references")?;
-    let coverage_regressed =
-        after_documents < before_documents || after_unresolved > before_unresolved;
-    let status = if coverage_regressed || !unexplained.is_empty() {
-        "INCONCLUSIVE_EVIDENCE_CHANGE"
-    } else if !removed.is_empty() && !added_rust_sources.is_empty() {
-        "STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED"
-    } else if !removed.is_empty() && added.is_empty() {
-        "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED"
-    } else if !removed.is_empty() {
-        "MIXED_STRUCTURAL_CHANGE"
-    } else {
-        "NO_STRUCTURAL_REDUCTION_OBSERVED"
-    };
-    obj(&[
-        (
-            "schema",
-            Value::string("excession.improvement-evaluation.v1"),
-        ),
-        ("status", Value::string(status)),
-        ("base_commit", inventory.get("base_commit")?.clone()),
-        ("candidate_commit", inventory.get("head_commit")?.clone()),
-        ("change_inventory_id", inventory.get("report_id")?.clone()),
-        ("plan_id", original_plan.get("plan_id")?.clone()),
-        ("base_native_report_id", before.get("report_id")?.clone()),
-        (
-            "candidate_native_report_id",
-            after.get("report_id")?.clone(),
-        ),
-        ("reciprocal_pairs_before", Value::number(old.len())),
-        ("reciprocal_pairs_after", Value::number(new.len())),
-        ("removed_observed_pairs", pair_values(removed)),
-        ("introduced_observed_pairs", pair_values(added)),
-        ("unexplained_disappearances", pair_values(unexplained)),
-        ("coverage_regressed", Value::Bool(coverage_regressed)),
-        ("source_changes", Value::number(modified.len())),
-        (
-            "introduced_rust_source_paths",
-            Value::array(added_rust_sources.into_iter().map(Value::string)),
-        ),
-        (
-            "obligations",
-            Value::array([
-                Value::string("INDEPENDENT_BUILD_AND_TESTS_REQUIRED"),
-                Value::string("PUBLIC_API_AND_SEMANTIC_COMPATIBILITY_UNVERIFIED"),
-                Value::string("SCIP_COVERAGE_AND_INDEXER_CORRECTNESS_UNVERIFIED"),
-                Value::string("BUILD_PROVENANCE_AND_REA_EVIDENCE_NOT_ATTESTED"),
-            ]),
-        ),
-        ("ready_to_merge", Value::Bool(false)),
-        ("automatic_deletion_authorized", Value::Bool(false)),
-    ])
-    .stamp_id("report_id")
 }
 
 pub struct Evaluation<'a> {
@@ -255,6 +24,21 @@ pub struct Evaluation<'a> {
     pub source_prefix: Option<&'a str>,
 }
 
+/// Plan from Excession's existing indexed Python/JavaScript refactor producer.
+/// The producer authenticates the revision through the Git-backed SQLite index.
+pub fn plan_indexed(db: &Db, name: &str, revision: &str) -> Result<Value> {
+    let report = refactor::suggest(db, name, revision)?;
+    plan_from_report(&report)
+}
+
+fn read_plan(path: &Path) -> Result<Value> {
+    let bytes = fs::read(path).map_err(|e| format!("read improvement plan: {e}"))?;
+    if bytes.len() > MAX_PLAN_BYTES {
+        return refuse("improvement plan exceeds 4 MiB");
+    }
+    json::parse(&bytes)
+}
+
 pub fn evaluate(request: &Evaluation<'_>) -> Result<Value> {
     let base_commit = git::rev(request.base_repo, request.base)?;
     let candidate_commit = git::rev(request.candidate_repo, request.candidate)?;
@@ -264,11 +48,7 @@ pub fn evaluate(request: &Evaluation<'_>) -> Result<Value> {
     {
         return refuse("evaluation requires two different commits available in both Git checkouts");
     }
-    let bytes = fs::read(request.plan).map_err(|e| format!("read improvement plan: {e}"))?;
-    if bytes.len() > MAX_PLAN_BYTES {
-        return refuse("improvement plan exceeds 4 MiB");
-    }
-    let saved = json::parse(&bytes)?;
+    let saved = read_plan(request.plan)?;
     let before = scip_refactor::suggest_with_prefix(
         request.base_repo,
         &base_commit,
@@ -283,6 +63,28 @@ pub fn evaluate(request: &Evaluation<'_>) -> Result<Value> {
     )?;
     let inventory =
         change_inventory::inventory(request.candidate_repo, &base_commit, &candidate_commit)?;
+    evaluate_reports(&before, &after, &inventory, &saved)
+}
+
+/// Evaluate indexed Python/JavaScript evidence on two pinned commits.
+/// The same normalized comparison is used by the SCIP producer. No edits.
+pub fn evaluate_indexed(
+    repo: &Path,
+    db: &Db,
+    name: &str,
+    base: &str,
+    candidate: &str,
+    plan: &Path,
+) -> Result<Value> {
+    let inventory = change_inventory::inventory(repo, base, candidate)?;
+    let base_commit = inventory.get("base_commit")?.str()?;
+    let candidate_commit = inventory.get("head_commit")?.str()?;
+    if base_commit == candidate_commit {
+        return refuse("improvement evaluation requires two distinct commits");
+    }
+    let before = refactor::suggest(db, name, base_commit)?;
+    let after = refactor::suggest(db, name, candidate_commit)?;
+    let saved = read_plan(plan)?;
     evaluate_reports(&before, &after, &inventory, &saved)
 }
 
@@ -406,11 +208,7 @@ pub fn trial(request: &Trial<'_>) -> Result<Value> {
     {
         return refuse("native refactor report changed since its source-bound audit");
     }
-    let plan_bytes = fs::read(request.plan).map_err(|e| format!("read improvement plan: {e}"))?;
-    if plan_bytes.len() > MAX_PLAN_BYTES {
-        return refuse("improvement plan exceeds 4 MiB");
-    }
-    let original_plan = json::parse(&plan_bytes)?;
+    let original_plan = read_plan(request.plan)?;
     if plan_from_report(&report)? != original_plan
         || !original_plan.content_id_matches("plan_id")?
     {
@@ -698,7 +496,7 @@ mod tests {
         );
         assert_eq!(
             result
-                .get("introduced_rust_source_paths")
+                .get("introduced_source_paths")
                 .unwrap()
                 .array_ref()
                 .unwrap()
@@ -755,6 +553,6 @@ mod tests {
             "candidates".into(),
             Value::array([candidate.clone(), candidate]),
         );
-        assert!(pairs(&duplicate).is_err());
+        assert!(crate::improve_generic::findings(&duplicate).is_err());
     }
 }

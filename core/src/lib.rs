@@ -7,7 +7,6 @@ pub mod agent;
 pub mod agent_locate;
 mod agent_locate_cache;
 pub mod analyze;
-pub mod language_analysis;
 pub mod benchmark;
 #[path = "source/change_inventory.rs"]
 pub mod change_inventory;
@@ -15,6 +14,7 @@ pub mod compiler_clang;
 pub mod configured_store;
 pub mod contracts;
 pub mod digest;
+pub mod language_analysis;
 
 pub mod discovery;
 pub mod doctor;

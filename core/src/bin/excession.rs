@@ -741,7 +741,9 @@ fn execute(args: &[String]) -> Result<Response> {
             if opt.get_or("json", "false") == "true" {
                 Ok(json(report))
             } else {
-                Ok(Response::Message(excession::language_analysis::human(&report)?))
+                Ok(Response::Message(excession::language_analysis::human(
+                    &report,
+                )?))
             }
         }
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),

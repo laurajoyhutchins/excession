@@ -90,10 +90,22 @@ mod tests {
             static_module_producer("web/index.ts").unwrap().name,
             "javascript"
         );
-        assert_eq!(static_module_producer("web/view.tsx").unwrap().name, "javascript");
-        assert_eq!(static_module_producer("web/view.jsx").unwrap().name, "javascript");
-        assert_eq!(static_module_producer("web/view.mts").unwrap().name, "javascript");
-        assert_eq!(static_module_producer("web/view.cts").unwrap().name, "javascript");
+        assert_eq!(
+            static_module_producer("web/view.tsx").unwrap().name,
+            "javascript"
+        );
+        assert_eq!(
+            static_module_producer("web/view.jsx").unwrap().name,
+            "javascript"
+        );
+        assert_eq!(
+            static_module_producer("web/view.mts").unwrap().name,
+            "javascript"
+        );
+        assert_eq!(
+            static_module_producer("web/view.cts").unwrap().name,
+            "javascript"
+        );
         assert_eq!(static_module_producer("src/main.rs").map(|p| p.name), None);
         assert_eq!(
             static_module_producer("node_modules/pkg/a.js").map(|p| p.name),

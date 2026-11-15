@@ -70,8 +70,14 @@ mod tests {
     fn mixed_python_and_javascript_paths_never_alias() {
         let roots = &["."];
         let paths = [
-            "src/app.py", "src/app.js", "src/app.jsx", "src/app.ts",
-            "src/app.tsx", "src/app.mjs", "src/app.cjs", "src/app.mts",
+            "src/app.py",
+            "src/app.js",
+            "src/app.jsx",
+            "src/app.ts",
+            "src/app.tsx",
+            "src/app.mjs",
+            "src/app.cjs",
+            "src/app.mts",
             "src/app.cts",
         ];
         let names = paths
@@ -87,6 +93,9 @@ mod tests {
     #[test]
     fn python_package_name_does_not_alias_js_index_module() {
         assert_eq!(module_name("pkg/__init__.py", &["."]).unwrap().0, "pkg");
-        assert_eq!(module_name("pkg/index.js", &["."]).unwrap().0, "pkg.index.js");
+        assert_eq!(
+            module_name("pkg/index.js", &["."]).unwrap().0,
+            "pkg.index.js"
+        );
     }
 }

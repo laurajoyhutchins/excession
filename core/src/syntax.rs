@@ -15,18 +15,18 @@ const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 
 fn eligible(path: &str) -> bool {
     [
-        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".rs", ".go", ".c", ".h", ".cc",
-        ".cpp", ".hpp", ".java", ".kt", ".kts", ".cs", ".rb", ".php", ".swift", ".scala", ".sh",
-        ".ex", ".exs", ".json", ".yaml", ".yml", ".toml", ".sql",
+        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".rs", ".go", ".c",
+        ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".kts", ".cs", ".rb", ".php", ".swift",
+        ".scala", ".sh", ".ex", ".exs", ".json", ".yaml", ".yml", ".toml", ".sql",
     ]
     .iter()
     .any(|extension| path.ends_with(extension))
 }
 
 fn selected(path: &str, roots: &[&str]) -> bool {
-    roots.iter().any(|root| {
-        *root == "." || path == *root || path.starts_with(&format!("{root}/"))
-    })
+    roots
+        .iter()
+        .any(|root| *root == "." || path == *root || path.starts_with(&format!("{root}/")))
 }
 
 fn line_count(data: &[u8]) -> usize {

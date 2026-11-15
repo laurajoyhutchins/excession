@@ -229,19 +229,34 @@ fn indexed_javascript_improvement_preserves_language_specific_observations() {
     }));
 
     let plan = data(&[
-        "improve", "plan", "--producer", "indexed",
-        "--db", f.db.to_str().unwrap(), "--name", "fixture",
-        "--rev", &f.commit,
+        "improve",
+        "plan",
+        "--producer",
+        "indexed",
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--rev",
+        &f.commit,
     ]);
     assert_eq!(str_at(&plan, "producer"), "indexed");
     assert_eq!(
         plan.get("candidate_count").unwrap().integer().unwrap(),
         candidates.len() as i64
     );
-    assert!(items(&plan, "candidates").iter().all(|candidate| {
-        str_at(candidate, "edit_capability") == "NO_NATIVE_EDIT_PRODUCER"
-    }));
-    assert!(!plan.get("automatic_deletion_authorized").unwrap().bool().unwrap());
+    assert!(
+        items(&plan, "candidates")
+            .iter()
+            .all(|candidate| { str_at(candidate, "edit_capability") == "NO_NATIVE_EDIT_PRODUCER" })
+    );
+    assert!(
+        !plan
+            .get("automatic_deletion_authorized")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
 }
 
 #[test]

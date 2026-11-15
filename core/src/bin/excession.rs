@@ -30,6 +30,10 @@ use std::path::Path;
 
 #[path = "excession/cli.rs"]
 mod cli;
+#[path = "excession/agent_init.rs"]
+mod agent_init;
+#[path = "excession/mcp.rs"]
+mod mcp;
 #[path = "excession/graph.rs"]
 mod graph_cli;
 #[path = "excession/scan.rs"]
@@ -707,6 +711,14 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown history command {sub}")),
         },
+        [top] if top == "mcp" => {
+            mcp::serve(
+                Path::new(opt.get_or("repo", ".")),
+                opt.0.get("roots").map(String::as_str),
+                opt.0.get("db").map(String::as_str),
+            )?;
+            Ok(Response::Bytes(Vec::new()))
+        }
         [top, sub] if top == "agent" => {
             let limit = opt
                 .get_or("limit", "32")
@@ -715,6 +727,13 @@ fn execute(args: &[String]) -> Result<Response> {
             let roots = opt.0.get("roots").map(String::as_str);
             let db = opt.0.get("db").map(String::as_str);
             match sub.as_str() {
+                "init" => Ok(Response::CanonicalJson(
+                    serde_json::to_string(&agent_init::init(
+                        Path::new(opt.get_or("repo", ".")),
+                        opt.get_or("client", "both"),
+                        opt.get_or("write", "false") == "true",
+                    )?).map_err(|err| format!("serialize agent onboarding: {err}"))?,
+                )),
                 "locate" => {
                     let budget = opt
                         .get_or("index-segments", "8")

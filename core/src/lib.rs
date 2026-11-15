@@ -11,6 +11,7 @@ pub mod benchmark;
 #[path = "source/change_inventory.rs"]
 pub mod change_inventory;
 pub mod compiler_clang;
+pub mod concepts;
 pub mod configured_store;
 pub mod contracts;
 pub mod digest;

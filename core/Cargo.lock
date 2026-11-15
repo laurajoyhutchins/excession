@@ -288,6 +288,7 @@ dependencies = [
  "clap",
  "jsonschema",
  "libc",
+ "percent-encoding",
  "rusqlite",
  "serde_json",
  "sha1",

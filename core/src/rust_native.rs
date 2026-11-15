@@ -168,7 +168,7 @@ pub fn scan(
         .get("project_root")
         .or_else(|_| metadata.get("projectRoot"))?
         .str()?;
-    let expected = format!("file://{}", workspace.display());
+    let expected = scip_refactor::scip_project_root_uri(&workspace)?;
     if project_root != expected {
         return refuse("native SCIP project_root differs from the selected Cargo workspace");
     }

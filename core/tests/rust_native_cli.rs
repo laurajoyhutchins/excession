@@ -73,7 +73,7 @@ impl Fixture {
         let root = repo.canonicalize().unwrap();
         let index = serde_json::json!({
             "metadata": {
-                "project_root": format!("file://{}", root.display()),
+                "project_root": format!("file://{}", root.display()).replace(" ", "%20"),
                 "tool_info": {"name":"rust-analyzer", "version":"test"}
             },
             "documents": [

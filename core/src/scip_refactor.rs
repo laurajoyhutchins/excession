@@ -3,6 +3,7 @@
 use crate::git;
 use crate::json::{self, Value, obj};
 use crate::{Result, refuse};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -17,6 +18,27 @@ const MAX_BLOB_BYTES: usize = 512 * 1024;
 const MAX_SOURCE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CANDIDATES: usize = 128;
 const MAX_REFERENCES_PER_CANDIDATE: usize = 100;
+
+const SCIP_URI_ESCAPE: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'%')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'\u0060')
+    .add(b'{')
+    .add(b'}');
+
+/// Encode a canonical on-disk workspace as a SCIP file URI. Reuse the
+/// established percent-encoding crate rather than comparing raw display
+/// paths, which fail for spaces and special characters.
+pub fn scip_project_root_uri(path: &Path) -> Result<String> {
+    let text = path.to_str().ok_or("non-UTF8 SCIP workspace path")?;
+    Ok(format!("file://{}", utf8_percent_encode(text, SCIP_URI_ESCAPE)))
+}
+
 
 #[derive(Clone)]
 struct Document {
@@ -330,13 +352,11 @@ fn analyze_bytes(
     let parsed = json::parse(bytes)?;
     let metadata = parsed.get("metadata")?;
     if let Some(prefix) = source_prefix {
-        let expected_root = format!(
-            "file://{}",
-            repo.canonicalize()
+        let expected_root = scip_project_root_uri(
+            &repo.canonicalize()
                 .map_err(|e| format!("SCIP checkout root: {e}"))?
-                .join(prefix)
-                .display()
-        );
+                .join(prefix),
+        )?;
         let actual_root = property(metadata, "project_root", "projectRoot")
             .ok_or("SCIP nested index lacks project_root")?
             .str()?;
@@ -887,5 +907,15 @@ mod tests {
         let item = candidate(payload).unwrap();
         assert_eq!(item.get("candidate_id").unwrap().str().unwrap(), expected);
         assert!(item.get("triage").is_err());
+    }
+}
+
+#[cfg(test)]
+mod file_uri_tests {
+    use super::*;
+    #[test]
+    fn project_root_uri_encodes_spaces_and_url_delimiters() {
+        let result = scip_project_root_uri(Path::new("/tmp/rust source/#module%.rs")).unwrap();
+        assert_eq!(result, "file:///tmp/rust%20source/%23module%25.rs");
     }
 }

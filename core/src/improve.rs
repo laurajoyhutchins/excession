@@ -663,7 +663,12 @@ mod tests {
         let after = report("head", "ht", false, 4, 0);
         let plan = plan_from_report(&before).unwrap();
         let mut changes = inventory(true);
-        let mut items = changes.get("changes").unwrap().array_ref().unwrap().to_vec();
+        let mut items = changes
+            .get("changes")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .to_vec();
         items.push(obj(&[
             ("kind", Value::string("ADDED")),
             ("before", Value::Null),

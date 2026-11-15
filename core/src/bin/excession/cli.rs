@@ -719,6 +719,14 @@ pub(super) fn command() -> Command {
             vec![
                 leaf("plan", &["repo", "rev", "index"], &["source-prefix"]),
                 leaf(
+                    "trial",
+                    &[
+                        "repo", "rev", "index", "report", "plan",
+                        "candidate", "trusted-local",
+                    ],
+                    &["source-prefix", "ast-grep", "symbol", "output"],
+                ),
+                leaf(
                     "evaluate",
                     &[
                         "base-repo", "candidate-repo", "base", "candidate",

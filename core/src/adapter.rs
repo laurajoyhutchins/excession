@@ -284,7 +284,10 @@ pub fn run_tool(mut command: Command, label: &str, timeout: Duration) -> Result<
             let _ = process.wait();
             return refuse(format!("{label} output exceeds byte budget"));
         }
-        if let Some(status) = process.try_wait().map_err(|e| format!("{label} wait: {e}"))? {
+        if let Some(status) = process
+            .try_wait()
+            .map_err(|e| format!("{label} wait: {e}"))?
+        {
             break status;
         }
         if Instant::now() >= deadline {

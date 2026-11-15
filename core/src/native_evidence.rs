@@ -55,8 +55,9 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     let scope = report.get("scope")?.str()?;
     let valid = match language {
         "go" => producer == "go-list" && scope == "COMPILER_SELECTED_INPUTS_ONLY",
-        "java" => producer == "javac-symbols"
-            && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL",
+        "java" => {
+            producer == "javac-symbols" && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL"
+        }
         "c" | "cpp" => producer == "clang-ast" && scope == "CONFIGURED_TU_NOT_BUILD_VERIFIED",
         _ => false,
     };
@@ -99,8 +100,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             || nested.get("source_commit")?.str()? != commit
             || nested.get("source_tree")?.str()? != tree
             || nested.get("subject")?.str()? != subject_path
-            || nested.get("configuration")?.str()?
-                != "EMPTY_CLASSPATH_AND_SOURCEPATH_NO_PROCESSORS"
+            || nested.get("configuration")?.str()? != "EMPTY_CLASSPATH_AND_SOURCEPATH_NO_PROCESSORS"
             || nested.get("java_version")?.str()?.is_empty()
             || nested.get("java_version")?.str()?.len() > 100
         {
@@ -158,8 +158,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
         || report.get("input_configurations")?.integer()? != configuration_count as i64
         || (language == "go" && expected_roles.len() != validated.len())
         || (language == "java" && configuration_count != 0)
-        || (matches!(language, "c" | "cpp")
-            && (source_count != 1 || configuration_count != 0))
+        || (matches!(language, "c" | "cpp") && (source_count != 1 || configuration_count != 0))
     {
         return refuse("native evidence input counts or selected source differ");
     }

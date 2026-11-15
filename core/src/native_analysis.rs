@@ -219,14 +219,32 @@ mod tests {
                 .contains("--trusted-local")
         );
         assert!(
-            scan(repo, "HEAD", "a.java", "java", Some(Path::new("compile.json")), None, None, "true")
-                .unwrap_err()
-                .contains("Java uses the installed JDK")
+            scan(
+                repo,
+                "HEAD",
+                "a.java",
+                "java",
+                Some(Path::new("compile.json")),
+                None,
+                None,
+                "true"
+            )
+            .unwrap_err()
+            .contains("Java uses the installed JDK")
         );
         assert!(
-            scan(repo, "HEAD", "a.go", "go", None, Some("clang"), None, "true")
-                .unwrap_err()
-                .contains("does not use")
+            scan(
+                repo,
+                "HEAD",
+                "a.go",
+                "go",
+                None,
+                Some("clang"),
+                None,
+                "true"
+            )
+            .unwrap_err()
+            .contains("does not use")
         );
         assert!(
             scan(repo, "HEAD", "a.cpp", "cpp", None, None, None, "true")

@@ -16,11 +16,8 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
-import tempfile
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 SCHEMA = "excession.native-impact-baselines.v1"
@@ -114,6 +111,8 @@ def precision_recall(predicted: set[str], reference: set[str]) -> dict:
         "recall": round(len(true_positive) / len(reference), 5) if reference else None,
         "missing": sorted(missing),
         "extra": sorted(extra),
+        "reference_paths": sorted(reference),
+        "predicted_paths": sorted(predicted),
     }
 
 
@@ -323,9 +322,7 @@ def one_case(case: dict, binary: Path, root: Path) -> dict:
         "matching_configured_observation_count": len(matching_configured),
         "safe_to_skip_unlisted_tests": impact["safe_to_skip_unlisted_tests"],
         "native_reference_candidate_comparison": (
-            precision_recall(candidates, set(classification["native_vs_oracle"]["missing"])
-                             | {x["from"]["path"] for x in producer["observation"]["references"]
-                                if x["to"]["path"] == case["changed_path"]})
+            precision_recall(candidates, set(classification["native_vs_oracle"]["reference_paths"]))
             if case["language"] == "java" else None
         ),
     }

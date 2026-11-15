@@ -279,7 +279,7 @@ jobs:
           assert result['status'] == 'MATCH', result
           assert test_path not in result['changed_paths'], result['changed_paths']
           assert test_path in result['oracle'][candidate]['expected_affected_paths']
-          assert test_path in result['actual'][candidate]
+          assert test_path in result['compact_source_impacts']['actual'][candidate]
           receipt = {
               'schema': 'excession.external-pytest-controlled-regression.v1',
               'base_commit': fixed,
@@ -290,7 +290,7 @@ jobs:
               'excession_flagged_unmodified_test': True,
               'independent_behavioral_failure': 'IndexError: tuple index out of range',
               'oracle_affected_paths': len(result['oracle'][candidate]['expected_affected_paths']),
-              'excession_affected_paths': len(result['actual'][candidate]),
+              'excession_affected_paths': len(result['compact_source_impacts']['actual'][candidate]),
               'limitations': 'Controlled seeded regression, not a recorded mistake by an independent coding agent. Full AST oracle has the same reachability.'
           }
           (out / 'controlled-regression.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')

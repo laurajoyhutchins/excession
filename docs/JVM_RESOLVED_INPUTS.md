@@ -6,7 +6,28 @@ scripts, or dependency resolution itself. Neither build system's metadata
 is intrinsically trusted, and Excession does not claim to authenticate
 which build tool produced it.
 
-Provide a JSON file external to the source checkout:
+For an existing trusted Maven or Gradle workflow that already exports its
+resolved **compile classpath** as a single platform-separated line of
+absolute JAR paths, Excession can assemble the JSON receipt without
+running that workflow itself:
+
+```sh
+excession evidence jvm-inputs-capture \\
+  --repo . --rev HEAD \\
+  --source-prefix src/main/java \\
+  --provider-claim maven \\
+  --classpath-file /tmp/trusted-compile-classpath.txt \\
+  --release 17 > /tmp/jvm-inputs.json
+```
+
+Use `--provider-claim gradle` for a classpath exported by a trusted
+Gradle build. The export must contain the *actual resolved compile
+classpath*, not a dependency declaration or the runtime classpath.
+The command hashes the JARs and enumerates the pinned Java source set;
+it does **not** execute either build tool, verify the exporter, or
+attest that the classpath is complete. Omit `--release` to record null.
+
+Equivalently, provide a JSON file external to the source checkout:
 
 ```json
 {

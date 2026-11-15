@@ -25,6 +25,35 @@ likely crate-root module-declaration candidates. It does not declare any
 candidate dead or automatically removable. The report contains a stable
 `plan_id` binding the complete evidence and ordering.
 
+## Preview or apply a single supported native extraction
+
+An explicit trial selects one refactor hypothesis, then derives eligible Rust
+function targets from its exact SCIP symbol references. The existing
+`extract-shared-module` recipe still checks actual top-level syntax, public
+visibility, local references and byte ranges. An ambiguous selection is not
+silently resolved by arbitrary ranking.
+
+```sh
+excession improve trial \
+  --repo /work/base --rev BASE_SHA \
+  --index /tmp/base.scip.json --report /tmp/base-native.json \
+  --plan /tmp/improve-plan.json --candidate NATIVE_CANDIDATE_ID \
+  --ast-grep /opt/pinned/ast-grep --source-prefix core \
+  --trusted-local true
+```
+
+The default is a read-only preview. Supply `--output /absolute/new/worktree`
+to apply the *same* validated plan in a new detached worktree. If multiple
+syntactically supported targets remain, use `--symbol exact_function_name`
+to narrow the candidate; a missing or ambiguous action still refuses. The
+native plan ID is checked across preview and application.
+
+`--trusted-local true` explicitly authorizes execution of the installed
+ast-grep binary. It is **not** a sandbox. Run unfamiliar repositories in an
+external isolated worker. These trials do not run Cargo, execute tests, commit
+the generated code, or assert that extracting a function actually improved
+the architecture.
+
 ## Compare a candidate after a supported transformation
 
 Use the existing `excession refactor rust-assist`,

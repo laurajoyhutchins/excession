@@ -188,7 +188,7 @@ fn run() -> Result<(), String> {
     let (commits, merges) = independently_check(&repo, &plan_json)?;
     let rev_count: usize = git(&repo, &["rev-list", "--count", "HEAD"])?
         .trim().parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
-    let all_refs: usize = git(&repo, &["rev-list", "--count", "--all"])?
+    let all_refs: usize = git(&repo, &["rev-list", "--count", "--all", "HEAD"])?
         .trim().parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
     if rev_count != commits || all_refs < commits {
         return Err("independent history counts disagree".into());

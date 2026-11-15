@@ -1126,6 +1126,13 @@ fn execute(args: &[String]) -> Result<Response> {
                     }
                     _ => return refuse("improve producer must be scip or indexed"),
                 })),
+                "replay" => Ok(json(improve_edits::execute(&improve_edits::Request {
+                    repo: opt.path("repo"),
+                    revision: opt.get("rev"),
+                    plan: opt.path("plan"),
+                    edits: opt.path("edits"),
+                    output: opt.0.get("output").map(Path::new),
+                })?)),
                 "trial" => {
                     if producer != "scip" {
                         return refuse(

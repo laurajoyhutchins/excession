@@ -32,7 +32,7 @@ fn hybrid(lexical: &[String], neighbors: &[String]) -> Vec<String> {
         selected.push(first.clone());
     }
     for path in neighbors {
-        if selected.len() >= 1 + GRAPH_SLOTS {
+        if selected.len() > GRAPH_SLOTS {
             break;
         }
         if seen.insert(path.clone()) {

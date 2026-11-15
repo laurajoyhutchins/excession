@@ -81,6 +81,46 @@ jobs:
         run: cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --lib native_syntax::tests::prefetched_multi_language_grammars_parse_natively -- --exact
       - name: Build actual Excession binary
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Smoke-test direct native Rust analysis with real SCIP tools
+        env:
+          RUSTUP_TOOLCHAIN: '1.99.1'
+        run: |
+          set -euo pipefail
+          FIXTURE="$RUNNER_TEMP/excession-native-rust-fixture"
+          OUT="$GITHUB_WORKSPACE/self-analysis-artifacts"
+          mkdir -p "$FIXTURE/src" "$OUT"
+          git -C "$FIXTURE" init -q -b main
+          cat > "$FIXTURE/Cargo.toml" <<'TOML'
+          [package]
+          name = "excession-native-smoke"
+          version = "0.1.0"
+          edition = "2024"
+          TOML
+          cat > "$FIXTURE/src/lib.rs" <<'RS'
+          mod helper;
+          pub fn answer() -> u32 { helper::value() }
+          RS
+          cat > "$FIXTURE/src/helper.rs" <<'RS'
+          pub fn value() -> u32 { 42 }
+          RS
+          cargo +1.99.1 generate-lockfile --offline --manifest-path "$FIXTURE/Cargo.toml"
+          git -C "$FIXTURE" add .
+          git -C "$FIXTURE" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm 'pin native Rust fixture'
+          "$GITHUB_WORKSPACE/core/target/debug/excession" analyze rust \
+            --repo "$FIXTURE" --rev HEAD --trusted-local true \
+            --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" \
+            --scip "$RUNNER_TEMP/scip-bin/scip" > "$OUT/native-rust-smoke.json"
+          python3 - "$OUT/native-rust-smoke.json" <<'PY'
+          import json
+          import sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report["schema"] == "excession.scip-observations.v1", report
+          assert report["indexer"]["name"] == "rust-analyzer", report
+          assert report["coverage"]["matched_cross_file_references"] > 0, report["coverage"]
+          assert any(r["from"]["path"] == "src/lib.rs"
+                     and r["to"]["path"] == "src/helper.rs"
+                     for r in report["observations"]), report["observations"]
+          PY
       - name: Adversarial self-analysis reporting tests
         run: python3 -m unittest discover -s tests -p 'test_self_analysis.py' -v
       - name: Create clean source snapshot for self-analysis

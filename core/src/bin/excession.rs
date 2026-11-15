@@ -709,6 +709,14 @@ fn execute(args: &[String]) -> Result<Response> {
             }
         }
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
+        [top, sub] if top == "analyze" && sub == "rust" => Ok(json(excession::rust_native::scan(
+            opt.path("repo"),
+            opt.get_or("rev", "HEAD"),
+            opt.0.get("source-prefix").map(String::as_str),
+            opt.get_or("rust-analyzer", "rust-analyzer"),
+            opt.get_or("scip", "scip"),
+            opt.get("trusted-local"),
+        )?)),
         [top] if top == "analyze" => {
             let repo = Path::new(opt.get_or("path", "."));
             let rev = opt.get_or("rev", "HEAD");

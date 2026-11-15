@@ -108,8 +108,8 @@ pub fn scan(
     if language != "java" && classpath_manifest.is_some() {
         return refuse("--classpath-manifest is only supported by Java native analysis");
     }
-    if language != "java" && source_prefix.is_some() {
-        return refuse("--source-prefix currently applies only to Java native analysis");
+    if !matches!(language, "java" | "rust") && source_prefix.is_some() {
+        return refuse("--source-prefix applies only to Java and Rust native analysis");
     }
     if language == "go" && (compile_db.is_some() || compiler.is_some()) {
         return refuse("Go does not use --compile-db or --compiler");

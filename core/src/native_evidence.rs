@@ -55,7 +55,10 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     let scope = report.get("scope")?.str()?;
     let valid = match language {
         "go" => producer == "go-list" && scope == "COMPILER_SELECTED_INPUTS_ONLY",
-        "rust" => producer == "rust-analyzer-scip" && scope == "SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED",
+        "rust" => {
+            producer == "rust-analyzer-scip"
+                && scope == "SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED"
+        }
         "java" => {
             (producer == "javac-symbols" && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL")
                 || (producer == "javac-configured"
@@ -121,7 +124,12 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             || nested.get("source_tree")?.str()? != tree
             || nested.get("indexer")?.get("name")?.str()? != "rust-analyzer"
             || nested.get("indexer")?.get("version")?.str()?.is_empty()
-            || !nested.get("coverage")?.get("languages")?.array_ref()?.iter().any(|value| value.str().ok() == Some("rust"))
+            || !nested
+                .get("coverage")?
+                .get("languages")?
+                .array_ref()?
+                .iter()
+                .any(|value| value.str().ok() == Some("rust"))
         {
             return refuse("Rust native index lacks a pinned rust-analyzer SCIP identity");
         }
@@ -177,7 +185,8 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
         || report.get("input_configurations")?.integer()? != configuration_count as i64
         || (language == "go" && expected_roles.len() != validated.len())
         || (language == "java" && configuration_count != 0)
-        || (language == "rust" && (source_count != 1 || configuration_count != 0 || validated.len() != 1))
+        || (language == "rust"
+            && (source_count != 1 || configuration_count != 0 || validated.len() != 1))
         || (matches!(language, "c" | "cpp") && (source_count != 1 || configuration_count != 0))
     {
         return refuse("native evidence input counts or selected source differ");
@@ -314,7 +323,9 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
                 let path = item.get("path")?.str()?;
                 git::validate_path(path)?;
                 if item.get("language")?.str()? != "rust" {
-                    return refuse("Rust SCIP observation crosses an unsupported language boundary");
+                    return refuse(
+                        "Rust SCIP observation crosses an unsupported language boundary",
+                    );
                 }
                 if !sources.contains_key(path) {
                     sources.insert(path.to_owned(), SourceRef::from_git(repo, &commit, path)?);
@@ -354,9 +365,21 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
                 ("subject", subject.clone()),
                 ("scope", Value::string(scope)),
                 ("producer", Value::string(producer)),
-                ("role", Value::string("requested-source-not-index-coverage-proof")),
-                ("indexed_documents", nested.get("coverage")?.get("indexed_documents")?.clone()),
-                ("unresolved_references", nested.get("coverage")?.get("unresolved_references")?.clone()),
+                (
+                    "role",
+                    Value::string("requested-source-not-index-coverage-proof"),
+                ),
+                (
+                    "indexed_documents",
+                    nested.get("coverage")?.get("indexed_documents")?.clone(),
+                ),
+                (
+                    "unresolved_references",
+                    nested
+                        .get("coverage")?
+                        .get("unresolved_references")?
+                        .clone(),
+                ),
             ]),
         });
     }

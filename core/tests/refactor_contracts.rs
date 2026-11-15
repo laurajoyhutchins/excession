@@ -209,15 +209,24 @@ fn scip_index() -> Value {
 fn indexed_python_improvement_uses_the_same_evidence_contract_as_scip() {
     let f = Fixture::new("python");
     let plan = data(&[
-        "improve", "plan", "--producer", "indexed",
-        "--db", f.db.to_str().unwrap(), "--name", "fixture",
-        "--rev", &f.commit,
+        "improve",
+        "plan",
+        "--producer",
+        "indexed",
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--rev",
+        &f.commit,
     ]);
     assert_eq!(str_at(&plan, "producer"), "indexed");
     assert_eq!(plan.get("candidate_count").unwrap().integer().unwrap(), 2);
-    assert!(items(&plan, "candidates").iter().all(|candidate| {
-        str_at(candidate, "edit_capability") == "NO_NATIVE_EDIT_PRODUCER"
-    }));
+    assert!(
+        items(&plan, "candidates")
+            .iter()
+            .all(|candidate| { str_at(candidate, "edit_capability") == "NO_NATIVE_EDIT_PRODUCER" })
+    );
     assert!(!plan.get("ready_to_merge").unwrap().bool().unwrap());
 
     let saved = f.tmp.join("improvement.json");
@@ -227,47 +236,120 @@ fn indexed_python_improvement_uses_the_same_evidence_contract_as_scip() {
     fs::write(
         f.repo.join("pkg/b.py"),
         "def shared(value):\n    return value + 1\n",
-    ).unwrap();
+    )
+    .unwrap();
     ok(run("git", &["-C", f.repo(), "add", "pkg/b.py"]));
-    ok(run("git", &[
-        "-C", f.repo(),
-        "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-        "commit", "-qm", "remove one static import candidate",
-    ]));
-    let head = String::from_utf8(ok(run("git", &[
-        "-C", f.repo(), "rev-parse", "HEAD",
-    ]))).unwrap().trim().to_owned();
+    ok(run(
+        "git",
+        &[
+            "-C",
+            f.repo(),
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "remove one static import candidate",
+        ],
+    ));
+    let head = String::from_utf8(ok(run("git", &["-C", f.repo(), "rev-parse", "HEAD"])))
+        .unwrap()
+        .trim()
+        .to_owned();
     ok(cli(&[
-        "index", "--repo", f.repo(), "--db", f.db.to_str().unwrap(),
-        "--name", "fixture", "--rev", &head, "--roots", "pkg",
+        "index",
+        "--repo",
+        f.repo(),
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--rev",
+        &head,
+        "--roots",
+        "pkg",
     ]));
 
     let args = [
-        "improve", "evaluate", "--producer", "indexed",
-        "--repo", f.repo(), "--db", f.db.to_str().unwrap(),
-        "--name", "fixture", "--base", &f.commit, "--candidate", &head,
-        "--plan", saved.to_str().unwrap(),
+        "improve",
+        "evaluate",
+        "--producer",
+        "indexed",
+        "--repo",
+        f.repo(),
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--base",
+        &f.commit,
+        "--candidate",
+        &head,
+        "--plan",
+        saved.to_str().unwrap(),
     ];
     let evaluated = data(&args);
     assert_eq!(str_at(&evaluated, "producer"), "indexed");
-    assert_eq!(str_at(&evaluated, "status"), "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED");
-    assert_eq!(evaluated.get("observed_findings_before").unwrap().integer().unwrap(), 2);
-    assert_eq!(evaluated.get("observed_findings_after").unwrap().integer().unwrap(), 1);
-    assert_eq!(evaluated.get("source_changes").unwrap().integer().unwrap(), 1);
+    assert_eq!(
+        str_at(&evaluated, "status"),
+        "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED"
+    );
+    assert_eq!(
+        evaluated
+            .get("observed_findings_before")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        evaluated
+            .get("observed_findings_after")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        evaluated.get("source_changes").unwrap().integer().unwrap(),
+        1
+    );
     assert!(!evaluated.get("ready_to_merge").unwrap().bool().unwrap());
-    assert!(!evaluated.get("automatic_deletion_authorized").unwrap().bool().unwrap());
+    assert!(
+        !evaluated
+            .get("automatic_deletion_authorized")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
 
     let mut invalid = plan.clone();
-    invalid.entries_mut().unwrap().insert(
-        "candidate_count".into(), Value::number(0),
-    );
+    invalid
+        .entries_mut()
+        .unwrap()
+        .insert("candidate_count".into(), Value::number(0));
     fs::write(&saved, invalid.canonical()).unwrap();
     denied(cli(&args));
     denied(cli(&[
-        "improve", "trial", "--producer", "indexed", "--repo", f.repo(),
-        "--rev", &f.commit, "--index", "unused", "--report", "unused",
-        "--plan", saved.to_str().unwrap(), "--candidate", "untrusted",
-        "--trusted-local", "true",
+        "improve",
+        "trial",
+        "--producer",
+        "indexed",
+        "--repo",
+        f.repo(),
+        "--rev",
+        &f.commit,
+        "--index",
+        "unused",
+        "--report",
+        "unused",
+        "--plan",
+        saved.to_str().unwrap(),
+        "--candidate",
+        "untrusted",
+        "--trusted-local",
+        "true",
     ]));
 }
 

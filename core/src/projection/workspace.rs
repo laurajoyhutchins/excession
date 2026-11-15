@@ -1,6 +1,15 @@
 //! Read-only navigation and bounded materialization of verified Git view manifests.
 //! Materialized files are not executable checkouts.
-use super::*;
+use super::model::{Entry, Plan, authenticate, checked_plan, make_plan, read_plan};
+use crate::json::{Value, obj};
+use crate::{Result, digest, git, refuse};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
+
+const MANIFEST_NAME: &str = "view-manifest.json";
+const MAX_BLOB_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
 
 fn get_entry<'a>(plan: &'a Plan, virtual_path: &str) -> Result<&'a Entry> {
     git::validate_path(virtual_path)?;

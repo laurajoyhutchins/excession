@@ -765,6 +765,54 @@ mod tests {
     }
 
     #[test]
+    fn compiler_reference_candidates_preserve_replay_identity_and_refuse_reinterpretation() {
+        let from = obj(&[("path", Value::string("src/Service.java"))]);
+        let to = obj(&[("path", Value::string("src/Helper.java"))]);
+        let payload = obj(&[
+            ("from", from.clone()),
+            ("to", to.clone()),
+            ("relation", Value::string("JAVAC_RESOLVED_SOURCE_REFERENCE")),
+        ]);
+        let observation = obj(&[
+            ("native_kind", Value::string("NATIVE_JAVA_SYMBOL_REFERENCE")),
+            ("status", Value::string("PRODUCER_SUPPLIED_UNATTESTED")),
+            ("producer", Value::string("native:javac-symbols")),
+            ("source", to.clone()),
+            ("subject", from.clone()),
+            ("native_payload", payload.clone()),
+            ("snapshot_id", Value::string("snapshot")),
+            ("receipt_id", Value::string("receipt")),
+            ("observation_id", Value::string("observation")),
+        ]);
+        let report = obj(&[("configured_observations", Value::array([observation.clone()]))]);
+        let candidates = source_witnesses(
+            &native_java_incoming(&report).unwrap(),
+            &BTreeSet::from(["src/Helper.java".to_owned()]),
+        ).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].get("entity").unwrap().get("path").unwrap().str().unwrap(),
+            "src/Service.java");
+        let evidence = &candidates[0].get("next_hop").unwrap()
+            .get("evidence").unwrap().array_ref().unwrap()[0];
+        assert_eq!(evidence.get("receipt_id").unwrap().str().unwrap(), "receipt");
+
+        let mut forged = observation;
+        forged.entries_mut().unwrap()
+            .insert("subject".to_owned(), obj(&[("path", Value::string("src/Fake.java"))]));
+        assert!(native_java_incoming(&obj(&[
+            ("configured_observations", Value::array([forged])),
+        ])).is_err());
+
+        let other = obj(&[("configured_observations", Value::array([
+            obj(&[("native_kind", Value::string("NATIVE_CONFIGURED_HEADER"))]),
+            obj(&[("native_kind", Value::string("NATIVE_SELECTED_INPUT"))]),
+            obj(&[("native_kind", Value::string("NATIVE_JVM_CLASSPATH_CONFIGURATION"))]),
+        ]))]);
+        assert!(native_java_incoming(&other).unwrap().is_empty(),
+            "Clang headers, Go membership and JAR inventory are not Java references");
+    }
+
+    #[test]
     fn traverses_reverse_import_with_original_evidence() {
         let input = obj(&[(
             "relationships",

@@ -12,6 +12,8 @@ on:
     paths:
       - 'core/examples/history_self_replay.rs'
       - 'core/src/source/history.rs'
+      - 'core/src/source/history_rewrite.rs'
+      - 'core/tests/history_dag_preview.rs'
       - '.github/workflows/history-self-replay.yml'
       - 'docs/HISTORY_REORGANIZATION.md'
 
@@ -67,6 +69,28 @@ jobs:
           cat "$RUNNER_TEMP/history-resource-usage.txt"
           cp "$RUNNER_TEMP/history-resource-usage.txt" \
             "$RUNNER_TEMP/excession-history-self-replay/resources.txt"
+      - name: Build canonical history CLI
+        run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Preview a dependency-safe all-ref Excession DAG rewrite
+        shell: bash
+        run: |
+          set -euo pipefail
+          core/target/debug/excession history preview-dag \
+            --repo "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/excession-history-dag-preview" \
+            --max-commits "$MAX_COMMITS" \
+            > "$RUNNER_TEMP/dag-preview-result.json"
+          cat "$RUNNER_TEMP/dag-preview-result.json"
+          python3 - "$RUNNER_TEMP/dag-preview-result.json" <<'PY'
+          import json, pathlib, sys
+          result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert result["status"] == "ISOLATED_DAG_REWRITE_TREE_VERIFIED"
+          assert result["source_commit_count"] == result["mapped_commit_count"]
+          assert result["synthetic_commit_count"] >= 1
+          assert result["exact_final_source_tree"] is True
+          assert result["original_refs_unchanged"] is True
+          assert result["rewrite_authorized"] is False
+          PY
       - name: Upload immutable source-replay reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -75,4 +99,6 @@ jobs:
           path: |
             ${{ runner.temp }}/excession-history-self-replay/*.json
             ${{ runner.temp }}/excession-history-self-replay/resources.txt
+            ${{ runner.temp }}/excession-history-dag-preview/*.json
+            ${{ runner.temp }}/dag-preview-result.json
           if-no-files-found: warn

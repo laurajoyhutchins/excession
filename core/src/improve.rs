@@ -535,6 +535,53 @@ mod tests {
     }
 
     #[test]
+    fn native_trial_targets_are_bounded_and_source_specific() {
+        let mut native = report("base", "bt", true, 3, 0);
+        native.entries_mut().unwrap().insert(
+            "indexer".into(),
+            obj(&[("name", Value::string("rust-analyzer"))]),
+        );
+        let references = Value::array([
+            obj(&[
+                ("symbol", Value::string("scip rust-analyzer pkg/selected().")),
+                ("to", obj(&[
+                    ("path", Value::string("core/src/a.rs")),
+                    ("language", Value::string("rust")),
+                ])),
+            ]),
+            obj(&[
+                ("symbol", Value::string("scip rust-analyzer pkg/ignored().")),
+                ("to", obj(&[
+                    ("path", Value::string("core/src/lib.rs")),
+                    ("language", Value::string("rust")),
+                ])),
+            ]),
+            obj(&[
+                ("symbol", Value::string("scip rust-analyzer pkg/helper().")),
+                ("to", obj(&[
+                    ("path", Value::string("core/src/a.rs")),
+                    ("language", Value::string("python")),
+                ])),
+            ]),
+        ]);
+        let mut candidate = native.get("candidates").unwrap().array_ref().unwrap()[0].clone();
+        candidate.entries_mut().unwrap().insert("references".into(), references);
+        native.entries_mut().unwrap().insert("candidates".into(), Value::array([candidate]));
+        let targets = extraction_targets(&native, "candidate-a", None).unwrap();
+        assert_eq!(targets, vec![(
+            "core/src/a.rs".to_owned(),
+            "core/src/a_selected_extracted.rs".to_owned(),
+            "selected".to_owned(),
+        )]);
+        assert_eq!(
+            extraction_targets(&native, "candidate-a", Some("selected")).unwrap(),
+            targets
+        );
+        assert!(extraction_targets(&native, "candidate-a", Some("../escape")).is_err());
+        assert!(extraction_targets(&native, "forged-id", None).is_err());
+    }
+
+    #[test]
     fn structural_delta_is_observation_not_merge_authorization() {
         let before = report("base", "bt", true, 3, 0);
         let after = report("head", "ht", false, 3, 0);

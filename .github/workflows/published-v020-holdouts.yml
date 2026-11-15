@@ -2,6 +2,15 @@ name: Published Excession v0.2.0 independent holdout acceptance
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "Frozen complete cohort, or Requests-only diagnostic replay"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - requests
 
 permissions:
   contents: read
@@ -65,13 +74,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/excession-published-holdout
+          case "${{ inputs.scope }}" in
+            all)
+              scope_args=(--fixture itsdangerous --fixture click --fixture requests
+                          --product-fixture itsdangerous --product-fixture click --product-fixture requests)
+              ;;
+            requests)
+              scope_args=(--fixture requests --product-fixture requests)
+              ;;
+            *) echo "Unsupported holdout scope" >&2; exit 2 ;;
+          esac
           python3 benchmarks/experiments/real_fixtures.py \
             --bin installed/excession/excession \
             --manifest benchmarks/fixtures/real-repositories.json \
             --out /tmp/excession-published-holdout/outcomes.json \
-            --repetitions 1 \
-            --fixture itsdangerous --fixture click --fixture requests \
-            --product-fixture itsdangerous --product-fixture click --product-fixture requests
+            --repetitions 1 "${scope_args[@]}"
       - name: Preserve independent receipts, including failures
         if: always()
         uses: actions/upload-artifact@v4

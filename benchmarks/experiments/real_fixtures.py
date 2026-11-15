@@ -302,6 +302,24 @@ def dependency_mutation_checks(
 
 
 
+def choose_distinct_impact_edge(
+    expected: set[tuple[str, str, int, str]],
+    path_by_module: dict[str, str],
+) -> tuple[tuple[str, str, int, str], int]:
+    """Choose a deterministic observable dependent, not a package self-relation.
+
+    The source inventory may contain a package-to-itself candidate (for
+    `from . import sibling`), but changing that package does not make it
+    a *distinct* impacted source. Do not silently exclude those self edges
+    from the source inventory denominator: report their count separately.
+    """
+    distinct = [edge for edge in sorted(expected)
+                if path_by_module[edge[0]] != path_by_module[edge[1]]]
+    if not distinct:
+        raise ValueError("fixture has no independently observed distinct-source import")
+    return distinct[0], len(expected) - len(distinct)
+
+
 def verify_product_workflow(
     binary: Path, repo: Path, work: Path, fixture: dict, commit: str,
     tree: str, objects: dict[str, tuple[str, str]],
@@ -375,7 +393,9 @@ def verify_product_workflow(
         )
 
     # Choose an independently observed edge, not an Excession-selected impact.
-    source_module, target_module, _line, _kind = sorted(expected)[0]
+    (source_module, target_module, _line, _kind), self_edges = (
+        choose_distinct_impact_edge(expected, path_by_module)
+    )
     source_path = path_by_module[source_module]
     target_path = path_by_module[target_module]
     comment = "# Excession pinned fixture change\n" if target_path.endswith(".py") \
@@ -415,7 +435,47 @@ def verify_product_workflow(
         and any(hop["target"]["path"] == target_path for hop in effect["hops"])
     ), None)
     if candidate is None:
-        raise ValueError("independent imported-source change had no candidate dependent")
+        # Persist the *actual* failing candidate evidence before the temporary
+        # checkout disappears. This does not relax the source-oracle predicate.
+        witness = {
+            "schema": "excession.independent-impact-mismatch.v1",
+            "fixture": fixture["name"],
+            "source_commit": commit,
+            "mutation_commit": head,
+            "importing_source": source_path,
+            "imported_source": target_path,
+            "import_line": _line,
+            "import_kind": _kind,
+            "independent_expected_paths": len(expected_paths),
+            "package_self_edges_excluded_only_from_impact_witness": self_edges,
+            "analyze_observed_paths": len(observed_paths),
+            "impact_report_schema": impact.get("schema"),
+            "impact_coverage": impact.get("coverage"),
+            "impact_effect_count": len(impact["effects"]),
+            "all_matching_source_effects": [
+                {"assessment": effect.get("assessment"),
+                 "claim_id": effect.get("claim_id"),
+                 "hops": [hop.get("target", {}).get("path")
+                          for hop in effect.get("hops", [])]}
+                for effect in impact["effects"]
+                if effect.get("entity", {}).get("path") == source_path
+            ][:100],
+            "other_effects_sample": [
+                {"source": effect.get("entity", {}).get("path"),
+                 "assessment": effect.get("assessment"),
+                 "hops": [hop.get("target", {}).get("path")
+                          for hop in effect.get("hops", [])]}
+                for effect in impact["effects"][:30]
+            ],
+        }
+        (work / f"{fixture['name']}-impact-diagnostic.json").write_text(
+            json.dumps(witness, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+        raise ValueError(
+            "independent imported-source change had no candidate dependent: "
+            f"{source_path} -> {target_path} ({_kind}, line {_line}); "
+            f"effects={len(impact['effects'])}; see preserved impact diagnostic"
+        )
     claim_id = candidate["claim_id"]
     if claim_id != canonical_sha256({
         k: v for k, v in candidate.items() if k != "claim_id"
@@ -455,6 +515,7 @@ def verify_product_workflow(
         raise ValueError("mutated source impact report was accepted")
     return {
         "upstream_commit": commit, "local_mutation_commit": head,
+        "package_self_edges_excluded_only_from_impact_witness": self_edges,
         "source_count": len(paths),
         "expected_pair_count": len(expected_paths),
         "observed_pair_count": len(observed_paths),
@@ -573,6 +634,9 @@ def main() -> None:
             "identity are authoritative. Timings are process wall time on one CI host."
         ),
     }
+    # Create the receipt destination before any fixture runs so even a
+    # failed product path can retain its native report and mismatch witness.
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="excession-real-fixtures-") as tmp:
         work = Path(tmp)
         for fixture in selected:
@@ -589,11 +653,20 @@ def main() -> None:
                       f"2 graph mutation detections", flush=True)
             except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired,
                     sqlite3.Error) as exc:
+                fixture_name = fixture.get("name", "<unknown>")
+                preserved = []
+                for suffix in ("impact-diagnostic.json", "impact.json"):
+                    candidate_receipt = work / f"{fixture_name}-{suffix}"
+                    if candidate_receipt.is_file() and candidate_receipt.stat().st_size <= 2_000_000:
+                        destination = args.out.parent / candidate_receipt.name
+                        shutil.copyfile(candidate_receipt, destination)
+                        preserved.append(destination.name)
                 report["fixtures"].append({
-                    "name": fixture.get("name", "<unknown>"),
+                    "name": fixture_name,
                     "status": "failed", "error": str(exc)[:1600],
+                    "preserved_evidence": preserved,
                 })
-                print(f"FAIL {fixture.get('name')}: {exc}", flush=True)
+                print(f"FAIL {fixture_name}: {exc}", flush=True)
     report["passed"] = sum(f["status"] == "passed" for f in report["fixtures"])
     report["failed"] = len(report["fixtures"]) - report["passed"]
     args.out.parent.mkdir(parents=True, exist_ok=True)

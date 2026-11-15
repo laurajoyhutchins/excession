@@ -172,7 +172,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     };
     let receipt_id = receipt.document()?.get("receipt_id")?.str()?.to_owned();
     let mut observations = Vec::new();
-    for (_, (input, role)) in validated {
+    for (input, role) in validated.values() {
         observations.push(Observation {
             receipt_id: receipt_id.clone(),
             subject_id: Subject::Source(input.clone()).id()?,
@@ -180,7 +180,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             payload: obj(&[
                 ("source", source_value(&input)),
                 ("subject", subject.clone()),
-                ("role", Value::string(role)),
+                ("role", Value::string(*role)),
                 ("scope", Value::string(scope)),
                 ("producer", Value::string(producer)),
             ]),

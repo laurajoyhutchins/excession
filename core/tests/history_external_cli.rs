@@ -71,17 +71,32 @@ fn reclassifies_changed_id_without_misrepresenting_pr_or_receipt_trust() {
         String::from_utf8_lossy(&result.stderr)
     );
     let report: Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(report["classification"], "SOURCE_IDENTITIES_CLASSIFIED_NOT_ATTESTED");
+    assert_eq!(
+        report["classification"],
+        "SOURCE_IDENTITIES_CLASSIFIED_NOT_ATTESTED"
+    );
     assert_eq!(report["pull_request_count"], 2);
     assert_eq!(report["changed_pull_request_count"], 1);
     assert_eq!(report["unfetched_pull_request_count"], 1);
     assert_eq!(report["receipt_count"], 2);
     assert_eq!(report["changed_receipt_count"], 1);
     assert_eq!(report["unfetched_receipt_count"], 0);
-    assert_eq!(report["pull_requests"][0]["obligation"], "REVIEW_AND_COMMIT_REAPPROVAL_REQUIRED");
-    assert_eq!(report["pull_requests"][1]["obligation"], "UNFETCHED_GITHUB_PR_SOURCE");
-    assert_eq!(report["receipts"][0]["obligation"], "INDEPENDENT_REBUILD_OR_REA_REBIND_REQUIRED");
-    assert_eq!(report["receipts"][1]["obligation"], "ORIGINAL_SOURCE_ID_UNCHANGED_RECEIPT_NOT_AUTHENTICATED");
+    assert_eq!(
+        report["pull_requests"][0]["obligation"],
+        "REVIEW_AND_COMMIT_REAPPROVAL_REQUIRED"
+    );
+    assert_eq!(
+        report["pull_requests"][1]["obligation"],
+        "UNFETCHED_GITHUB_PR_SOURCE"
+    );
+    assert_eq!(
+        report["receipts"][0]["obligation"],
+        "INDEPENDENT_REBUILD_OR_REA_REBIND_REQUIRED"
+    );
+    assert_eq!(
+        report["receipts"][1]["obligation"],
+        "ORIGINAL_SOURCE_ID_UNCHANGED_RECEIPT_NOT_AUTHENTICATED"
+    );
     assert_eq!(report["github_review_approvals_transferred"], false);
     assert_eq!(report["build_provenance_verified"], false);
     assert_eq!(report["rea_evidence_verified"], false);

@@ -24,7 +24,9 @@ fn load(path: &Path, max_bytes: u64) -> Result<(Value, String)> {
 }
 
 fn fields(value: &Value, required: &[&str], label: &str) -> Result<()> {
-    let object = value.as_object().ok_or_else(|| format!("{label} must be an object"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{label} must be an object"))?;
     if object.len() != required.len() || required.iter().any(|key| !object.contains_key(*key)) {
         return refuse(format!("{label} contains missing or unrecognized fields"));
     }
@@ -32,7 +34,9 @@ fn fields(value: &Value, required: &[&str], label: &str) -> Result<()> {
 }
 
 fn str_field<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
-    value[key].as_str().ok_or_else(|| format!("{key} must be a string"))
+    value[key]
+        .as_str()
+        .ok_or_else(|| format!("{key} must be a string"))
 }
 
 fn checked_oid(value: &Value, key: &str) -> Result<String> {
@@ -51,7 +55,11 @@ fn required_array<'a>(value: &'a Value, field: &str, limit: usize) -> Result<&'a
 
 fn digest_field(value: &Value, field: &str) -> Result<String> {
     let digest = str_field(value, field)?;
-    if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
         return refuse(format!("{field} must be a lowercase SHA-256 digest"));
     }
     Ok(digest.to_owned())
@@ -101,10 +109,18 @@ pub fn reconcile(mapping_path: &Path, snapshot_path: &Path) -> Result<Value> {
     if mapping["rewrite_authorized"] != false {
         return refuse("imported DAG mapping unexpectedly authorizes rewrite");
     }
-    fields(&snapshot, &[
-        "schema", "repository", "pinned_original_head", "captured_at",
-        "pull_requests", "receipts"
-    ], "external snapshot")?;
+    fields(
+        &snapshot,
+        &[
+            "schema",
+            "repository",
+            "pinned_original_head",
+            "captured_at",
+            "pull_requests",
+            "receipts",
+        ],
+        "external snapshot",
+    )?;
     let original_head = checked_oid(&mapping, "original_head")?;
     let candidate_head = checked_oid(&mapping, "candidate_head")?;
     if checked_oid(&snapshot, "pinned_original_head")? != original_head {
@@ -138,10 +154,20 @@ pub fn reconcile(mapping_path: &Path, snapshot_path: &Path) -> Result<Value> {
     let mut changed_prs = 0;
     let mut missing_prs = 0;
     for row in required_array(&snapshot, "pull_requests", MAX_PR_RECORDS)? {
-        fields(row, &[
-            "number", "state", "head_commit", "base_commit", "merge_commit"
-        ], "pull request")?;
-        let number = row["number"].as_u64().ok_or("PR number must be a positive integer")?;
+        fields(
+            row,
+            &[
+                "number",
+                "state",
+                "head_commit",
+                "base_commit",
+                "merge_commit",
+            ],
+            "pull request",
+        )?;
+        let number = row["number"]
+            .as_u64()
+            .ok_or("PR number must be a positive integer")?;
         if number == 0 || !numbers.insert(number) {
             return refuse("duplicate or invalid PR number");
         }
@@ -165,10 +191,11 @@ pub fn reconcile(mapping_path: &Path, snapshot_path: &Path) -> Result<Value> {
             }
             None => (None, None),
         };
-        let missing = head_class == "NOT_FETCHED" || base_class == "NOT_FETCHED"
+        let missing = head_class == "NOT_FETCHED"
+            || base_class == "NOT_FETCHED"
             || merge_class == Some("NOT_FETCHED");
-        let changed = head_class == "CHANGED" || base_class == "CHANGED"
-            || merge_class == Some("CHANGED");
+        let changed =
+            head_class == "CHANGED" || base_class == "CHANGED" || merge_class == Some("CHANGED");
         missing_prs += usize::from(missing);
         changed_prs += usize::from(changed);
         let obligation = if missing {
@@ -193,7 +220,11 @@ pub fn reconcile(mapping_path: &Path, snapshot_path: &Path) -> Result<Value> {
     let mut missing_receipts = 0;
     let mut kinds = BTreeMap::<String, usize>::new();
     for row in required_array(&snapshot, "receipts", MAX_RECEIPTS)? {
-        fields(row, &["id", "kind", "source_commit", "receipt_sha256"], "receipt")?;
+        fields(
+            row,
+            &["id", "kind", "source_commit", "receipt_sha256"],
+            "receipt",
+        )?;
         let id = str_field(row, "id")?;
         if id.trim().is_empty() || id.len() > 256 || !seen_receipts.insert(id.to_owned()) {
             return refuse("duplicate, empty or oversized receipt ID");
@@ -245,7 +276,8 @@ pub fn reconcile(mapping_path: &Path, snapshot_path: &Path) -> Result<Value> {
         "rea_evidence_verified":false,
         "rewrite_authorized":false
     });
-    let canonical = serde_json::to_vec(&report).map_err(|e| format!("serialize external evidence: {e}"))?;
+    let canonical =
+        serde_json::to_vec(&report).map_err(|e| format!("serialize external evidence: {e}"))?;
     report["report_id"] = Value::String(digest::sha256(&canonical));
     Ok(report)
 }

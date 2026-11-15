@@ -8,7 +8,6 @@ use crate::evidence_store::{self, Batch, Observation, Receipt};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
-use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -102,13 +101,18 @@ fn tool_path(name: &str, specified: Option<&str>) -> Result<PathBuf> {
                 .ok_or_else(|| format!("{name} missing: install a native checker or pass --tool"))?
         }
     };
-    let resolved = candidate.canonicalize()
+    // Preserve argv[0] for dispatching launchers such as rustup's "cargo"
+    // symlink. Hash the symlink target, but execute the named entrypoint.
+    let parent = candidate.parent().ok_or("compiler has no parent")?
+        .canonicalize().map_err(|e| format!("resolve compiler directory: {e}"))?;
+    let launch = parent.join(candidate.file_name().ok_or("compiler has no name")?);
+    let resolved = launch.canonicalize()
         .map_err(|e| format!("resolve compiler executable: {e}"))?;
     let metadata = fs::metadata(&resolved).map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_BINARY_BYTES {
         return refuse("compiler launcher is not a regular file within 64 MiB");
     }
-    Ok(resolved)
+    Ok(launch)
 }
 
 fn toolchain(tool: &Path, name: &str) -> Result<Value> {

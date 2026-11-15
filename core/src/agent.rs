@@ -124,10 +124,14 @@ pub fn context(
             }
             for item in analysis.get("configured_observations")?.array_ref()? {
                 let source_path = item.get("source")?.get("path")?.str()?;
-                let selected_path = item.entries()?.get("subject")
+                let selected_path = item
+                    .entries()?
+                    .get("subject")
                     .and_then(|subject| subject.get("path").ok())
                     .and_then(|path| path.str().ok());
-                if focus.contains(source_path) || selected_path.is_some_and(|path| focus.contains(path)) {
+                if focus.contains(source_path)
+                    || selected_path.is_some_and(|path| focus.contains(path))
+                {
                     total_configured += 1;
                     if configured_observations.len() < limit {
                         configured_observations.push(item.clone());
@@ -184,8 +188,14 @@ pub fn context(
         ("sources", Value::array(sources)),
         ("relationships", Value::array(relations)),
         ("relationship_count", Value::number(total_relations)),
-        ("configured_observations", Value::array(configured_observations)),
-        ("configured_observation_count", Value::number(total_configured)),
+        (
+            "configured_observations",
+            Value::array(configured_observations),
+        ),
+        (
+            "configured_observation_count",
+            Value::number(total_configured),
+        ),
         ("test_candidates", Value::array(test_candidates)),
         ("test_candidate_count", Value::number(total_tests)),
         (
@@ -347,11 +357,17 @@ pub fn verify(
     let configured = impact.get("configured_observations")?.array_ref()?;
     let producer_coverage = impact.get("producer_coverage")?.array_ref()?;
     if producer_coverage.iter().any(|item| {
-        item.get("producers").ok().and_then(|v| v.array_ref().ok())
-            .is_some_and(|items| items.iter().any(|e| {
-                e.get("producer").ok().and_then(|v| v.str().ok())
-                    .is_some_and(|p| p.starts_with("native:"))
-            }))
+        item.get("producers")
+            .ok()
+            .and_then(|v| v.array_ref().ok())
+            .is_some_and(|items| {
+                items.iter().any(|e| {
+                    e.get("producer")
+                        .ok()
+                        .and_then(|v| v.str().ok())
+                        .is_some_and(|p| p.starts_with("native:"))
+                })
+            })
     }) {
         obligations.insert("NATIVE_PRODUCER_ATTESTATION_MISSING".into());
     }

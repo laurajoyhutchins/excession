@@ -307,7 +307,6 @@ fn select_graph(
     Ok(())
 }
 
-
 /// Reconstruct native observations from retained original producer bytes and
 /// authenticate every input to this Git revision before using its SQLite rows.
 /// These are configuration-scoped observations, not dependency-graph edges.
@@ -321,9 +320,7 @@ fn select_native(
 ) -> Result<()> {
     digest_id(snapshot)?;
     let audit = native_evidence::audit_source(repo, commit, db, snapshot)?;
-    if audit.get("source_commit")?.str()? != commit
-        || audit.get("source_tree")?.str()? != tree
-    {
+    if audit.get("source_commit")?.str()? != commit || audit.get("source_tree")?.str()? != tree {
         return refuse("native evidence replay differs from requested Git revision");
     }
     let receipt_rows = db.query(
@@ -334,7 +331,10 @@ fn select_native(
         return refuse("selected native evidence lacks one original receipt");
     }
     let receipt = json::parse(
-        receipt_rows[0][0].as_deref().ok_or("missing native receipt")?.as_bytes(),
+        receipt_rows[0][0]
+            .as_deref()
+            .ok_or("missing native receipt")?
+            .as_bytes(),
     )?;
     let producer = receipt.get("producer")?.str()?;
     if !matches!(producer, "native:go-list" | "native:clang-ast") {
@@ -350,7 +350,10 @@ fn select_native(
     }
     for row in obs {
         let entry = json::parse(
-            row[0].as_deref().ok_or("missing native observation")?.as_bytes(),
+            row[0]
+                .as_deref()
+                .ok_or("missing native observation")?
+                .as_bytes(),
         )?;
         let kind = entry.get("native_kind")?.str()?;
         if !matches!(kind, "NATIVE_SELECTED_INPUT" | "NATIVE_CONFIGURED_TU") {
@@ -678,8 +681,7 @@ fn plan_from_ids(
     graphs: Vec<String>,
     native: Vec<String>,
 ) -> Result<Plan> {
-    if scip.len() > MAX_PLAN_ITEMS || graphs.len() > MAX_PLAN_ITEMS
-        || native.len() > MAX_PLAN_ITEMS
+    if scip.len() > MAX_PLAN_ITEMS || graphs.len() > MAX_PLAN_ITEMS || native.len() > MAX_PLAN_ITEMS
     {
         return refuse("more than 24 source evidence producers for one revision");
     }
@@ -808,7 +810,10 @@ fn plan_from_ids(
         // Full immutable-store audit followed by source-bound replay.
         let receipt = native_evidence::audit_source(repo, &commit, db, id)?;
         let path = receipt.get("source")?.get("path")?.str()?;
-        native_by_subject.entry(path.to_owned()).or_default().insert(id.clone());
+        native_by_subject
+            .entry(path.to_owned())
+            .or_default()
+            .insert(id.clone());
     }
     for (path, ids) in native_by_subject {
         if ids.len() > 1 {
@@ -893,7 +898,9 @@ pub fn pinned_plan(db: &Db, repo: &Path, revision: &str, record: &Value) -> Resu
         .map(|item| Ok(item.str()?.to_owned()))
         .collect::<Result<Vec<_>>>()?;
     let native = match record.entries()?.get("native") {
-        Some(items) => items.array_ref()?.iter()
+        Some(items) => items
+            .array_ref()?
+            .iter()
             .map(|item| Ok(item.str()?.to_owned()))
             .collect::<Result<Vec<_>>>()?,
         None => Vec::new(),

@@ -28,9 +28,7 @@ fn source_ref(repo: &Path, commit: &str, tree: &str, item: &Value) -> Result<Sou
 
 /// Validate a producer report and rebuild every immutable observation from
 /// the original bytes. This is used both at ingestion and on each selection.
-fn batch_from_bytes(
-    repo: &Path, revision: &str, raw: &[u8],
-) -> Result<(Batch, Value)> {
+fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, Value)> {
     if raw.len() as u64 > MAX_REPORT_BYTES {
         return refuse("native evidence exceeds 4 MiB source receipt budget");
     }
@@ -55,9 +53,7 @@ fn batch_from_bytes(
     }
     let commit = git::rev(repo, revision)?;
     let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
-    if report.get("source_commit")?.str()? != commit
-        || report.get("source_tree")?.str()? != tree
-    {
+    if report.get("source_commit")?.str()? != commit || report.get("source_tree")?.str()? != tree {
         return refuse("native evidence belongs to a different Git revision");
     }
     let subject = report.get("source")?;
@@ -71,15 +67,16 @@ fn batch_from_bytes(
     let mut expected_roles = BTreeMap::new();
     if language == "go" {
         native_boundary::declaration_preflight(nested)?;
-        if nested.get("language")?.str()? != "go"
-            || nested.get("subject")?.str()? != subject_path
-        {
+        if nested.get("language")?.str()? != "go" || nested.get("subject")?.str()? != subject_path {
             return refuse("Go input declaration subject differs from source");
         }
         for item in nested.get("inputs")?.array_ref()? {
             let path = item.get("path")?.str()?;
             let role = item.get("role")?.str()?;
-            if expected_roles.insert(path.to_owned(), role.to_owned()).is_some() {
+            if expected_roles
+                .insert(path.to_owned(), role.to_owned())
+                .is_some()
+            {
                 return refuse("duplicate Go declared input");
             }
         }
@@ -107,7 +104,8 @@ fn batch_from_bytes(
         if !matches!(role, "source" | "configuration") {
             return refuse("native input role unsupported");
         }
-        if language == "go" && expected_roles.get(&git_source.path).map(String::as_str) != Some(role)
+        if language == "go"
+            && expected_roles.get(&git_source.path).map(String::as_str) != Some(role)
         {
             return refuse("native Go input inventory differs from compiler declaration");
         }
@@ -117,7 +115,10 @@ fn batch_from_bytes(
             }
             contains_subject = true;
         }
-        if validated.insert(git_source.path.clone(), (git_source, role)).is_some() {
+        if validated
+            .insert(git_source.path.clone(), (git_source, role))
+            .is_some()
+        {
             return refuse("duplicate native evidence source input");
         }
         if role == "source" {
@@ -150,13 +151,16 @@ fn batch_from_bytes(
             subject_id: Subject::Source(input.clone()).id()?,
             native_kind: "NATIVE_SELECTED_INPUT".to_owned(),
             payload: obj(&[
-                ("source", obj(&[
-                    ("source_commit", Value::string(&input.commit)),
-                    ("source_tree", Value::string(&input.tree)),
-                    ("path", Value::string(&input.path)),
-                    ("blob", Value::string(&input.blob)),
-                    ("mode", Value::string(&input.mode)),
-                ])),
+                (
+                    "source",
+                    obj(&[
+                        ("source_commit", Value::string(&input.commit)),
+                        ("source_tree", Value::string(&input.tree)),
+                        ("path", Value::string(&input.path)),
+                        ("blob", Value::string(&input.blob)),
+                        ("mode", Value::string(&input.mode)),
+                    ]),
+                ),
                 ("subject", subject.clone()),
                 ("role", Value::string(role)),
                 ("scope", Value::string(scope)),
@@ -191,14 +195,19 @@ fn batch_from_bytes(
         });
     }
     Ok((
-        Batch { source_commit: commit, receipts: vec![receipt], observations },
+        Batch {
+            source_commit: commit,
+            receipts: vec![receipt],
+            observations,
+        },
         report,
     ))
 }
 
 pub fn import(repo: &Path, revision: &str, report: &Path, db: &Db) -> Result<Value> {
     let size = std::fs::metadata(report)
-        .map_err(|e| format!("native evidence stat: {e}"))?.len();
+        .map_err(|e| format!("native evidence stat: {e}"))?
+        .len();
     if size > MAX_REPORT_BYTES {
         return refuse("native evidence input exceeds 4 MiB receipt budget");
     }
@@ -206,7 +215,10 @@ pub fn import(repo: &Path, revision: &str, report: &Path, db: &Db) -> Result<Val
     let (batch, parsed) = batch_from_bytes(repo, revision, &raw)?;
     let id = evidence_store::persist(db, &batch)?;
     Ok(obj(&[
-        ("schema", Value::string("excession.native-evidence-import.v1")),
+        (
+            "schema",
+            Value::string("excession.native-evidence-import.v1"),
+        ),
         ("snapshot_id", Value::string(id)),
         ("source_commit", parsed.get("source_commit")?.clone()),
         ("source_tree", parsed.get("source_tree")?.clone()),
@@ -229,7 +241,12 @@ pub fn audit_source(repo: &Path, revision: &str, db: &Db, snapshot: &str) -> Res
     if records.len() != 1 {
         return refuse("native snapshot requires one original producer receipt");
     }
-    let receipt = json::parse(records[0][0].as_deref().ok_or("missing native receipt")?.as_bytes())?;
+    let receipt = json::parse(
+        records[0][0]
+            .as_deref()
+            .ok_or("missing native receipt")?
+            .as_bytes(),
+    )?;
     let original = receipt.get("raw_json")?.str()?;
     let (batch, report) = batch_from_bytes(repo, revision, original.as_bytes())?;
     if receipt.get("producer")?.str()? != format!("native:{}", report.get("producer")?.str()?)
@@ -240,8 +257,14 @@ pub fn audit_source(repo: &Path, revision: &str, db: &Db, snapshot: &str) -> Res
         return refuse("stored native producer differs from Git-bound source replay");
     }
     Ok(obj(&[
-        ("schema", Value::string("excession.native-evidence-audit.v1")),
-        ("status", Value::string("REPLAYED_GIT_BOUND_NATIVE_OBSERVATIONS")),
+        (
+            "schema",
+            Value::string("excession.native-evidence-audit.v1"),
+        ),
+        (
+            "status",
+            Value::string("REPLAYED_GIT_BOUND_NATIVE_OBSERVATIONS"),
+        ),
         ("snapshot_id", Value::string(snapshot)),
         ("source_commit", report.get("source_commit")?.clone()),
         ("source_tree", report.get("source_tree")?.clone()),

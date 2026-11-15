@@ -4,7 +4,10 @@ use crate::json::{self, Value, obj};
 use crate::{Result, analyze, digest, git, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
 const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SOURCE_BYTES: usize = 512 * 1024;
@@ -175,6 +178,51 @@ fn prepare(repo: &Path, commit: &str, plan: &Value, native: &Value) -> Result<Ve
     Ok(changed)
 }
 
+/// Verify and edit an already checked-out regular blob through a single
+/// descriptor. Never follow a symlink in a candidate's final path, even if
+/// that path changes after Git checkout and before the write.
+fn write_pinned_regular_file(target: &Path, original: &[u8], rewritten: &[u8]) -> Result<()> {
+    let path_meta = fs::symlink_metadata(target)
+        .map_err(|e| format!("inspect candidate source: {e}"))?;
+    if !path_meta.file_type().is_file() {
+        return refuse("candidate edit target is not a regular file");
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let mut file = options
+        .open(target)
+        .map_err(|e| format!("open candidate source without following symlinks: {e}"))?;
+    let opened = file
+        .metadata()
+        .map_err(|e| format!("inspect opened candidate source: {e}"))?;
+    if !opened.is_file() || opened.len() > MAX_SOURCE_BYTES as u64 {
+        return refuse("opened candidate source is not a bounded regular file");
+    }
+    #[cfg(unix)]
+    if (path_meta.dev(), path_meta.ino()) != (opened.dev(), opened.ino())
+        || opened.nlink() != 1
+    {
+        return refuse("candidate source was replaced or hardlinked during edit");
+    }
+    let mut actual = Vec::new();
+    file.read_to_end(&mut actual)
+        .map_err(|e| format!("read opened candidate source: {e}"))?;
+    if actual != original {
+        return refuse("candidate worktree source differs from pinned Git blob");
+    }
+    file.set_len(0)
+        .map_err(|e| format!("truncate checked candidate source: {e}"))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| format!("seek checked candidate source: {e}"))?;
+    file.write_all(rewritten)
+        .map_err(|e| format!("write checked candidate source: {e}"))?;
+    file.sync_all()
+        .map_err(|e| format!("sync checked candidate source: {e}"))?;
+    Ok(())
+}
+
 fn apply(repo: &Path, commit: &str, output: &Path, changed: &[Changed]) -> Result<()> {
     let checked = analyze::checked_external_destination(repo, output, "improvement worktree")?;
     if checked.exists() {
@@ -207,13 +255,7 @@ fn apply(repo: &Path, commit: &str, output: &Path, changed: &[Changed]) -> Resul
             {
                 return refuse("native edit path escapes through a symlink");
             }
-            if fs::read(&target).map_err(|e| format!("read candidate source: {e}"))?
-                != item.original
-            {
-                return refuse("candidate worktree source differs from pinned Git blob");
-            }
-            fs::write(&target, &item.rewritten)
-                .map_err(|e| format!("write candidate source: {e}"))?;
+            write_pinned_regular_file(&target, &item.original, &item.rewritten)?;
         }
         Ok(())
     })();
@@ -318,6 +360,37 @@ pub fn execute(request: &Request<'_>) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn pinned_worktree_writes_reject_symlinks_and_hardlinks() {
+        use std::os::unix::fs::symlink;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "excession-improve-regular-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).unwrap();
+        let source = root.join("source.rs");
+        let linked = root.join("linked.rs");
+        let hard = root.join("hard.rs");
+        fs::write(&source, b"original").unwrap();
+        symlink(&source, &linked).unwrap();
+        assert!(write_pinned_regular_file(&linked, b"original", b"unsafe").is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"original");
+        fs::hard_link(&source, &hard).unwrap();
+        assert!(write_pinned_regular_file(&source, b"original", b"unsafe").is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"original");
+        fs::remove_file(&hard).unwrap();
+        assert!(write_pinned_regular_file(&source, b"wrong", b"unsafe").is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"original");
+        write_pinned_regular_file(&source, b"original", b"updated").unwrap();
+        assert_eq!(fs::read(&source).unwrap(), b"updated");
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn byte_offsets_require_unambiguous_valid_utf8() {

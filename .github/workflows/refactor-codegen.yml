@@ -8,6 +8,7 @@ on:
       - 'core/src/refactor_module_api.rs'
       - 'core/src/improve.rs'
       - 'core/src/improve_generic.rs'
+      - 'core/src/improve_edits.rs'
       - 'core/src/improve_rust.rs'
       - 'tests/fixtures/rust-api/**'
       - 'core/src/agent.rs'

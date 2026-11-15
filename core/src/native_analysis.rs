@@ -3,7 +3,7 @@
 //! one configured translation unit's AST, calls, and observed headers.
 //! These are distinct predicates; neither proves a complete build graph.
 use crate::json::{Value, obj};
-use crate::{Result, compiler_clang, git, native_boundary, native_discovery, refuse};
+use crate::{Result, compiler_clang, git, native_boundary, native_discovery, refuse, rust_native};
 use std::path::Path;
 
 fn identity(repo: &Path, commit: &str, tree: &str, path: &str) -> Result<Value> {
@@ -50,6 +50,8 @@ pub struct NativeOptions<'a> {
     pub compiler: Option<&'a str>,
     pub source_prefix: Option<&'a str>,
     pub classpath_manifest: Option<&'a Path>,
+    pub rust_analyzer: Option<&'a str>,
+    pub scip: Option<&'a str>,
 }
 
 /// Build the same evidence envelope around supported native producer types.
@@ -67,18 +69,21 @@ pub fn scan(
         compiler,
         source_prefix,
         classpath_manifest,
+        rust_analyzer,
+        scip,
     } = options;
     if trusted_local != "true" {
         return refuse("native analysis requires explicit --trusted-local true");
     }
-    if !matches!(language, "go" | "c" | "cpp" | "java") {
+    if !matches!(language, "go" | "c" | "cpp" | "java" | "rust") {
         return refuse(
-            "native producer unavailable: supported languages are go, c, cpp, java; use analyze languages for syntax-only coverage",
+            "native producer unavailable: supported languages are go, c, cpp, java, rust; use analyze languages for syntax-only coverage",
         );
     }
     git::validate_path(source)?;
     let expected_ext = match language {
         "go" => source.ends_with(".go"),
+        "rust" => source.ends_with(".rs"),
         "c" => source.ends_with(".c"),
         "java" => source.ends_with(".java"),
         "cpp" => [".cc", ".cpp", ".cxx", ".C"]
@@ -88,6 +93,12 @@ pub fn scan(
     };
     if !expected_ext {
         return refuse("source extension does not match selected native language");
+    }
+    if language == "rust" && (compile_db.is_some() || compiler.is_some() || classpath_manifest.is_some()) {
+        return refuse("Rust SCIP does not use --compile-db, --compiler or --classpath-manifest");
+    }
+    if language != "rust" && (rust_analyzer.is_some() || scip.is_some()) {
+        return refuse("--rust-analyzer and --scip are only supported by Rust native analysis");
     }
     if language == "java" && (compile_db.is_some() || compiler.is_some()) {
         return refuse("Java uses the installed JDK, not --compile-db or --compiler");
@@ -116,6 +127,56 @@ pub fn scan(
     }
     let tree = git::rev(&root, &format!("{commit}^{{tree}}"))?;
     let subject = identity(&root, &commit, &tree, source)?;
+    if language == "rust" {
+        if let Some(prefix) = source_prefix {
+            git::validate_path(prefix)?;
+            if !source.starts_with(&format!("{prefix}/")) {
+                return refuse("selected Rust source is outside --source-prefix");
+            }
+        }
+        let native = rust_native::scan(
+            &root,
+            &commit,
+            source_prefix,
+            rust_analyzer.unwrap_or("rust-analyzer"),
+            scip.unwrap_or("scip"),
+            "true",
+        )?;
+        if native.get("schema")?.str()? != "excession.scip-observations.v1"
+            || !native.content_id_matches("report_id")?
+            || native.get("source_commit")?.str()? != commit
+            || native.get("source_tree")?.str()? != tree
+            || native.get("indexer")?.get("name")?.str()? != "rust-analyzer"
+        {
+            return refuse("Rust SCIP observations do not match selected Git revision and producer");
+        }
+        return obj(&[
+            ("schema", Value::string("excession.native-analysis.v1")),
+            ("status", Value::string("PARTIAL")),
+            ("source_commit", Value::string(commit)),
+            ("source_tree", Value::string(tree)),
+            ("source", subject.clone()),
+            ("language", Value::string("rust")),
+            ("producer", Value::string("rust-analyzer-scip")),
+            ("scope", Value::string("SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED")),
+            ("execution", Value::string("TRUSTED_LOCAL_NOT_ATTESTED")),
+            ("input_sources", Value::number(1)),
+            ("input_configurations", Value::number(0)),
+            ("inputs", Value::array([obj(&[
+                ("source", subject),
+                ("role", Value::string("source")),
+            ])])),
+            ("observation", native),
+            ("limitations", Value::array([
+                Value::string("SCIP is a workspace index, not a rustc build or typecheck receipt"),
+                Value::string("The requested Git source is not proof that the indexer covered that file"),
+                Value::string("Cross-file symbol references are not necessarily imports or calls"),
+                Value::string("Absent references are not proof of unreachable or unused code"),
+                Value::string("Trusted-local indexer execution is not independent attestation"),
+            ])),
+        ])
+        .stamp_id("report_id");
+    }
     if language == "java" {
         return crate::java_native::scan(
             &root,

@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/investigation.v1.schema.json",
+  "title": "contracts: evidence-qualified inspect, explain, impact and view integration",
+  "description": "Contract scaffold; shape validity alone does not establish evidence or semantic truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_commit",
+    "query",
+    "answer",
+    "limit",
+    "interpretation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.investigation.v1"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "focus_subject_id",
+        "facet",
+        "require"
+      ],
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "INSPECT",
+            "EXPLAIN",
+            "IMPACT",
+            "REFACTOR",
+            "COMPARE",
+            "VALIDATE"
+          ]
+        },
+        "focus_subject_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "facet": {
+          "type": "string",
+          "enum": [
+            "SOURCE",
+            "SCIP",
+            "BUILD",
+            "SECURITY",
+            "ARTIFACT",
+            "RUNTIME"
+          ]
+        },
+        "require": {
+          "type": "string",
+          "enum": [
+            "OBSERVED_ONLY",
+            "INCLUDE_CANDIDATES",
+            "COVERAGE_SCOPED"
+          ]
+        }
+      }
+    },
+    "answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "answerability",
+        "evidence_receipts",
+        "coverage_receipts",
+        "unknown_ids"
+      ],
+      "properties": {
+        "answerability": {
+          "type": "string",
+          "enum": [
+            "ANSWERABLE_UNDER_SCOPE",
+            "PARTIAL",
+            "AMBIGUOUS",
+            "UNKNOWN",
+            "UNSUPPORTED"
+          ]
+        },
+        "evidence_receipts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "coverage_receipts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "unknown_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_nodes",
+        "max_edges"
+      ],
+      "properties": {
+        "max_nodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "max_edges": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200000
+        }
+      }
+    },
+    "interpretation": {
+      "const": "NO_GENERIC_DEPENDENCY_EDGE_PROMOTION"
+    }
+  }
+}

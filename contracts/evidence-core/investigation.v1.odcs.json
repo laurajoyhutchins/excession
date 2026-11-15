@@ -1,0 +1,119 @@
+{
+  "version": "0.1.0",
+  "apiVersion": "v3.2.0",
+  "kind": "DataContract",
+  "id": "excession_evidence_core_j_query_v1",
+  "name": "contracts: evidence-qualified inspect, explain, impact and view integration",
+  "status": "active",
+  "domain": "source-analysis",
+  "description": {
+    "purpose": "Draft evidence-core j-query interchange contract, not yet implemented in Rust.",
+    "limitations": "Schema conformity and metadata do not authenticate Git source, native execution, analyzer correctness, or complete runtime dependencies."
+  },
+  "schema": [
+    {
+      "name": "j_query",
+      "logicalType": "object",
+      "physicalType": "application/json",
+      "description": "Versioned evidence-core wire shape",
+      "properties": [
+        {
+          "name": "schema",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "source_commit",
+          "logicalType": "string",
+          "required": true
+        },
+        {
+          "name": "query",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "answer",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "limit",
+          "logicalType": "object",
+          "required": true
+        },
+        {
+          "name": "interpretation",
+          "logicalType": "string",
+          "required": true
+        }
+      ],
+      "quality": [
+        {
+          "name": "schema_conformity",
+          "type": "text",
+          "dimension": "conformity",
+          "severity": "error",
+          "description": "Validate against the matching closed Draft 2020-12 JSON Schema."
+        },
+        {
+          "name": "identity_integrity",
+          "type": "text",
+          "dimension": "consistency",
+          "severity": "error",
+          "description": "Recompute native/normalized references and content digests independently."
+        },
+        {
+          "name": "source_and_behavior_evidence",
+          "type": "text",
+          "dimension": "accuracy",
+          "severity": "error",
+          "description": "Independently audit Git source or behavior before accepting claims; self-hashes do not prove execution."
+        }
+      ]
+    }
+  ],
+  "customProperties": [
+    {
+      "property": "jsonSchemaPath",
+      "value": "contracts/evidence-core/investigation.v1.schema.json"
+    },
+    {
+      "property": "implementationStatus",
+      "value": "CONTRACT_AND_TDD_ONLY"
+    },
+    {
+      "property": "sourceObjectFormat",
+      "value": "git-sha1-current"
+    }
+  ],
+  "team": {
+    "id": "excession_maintainers",
+    "name": "Excession maintainers",
+    "description": "Maintains versioned evidence-core contracts"
+  },
+  "context": {
+    "instructions": "Do not promote generic relations, incomplete inventories or self-hashes into stronger claims.",
+    "verifiedStatements": [
+      {
+        "id": "scaffold_only",
+        "question": "Is this behavior implemented?",
+        "answer": "No, this is documentation and contract TDD only."
+      }
+    ],
+    "constraints": [
+      {
+        "id": "no_semantic_promotion",
+        "constraint": "Do not promote candidate relations or review events to native or behavioral proof."
+      },
+      {
+        "id": "no_absence_inference",
+        "constraint": "Missing observations never prove absent relationships without adequate facet coverage."
+      },
+      {
+        "id": "no_self_hash_attestation",
+        "constraint": "Unkeyed hashes are not independent execution attestations."
+      }
+    ]
+  }
+}

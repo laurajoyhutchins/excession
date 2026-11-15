@@ -782,8 +782,11 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get_or("rev", "HEAD"),
                 opt.get("source"),
                 opt.get("language"),
-                opt.0.get("compile-db").map(|v| Path::new(v.as_str())),
-                opt.0.get("compiler").map(String::as_str),
+                excession::native_analysis::NativeOptions {
+                    compile_db: opt.0.get("compile-db").map(|v| Path::new(v.as_str())),
+                    compiler: opt.0.get("compiler").map(String::as_str),
+                    source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                },
                 opt.get_or("trusted-local", "false"),
             )?;
             if opt.get_or("json", "false") == "true" {

@@ -70,6 +70,14 @@ impl Fixture {
                 "src/worker.cpp",
                 "namespace app { int twice(int n) { return n+n; } }\n",
             ),
+            (
+                "src/main/java/org/example/Service.java",
+                "package org.example; public class Service { public int compute(Helper helper) { return helper.answer(); } }\n",
+            ),
+            (
+                "src/main/java/org/example/Helper.java",
+                "package org.example; public class Helper { public int answer() { return 42; } }\n",
+            ),
         ] {
             let file = repo.join(path);
             fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -665,5 +673,320 @@ fn native_clang_tu_retains_compiler_counts_but_never_manufactures_calls_as_edges
                     && field(item.get("source").unwrap(), "path") == "src/main.h"
             ),
         "changed tracked header must surface as configured native evidence"
+    );
+}
+
+#[test]
+fn native_java_compiler_resolves_real_source_declarations_and_replays_impact() {
+    if !available("java", "-version") {
+        return;
+    }
+    let f = Fixture::new();
+    let java_source = "src/main/java/org/example/Service.java";
+    let helper_source = "src/main/java/org/example/Helper.java";
+    let raw = parsed(f.invoke(&[
+        "analyze",
+        "native",
+        "--language",
+        "java",
+        "--source",
+        java_source,
+        "--source-prefix",
+        "src/main/java",
+        "--trusted-local",
+        "--json",
+    ]));
+    assert_eq!(field(&raw, "schema"), "excession.native-analysis.v1");
+    assert_eq!(field(&raw, "producer"), "javac-symbols");
+    assert_eq!(
+        field(&raw, "scope"),
+        "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL"
+    );
+    assert!(raw.content_id_matches("report_id").unwrap());
+    assert_eq!(raw.get("input_sources").unwrap().integer().unwrap(), 2);
+    let nested = raw.get("observation").unwrap();
+    assert!(nested.content_id_matches("report_id").unwrap());
+    assert_eq!(field(nested, "status"), "JAVAC_ANALYZED_PROC_DISABLED");
+    let references = nested.get("references").unwrap().array_ref().unwrap();
+    assert!(references.iter().any(
+        |item| field(item.get("from").unwrap(), "path") == java_source
+            && field(item.get("to").unwrap(), "path") == helper_source
+            && field(item, "relation") == "JAVAC_RESOLVED_SOURCE_REFERENCE"
+    ));
+
+    let db_path = f.parent.join("java-evidence.sqlite");
+    let report_path = f.parent.join("java-native.json");
+    fs::write(&report_path, raw.canonical()).unwrap();
+    let db = db_path.to_str().unwrap();
+    let report = report_path.to_str().unwrap();
+    let imported = parsed(f.invoke(&[
+        "evidence",
+        "native-import",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--report",
+        report,
+        "--db",
+        db,
+    ]));
+    let snapshot = field(&imported, "snapshot_id");
+    let replay = parsed(f.invoke(&[
+        "evidence",
+        "native-store-audit",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--db",
+        db,
+        "--snapshot",
+        snapshot,
+    ]));
+    assert_eq!(
+        field(&replay, "status"),
+        "REPLAYED_GIT_BOUND_NATIVE_OBSERVATIONS"
+    );
+    let analyzed = parsed(f.invoke(&["analyze", ".", "--db", db, "--json"]));
+    assert!(
+        analyzed
+            .get("producer_selection_plan")
+            .unwrap()
+            .get("native")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|x| x.str().unwrap() == snapshot)
+    );
+    let configured = analyzed
+        .get("configured_observations")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(configured.iter().any(|item| field(item, "native_kind")
+        == "NATIVE_JAVA_SYMBOL_REFERENCE"
+        && field(item.get("source").unwrap(), "path") == helper_source
+        && field(item.get("subject").unwrap(), "path") == java_source));
+    assert!(
+        !analyzed
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|item| field(item, "kind") == "JAVAC_RESOLVED_SOURCE_REFERENCE")
+    );
+    let context = parsed(f.invoke(&[
+        "agent",
+        "context",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--focus",
+        java_source,
+        "--db",
+        db,
+    ]));
+    assert!(
+        context
+            .get("configured_observation_count")
+            .unwrap()
+            .integer()
+            .unwrap()
+            > 0
+    );
+    fs::write(
+        f.repo.join(helper_source),
+        "package org.example; public class Helper { public int answer() { return 43; } }\n",
+    )
+    .unwrap();
+    ok("git", &["add", helper_source], &f.repo);
+    ok(
+        "git",
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "modify Java declaration",
+        ],
+        &f.repo,
+    );
+    let head = String::from_utf8(ok("git", &["rev-parse", "HEAD"], &f.repo))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let impact = parsed(f.invoke(&[
+        "impact", ".", "--db", db, "--base", &f.commit, "--head", &head, "--json",
+    ]));
+    assert!(
+        impact
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(
+                |item| field(item, "native_kind") == "NATIVE_JAVA_SYMBOL_REFERENCE"
+                    && field(item.get("source").unwrap(), "path") == helper_source
+                    && field(item.get("subject").unwrap(), "path") == java_source
+            ),
+        "changed declaration must surface native Java dependent"
+    );
+    let verify = parsed(f.invoke(&[
+        "agent",
+        "verify",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--base",
+        &f.commit,
+        "--candidate",
+        &head,
+        "--db",
+        db,
+    ]));
+    assert!(!verify.get("ready_to_merge").unwrap().bool().unwrap());
+    assert!(
+        verify
+            .get("obligations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|i| i.str().unwrap() == "NATIVE_PRODUCER_ATTESTATION_MISSING")
+    );
+    let replay_cross_revision = f.invoke(&[
+        "evidence",
+        "native-store-audit",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &head,
+        "--db",
+        db,
+        "--snapshot",
+        snapshot,
+    ]);
+    assert!(!replay_cross_revision.status.success());
+}
+
+#[test]
+fn native_java_refuses_missing_classpath_and_tampered_report_even_with_fresh_ids() {
+    if !available("java", "-version") {
+        return;
+    }
+    let f = Fixture::new();
+    let java_source = "src/main/java/org/example/Service.java";
+    let java_file = f.repo.join("src/main/java/org/example/Helper.java");
+    fs::write(&java_file,
+        "package org.example; import missing.library.Type; public class Helper { Type unresolved; }\n"
+    ).unwrap();
+    ok(
+        "git",
+        &["add", "src/main/java/org/example/Helper.java"],
+        &f.repo,
+    );
+    ok(
+        "git",
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "requires unsupported third party dependency",
+        ],
+        &f.repo,
+    );
+    let error = f.invoke(&[
+        "analyze",
+        "native",
+        "--language",
+        "java",
+        "--source",
+        java_source,
+        "--source-prefix",
+        "src/main/java",
+        "--trusted-local",
+        "--json",
+    ]);
+    assert!(
+        !error.status.success(),
+        "unsupported classpath must fail closed"
+    );
+    assert!(!String::from_utf8_lossy(&error.stdout).contains("native-analysis.v1"));
+}
+
+#[test]
+fn native_java_rejects_rehashed_fabricated_compiler_references() {
+    if !available("java", "-version") {
+        return;
+    }
+    let f = Fixture::new();
+    let mut report = parsed(f.invoke(&[
+        "analyze",
+        "native",
+        "--language",
+        "java",
+        "--source",
+        "src/main/java/org/example/Service.java",
+        "--source-prefix",
+        "src/main/java",
+        "--trusted-local",
+        "--json",
+    ]));
+    let nested = report
+        .entries_mut()
+        .unwrap()
+        .get_mut("observation")
+        .unwrap();
+    let originals = nested.entries_mut().unwrap().get_mut("references").unwrap();
+    let edges = match originals {
+        Value::Array(values) => values,
+        _ => panic!("references are an array"),
+    };
+    assert!(!edges.is_empty());
+    let altered = edges.first_mut().unwrap();
+    altered
+        .entries_mut()
+        .unwrap()
+        .get_mut("to")
+        .unwrap()
+        .entries_mut()
+        .unwrap()
+        .insert(
+            "path".to_owned(),
+            Value::string("src/main/java/org/example/Fake.java"),
+        );
+    nested.entries_mut().unwrap().remove("report_id");
+    let new_nested = nested.clone().stamp_id("report_id").unwrap();
+    *nested = new_nested;
+    report.entries_mut().unwrap().remove("report_id");
+    let report = report.stamp_id("report_id").unwrap();
+    let report_path = f.parent.join("forged-java.json");
+    fs::write(&report_path, report.canonical()).unwrap();
+    let db = f.parent.join("forged-java.sqlite");
+    let failure = f.invoke(&[
+        "evidence",
+        "native-import",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--report",
+        report_path.to_str().unwrap(),
+        "--db",
+        db.to_str().unwrap(),
+    ]);
+    assert!(!failure.status.success());
+    assert!(
+        String::from_utf8_lossy(&failure.stderr).contains("Git")
+            || String::from_utf8_lossy(&failure.stderr).contains("source")
     );
 }

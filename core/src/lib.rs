@@ -50,6 +50,7 @@ mod incremental_python;
 pub mod index;
 mod indexed_tree;
 pub mod integration;
+pub mod java_native;
 pub mod json;
 pub mod kbuild_graph;
 pub mod kernel;

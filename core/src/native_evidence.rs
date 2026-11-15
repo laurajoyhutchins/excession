@@ -55,6 +55,9 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     let scope = report.get("scope")?.str()?;
     let valid = match language {
         "go" => producer == "go-list" && scope == "COMPILER_SELECTED_INPUTS_ONLY",
+        "java" => {
+            producer == "javac-symbols" && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL"
+        }
         "c" | "cpp" => producer == "clang-ast" && scope == "CONFIGURED_TU_NOT_BUILD_VERIFIED",
         _ => false,
     };
@@ -89,6 +92,19 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             {
                 return refuse("duplicate Go declared input");
             }
+        }
+    } else if language == "java" {
+        if nested.get("schema")?.str()? != "excession.java-native.v1"
+            || !nested.content_id_matches("report_id")?
+            || nested.get("status")?.str()? != "JAVAC_ANALYZED_PROC_DISABLED"
+            || nested.get("source_commit")?.str()? != commit
+            || nested.get("source_tree")?.str()? != tree
+            || nested.get("subject")?.str()? != subject_path
+            || nested.get("configuration")?.str()? != "EMPTY_CLASSPATH_AND_SOURCEPATH_NO_PROCESSORS"
+            || nested.get("java_version")?.str()?.is_empty()
+            || nested.get("java_version")?.str()?.len() > 100
+        {
+            return refuse("Java native observation lacks compiler and Git identity contract");
         }
     } else if nested.get("schema")?.str()? != "excession.clang-tu.v1"
         || !nested.content_id_matches("report_id")?
@@ -141,7 +157,8 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
         || report.get("input_sources")?.integer()? != source_count as i64
         || report.get("input_configurations")?.integer()? != configuration_count as i64
         || (language == "go" && expected_roles.len() != validated.len())
-        || (language != "go" && (source_count != 1 || configuration_count != 0))
+        || (language == "java" && configuration_count != 0)
+        || (matches!(language, "c" | "cpp") && (source_count != 1 || configuration_count != 0))
     {
         return refuse("native evidence input counts or selected source differ");
     }
@@ -155,23 +172,76 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     };
     let receipt_id = receipt.document()?.get("receipt_id")?.str()?.to_owned();
     let mut observations = Vec::new();
-    for (_, (input, role)) in validated {
+    for (input, role) in validated.values() {
         observations.push(Observation {
             receipt_id: receipt_id.clone(),
             subject_id: Subject::Source(input.clone()).id()?,
             native_kind: "NATIVE_SELECTED_INPUT".to_owned(),
             payload: obj(&[
-                ("source", source_value(&input)),
+                ("source", source_value(input)),
                 ("subject", subject.clone()),
-                ("role", Value::string(role)),
+                ("role", Value::string(*role)),
                 ("scope", Value::string(scope)),
                 ("producer", Value::string(producer)),
             ]),
         });
     }
+    if language == "java" {
+        let declared = nested.get("sources")?.array_ref()?;
+        let mut source_paths = BTreeSet::new();
+        for item in declared {
+            let path = item.str()?;
+            git::validate_path(path)?;
+            if !source_paths.insert(path.to_owned()) {
+                return refuse("duplicate Java declared source");
+            }
+        }
+        if source_paths.len() != validated.len()
+            || source_paths.iter().any(|p| !validated.contains_key(p))
+        {
+            return refuse("Java declaration differs from the authenticated source inventory");
+        }
+        let references = nested.get("references")?.array_ref()?;
+        if references.len() > 4096 {
+            return refuse("Java resolved references exceed evidence budget");
+        }
+        let mut observed = BTreeSet::new();
+        for reference in references {
+            if reference.get("relation")?.str()? != "JAVAC_RESOLVED_SOURCE_REFERENCE" {
+                return refuse("unknown Java compiler source-reference predicate");
+            }
+            let from = source_ref(repo, &commit, &tree, reference.get("from")?)?;
+            let to = source_ref(repo, &commit, &tree, reference.get("to")?)?;
+            if from.path == to.path
+                || !source_paths.contains(&from.path)
+                || !source_paths.contains(&to.path)
+                || !observed.insert((from.path.clone(), to.path.clone()))
+            {
+                return refuse("duplicate, self, or untracked Java reference");
+            }
+            // The source is the referenced declaration: changing it can now
+            // surface the observed dependent in impact without claiming a
+            // cross-language build or runtime edge.
+            observations.push(Observation {
+                receipt_id: receipt_id.clone(),
+                subject_id: Subject::Source(from.clone()).id()?,
+                native_kind: "NATIVE_JAVA_SYMBOL_REFERENCE".to_owned(),
+                payload: obj(&[
+                    ("source", source_value(&to)),
+                    ("subject", source_value(&from)),
+                    ("from", source_value(&from)),
+                    ("to", source_value(&to)),
+                    ("role", Value::string("compiler-resolved-source-reference")),
+                    ("scope", Value::string(scope)),
+                    ("producer", Value::string(producer)),
+                    ("relation", Value::string("JAVAC_RESOLVED_SOURCE_REFERENCE")),
+                ]),
+            });
+        }
+    }
     // Keep compiler AST symbols, calls, external headers and exact flags in the
     // original native receipt, not an invented universal source-level graph.
-    if language != "go" {
+    if matches!(language, "c" | "cpp") {
         let ast = nested.get("observation")?;
         let symbols = ast.get("symbols")?.array_ref()?;
         let calls = ast.get("calls")?.array_ref()?;

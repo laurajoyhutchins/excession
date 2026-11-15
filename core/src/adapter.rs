@@ -263,6 +263,51 @@ fn run_payload(binary: &str, code: &str, payload: Value, limits: AdapterLimits) 
     crate::json::parse(&stdout)
 }
 
+/// Bounded execution of an external *native* tool, without a shell, reusing
+/// the same pipe draining and deadline policy as parser adapters.
+pub fn run_tool(mut command: Command, label: &str, timeout: Duration) -> Result<Vec<u8>> {
+    let mut process = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("{label} unavailable: {e}"))?;
+    let stdout = process.stdout.take().ok_or("missing native tool stdout")?;
+    let stderr = process.stderr.take().ok_or("missing native tool stderr")?;
+    let exceeded = Arc::new(AtomicBool::new(false));
+    let stdout_rx = read_pipe(stdout, 4 * 1024 * 1024, Arc::clone(&exceeded));
+    let stderr_rx = read_pipe(stderr, 64 * 1024, Arc::clone(&exceeded));
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if exceeded.load(Ordering::Relaxed) {
+            let _ = process.kill();
+            let _ = process.wait();
+            return refuse(format!("{label} output exceeds byte budget"));
+        }
+        if let Some(status) = process
+            .try_wait()
+            .map_err(|e| format!("{label} wait: {e}"))?
+        {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = process.kill();
+            let _ = process.wait();
+            return refuse(format!("{label} exceeded execution deadline"));
+        }
+        thread::sleep(Duration::from_millis(25));
+    };
+    let out = receive(stdout_rx, deadline, "native stdout")?;
+    let err = receive(stderr_rx, deadline, "native stderr")?;
+    if exceeded.load(Ordering::Relaxed) {
+        return refuse(format!("{label} output exceeds byte budget"));
+    }
+    if !status.success() {
+        return refuse(format!("{label} failed: {}", String::from_utf8_lossy(&err)));
+    }
+    Ok(out)
+}
+
 pub fn entry(name: &str, path: &str, content: &str) -> Value {
     obj(&[
         ("name", Value::string(name)),

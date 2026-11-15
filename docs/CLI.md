@@ -93,11 +93,13 @@ Git-bound candidates and explicit skipped sources. Without `--json`, the
 default is a concise per-language summary. These candidates are **not**
 proven build dependencies or validated program effects.
 
-### Configured native Go and Clang evidence
+### Configured native Go, Java, and Clang evidence
 
 ```sh
 excession analyze native --language go --source cmd/server/main.go --trusted-local
 excession analyze native --language go --source cmd/server/main.go --trusted-local --json
+excession analyze native --language java --source src/main/java/app/Service.java \\
+  --source-prefix src/main/java --trusted-local --json
 excession analyze native --language c --source src/main.c \\
   --compile-db build/compile_commands.json --trusted-local --json
 excession analyze native --language cpp --source src/main.cpp \\
@@ -122,13 +124,23 @@ Native import retains the **original report bytes** through the existing
 immutable evidence store, rechecks all claimed source/configuration blobs
 against pinned Git objects, and requires exact report identities. Automatic
 analysis, impact, agent context, and agent verify reuse the same selected,
-source-replayed receipts. They expose native Go input membership and configured
-Clang AST observations as **configured observations**, not generic dependency
+source-replayed receipts. They expose native Go input membership, Java compiler-resolved source
+references and configured Clang AST observations as **configured observations**, not generic dependency
 edges or verified runtime effects. Reports for different commits remain
 separate; saved impact plans replay only the originally selected identities.
 `evidence native-store-audit` rechecks an imported snapshot without executing
 the compiler. Imported producer claims remain **unattested**, even when their
 Git inputs are authentic.
+
+Java uses the installed JDK's `JavacTask` parse/analyze API to resolve
+references between **tracked Java source files**. It neither generates class
+files nor runs project classes, annotation processors, Maven or Gradle. It
+uses an empty classpath/sourcepath and refuses missing external dependencies.
+The source set is limited to 128 Java files and 4 MiB of source. Select a
+smaller module with `--source-prefix` when needed. Compiler-resolved
+source-to-source references are kept as typed, unattested observations
+rather than promoted to verified call edges. Its offline JDK configuration
+is intentionally narrower than a full Java project build.
 
 Go reuses the existing pinned-Git, offline `go list` producer with its
 declared source/configuration inputs. Clang reuses the existing compilation
@@ -149,7 +161,7 @@ build receipts. No source code or build process is executed without
 Go currently requires a tracked root `go.mod` without a `go.work`, uses
 offline module resolution and disables CGO. Clang requires an existing
 compilation database and selected HEAD in a clean checkout. A source
-without a supported native producer, including Java, is refused explicitly.
+without a supported native producer is refused explicitly.
 Use `analyze languages` for syntax-level coverage across those languages.
 
 `excession analyze rust --trusted-local` runs the installed rust-analyzer

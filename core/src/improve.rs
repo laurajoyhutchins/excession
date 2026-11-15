@@ -91,6 +91,12 @@ pub fn evaluate_indexed(
 mod rust_trial;
 pub use rust_trial::{Trial, trial};
 
+/// Dispatch editing capabilities without embedding language/tool names in the
+/// shared observation model. Producers own their specific native recipes.
+pub(crate) fn edit_capability(report: &Value, candidate: &Value) -> Result<&'static str> {
+    rust_trial::edit_capability(report, candidate)
+}
+
 #[cfg(test)]
 use crate::json::obj;
 #[cfg(test)]

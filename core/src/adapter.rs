@@ -263,9 +263,17 @@ fn run_payload(binary: &str, code: &str, payload: Value, limits: AdapterLimits) 
     crate::json::parse(&stdout)
 }
 
-/// Bounded execution of an external *native* tool, without a shell, reusing
-/// the same pipe draining and deadline policy as parser adapters.
-pub fn run_tool(mut command: Command, label: &str, timeout: Duration) -> Result<Vec<u8>> {
+/// Bounded native process result. A nonzero code is a valid compiler diagnostic
+/// outcome, not a missing or unauthenticated execution.
+pub struct ToolOutput {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub exit_code: i32,
+}
+
+/// Execute one explicitly selected native process without a shell, with
+/// bounded pipes and a deadline. Failure and success share one receipt path.
+pub fn run_tool_status(mut command: Command, label: &str, timeout: Duration) -> Result<ToolOutput> {
     let mut process = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -302,10 +310,22 @@ pub fn run_tool(mut command: Command, label: &str, timeout: Duration) -> Result<
     if exceeded.load(Ordering::Relaxed) {
         return refuse(format!("{label} output exceeds byte budget"));
     }
-    if !status.success() {
-        return refuse(format!("{label} failed: {}", String::from_utf8_lossy(&err)));
+    let exit_code = status.code().ok_or_else(|| format!("{label} terminated by signal"))?;
+    Ok(ToolOutput {
+        stdout: out,
+        stderr: err,
+        exit_code,
+    })
+}
+
+/// Existing native analysis consumers need a successful tool invocation.
+/// Compiler-check receipts use run_tool_status to retain failed diagnostics.
+pub fn run_tool(command: Command, label: &str, timeout: Duration) -> Result<Vec<u8>> {
+    let result = run_tool_status(command, label, timeout)?;
+    if result.exit_code != 0 {
+        return refuse(format!("{label} failed ({}): {}", result.exit_code, String::from_utf8_lossy(&result.stderr)));
     }
-    Ok(out)
+    Ok(result.stdout)
 }
 
 pub fn entry(name: &str, path: &str, content: &str) -> Value {

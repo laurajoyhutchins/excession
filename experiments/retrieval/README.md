@@ -20,6 +20,12 @@ For a query, both approaches consume the **same existing** `agent locate` output
 - **Lexical:** first five BM25-ranked source paths.
 - **Graph-first hybrid:** top BM25 path; then up to two distinct direct source neighbors from the existing Git-bound `relationship_candidates`; then remaining BM25 paths, with a hard total budget of five.
 
+For attribution, the v2 evaluator additionally runs **SCIP-only** and
+**static-only** graph-first variants, each under the same five-file limit.
+Only edges whose original producer assessment is `OBSERVED` enter SCIP-only;
+`STATIC_IMPORT` remains a heuristic and enters static-only. This avoids
+misrepresenting the effects of static imports as an SCIP accuracy result.
+
 The hybrid does **not** score language-model similarity, invent edges, claim semantic correctness, or change the core candidate ranking. Source-bound `SCIP_REFERENCE` observations retain `OBSERVED` assessments and their original native receipts; static import edges remain `CANDIDATE`. A producer observation is not automatically a correct semantic dependency.
 
 The Rust evaluator in `core/examples/retrieval_scip_benchmark.rs` checks the gold anchors against raw Git blobs and evaluates path-level recall@5, reciprocal rank@5, per-query hit counts, and non-answer false retrieval. It fails if a real native SCIP observation does not reach at least one evaluated query. The negative cases measure whether unsupported queries still return candidates, not whether the ranking model can correctly abstain. All per-task results are retained, including cases where graph expansion reduces recall.
@@ -58,3 +64,5 @@ The exact-head [GitHub Actions benchmark run](https://github.com/laurajoyhutchin
 **Interpretation:** Do **not** promote the graph-first ranking. The negative result does not disprove the value of SCIP in other corpora, but it demonstrates that simply placing relationship neighbors above lexical matches can degrade retrieval. The evaluation labels are also unreviewed and too few to support a general accuracy claim.
 
 **Next experiment:** Quantify native SCIP-only neighbors independently from static-import candidates, use externally adjudicated queries and multiple repositories, and compare identical source-path inspection budgets. Performance work should eliminate repeated Git subprocesses for the same already-authenticated path inside one exact-revision replay, without weakening source identity checks. Measure before and after, keeping this run as the baseline.
+
+The first recorded run used evaluator v1 (mixed graph expansion only). The v2 arms are a follow-up diagnostic with **unchanged queries and gold anchors**, not a replacement of the archived result.

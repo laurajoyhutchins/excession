@@ -175,6 +175,27 @@
     },
     "candidate_source_enumeration_complete": {
       "type": "boolean"
+    },
+    "native_reference_impacts": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "Bounded Java compiler-observed reference candidates, separate from static/SCIP import candidates",
+      "items": {
+        "type": "object",
+        "required": [
+          "entity",
+          "assessment",
+          "next_hop",
+          "distance_to_change"
+        ]
+      }
+    },
+    "native_reference_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "native_reference_enumeration_complete": {
+      "type": "boolean"
     }
   },
   "$defs": {

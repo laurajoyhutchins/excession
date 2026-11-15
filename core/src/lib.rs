@@ -57,6 +57,7 @@ pub mod kernel_coverage;
 pub mod kernel_links;
 mod module_identity;
 pub mod native_boundary;
+pub mod native_analysis;
 pub mod native_discovery;
 pub mod native_syntax;
 pub mod native_test_selectors;

@@ -776,6 +776,22 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?))
             }
         }
+        [top, sub] if top == "analyze" && sub == "native" => {
+            let report = excession::native_analysis::scan(
+                Path::new(opt.get_or("repo", ".")),
+                opt.get_or("rev", "HEAD"),
+                opt.get("source"),
+                opt.get("language"),
+                opt.0.get("compile-db").map(|v| Path::new(v.as_str())),
+                opt.0.get("compiler").map(String::as_str),
+                opt.get_or("trusted-local", "false"),
+            )?;
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(report))
+            } else {
+                Ok(Response::Message(excession::native_analysis::human(&report)?))
+            }
+        }
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
         [top, sub] if top == "analyze" && sub == "rust" => {
             let report = excession::rust_native::scan(

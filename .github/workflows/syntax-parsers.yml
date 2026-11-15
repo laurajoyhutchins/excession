@@ -35,6 +35,8 @@ on:
       - 'docs/EVIDENCE_QUERY.md'
       - 'core/src/native_boundary.rs'
       - 'core/src/native_discovery.rs'
+      - 'core/src/native_analysis.rs'
+      - 'core/tests/native_analysis_cli.rs'
       - 'tools/native_language_adapter.py'
       - 'tools/excession_ts_resolve.cjs'
       - 'core/src/adapter.rs'

@@ -39,3 +39,22 @@ This initial dataset is far too small and has not been independently adjudicated
 5. No stale Git identity, forged native receipt, cross-revision leakage, or silent semantics promotion.
 
 Keep the evidence-first retrieval output in Excession regardless of whether the hybrid wins. A negative result is a useful result.
+
+
+## First execution: pinned h11, 2026-11-14
+
+The exact-head [GitHub Actions benchmark run](https://github.com/laurajoyhutchins/excession/actions/runs/43660179881) **passed**, and the recorded result is negative for graph-first ranking. The full source-bound [evidence ZIP](https://github.com/laurajoyhutchins/excession/actions/runs/43660179881) contains per-query paths and native receipt digests.
+
+- Upstream h11 commit: `62c5068c971579d61fa1b55373390e12f25fd856`
+- SCIP producer: `scip-python 0.6.6` via the official `scip 0.10.0` decoder
+- Git-bound SCIP ingestion: 2,829 matched cross-file references, 1,143 unresolved; retained snapshot `657fef9b94a6412dd9f166c15b26b6c1685402e7e265c07ab1623234bfe4b583`
+- 16 positive, two negative author-seeded queries; 24 relevant paths total
+- **BM25 recall@5: 0.750000**, **graph-first recall@5: 0.541667**
+- **BM25 MRR@5: 0.528125**, **graph-first MRR@5: 0.443750**
+- Negative cases producing a nonempty retrieval result: 1/2 under both policies
+- Only **one of 18 queries** exposed native SCIP relations as additional direct neighbors, totaling four native edges. Other `relationship_candidates` arose from static import candidates. Consequently the graph-first column measures a **mixed static/SCIP expansion policy**, not SCIP-only gain.
+- The Rust evaluator ran for **5:12.20** wall-clock, 82.78 user CPU seconds, and reported 47,448 KiB peak resident memory for the evaluation process. Its maximum single-query time was 18,434 ms. This is end-to-end query overhead including source-bound native evidence replay, not a neural model inference time.
+
+**Interpretation:** Do **not** promote the graph-first ranking. The negative result does not disprove the value of SCIP in other corpora, but it demonstrates that simply placing relationship neighbors above lexical matches can degrade retrieval. The evaluation labels are also unreviewed and too few to support a general accuracy claim.
+
+**Next experiment:** Quantify native SCIP-only neighbors independently from static-import candidates, use externally adjudicated queries and multiple repositories, and compare identical source-path inspection budgets. Performance work should eliminate repeated Git subprocesses for the same already-authenticated path inside one exact-revision replay, without weakening source identity checks. Measure before and after, keeping this run as the baseline.

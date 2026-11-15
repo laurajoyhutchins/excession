@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/boundary.v1.schema.json",
+  "title": "contracts: reconcile evidence-core boundaries with concepts and product scaffolds",
+  "description": "Draft wire shape only; semantic/source/behavioral validity requires Rust and independent evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "source_authority",
+    "relation_authority",
+    "current_git_format",
+    "legacy_reports",
+    "meaning_preservation",
+    "concept_layer"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.evidence-boundary.v1"
+    },
+    "source_authority": {
+      "const": "GIT_OBJECTS"
+    },
+    "relation_authority": {
+      "const": "RUST_SQLITE"
+    },
+    "current_git_format": {
+      "const": "SHA1_ONLY"
+    },
+    "legacy_reports": {
+      "type": "array",
+      "minItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "excession.semantic-observations.v1",
+          "excession.evidence-query.v1"
+        ]
+      }
+    },
+    "meaning_preservation": {
+      "const": "PRODUCER_NATIVE_RELATIONS_NOT_PROMOTED"
+    },
+    "concept_layer": {
+      "const": "DERIVED_NOT_AN_AUTHORITY"
+    }
+  }
+}

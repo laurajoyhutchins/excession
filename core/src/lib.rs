@@ -52,6 +52,7 @@ mod indexed_tree;
 pub mod integration;
 pub mod java_native;
 pub mod json;
+pub mod jvm_inputs;
 pub mod kbuild_graph;
 pub mod kernel;
 pub mod kernel_coverage;

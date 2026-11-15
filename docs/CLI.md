@@ -100,6 +100,9 @@ excession analyze native --language go --source cmd/server/main.go --trusted-loc
 excession analyze native --language go --source cmd/server/main.go --trusted-local --json
 excession analyze native --language java --source src/main/java/app/Service.java \\
   --source-prefix src/main/java --trusted-local --json
+excession analyze native --language java --source src/main/java/app/Service.java \\
+  --source-prefix src/main/java --classpath-manifest /tmp/jvm-inputs.json \\
+  --trusted-local --json
 excession analyze native --language c --source src/main.c \\
   --compile-db build/compile_commands.json --trusted-local --json
 excession analyze native --language cpp --source src/main.cpp \\
@@ -133,9 +136,13 @@ the compiler. Imported producer claims remain **unattested**, even when their
 Git inputs are authentic.
 
 Java uses the installed JDK's `JavacTask` parse/analyze API to resolve
-references between **tracked Java source files**. It neither generates class
+references between **tracked Java source files**. An optional externally
+supplied Maven/Gradle-claimed compilation-input receipt admits only
+hash-checked JARs, exact Git source inventory and supported Java `--release`.
+See [JVM resolved inputs](JVM_RESOLVED_INPUTS.md). It neither generates class
 files nor runs project classes, annotation processors, Maven or Gradle. It
-uses an empty classpath/sourcepath and refuses missing external dependencies.
+uses an empty classpath unless `--classpath-manifest` is supplied; it
+refuses missing external dependencies in either mode.
 The source set is limited to 128 Java files and 4 MiB of source. Select a
 smaller module with `--source-prefix` when needed. Compiler-resolved
 source-to-source references are kept as typed, unattested observations

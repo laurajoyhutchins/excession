@@ -17,14 +17,16 @@ public class ExcessionJavaNative {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            throw new IllegalArgumentException("expected checkout, empty classpath, and sources");
+        if (args.length < 5) {
+            throw new IllegalArgumentException("expected checkout, empty sourcepath, classpath, release, and sources");
         }
         Path checkout = Paths.get(args[0]).toRealPath();
-        Path emptyClasspath = Paths.get(args[1]).toRealPath();
+        Path emptySourcepath = Paths.get(args[1]).toRealPath();
+        String classpath = args[2];
+        String release = args[3];
         ArrayList<Path> files = new ArrayList<>();
         TreeSet<String> selected = new TreeSet<>();
-        for (int i = 2; i < args.length; i++) {
+        for (int i = 4; i < args.length; i++) {
             Path file = Paths.get(args[i]).toRealPath();
             if (!file.startsWith(checkout)) {
                 throw new IllegalArgumentException("Java source outside selected checkout");
@@ -40,11 +42,15 @@ public class ExcessionJavaNative {
         try (StandardJavaFileManager manager =
                  compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
             var sources = manager.getJavaFileObjectsFromPaths(files);
-            List<String> options = List.of(
+            ArrayList<String> options = new ArrayList<>(List.of(
                 "-proc:none", "-implicit:none",
-                "-classpath", emptyClasspath.toString(),
-                "-sourcepath", emptyClasspath.toString(), "-encoding", "UTF-8"
-            );
+                "-classpath", classpath,
+                "-sourcepath", emptySourcepath.toString(), "-encoding", "UTF-8"
+            ));
+            if (!release.equals("-")) {
+                options.add("--release");
+                options.add(release);
+            }
             JavacTask task = (JavacTask) compiler.getTask(
                 null, manager, diagnostics, options, null, sources
             );

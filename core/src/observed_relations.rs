@@ -339,7 +339,7 @@ fn select_native(
     let producer = receipt.get("producer")?.str()?;
     if !matches!(
         producer,
-        "native:go-list" | "native:clang-ast" | "native:javac-symbols"
+        "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured"
     ) {
         return refuse("selected receipt is not a supported native producer");
     }
@@ -365,6 +365,7 @@ fn select_native(
                 | "NATIVE_CONFIGURED_TU"
                 | "NATIVE_CONFIGURED_HEADER"
                 | "NATIVE_JAVA_SYMBOL_REFERENCE"
+                | "NATIVE_JVM_CLASSPATH_CONFIGURATION"
         ) {
             return refuse("unknown selected native observation kind");
         }
@@ -522,7 +523,7 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
                         ("source_prefix", prefix.as_deref().map_or(Value::Null, Value::string)),
                         ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
                     ]));
-                } else if matches!(producer, "native:go-list" | "native:clang-ast" | "native:javac-symbols") {
+                } else if matches!(producer, "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured") {
                     crate::evidence_store::audit(db, snapshot)?;
                     let report = json::parse(receipt.get("raw_json")?.str()?.as_bytes())?;
                     native.push(obj(&[

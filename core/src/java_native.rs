@@ -2,7 +2,7 @@
 //! language semantics; Git owns every admitted source identity. No Maven,
 //! Gradle, annotation processors, generated sources, or compiled user code.
 use crate::json::{Value, obj};
-use crate::{Result, adapter, digest, git, refuse};
+use crate::{Result, adapter, digest, git, jvm_inputs, refuse};
 use percent_encoding::percent_decode_str;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -19,6 +19,18 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 const JAVA_ADAPTER: &str = include_str!("../adapters/ExcessionJavaNative.java");
 
 struct Scratch(PathBuf);
+
+fn create_private_dir(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir(path)
+    }
+}
 impl Scratch {
     fn new() -> Result<Self> {
         for _ in 0..16 {
@@ -27,7 +39,7 @@ impl Scratch {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-            match fs::create_dir(&dir) {
+            match create_private_dir(&dir) {
                 Ok(()) => return Ok(Self(dir)),
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return refuse(format!("create Java analysis scratch: {e}")),
@@ -69,7 +81,13 @@ fn decode_path(encoded: &str) -> Result<String> {
 /// JavacTask.parse+analyze resolve references without generating classes or
 /// executing the repository's build scripts. Missing build dependencies
 /// are refused rather than guessed.
-pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<Value> {
+pub fn scan(
+    repo: &Path,
+    revision: &str,
+    source: &str,
+    prefix: &str,
+    resolved_manifest: Option<&Path>,
+) -> Result<Value> {
     git::validate_path(source)?;
     if !source.ends_with(".java") {
         return refuse("native Java source must end in .java");
@@ -129,16 +147,41 @@ pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<V
         }
         sources.push(physical);
     }
+    let source_paths = entries
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect::<Vec<_>>();
+    let resolved = match resolved_manifest {
+        Some(path) => Some(jvm_inputs::verify(
+            &jvm_inputs::load(path)?,
+            &commit,
+            &tree,
+            prefix,
+            &source_paths,
+        )?),
+        None => None,
+    };
     let scratch = Scratch::new()?;
     let helper = scratch.0.join("ExcessionJavaNative.java");
     fs::write(&helper, JAVA_ADAPTER).map_err(|e| format!("write JDK adapter: {e}"))?;
     let empty = scratch.0.join("empty-classpath");
     fs::create_dir(&empty).map_err(|e| format!("create empty Java classpath: {e}"))?;
+    let classpath = match &resolved {
+        Some(inputs) => inputs.stage_classpath(&scratch.0)?,
+        None => empty.to_string_lossy().into_owned(),
+    };
     let mut command = Command::new("java");
     command
         .arg(&helper)
         .arg(&root)
         .arg(&empty)
+        .arg(&classpath)
+        .arg(
+            resolved
+                .as_ref()
+                .and_then(|inputs| inputs.release.as_deref())
+                .unwrap_or("-"),
+        )
         .args(&sources)
         .current_dir(&scratch.0)
         .env_remove("CLASSPATH")
@@ -177,6 +220,9 @@ pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<V
         }
     }
     // Detect even a native producer modifying its inputs while being observed.
+    if let Some(inputs) = &resolved {
+        jvm_inputs::verify(&inputs.document, &commit, &tree, prefix, &source_paths)?;
+    }
     git::clean(&root)?;
     for (entry, path) in entries.iter().zip(sources.iter()) {
         let content = fs::read(path).map_err(|e| format!("recheck Java source: {e}"))?;
@@ -203,6 +249,11 @@ pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<V
             ])
         })
         .collect::<Vec<_>>();
+    let configuration = if resolved.is_some() {
+        "EXTERNAL_RESOLVED_CLASSPATH_NO_PROCESSORS"
+    } else {
+        "EMPTY_CLASSPATH_AND_SOURCEPATH_NO_PROCESSORS"
+    };
     let nested = obj(&[
         ("schema", Value::string("excession.java-native.v1")),
         ("status", Value::string("JAVAC_ANALYZED_PROC_DISABLED")),
@@ -216,9 +267,12 @@ pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<V
             Value::array(entries.iter().map(|entry| Value::string(&entry.path))),
         ),
         ("references", Value::array(refs)),
+        ("configuration", Value::string(configuration)),
         (
-            "configuration",
-            Value::string("EMPTY_CLASSPATH_AND_SOURCEPATH_NO_PROCESSORS"),
+            "resolved_inputs",
+            resolved
+                .as_ref()
+                .map_or(Value::Null, |inputs| inputs.document.clone()),
         ),
     ])
     .stamp_id("report_id")?;
@@ -236,10 +290,18 @@ pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<V
             ),
         ),
         ("language", Value::string("java")),
-        ("producer", Value::string("javac-symbols")),
+        ("producer", Value::string(if resolved.is_some() {
+            "javac-configured"
+        } else {
+            "javac-symbols"
+        })),
         (
             "scope",
-            Value::string("JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL"),
+            Value::string(if resolved.is_some() {
+                "JAVAC_CONFIGURED_SOURCE_REFERENCES_PARTIAL"
+            } else {
+                "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL"
+            }),
         ),
         ("execution", Value::string("TRUSTED_LOCAL_NOT_ATTESTED")),
         ("input_sources", Value::number(entries.len())),
@@ -253,7 +315,10 @@ pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<V
                     "Only the selected tracked self-contained Java source set is analyzed",
                 ),
                 Value::string(
-                    "No annotation processors, third-party classpath, Maven or Gradle resolution",
+                    "No annotation processors, project build execution or automatic dependency resolution",
+                ),
+                Value::string(
+                    "External Maven/Gradle provider claim is not independently attested",
                 ),
                 Value::string(
                     "Resolved source references do not establish call or runtime behavior",
@@ -268,6 +333,17 @@ pub fn scan(repo: &Path, revision: &str, source: &str, prefix: &str) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_compiler_inputs_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = Scratch::new().unwrap();
+        assert_eq!(
+            fs::metadata(&scratch.0).unwrap().permissions().mode() & 0o077,
+            0
+        );
+    }
 
     #[test]
     fn percent_decoded_paths_are_strict() {

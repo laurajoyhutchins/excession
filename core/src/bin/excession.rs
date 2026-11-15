@@ -786,6 +786,10 @@ fn execute(args: &[String]) -> Result<Response> {
                     compile_db: opt.0.get("compile-db").map(|v| Path::new(v.as_str())),
                     compiler: opt.0.get("compiler").map(String::as_str),
                     source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                    classpath_manifest: opt
+                        .0
+                        .get("classpath-manifest")
+                        .map(|v| Path::new(v.as_str())),
                 },
                 opt.get_or("trusted-local", "false"),
             )?;
@@ -1361,6 +1365,16 @@ fn execute(args: &[String]) -> Result<Response> {
                 limit,
             )?))
         }
+        [top, sub] if top == "evidence" && sub == "jvm-inputs-capture" => Ok(json(
+            excession::jvm_inputs::capture(&excession::jvm_inputs::Capture {
+                repo: opt.path("repo"),
+                revision: opt.get("rev"),
+                source_prefix: opt.get("source-prefix"),
+                provider_claim: opt.get("provider-claim"),
+                classpath_file: opt.path("classpath-file"),
+                release: opt.0.get("release").map(String::as_str),
+            })?,
+        )),
         [top, sub] if top == "evidence" && sub == "native-import" => {
             let destination =
                 analyze::checked_external_destination(opt.path("repo"), opt.path("db"), "SQLite")?;

@@ -31,12 +31,21 @@ checkout bytes against Git before and after the compiler executes, requires
 a clean HEAD, and refuses more than 128 files or 4 MiB of source.
 
 The adapter invokes only the installed JDK source launcher on Excession's
-fixed helper and uses compiler APIs to resolve source symbols. The compiler
-is configured with empty class and source paths, `-proc:none`, and
-`-implicit:none`. It does not run Maven, Gradle, annotation processors,
-generated code, user classes, or build scripts. JDK library references
-are not source-to-source edges. It refuses missing third-party dependencies,
-and cannot reproduce a project-specific compiler configuration.
+fixed helper and uses compiler APIs to resolve source symbols. Without a
+configured receipt, the compiler uses empty class and source paths,
+`-proc:none`, and `-implicit:none`.
+
+For previously resolved external JAR dependencies, provide an
+`excession.jvm-resolved-inputs.v1` manifest using `--classpath-manifest`.
+Excession independently checks each JAR SHA-256, snapshots the exact bytes
+into temporary compiler inputs, and never invokes Maven or Gradle.
+The external provider label remains a **claim**, not attested build
+provenance. See [Resolved JVM compilation inputs](JVM_RESOLVED_INPUTS.md).
+
+It does not run Maven, Gradle, annotation processors, generated code,
+user classes, or build scripts. JDK library references are not
+source-to-source edges. Projects with missing or different compiler
+configuration are still explicitly unsupported.
 
 The native report has a Git-bound `excession.native-analysis.v1` envelope
 and a nested `excession.java-native.v1` report containing compiler-resolved
@@ -56,8 +65,8 @@ endpoints are independently validated.
 
 ## Explicitly unsupported
 
-A Java project requiring a third-party classpath, annotation processors,
-Kotlin/Scala mixed compilation, Gradle/Maven generated code, or module
-workflows must use a separate configured native producer. Excession
+A Java project requiring annotation processors, Kotlin/Scala mixed
+compilation, generated code, non-JAR classpath entries, a JPMS module path,
+or compiler flags beyond a supported `--release` remains unsupported. Excession
 refuses this narrower source-only workflow rather than guessing those
 semantics. A trusted-local compiler invocation is **not sandboxed**.

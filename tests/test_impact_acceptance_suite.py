@@ -1,7 +1,6 @@
 """Independent tests for the pinned multi-repository impact acceptance harness."""
 from __future__ import annotations
 
-from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
@@ -11,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "benchmarks" / "experiments"))
 
-from impact_acceptance_suite import Case, assess, validate_manifest, _paths, _write_json
+from impact_acceptance_suite import assess, validate_manifest, verify_agent_obligations, _paths, _write_json
 
 
 BASE = "a" * 40
@@ -180,6 +179,59 @@ class IndependentAssessmentTests(unittest.TestCase):
             digest = _write_json(path, {"b": 2, "a": 1})
             self.assertEqual(digest, _write_json(path, {"a": 1, "b": 2}))
             self.assertEqual(json.loads(path.read_text()), {"a": 1, "b": 2})
+
+
+
+class AgentVerificationAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        self.case = validate_manifest(manifest())[0]
+        self.trees = {"base_tree": "c" * 40, "head_tree": "d" * 40}
+        self.report = {
+            "schema": "excession.agent-verification.v1",
+            "base_commit": BASE,
+            "candidate_commit": HEAD,
+            "base_tree": self.trees["base_tree"],
+            "candidate_tree": self.trees["head_tree"],
+            "status": "OPEN_OBLIGATIONS",
+            "ready_to_merge": False,
+            "safe_to_skip_unlisted_tests": False,
+            "obligations": [
+                "SEMANTIC_CORRECTNESS_NOT_EVALUATED",
+                "INCOMPLETE_DEPENDENCY_COVERAGE",
+                "TEST_SELECTION_NOT_PROVEN",
+                "INDEPENDENT_TEST_RECEIPT_MISSING",
+                "INDEPENDENT_BUILD_RECEIPT_MISSING",
+            ],
+            "replay": {"source": "RECOMPUTED_FROM_PINNED_GIT"},
+            "coverage": {"status": "PARTIAL", "truncated": True},
+            "candidate_source_count": 120,
+        }
+
+    def test_unattested_complete_source_reporting_never_grants_merge_authority(self):
+        result = verify_agent_obligations(self.report, self.case, self.trees)
+        self.assertFalse(result["ready_to_merge"])
+        self.assertTrue(result["output_truncated"])
+        self.assertEqual(result["candidate_source_count"], 120)
+
+    def test_missing_obligation_or_unearned_authority_refused(self):
+        for field, value in [
+            ("ready_to_merge", True),
+            ("safe_to_skip_unlisted_tests", True),
+            ("status", "VERIFIED"),
+            ("obligations", []),
+            ("candidate_tree", "e" * 40),
+        ]:
+            with self.subTest(field=field):
+                altered = json.loads(json.dumps(self.report))
+                altered[field] = value
+                with self.assertRaises(ValueError):
+                    verify_agent_obligations(altered, self.case, self.trees)
+
+    def test_source_replay_must_be_explicit(self):
+        altered = json.loads(json.dumps(self.report))
+        altered["replay"]["source"] = "REPORTED_ONLY"
+        with self.assertRaises(ValueError):
+            verify_agent_obligations(altered, self.case, self.trees)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,6 @@
 //! These are distinct predicates; neither proves a complete build graph.
 use crate::json::{Value, obj};
 use crate::{Result, compiler_clang, git, native_boundary, native_discovery, refuse};
-use std::collections::BTreeMap;
 use std::path::Path;
 
 fn identity(repo: &Path, commit: &str, tree: &str, path: &str) -> Result<Value> {

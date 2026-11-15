@@ -12,6 +12,7 @@ use excession::explain;
 use excession::history;
 use excession::history_rewrite;
 use excession::impact_query;
+use excession::improve;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
 use excession::observed_relations::{self, Plan, Selection};
@@ -1089,6 +1090,25 @@ fn execute(args: &[String]) -> Result<Response> {
                 refactor::suggest(&db, opt.get("name"), opt.get("rev"))?
             }))
         }
+        [top, sub] if top == "improve" => match sub.as_str() {
+            "plan" => Ok(json(improve::plan(
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.path("index"),
+                opt.0.get("source-prefix").map(String::as_str),
+            )?)),
+            "evaluate" => Ok(json(improve::evaluate(&improve::Evaluation {
+                base_repo: opt.path("base-repo"),
+                candidate_repo: opt.path("candidate-repo"),
+                base: opt.get("base"),
+                candidate: opt.get("candidate"),
+                base_index: opt.path("base-index"),
+                candidate_index: opt.path("candidate-index"),
+                plan: opt.path("plan"),
+                source_prefix: opt.0.get("source-prefix").map(String::as_str),
+            })?)),
+            _ => refuse(format!("unknown improvement command {sub}")),
+        },
         [top, sub] if top == "benchmark" => match sub.as_str() {
             "review-prepare" => {
                 let repetition = opt

@@ -124,7 +124,7 @@ fn source_record(source: &Value, roots: &BTreeSet<String>) -> Result<()> {
     git::validate_path(path)?;
     if !roots
         .iter()
-        .any(|r| path == r || path.starts_with(&format!("{r}/")))
+        .any(|r| r == "." || path == r || path.starts_with(&format!("{r}/")))
     {
         return refuse("preflight: source outside declared roots");
     }
@@ -203,7 +203,9 @@ pub fn syntax(value: &Value) -> Result<Value> {
     let mut root_set = BTreeSet::new();
     for root in roots {
         let path = root.str()?;
-        git::validate_path(path)?;
+        if path != "." {
+            git::validate_path(path)?;
+        }
         root_set.insert(path.to_owned());
     }
     let mut previous = "";

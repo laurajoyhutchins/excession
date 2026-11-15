@@ -146,6 +146,27 @@ fn cross_language_command_preserves_scope_and_unsupported_coverage() {
                 )
             })
     );
+    // A whole-repository syntax report must remain independently preflightable
+    // and re-parsable with exactly the same Git identities.
+    let syntax = checked(
+        exe,
+        &["syntax", "scan", "--repo", f.path(), "--roots", "."],
+        &f.repo,
+    );
+    let syntax_file = f.root.join("syntax.json");
+    fs::write(&syntax_file, &syntax).unwrap();
+    let location = syntax_file.to_str().unwrap();
+    let preflight = checked(exe, &["syntax", "preflight", "--report", location], &f.repo);
+    assert_eq!(
+        json::parse(&preflight).unwrap().get("status").unwrap().str().unwrap(),
+        "SHAPE_AND_DIGEST_ONLY"
+    );
+    let audit = checked(exe, &["syntax", "audit", "--repo", f.path(), "--report", location], &f.repo);
+    assert_eq!(
+        json::parse(&audit).unwrap().get("status").unwrap().str().unwrap(),
+        "REPARSED_MATCH"
+    );
+
     let human = String::from_utf8(checked(
         exe,
         &["analyze", "languages", "--repo", f.path()],

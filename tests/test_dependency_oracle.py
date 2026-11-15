@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "benchmarks" / "experiments"))
-from dependency_oracle import python_edges  # noqa: E402
+from dependency_oracle import module_name, python_edges  # noqa: E402
 
 
 class LiteralImportCoverage(unittest.TestCase):
@@ -37,6 +37,16 @@ class LiteralImportCoverage(unittest.TestCase):
             ("src.pkg.first", "src.pkg.third", 2, "from"),
             ("src.pkg.first", "src.pkg.third", 3, "import"),
         }
+
+    def test_mixed_language_names_are_distinct(self):
+        paths = (
+            "src/app.py", "src/app.js", "src/app.jsx", "src/app.ts",
+            "src/app.tsx", "src/app.mjs", "src/app.cjs", "src/app.mts",
+            "src/app.cts",
+        )
+        self.assertEqual(len({module_name(p) for p in paths}), len(paths))
+        self.assertEqual(module_name("src/app.js"), "src.app.js")
+        self.assertEqual(module_name("src/app.py"), "src.app")
 
     def test_independent_oracle_recognizes_absolute_and_relative_imports(self):
         found, unresolved = python_edges(self.sources, self.modules)

@@ -8,7 +8,7 @@ const files = JSON.parse(fs.readFileSync(0, 'utf8'));
 const tracked = new Set(files.map(f => f.path));
 const edges = [];
 const unresolved = [];
-const suffixes = ['.js', '.mjs', '.cjs', '.ts'];
+const suffixes = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts'];
 
 function resolveRelative(source, specifier) {
   if (!specifier.startsWith('.')) return null;
@@ -21,12 +21,15 @@ function resolveRelative(source, specifier) {
   // TypeScript Node10 does not infer index.cjs/index.mjs for a bare
   // directory specifier. Node CommonJS likewise does not infer index.cjs.
   // Explicit './alt/index.cjs' is valid; './alt' is unresolved here.
-  for (const ext of ['.js', '.ts']) candidates.push(path.join(base, 'index' + ext));
+  for (const ext of ['.js', '.jsx', '.ts', '.tsx']) candidates.push(path.join(base, 'index' + ext));
   return candidates.find(candidate => tracked.has(candidate)) ?? null;
 }
 
 for (const file of files) {
-  const kind = file.path.endsWith('.ts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+  const kind = file.path.endsWith('.tsx') ? ts.ScriptKind.TSX
+    : file.path.endsWith('.jsx') ? ts.ScriptKind.JSX
+    : file.path.endsWith('.ts') || file.path.endsWith('.mts') || file.path.endsWith('.cts')
+      ? ts.ScriptKind.TS : ts.ScriptKind.JS;
   const source = ts.createSourceFile(
     file.path, file.content, ts.ScriptTarget.Latest, true, kind
   );

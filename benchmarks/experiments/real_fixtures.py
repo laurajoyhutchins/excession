@@ -322,7 +322,7 @@ def verify_product_workflow(
         path for path, (mode, _) in objects.items()
         if mode in ("100644", "100755")
         and path.startswith(prefixes)
-        and path.endswith((".py", ".js", ".mjs", ".cjs", ".ts"))
+        and path.endswith((".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"))
         and not any(part in ("node_modules", ".venv") for part in path.split("/"))
     )
     path_by_module = {module_name(path): path for path in paths}

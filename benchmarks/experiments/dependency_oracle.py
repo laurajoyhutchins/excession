@@ -29,16 +29,17 @@ def module_name(path: str) -> str:
     """Derive the indexer's path-oriented identifier without consulting SQL."""
     if path.endswith(".py"):
         stem = path[:-3]
-    elif path.endswith((".mjs", ".cjs", ".ts")):
+    elif path.endswith((".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts")):
         stem = path
-    elif path.endswith(".js"):
-        stem = path[:-3]
     else:
         raise ValueError(f"not a supported source path: {path}")
     name = stem.replace("/", ".")
-    for suffix in (".__init__", ".index"):
-        if name.endswith(suffix):
-            return name[: -len(suffix)]
+    # Python packages have importable names; JavaScript/TypeScript files use
+    # extension-qualified, Git-path identities to avoid cross-language aliases.
+    if path.endswith(".py"):
+        for suffix in (".__init__", ".index"):
+            if name.endswith(suffix):
+                return name[: -len(suffix)]
     return name
 
 

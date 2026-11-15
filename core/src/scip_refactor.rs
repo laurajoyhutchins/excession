@@ -36,9 +36,11 @@ const SCIP_URI_ESCAPE: &AsciiSet = &CONTROLS
 /// paths, which fail for spaces and special characters.
 pub fn scip_project_root_uri(path: &Path) -> Result<String> {
     let text = path.to_str().ok_or("non-UTF8 SCIP workspace path")?;
-    Ok(format!("file://{}", utf8_percent_encode(text, SCIP_URI_ESCAPE)))
+    Ok(format!(
+        "file://{}",
+        utf8_percent_encode(text, SCIP_URI_ESCAPE)
+    ))
 }
-
 
 #[derive(Clone)]
 struct Document {
@@ -353,7 +355,8 @@ fn analyze_bytes(
     let metadata = parsed.get("metadata")?;
     if let Some(prefix) = source_prefix {
         let expected_root = scip_project_root_uri(
-            &repo.canonicalize()
+            &repo
+                .canonicalize()
                 .map_err(|e| format!("SCIP checkout root: {e}"))?
                 .join(prefix),
         )?;

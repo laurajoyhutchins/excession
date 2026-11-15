@@ -1,0 +1,235 @@
+{
+  "schema": "excession.retrieval-gold.v1",
+  "repository": "python-hyper/h11",
+  "source_commit": "62c5068c971579d61fa1b55373390e12f25fd856",
+  "review_status": "AUTHOR_SEEDED_UNREVIEWED",
+  "label_method": "Anchored by exact Git source definitions independently of SCIP index contents; author-seeded not adjudicated",
+  "cases": [
+    {
+      "id": "send-boundary",
+      "query": "How does the connection send HTTP message data?",
+      "gold": [
+        {
+          "path": "h11/_connection.py",
+          "blob": "e37d82a82a882c072cb938a90eb4486b51cdad99",
+          "anchor": "def send("
+        },
+        {
+          "path": "h11/_writers.py",
+          "blob": "939cdb912a9debaea07fbf3a9ac04549c44d077c",
+          "anchor": "def send_data("
+        }
+      ]
+    },
+    {
+      "id": "chunked-decode",
+      "query": "Where does the parser decode chunked HTTP message bodies?",
+      "gold": [
+        {
+          "path": "h11/_readers.py",
+          "blob": "576804cc282032526e0a932c9853d586a094bad0",
+          "anchor": "class ChunkedReader"
+        }
+      ]
+    },
+    {
+      "id": "chunked-encode",
+      "query": "Where is outgoing HTTP chunked transfer encoding written?",
+      "gold": [
+        {
+          "path": "h11/_writers.py",
+          "blob": "939cdb912a9debaea07fbf3a9ac04549c44d077c",
+          "anchor": "class ChunkedWriter"
+        }
+      ]
+    },
+    {
+      "id": "keepalive-state",
+      "query": "How are keep alive settings and protocol state transitions handled?",
+      "gold": [
+        {
+          "path": "h11/_state.py",
+          "blob": "3ad444b043e3f3d6c05c2d9d84d5119312bfaa34",
+          "anchor": "def process_keep_alive_disabled"
+        },
+        {
+          "path": "h11/_connection.py",
+          "blob": "e37d82a82a882c072cb938a90eb4486b51cdad99",
+          "anchor": "def _keep_alive"
+        }
+      ]
+    },
+    {
+      "id": "header-validation",
+      "query": "Which code normalizes and validates HTTP header fields?",
+      "gold": [
+        {
+          "path": "h11/_headers.py",
+          "blob": "31da3e2b23b55a624b36f105e62a6902e63286aa",
+          "anchor": "def normalize_and_validate"
+        }
+      ]
+    },
+    {
+      "id": "request-event",
+      "query": "Where is an HTTP Request event constructed and validated?",
+      "gold": [
+        {
+          "path": "h11/_events.py",
+          "blob": "ca1c3adbde2c4e7710482a18e3471f91f1da610e",
+          "anchor": "class Request"
+        }
+      ]
+    },
+    {
+      "id": "buffered-line",
+      "query": "How does the input buffer extract the next HTTP line?",
+      "gold": [
+        {
+          "path": "h11/_receivebuffer.py",
+          "blob": "e5c4e08a56f5081e87103f38b4add6ce1b730204",
+          "anchor": "def maybe_extract_next_line"
+        }
+      ]
+    },
+    {
+      "id": "remote-errors",
+      "query": "Which helper transforms local protocol violations into remote protocol errors?",
+      "gold": [
+        {
+          "path": "h11/_util.py",
+          "blob": "6718445290770e028ea2f1f662026c9a0b0991db",
+          "anchor": "def _reraise_as_remote_protocol_error"
+        }
+      ]
+    },
+    {
+      "id": "receive-next-event",
+      "query": "How does received transport data become an HTTP protocol event?",
+      "gold": [
+        {
+          "path": "h11/_connection.py",
+          "blob": "e37d82a82a882c072cb938a90eb4486b51cdad99",
+          "anchor": "def receive_data"
+        },
+        {
+          "path": "h11/_readers.py",
+          "blob": "576804cc282032526e0a932c9853d586a094bad0",
+          "anchor": "def maybe_read_from_IDLE_client"
+        }
+      ]
+    },
+    {
+      "id": "new-connection-cycle",
+      "query": "How does an HTTP connection start the next keepalive cycle?",
+      "gold": [
+        {
+          "path": "h11/_connection.py",
+          "blob": "e37d82a82a882c072cb938a90eb4486b51cdad99",
+          "anchor": "def start_next_cycle"
+        },
+        {
+          "path": "h11/_state.py",
+          "blob": "3ad444b043e3f3d6c05c2d9d84d5119312bfaa34",
+          "anchor": "def start_next_cycle"
+        }
+      ]
+    },
+    {
+      "id": "body-length-framing",
+      "query": "How does the library choose body framing from content length headers?",
+      "gold": [
+        {
+          "path": "h11/_connection.py",
+          "blob": "e37d82a82a882c072cb938a90eb4486b51cdad99",
+          "anchor": "def _body_framing"
+        },
+        {
+          "path": "h11/_readers.py",
+          "blob": "576804cc282032526e0a932c9853d586a094bad0",
+          "anchor": "class ContentLengthReader"
+        },
+        {
+          "path": "h11/_writers.py",
+          "blob": "939cdb912a9debaea07fbf3a9ac04549c44d077c",
+          "anchor": "class ContentLengthWriter"
+        }
+      ]
+    },
+    {
+      "id": "expect-continue",
+      "query": "How does a request detect Expect 100-continue?",
+      "gold": [
+        {
+          "path": "h11/_headers.py",
+          "blob": "31da3e2b23b55a624b36f105e62a6902e63286aa",
+          "anchor": "def has_expect_100_continue"
+        }
+      ]
+    },
+    {
+      "id": "status-line",
+      "query": "Where is a response status line serialized?",
+      "gold": [
+        {
+          "path": "h11/_writers.py",
+          "blob": "939cdb912a9debaea07fbf3a9ac04549c44d077c",
+          "anchor": "def write_any_response"
+        }
+      ]
+    },
+    {
+      "id": "upgrade-switch",
+      "query": "How are HTTP protocol upgrade and CONNECT transitions processed?",
+      "gold": [
+        {
+          "path": "h11/_connection.py",
+          "blob": "e37d82a82a882c072cb938a90eb4486b51cdad99",
+          "anchor": "def _server_switch_event"
+        },
+        {
+          "path": "h11/_state.py",
+          "blob": "3ad444b043e3f3d6c05c2d9d84d5119312bfaa34",
+          "anchor": "def process_client_switch_proposal"
+        }
+      ]
+    },
+    {
+      "id": "response-headers",
+      "query": "Where does an outgoing response clean up headers?",
+      "gold": [
+        {
+          "path": "h11/_connection.py",
+          "blob": "e37d82a82a882c072cb938a90eb4486b51cdad99",
+          "anchor": "def _clean_up_response_headers_for_sending"
+        },
+        {
+          "path": "h11/_headers.py",
+          "blob": "31da3e2b23b55a624b36f105e62a6902e63286aa",
+          "anchor": "class Headers"
+        }
+      ]
+    },
+    {
+      "id": "http10-eof",
+      "query": "Which reader handles HTTP 1.0 bodies until EOF?",
+      "gold": [
+        {
+          "path": "h11/_readers.py",
+          "blob": "576804cc282032526e0a932c9853d586a094bad0",
+          "anchor": "class Http10Reader"
+        }
+      ]
+    },
+    {
+      "id": "negative-graphics",
+      "query": "Locate GPU shader cache eviction and render surface scheduling",
+      "gold": []
+    },
+    {
+      "id": "negative-database",
+      "query": "Locate database sharding coordinator consensus replication",
+      "gold": []
+    }
+  ]
+}

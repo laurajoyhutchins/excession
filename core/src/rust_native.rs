@@ -3,7 +3,7 @@
 use crate::json::{self, Value};
 use crate::{Result, git, refuse, scip_refactor};
 use std::env;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};

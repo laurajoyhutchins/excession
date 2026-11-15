@@ -148,8 +148,15 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
         let id = row.get("id")?.str()?;
         let task = row.get("query")?.str()?;
         let tick = Instant::now();
-        let report =
-            agent_locate::locate_with_budget(root, &commit, task, LIMIT, Some(static_roots), Some(db), 256)?;
+        let report = agent_locate::locate_with_budget(
+            root,
+            &commit,
+            task,
+            LIMIT,
+            Some(static_roots),
+            Some(db),
+            256,
+        )?;
         let elapsed_ms = tick.elapsed().as_millis();
         worst_case_ms = worst_case_ms.max(elapsed_ms);
         if report.get("source_commit")?.str()? != commit {

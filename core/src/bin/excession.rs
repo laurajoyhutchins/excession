@@ -53,7 +53,9 @@ impl Response {
                 let failed = report.get("status")?.str()? == "FAIL";
                 writeln!(out, "{}", report.canonical()).map_err(write_error)?;
                 out.flush().map_err(write_error)?;
-                if failed { std::process::exit(1); }
+                if failed {
+                    std::process::exit(1);
+                }
                 Ok(())
             }
             Self::Json(j) => writeln!(out, "{}", j.canonical()).map_err(write_error),
@@ -776,10 +778,14 @@ fn execute(args: &[String]) -> Result<Response> {
                 _ => return refuse("--trusted-local requires true or false"),
             };
             if !trusted {
-                return refuse("compiler checks require --trusted-local true; no sandbox is provided");
+                return refuse(
+                    "compiler checks require --trusted-local true; no sandbox is provided",
+                );
             }
             let db_path = analyze::checked_external_destination(
-                opt.path("repo"), opt.path("db"), "compiler check evidence",
+                opt.path("repo"),
+                opt.path("db"),
+                "compiler check evidence",
             )?;
             let db = excession::sqlite::Db::open(&db_path)?;
             let result = excession::compiler_check::run(

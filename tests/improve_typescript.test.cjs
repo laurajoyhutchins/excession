@@ -144,15 +144,15 @@ test('native TypeScript codefix removes an unused type-only binding without remo
     fs.rmSync(f.root, {recursive: true, force: true});
   });
   fs.writeFileSync(path.join(f.repo, f.source),
-    '// Pinned upstream-style type import with multiple bindings.\\n'
-    + "import type { Phase, Turn, CodeSnapshot, Interview } from './math';\\n"
-    + 'export interface InterviewState extends Interview { phase: Phase; }\\n'
-    + 'export type InterviewContext = { codeSnapshot?: CodeSnapshot };\\n');
+    '// Pinned upstream-style type import with multiple bindings.\n'
+    + "import type { Phase, Turn, CodeSnapshot, Interview } from './math';\n"
+    + 'export interface InterviewState extends Interview { phase: Phase; }\n'
+    + 'export type InterviewContext = { codeSnapshot?: CodeSnapshot };\n');
   fs.writeFileSync(path.join(f.repo, 'src/math.ts'),
-    'export type Phase = "intro" | "done";\\n'
-    + 'export type Turn = { message: string };\\n'
-    + 'export type CodeSnapshot = { source: string };\\n'
-    + 'export type Interview = { id: string };\\n');
+    'export type Phase = "intro" | "done";\n'
+    + 'export type Turn = { message: string };\n'
+    + 'export type CodeSnapshot = { source: string };\n'
+    + 'export type Interview = { id: string };\n');
   run('git', ['add', '.'], f.repo);
   run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
     'commit', '-qm', 'upstream-style unused type import'], f.repo);

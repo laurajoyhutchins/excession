@@ -138,7 +138,7 @@ pub fn scan(
             input_receipts(&root, &commit, &tree, declaration)?;
         (
             "go-list",
-            "COMPILER_SELECTED_INPUTS_ONLY",
+            "COMPILER_SELECTED_PRODUCTION_CLOSURE",
             inputs,
             source_count,
             config_count,
@@ -182,7 +182,8 @@ pub fn scan(
     };
     let limitations = if language == "go" {
         Value::array([
-            Value::string("Go input membership is not a symbol reference or call graph"),
+            Value::string("Go production compilation input membership is not a call graph"),
+            Value::string("Go tests and GOOS/GOARCH alternatives are not selected inputs"),
             Value::string("CGO and go.work are unsupported; dependency resolution is offline"),
             Value::string("Native local tool execution is not remote attestation"),
         ])

@@ -54,7 +54,10 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     let producer = report.get("producer")?.str()?;
     let scope = report.get("scope")?.str()?;
     let valid = match language {
-        "go" => producer == "go-list" && scope == "COMPILER_SELECTED_INPUTS_ONLY",
+        "go" => producer == "go-list"
+            && matches!(scope,
+                "COMPILER_SELECTED_INPUTS_ONLY" // older overinclusive receipt; retained as legacy
+                    | "COMPILER_SELECTED_PRODUCTION_CLOSURE"),
         "java" => {
             (producer == "javac-symbols" && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL")
                 || (producer == "javac-configured"

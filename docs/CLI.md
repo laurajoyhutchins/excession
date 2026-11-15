@@ -149,8 +149,13 @@ source-to-source references are kept as typed, unattested observations
 rather than promoted to verified call edges. Its offline JDK configuration
 is intentionally narrower than a full Java project build.
 
-Go reuses the existing pinned-Git, offline `go list` producer with its
-declared source/configuration inputs. Clang reuses the existing compilation
+Go uses pinned-Git, offline `go list -deps -json` to select the production
+compilation source closure for one configuration, including local transitive
+package dependencies but excluding test files, ignored files and unselected
+GOOS/GOARCH alternatives. An older `COMPILER_SELECTED_INPUTS_ONLY`
+receipt may contain those extra sources and remains a distinct, legacy
+conservative input inventory rather than a proven production selection.
+The current scope is `COMPILER_SELECTED_PRODUCTION_CLOSURE`. Clang reuses the existing compilation
 database AST adapter for one translation unit, with symbols, calls and
 content-hashed headers. Both produce `excession.native-analysis.v1`,
 including the selected Git commit/tree and source blob, producer evidence,

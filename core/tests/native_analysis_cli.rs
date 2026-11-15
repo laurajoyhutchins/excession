@@ -59,6 +59,14 @@ impl Fixture {
             ),
             ("dep/dep.go", "package dep\nconst Value = 42\n"),
             (
+                "cmd/server/main_test.go",
+                "package server\nimport \"testing\"\nfunc TestAnswer(t *testing.T) { _ = Answer() }\n",
+            ),
+            (
+                "cmd/server/main_windows.go",
+                "package server\nfunc AlternateWindowsOnly() {}\n",
+            ),
+            (
                 "src/main.c",
                 "#include \"main.h\"\nint entry(int a) { return helper(a); }\n",
             ),
@@ -173,7 +181,7 @@ fn native_go_inputs_have_git_blobs_and_no_fabricated_call_graph() {
         "--json",
     ]));
     assert_eq!(field(&response, "schema"), "excession.native-analysis.v1");
-    assert_eq!(field(&response, "scope"), "COMPILER_SELECTED_INPUTS_ONLY");
+    assert_eq!(field(&response, "scope"), "COMPILER_SELECTED_PRODUCTION_CLOSURE");
     assert_eq!(field(&response, "source_commit"), f.commit);
     assert!(response.content_id_matches("report_id").unwrap());
     assert_eq!(
@@ -191,6 +199,8 @@ fn native_go_inputs_have_git_blobs_and_no_fabricated_call_graph() {
             "{expected} not found in {paths:?}"
         );
     }
+    assert!(!paths.contains(&"cmd/server/main_test.go"));
+    assert!(!paths.contains(&"cmd/server/main_windows.go"));
     for record in inputs {
         let item = record.get("source").unwrap();
         let path = field(item, "path");
@@ -215,7 +225,7 @@ fn native_go_inputs_have_git_blobs_and_no_fabricated_call_graph() {
         "{}",
         String::from_utf8_lossy(&human.stderr)
     );
-    assert!(String::from_utf8_lossy(&human.stdout).contains("COMPILER_SELECTED_INPUTS_ONLY"));
+    assert!(String::from_utf8_lossy(&human.stdout).contains("COMPILER_SELECTED_PRODUCTION_CLOSURE"));
 }
 
 #[test]

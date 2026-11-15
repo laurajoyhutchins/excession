@@ -52,6 +52,12 @@ def relative(root, filename):
 
 
 def go(root, entry):
+    """Actual offline production compilation input closure under one Go config.
+
+    Do NOT label tests, ignored files, alternate GOOS/GOARCH sources, or
+    unselected packages as compiler-selected production inputs. Those require
+    separate configured observations and cannot be used as current inputs.
+    """
     if not (root / "go.mod").is_file() or (root / "go.work").exists():
         raise Unsupported("Go requires tracked go.mod without go.work")
     dirname = PurePosixPath(entry).parent.as_posix()
@@ -61,12 +67,12 @@ def go(root, entry):
            "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local",
            "GOWORK": "off", "CGO_ENABLED": "0", "GOFLAGS": "-mod=readonly",
            "LC_ALL": "C", "TZ": "UTC"}
-    output = run([str(find("go")), "list", "-deps", "-test", "-json",
+    output = run([str(find("go")), "list", "-deps", "-json",
                   "./" if dirname == "." else "./" + dirname], cwd=root, env=env)
     decoder = json.JSONDecoder()
     text = output.decode()
     offset = 0
-    selected, package_dirs = set(), set()
+    selected = set()
     while offset < len(text):
         while offset < len(text) and text[offset].isspace():
             offset += 1
@@ -75,27 +81,24 @@ def go(root, entry):
         item, offset = decoder.raw_decode(text, offset)
         if item.get("Error") or item.get("DepsErrors"):
             raise Unsupported("Go native resolver reported dependency errors")
-        if item.get("Standard") or str(item.get("ImportPath", "")).endswith(".test"):
+        if item.get("Standard"):
             continue
         directory = item.get("Dir")
         if not directory:
             raise Unsupported("native Go package has no directory")
-        package_dirs.add("." if Path(directory) == root else relative(root, directory))
-        if any(item.get(key) for key in ("CgoFiles", "SwigFiles", "SwigCXXFiles")):
-            raise Unsupported("Go cgo/SWIG needs separate toolchain effects")
-        for key in ("GoFiles", "TestGoFiles", "XTestGoFiles", "SFiles",
-                    "CFiles", "CXXFiles", "HFiles", "EmbedFiles",
-                    "TestEmbedFiles", "XTestEmbedFiles", "SysoFiles"):
+        if any(item.get(key) for key in (
+                "CgoFiles", "SwigFiles", "SwigCXXFiles",
+                "CFiles", "CXXFiles", "HFiles", "FFiles", "MFiles")):
+            raise Unsupported("Go non-native sources require separate toolchain effects")
+        for key in ("GoFiles", "SFiles", "EmbedFiles", "SysoFiles"):
             for filename in item.get(key, []):
                 selected.add(relative(root, Path(directory) / filename))
-    # Include build-tag alternatives in any reached local package.
-    for filename in root.rglob("*.go"):
-        if filename.is_file() and filename.relative_to(root).parent.as_posix() in package_dirs:
-            selected.add(filename.relative_to(root).as_posix())
     if entry not in selected:
-        raise Unsupported("entry not reached by go list")
+        raise Unsupported("Go entry is not compiler-selected for this production configuration")
     return selected, {p for p in ("go.mod", "go.sum") if (root / p).is_file()}, {
-        "go-flags": "CGO_ENABLED=0,GOWORK=off,GOPROXY=off"}
+        "go-flags": "CGO_ENABLED=0,GOWORK=off,GOPROXY=off",
+        "go-selection": "production-closure-without-tests-or-alternatives"}
+
 
 
 def typescript(root, entry, helper):

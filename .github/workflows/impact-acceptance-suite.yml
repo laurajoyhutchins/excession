@@ -1,0 +1,57 @@
+name: Independent multi-repository impact acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/acceptance/**'
+      - 'benchmarks/experiments/impact_*.py'
+      - 'benchmarks/experiments/dependency_oracle.py'
+      - 'tests/test_impact_acceptance_suite.py'
+      - 'tests/test_impact_heldout_contract.py'
+      - 'core/src/impact_query.rs'
+      - '.github/workflows/impact-acceptance-suite.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: impact-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  impact-acceptance:
+    name: Independent Git/AST impact acceptance (h11 + pytest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test manifest and source evidence admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_impact_acceptance_suite.py' -v
+          python3 -m unittest discover -s tests -p 'test_impact_heldout_contract.py' -v
+      - name: Build exact-tree Excession release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --release --manifest-path core/Cargo.toml --bin excession
+      - name: Validate both pinned external repositories against Git and CPython AST
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/experiments/impact_acceptance_suite.py \
+            --manifest benchmarks/acceptance/impact_cases.json \
+            --bin core/target/release/excession \
+            --out-dir /tmp/excession-impact-acceptance
+      - name: Preserve independent source and candidate evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: impact-acceptance-git-ast-evidence
+          path: /tmp/excession-impact-acceptance/
+          if-no-files-found: warn
+          retention-days: 14

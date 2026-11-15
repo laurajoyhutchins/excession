@@ -108,7 +108,10 @@ def result_matches_oracle(
     )
 
 
-def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict:
+def evaluate(
+    binary: Path, repo: Path, base: str, head: str, roots: str,
+    repository_name: str | None = None,
+) -> dict:
     root_set = set(roots.split(","))
     starts = time.perf_counter()
     before_tree, before = inventory(repo, base)
@@ -134,7 +137,9 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
             "--roots", roots, "--db", str(Path(work) / "index.sqlite"), "--json",
         ]
         start = time.perf_counter()
-        report = json.loads(call(*args))
+        raw_report = call(*args)
+        report = json.loads(raw_report)
+        report_bytes = len(raw_report)
         impact_wall_s = time.perf_counter() - start
 
     if report.get("schema") != "excession.impact.v1":
@@ -257,7 +262,7 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
     return {
         "schema": "excession.heldout-impact-evaluation.v1",
         "status": "MATCH" if passed else "MISMATCH",
-        "upstream_repository": "python-hyper/h11",
+        "upstream_repository": repository_name,
         "base_commit": base,
         "head_commit": head,
         "roots": sorted(root_set),
@@ -286,6 +291,9 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
         },
         "impact_coverage": report["coverage"],
         "candidate_effect_count": len(report["effects"]),
+        "impact_report_bytes": report_bytes,
+        "candidate_source_count": compact_count,
+        "candidate_source_enumeration_complete": compact_complete,
         "measured_wall_seconds": {
             "oracle_git_and_ast": round(oracle_wall_s, 3),
             "excession_impact_with_indexing": round(impact_wall_s, 3),

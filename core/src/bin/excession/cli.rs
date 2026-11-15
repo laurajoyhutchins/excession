@@ -696,6 +696,7 @@ pub(super) fn command() -> Command {
                 leaf("audit", &["repo", "plan"], &[]),
                 leaf("refs", &["repo"], &["max-refs"]),
                 leaf("verify-target", &["repo", "target", "replacement"], &[]),
+                leaf("reconcile-external", &["mapping", "snapshot"], &[]),
                 leaf("preview-dag", &["repo", "output"], &["group", "max-commits"]),
             ],
         ).about("Read-only Git history consolidation plans and exact source-DAG replay"))

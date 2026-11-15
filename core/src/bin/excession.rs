@@ -10,6 +10,7 @@ use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
 use excession::history;
+use excession::history_external;
 use excession::history_rewrite;
 use excession::impact_query;
 use excession::native_test_selectors;
@@ -654,6 +655,13 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("target"),
                 opt.get("replacement"),
             )?)),
+            "reconcile-external" => Ok(Response::CanonicalJson(
+                serde_json::to_string(&history_external::reconcile(
+                    opt.path("mapping"),
+                    opt.path("snapshot"),
+                )?)
+                .map_err(|e| format!("serialize external reconciliation: {e}"))?,
+            )),
             "preview-dag" => {
                 let max = opt
                     .get_or("max-commits", "100000")

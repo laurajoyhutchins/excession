@@ -68,15 +68,15 @@ also support `--json` and explicit revisions/roots.
 ```sh
 excession                    # focused help
 excession commands           # all specialist families
-excession analyze .          # static source candidates
+excession analyze .          # static Python/JS/TS candidates
+excession analyze languages  # Git-bound syntax for all detected languages
 excession impact .           # compare HEAD~1..HEAD
 excession tests              # plan tests without running them
 excession analyze rust --trusted-local    # execute installed native Rust indexer
 excession analyze rust --trusted-local --json > /tmp/rust.json
 ```
 
-Rust analysis selects the sole tracked Cargo project, including a nested
-project. For multiple projects, specify `--source-prefix`. It requires a
+\xFF For multiple projects, specify `--source-prefix`. It requires a
 clean checkout and explicitly executes trusted local tooling; this is not a
 sandbox. Specialist commands remain accessible through their own help screens.
 

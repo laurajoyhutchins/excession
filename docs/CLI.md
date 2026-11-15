@@ -50,6 +50,8 @@ dirty for these read-only operations; uncommitted edits are **not included**.
 cd /path/to/repository
 excession discover .
 excession analyze .
+excession analyze languages
+excession analyze languages --roots src,tests --json
 excession changes .
 excession impact . --output /tmp/impact.json
 ```
@@ -77,6 +79,19 @@ separately typed annotations.
 
 Without `--base`, `impact` and `changes` compare `HEAD~1..HEAD`. For a
 root commit, explicitly choose a valid base after another commit exists.
+
+`excession analyze languages` performs a common source-bound Tree-sitter
+scan for all selected recognized languages, followed by only the conservative
+import resolvers Excession actually supports (Python, JavaScript/TypeScript,
+Go). It reports parsed, unavailable and unresolved counts separately for
+every language. Rust, C/C++, Java, and other languages remain syntax-only
+unless their separate native tooling is invoked. Scans require a clean checkout,
+work offline with installed grammars, default to `--roots .`, and refuse more
+than 500 selected source files or 16 MiB of source: narrow `--roots` for
+larger projects. `--json` emits `excession.language-analysis.v1` with
+Git-bound candidates and explicit skipped sources. Without `--json`, the
+default is a concise per-language summary. These candidates are **not**
+proven build dependencies or validated program effects.
 
 `excession analyze rust --trusted-local` runs the installed rust-analyzer
 and official SCIP decoder on a **clean** HEAD. It automatically selects a

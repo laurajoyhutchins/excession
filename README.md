@@ -206,12 +206,13 @@ See [refactoring](docs/REFACTORING.md) and
 
 ### Measure a refactor before trusting it
 
-`excession improve plan` ranks source-bound native SCIP hypotheses without
-declaring code unused. `excession improve evaluate` compares fresh pinned
-native indexes before and after an isolated candidate commit. It checks the
-original plan, Git change inventory, apparent reciprocal-reference reductions,
-and coverage regressions. It never certifies behavioral equivalence or permits
-automatic deletion or merge. See [the improvement loop](docs/IMPROVEMENT_LOOP.md).
+`excession improve plan` and `excession improve evaluate` share one
+source-bound evidence contract across SCIP and indexed Python/JavaScript
+observations. They compare normalized source locations, Git changes, and
+producer-specific coverage without inferring behavioral equivalence. Rust
+extraction is an optional native edit adapter, not an assumption baked into
+the improvement evaluator. No improvement result permits automatic deletion
+or merge. See [the improvement loop](docs/IMPROVEMENT_LOOP.md).
 
 ### Inspect scanner evidence
 

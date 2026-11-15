@@ -310,7 +310,9 @@ pub fn run_tool_status(mut command: Command, label: &str, timeout: Duration) -> 
     if exceeded.load(Ordering::Relaxed) {
         return refuse(format!("{label} output exceeds byte budget"));
     }
-    let exit_code = status.code().ok_or_else(|| format!("{label} terminated by signal"))?;
+    let exit_code = status
+        .code()
+        .ok_or_else(|| format!("{label} terminated by signal"))?;
     Ok(ToolOutput {
         stdout: out,
         stderr: err,
@@ -323,7 +325,11 @@ pub fn run_tool_status(mut command: Command, label: &str, timeout: Duration) -> 
 pub fn run_tool(command: Command, label: &str, timeout: Duration) -> Result<Vec<u8>> {
     let result = run_tool_status(command, label, timeout)?;
     if result.exit_code != 0 {
-        return refuse(format!("{label} failed ({}): {}", result.exit_code, String::from_utf8_lossy(&result.stderr)));
+        return refuse(format!(
+            "{label} failed ({}): {}",
+            result.exit_code,
+            String::from_utf8_lossy(&result.stderr)
+        ));
     }
     Ok(result.stdout)
 }

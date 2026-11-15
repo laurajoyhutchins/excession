@@ -125,6 +125,11 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
     let commit = git::rev(root, revision)?;
     let labels = json::parse(&fs::read(labels_file).map_err(|e| e.to_string())?)?;
     let expected = verify_labels(root, &commit, &labels)?;
+    // Scope only auxiliary module analysis, never the Git-wide lexical index.
+    let static_roots = labels.get("static_roots")?.str()?;
+    if static_roots.is_empty() {
+        return Err("evaluation must declare static analyzer roots".into());
+    }
     let mut rows = Vec::new();
     let mut total_expected = 0usize;
     let mut lexical_hits = 0usize;
@@ -144,7 +149,7 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
         let task = row.get("query")?.str()?;
         let tick = Instant::now();
         let report =
-            agent_locate::locate_with_budget(root, &commit, task, LIMIT, None, Some(db), 256)?;
+            agent_locate::locate_with_budget(root, &commit, task, LIMIT, Some(static_roots), Some(db), 256)?;
         let elapsed_ms = tick.elapsed().as_millis();
         worst_case_ms = worst_case_ms.max(elapsed_ms);
         if report.get("source_commit")?.str()? != commit {

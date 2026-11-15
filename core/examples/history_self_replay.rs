@@ -127,6 +127,111 @@ fn independently_check(repo: &Path, plan: &Value) -> Result<(usize, usize), Stri
     Ok((rows.len(), merges))
 }
 
+/// Independently replay the union of all locally available refs and detached
+/// HEAD. This can be substantially larger than the HEAD ancestry alone.
+fn replay_local_refs(
+    repo: &Path,
+    output: &Path,
+    refs: &excession::json::Value,
+    head: &str,
+    limit: usize,
+) -> Result<(usize, usize, usize), String> {
+    let mut independent = BTreeMap::<String, Vec<String>>::new();
+    for row in git(repo, &["rev-list", "--parents", "--all", "HEAD"])?.lines() {
+        let mut fields = row.split_whitespace();
+        let oid = fields.next().ok_or("empty all-ref DAG record")?;
+        if independent
+            .insert(oid.to_owned(), fields.map(str::to_owned).collect())
+            .is_some()
+        {
+            return Err("duplicate all-ref DAG record".into());
+        }
+    }
+    let mut expected_trees = BTreeMap::<String, String>::new();
+    for row in git(
+        repo,
+        &["log", "--all", "--no-show-signature", "--format=%H:%T", "HEAD"],
+    )?
+    .lines()
+    {
+        let (commit, tree) = row.split_once(':').ok_or("malformed all-ref tree record")?;
+        if expected_trees.insert(commit.to_owned(), tree.to_owned()).is_some() {
+            return Err("duplicate all-ref tree record".into());
+        }
+    }
+    if independent.len() != expected_trees.len() || independent.len() > limit {
+        return Err("all-ref history is inconsistent or exceeds configured capacity".into());
+    }
+    let mut tips = BTreeSet::new();
+    tips.insert(head.to_owned());
+    let mut non_commit_refs = 0usize;
+    for row in refs.get("refs")?.array_ref()? {
+        let name = row.get("ref")?.str()?;
+        let spec = format!("{name}^{{commit}}");
+        match git(repo, &["rev-parse", "-q", "--verify", &spec]) {
+            Ok(commit) => {
+                tips.insert(commit.trim().to_owned());
+            }
+            Err(_) => non_commit_refs += 1,
+        }
+    }
+    let mut seen = BTreeSet::new();
+    let mut manifests = Vec::new();
+    for tip in &tips {
+        let plan = history::plan(repo, tip, None, limit)?;
+        let report: Value = serde_json::from_str(&plan.canonical()).map_err(|e| e.to_string())?;
+        if report["coverage"]["commit_range"] != "COMPLETE"
+            || report["coverage"]["truncated"] != false
+            || report["safety"]["rewrite_authorized"] != false
+        {
+            return Err(format!("ref tip {tip} has incomplete ancestry"));
+        }
+        let rows = report["commits"].as_array().ok_or("missing branch commits")?;
+        for row in rows {
+            let oid = required(row, "commit")?;
+            let original = independent.get(oid).ok_or("ref plan includes an unreachable commit")?;
+            let parents = row["parents"].as_array().ok_or("missing ref parents")?
+                .iter().map(|p| p.as_str().ok_or("invalid ref parent").map(str::to_owned))
+                .collect::<Result<Vec<_>, _>>()?;
+            if &parents != original
+                || expected_trees.get(oid).map(String::as_str) != Some(required(row, "tree")?)
+            {
+                return Err(format!("ref plan differs from independent Git object at {oid}"));
+            }
+            seen.insert(oid.to_owned());
+        }
+        manifests.push(json!({
+            "tip":tip,
+            "plan_id":report["report_id"],
+            "reachable_commit_count":rows.len(),
+            "complete":true,
+            "rewrite_authorized":false
+        }));
+    }
+    if seen.len() != independent.len() || seen.len() != expected_trees.len() {
+        return Err(format!(
+            "local-ref union incomplete: {} planned, {} independently reachable",
+            seen.len(),
+            independent.len()
+        ));
+    }
+    save(
+        output,
+        "ref-plans.json",
+        &serde_json::to_string_pretty(&json!({
+            "schema":"excession.history-local-ref-replay.v1",
+            "pinned_head":head,
+            "unique_reachable_commits":seen.len(),
+            "replayed_distinct_tips":tips.len(),
+            "non_commit_refs":non_commit_refs,
+            "plans":manifests,
+            "external_refs_complete":false,
+            "rewrite_authorized":false
+        })).map_err(|e| e.to_string())?,
+    )?;
+    Ok((seen.len(), tips.len(), non_commit_refs))
+}
+
 fn candidate(repo: &Path, output: &Path, plan: &Value) -> Result<Value, String> {
     let groups = plan["candidate_groups"]
         .as_array()
@@ -272,6 +377,11 @@ fn run() -> Result<(), String> {
         return Err("local ref inventory truncated".into());
     }
     save(&output, "refs.json", &refs.canonical())?;
+    let (unique_reachable, replayed_tips, non_commit_refs) =
+        replay_local_refs(&repo, &output, &refs, head.trim(), limit)?;
+    if unique_reachable != all_refs {
+        return Err("all-ref replay count disagrees with independent Git count".into());
+    }
     let target = history::verify_target(&repo, head.trim(), head.trim())?;
     if !target.get("exact_tree_equal")?.bool()? {
         return Err("original target tree differs".into());
@@ -303,7 +413,10 @@ fn run() -> Result<(), String> {
         "commit_count":commits,
         "merge_commits":merges,
         "all_local_ref_reachable_commits":all_refs,
+        "all_local_reachable_commits_replayed":unique_reachable,
         "other_local_reachable_commits":all_refs-commits,
+        "distinct_replayed_commit_tips":replayed_tips,
+        "non_commit_refs":non_commit_refs,
         "review_candidate_groups":plan_json["candidate_groups"].as_array().ok_or("groups")?.len(),
         "preview_status":preview["status"],
         "elapsed_ms":started.elapsed().as_millis() as u64,

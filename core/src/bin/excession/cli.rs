@@ -998,9 +998,11 @@ mod tests {
         };
         assert_eq!(planned.path, ["agent", "init"]);
         assert!(!planned.options.0.contains_key("write"));
-        let ParseOutcome::Command(writing) = parse(&strings(&[
-            "agent", "init", "--client", "codex", "--write"
-        ])).unwrap() else { panic!("expected agent init --write"); };
+        let ParseOutcome::Command(writing) =
+            parse(&strings(&["agent", "init", "--client", "codex", "--write"])).unwrap()
+        else {
+            panic!("expected agent init --write");
+        };
         assert_eq!(writing.options.get("write"), "true");
         assert!(parse(&strings(&["mcp", "--repo", "."])).is_ok());
     }

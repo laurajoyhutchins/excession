@@ -124,8 +124,8 @@ Native import retains the **original report bytes** through the existing
 immutable evidence store, rechecks all claimed source/configuration blobs
 against pinned Git objects, and requires exact report identities. Automatic
 analysis, impact, agent context, and agent verify reuse the same selected,
-source-replayed receipts. They expose native Go input membership and configured
-Clang AST observations as **configured observations**, not generic dependency
+source-replayed receipts. They expose native Go input membership, Java compiler-resolved source
+references and configured Clang AST observations as **configured observations**, not generic dependency
 edges or verified runtime effects. Reports for different commits remain
 separate; saved impact plans replay only the originally selected identities.
 `evidence native-store-audit` rechecks an imported snapshot without executing

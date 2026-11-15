@@ -36,6 +36,8 @@ on:
       - 'core/src/native_boundary.rs'
       - 'core/src/native_discovery.rs'
       - 'core/src/native_analysis.rs'
+      - 'core/src/java_native.rs'
+      - 'core/adapters/ExcessionJavaNative.java'
       - 'core/src/native_evidence.rs'
       - 'core/src/observed_relations.rs'
       - 'core/src/agent.rs'

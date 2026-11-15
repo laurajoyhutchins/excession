@@ -183,7 +183,8 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
             let path = item.get("source")?.get("path")?.str()?.to_owned();
             match relation.get("kind")?.str()? {
                 "SCIP_REFERENCE" => {
-                    if assessment != "OBSERVED" || relation.get("evidence")?.array_ref()?.is_empty() {
+                    if assessment != "OBSERVED" || relation.get("evidence")?.array_ref()?.is_empty()
+                    {
                         return Err("invalid native SCIP evidence at retrieval boundary".into());
                     }
                     eligible_native_edges += 1;
@@ -241,11 +242,23 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
                 Value::array(base.iter().take(K).map(Value::string)),
             ),
             ("hybrid", Value::array(alt.iter().map(Value::string))),
-            ("scip_only", Value::array(scip_alt.iter().map(Value::string))),
-            ("static_only", Value::array(static_alt.iter().map(Value::string))),
-            ("relation_neighbor_count", Value::number(neighbor_records.len())),
+            (
+                "scip_only",
+                Value::array(scip_alt.iter().map(Value::string)),
+            ),
+            (
+                "static_only",
+                Value::array(static_alt.iter().map(Value::string)),
+            ),
+            (
+                "relation_neighbor_count",
+                Value::number(neighbor_records.len()),
+            ),
             ("scip_neighbor_count", Value::number(scip_neighbors.len())),
-            ("static_neighbor_count", Value::number(static_neighbors.len())),
+            (
+                "static_neighbor_count",
+                Value::number(static_neighbors.len()),
+            ),
             ("lexical_hits", Value::number(base_hits)),
             ("hybrid_hits", Value::number(alt_hits)),
             ("scip_only_hits", Value::number(scip_hits)),
@@ -291,12 +304,21 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
             "hybrid_recall_at_k",
             float(hybrid_hits as f64 / total_expected as f64),
         ),
-        ("scip_only_recall_at_k", float(scip_only_hits as f64 / total_expected as f64)),
-        ("static_only_recall_at_k", float(static_only_hits as f64 / total_expected as f64)),
+        (
+            "scip_only_recall_at_k",
+            float(scip_only_hits as f64 / total_expected as f64),
+        ),
+        (
+            "static_only_recall_at_k",
+            float(static_only_hits as f64 / total_expected as f64),
+        ),
         ("lexical_mrr_at_k", float(lexical_mrr / positive as f64)),
         ("hybrid_mrr_at_k", float(hybrid_mrr / positive as f64)),
         ("scip_only_mrr_at_k", float(scip_only_mrr / positive as f64)),
-        ("static_only_mrr_at_k", float(static_only_mrr / positive as f64)),
+        (
+            "static_only_mrr_at_k",
+            float(static_only_mrr / positive as f64),
+        ),
         (
             "negative_lexical_any_match",
             Value::number(negative_lexical_matches),

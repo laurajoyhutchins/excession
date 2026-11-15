@@ -178,7 +178,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             subject_id: Subject::Source(input.clone()).id()?,
             native_kind: "NATIVE_SELECTED_INPUT".to_owned(),
             payload: obj(&[
-                ("source", source_value(&input)),
+                ("source", source_value(input)),
                 ("subject", subject.clone()),
                 ("role", Value::string(*role)),
                 ("scope", Value::string(scope)),

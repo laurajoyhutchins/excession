@@ -44,18 +44,24 @@ fn input_receipts(
     Ok((Value::array(receipts), source_count, config_count))
 }
 
-/// Build the same evidence envelope around two different native producer types.
+#[derive(Default, Clone, Copy)]
+pub struct NativeOptions<'a> {
+    pub compile_db: Option<&'a Path>,
+    pub compiler: Option<&'a str>,
+    pub source_prefix: Option<&'a str>,
+}
+
+/// Build the same evidence envelope around supported native producer types.
 /// Only the selected source and declared Go inputs have authenticated Git blobs.
 pub fn scan(
     repo: &Path,
     revision: &str,
     source: &str,
     language: &str,
-    compile_db: Option<&Path>,
-    compiler: Option<&str>,
-    source_prefix: Option<&str>,
+    options: NativeOptions<'_>,
     trusted_local: &str,
 ) -> Result<Value> {
+    let NativeOptions { compile_db, compiler, source_prefix } = options;
     if trusted_local != "true" {
         return refuse("native analysis requires explicit --trusted-local true");
     }
@@ -213,48 +219,19 @@ mod tests {
     #[test]
     fn refuses_untrusted_and_unsupported_before_invoking_toolchains() {
         let repo = Path::new("/does-not-exist");
-        assert!(
-            scan(repo, "HEAD", "a.go", "go", None, None, None, "false")
-                .unwrap_err()
-                .contains("--trusted-local")
-        );
-        assert!(
-            scan(
-                repo,
-                "HEAD",
-                "a.java",
-                "java",
-                Some(Path::new("compile.json")),
-                None,
-                None,
-                "true"
-            )
-            .unwrap_err()
-            .contains("Java uses the installed JDK")
-        );
-        assert!(
-            scan(
-                repo,
-                "HEAD",
-                "a.go",
-                "go",
-                None,
-                Some("clang"),
-                None,
-                "true"
-            )
-            .unwrap_err()
-            .contains("does not use")
-        );
-        assert!(
-            scan(repo, "HEAD", "a.cpp", "cpp", None, None, None, "true")
-                .unwrap_err()
-                .contains("--compile-db")
-        );
-        assert!(
-            scan(repo, "HEAD", "a.c", "cpp", None, None, None, "true")
-                .unwrap_err()
-                .contains("source extension")
-        );
+        assert!(scan(repo, "HEAD", "a.go", "go", NativeOptions::default(), "false")
+            .unwrap_err().contains("--trusted-local"));
+        assert!(scan(repo, "HEAD", "a.java", "java", NativeOptions {
+            compile_db: Some(Path::new("compile.json")),
+            ..NativeOptions::default()
+        }, "true").unwrap_err().contains("Java uses the installed JDK"));
+        assert!(scan(repo, "HEAD", "a.go", "go", NativeOptions {
+            compiler: Some("clang"),
+            ..NativeOptions::default()
+        }, "true").unwrap_err().contains("does not use"));
+        assert!(scan(repo, "HEAD", "a.cpp", "cpp", NativeOptions::default(), "true")
+            .unwrap_err().contains("--compile-db"));
+        assert!(scan(repo, "HEAD", "a.c", "cpp", NativeOptions::default(), "true")
+            .unwrap_err().contains("source extension"));
     }
 }

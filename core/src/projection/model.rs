@@ -11,7 +11,6 @@ pub(super) const MAX_ENTRIES: usize = 5_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Entry {
-
     pub(super) virtual_path: String,
     pub(super) source_path: String,
     pub(super) blob: String,
@@ -56,7 +55,6 @@ impl Entry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plan {
-
     pub(super) kind: String,
     pub(super) commit: String,
     pub(super) tree: String,
@@ -246,7 +244,11 @@ impl Plan {
     }
 }
 
-pub(super) fn source_table(repo: &Path, commit: &str, tree: &str) -> Result<BTreeMap<String, git::Entry>> {
+pub(super) fn source_table(
+    repo: &Path,
+    commit: &str,
+    tree: &str,
+) -> Result<BTreeMap<String, git::Entry>> {
     git::verify_repo(repo)?;
     if git::rev(repo, &format!("{commit}^{{tree}}"))? != tree {
         return refuse("source commit and root tree disagree");
@@ -262,7 +264,10 @@ pub(super) fn source_table(repo: &Path, commit: &str, tree: &str) -> Result<BTre
 
 /// Check all entries against a source table independently authenticated for
 /// this exact commit/tree. Reusing an enumeration never reuses a verdict.
-pub(super) fn authenticate_from_table(plan: &Plan, actual: &BTreeMap<String, git::Entry>) -> Result<()> {
+pub(super) fn authenticate_from_table(
+    plan: &Plan,
+    actual: &BTreeMap<String, git::Entry>,
+) -> Result<()> {
     plan.check()?;
     check_source_bindings(plan, actual)
 }

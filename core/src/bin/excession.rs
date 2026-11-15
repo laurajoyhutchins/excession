@@ -731,6 +731,19 @@ fn execute(args: &[String]) -> Result<Response> {
             }
         }
         [top] if top == "commands" => Ok(Response::Message(cli::catalog())),
+        [top, sub] if top == "analyze" && sub == "languages" => {
+            let roots = opt.get_or("roots", ".").split(',').collect::<Vec<_>>();
+            let report = excession::language_analysis::run(
+                Path::new(opt.get_or("repo", ".")),
+                opt.get_or("rev", "HEAD"),
+                &roots,
+            )?;
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(report))
+            } else {
+                Ok(Response::Message(excession::language_analysis::human(&report)?))
+            }
+        }
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
         [top, sub] if top == "analyze" && sub == "rust" => {
             let report = excession::rust_native::scan(

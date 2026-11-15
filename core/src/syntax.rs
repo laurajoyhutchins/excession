@@ -15,7 +15,7 @@ const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 
 fn eligible(path: &str) -> bool {
     [
-        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".rs", ".go", ".c", ".h", ".cc",
+        ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".rs", ".go", ".c", ".h", ".cc",
         ".cpp", ".hpp", ".java", ".kt", ".kts", ".cs", ".rb", ".php", ".swift", ".scala", ".sh",
         ".ex", ".exs", ".json", ".yaml", ".yml", ".toml", ".sql",
     ]
@@ -24,9 +24,9 @@ fn eligible(path: &str) -> bool {
 }
 
 fn selected(path: &str, roots: &[&str]) -> bool {
-    roots
-        .iter()
-        .any(|root| path == *root || path.starts_with(&format!("{root}/")))
+    roots.iter().any(|root| {
+        *root == "." || path == *root || path.starts_with(&format!("{root}/"))
+    })
 }
 
 fn line_count(data: &[u8]) -> usize {
@@ -188,7 +188,9 @@ pub fn scan(root: &Path, reference: &str, roots: &[&str]) -> Result<Value> {
         return refuse("syntax scan requires 1 to 32 roots");
     }
     for root_path in roots {
-        git::validate_path(root_path)?;
+        if *root_path != "." {
+            git::validate_path(root_path)?;
+        }
     }
     git::clean(root)?;
     let commit = git::rev(root, reference)?;

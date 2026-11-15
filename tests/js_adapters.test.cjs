@@ -76,3 +76,19 @@ test('unsupported tsconfig inheritance cannot produce guessed source edges', () 
   assert.equal(result.imports[0].target_path, null);
   assert.ok(result.hazards[0].reason.includes('unsupported compiler configuration'));
 });
+
+test('JS and TS flavor parsers retain typed and JSX syntax without parse errors', () => {
+  const entries = [
+    {path:'src/view.tsx',content:'import { label } from "./label"; interface Props { name: string }; export function View(p: Props) { return <div>{p.name}{label}</div>; }'},
+    {path:'src/view.jsx',content:'export function View() { return <span>hello</span>; }'},
+    {path:'src/typed.mts',content:'export type Answer = number; export const value: Answer = 42;'},
+    {path:'src/common.cts',content:'export type Answer = number; export const value: Answer = 42;'},
+    {path:'src/label.ts',content:'export const label = "ok";'},
+  ];
+  const rows = runAdapter('js_adapter.cjs', {entries, configs:[]});
+  for (const row of rows) {
+    assert.deepEqual(row.parse_errors, [], row.path + JSON.stringify(row.parse_errors));
+  }
+  assert.ok(rows[0].imports.some(i => i.specifier === './label' && i.target_path === 'src/label.ts'));
+  assert.ok(rows[0].symbols.some(i => i.name === 'View'));
+});

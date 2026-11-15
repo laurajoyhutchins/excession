@@ -7,6 +7,7 @@ pub mod agent;
 pub mod agent_locate;
 mod agent_locate_cache;
 pub mod analyze;
+pub mod language_analysis;
 pub mod benchmark;
 #[path = "source/change_inventory.rs"]
 pub mod change_inventory;

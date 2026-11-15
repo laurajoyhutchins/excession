@@ -72,3 +72,39 @@ Git bundle. A passing result does not authenticate arbitrary dependency
 relations that are self-consistent but absent from the source. The existing
 `dependency_oracle.py` and `real_fixtures.py` supply
 the separate source-level falsification experiment.
+
+## Java source-reference impact A/B
+
+`benchmarks/experiments/native_reference_ab.py` defines its expected
+source-to-source relationships **before** invoking Excession or the JDK
+compiler. It constructs a deterministic Git history and compares four
+candidate sets for a changed Java declaration:
+
+1. Explicit import statements (no same-package resolution).
+2. Simple class-name token matching (deliberately confuses a shadowed
+   local variable with a class symbol).
+3. The existing static-import/SCIP impact list.
+4. The separately reported compiler-observed Java reference candidates.
+
+Run the experiment with a built executable:
+
+```sh
+python3 benchmarks/experiments/native_reference_ab.py \
+  --bin core/target/debug/excession \
+  --out-dir /tmp/excession-native-reference-ab
+```
+
+The harness produces `summary.json` and a reconstructable Git bundle,
+including source commits, expected direct references and affected files,
+true/false positives and negatives, invocation costs and an explicit
+unsupported-coverage inventory. Its five-source Java corpus is **synthetic**,
+not an independent real repository; its lexical baselines are simple,
+not representative of Java language servers. Correctness in that corpus
+does not establish Java-wide impact recall, speedups against industrial
+analyzers, reduced end-to-end work, or safe test elision.
+
+The native impact result is distinct from `candidate_source_impacts`.
+Go selected-input membership and configured Clang headers remain
+configuration evidence, not promoted reference edges. Separate real
+repository evaluation is still necessary before a general performance
+or coverage claim.

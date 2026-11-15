@@ -55,6 +55,54 @@ fn incoming(analysis: &Value) -> Result<BTreeMap<String, Vec<Value>>> {
     Ok(by_target)
 }
 
+/// Compiler-reported Java source references remain separate from static
+/// import candidates and SCIP relationships. Their producer and revision
+/// identities were revalidated by the native evidence selector before use.
+/// Reverse reachability here is only within that selected observed graph.
+fn native_java_incoming(analysis: &Value) -> Result<BTreeMap<String, Vec<Value>>> {
+    let mut by_target = BTreeMap::<String, Vec<Value>>::new();
+    for item in analysis.get("configured_observations")?.array_ref()? {
+        if item.get("native_kind")?.str()? != "NATIVE_JAVA_SYMBOL_REFERENCE" {
+            continue;
+        }
+        if item.get("status")?.str()? != "PRODUCER_SUPPLIED_UNATTESTED"
+            || !matches!(
+                item.get("producer")?.str()?,
+                "native:javac-symbols" | "native:javac-configured"
+            )
+        {
+            return refuse("native Java reference lacks its unverified producer contract");
+        }
+        let payload = item.get("native_payload")?;
+        let from = item.get("subject")?;
+        let to = item.get("source")?;
+        if payload.get("from")? != from
+            || payload.get("to")? != to
+            || payload.get("relation")?.str()? != "JAVAC_RESOLVED_SOURCE_REFERENCE"
+        {
+            return refuse("native Java reference changed meaning during source replay");
+        }
+        let from_path = from.get("path")?.str()?;
+        let to_path = to.get("path")?.str()?;
+        if from_path == to_path {
+            return refuse("native Java source reference cannot be a self edge");
+        }
+        let evidence = obj(&[
+            ("snapshot_id", item.get("snapshot_id")?.clone()),
+            ("receipt_id", item.get("receipt_id")?.clone()),
+            ("observation_id", item.get("observation_id")?.clone()),
+            ("status", Value::string("PRODUCER_SUPPLIED_UNATTESTED")),
+        ]);
+        by_target.entry(to_path.to_owned()).or_default().push(obj(&[
+            ("source", from.clone()),
+            ("target", to.clone()),
+            ("relation", Value::string("JAVAC_RESOLVED_SOURCE_REFERENCE")),
+            ("evidence", Value::array([evidence])),
+        ]));
+    }
+    Ok(by_target)
+}
+
 fn changed_paths(inventory: &Value, side: &str) -> Result<BTreeSet<String>> {
     let mut paths = BTreeSet::new();
     for change in inventory.get("changes")?.array_ref()? {
@@ -273,6 +321,9 @@ fn run_core(
     let head_commit = changes.get("head_commit")?.str()?;
     let mut effects = Vec::new();
     let mut candidate_source_impacts = Vec::new();
+    let mut native_reference_impacts = Vec::new();
+    let mut native_reference_count = 0usize;
+    let mut native_reference_truncated = false;
     let mut candidate_source_count = 0usize;
     let mut effect_truncated = false;
     let mut source_truncated = false;
@@ -360,6 +411,16 @@ fn run_core(
                 }
             }
         }
+        let native_graph = native_java_incoming(&report)?;
+        let native_witnesses = source_witnesses(&native_graph, &changed)?;
+        native_reference_count = native_reference_count
+            .checked_add(native_witnesses.len())
+            .ok_or("native Java source impact count overflow")?;
+        let native_room = MAX_SOURCE_IMPACTS.saturating_sub(native_reference_impacts.len());
+        if native_witnesses.len() > native_room {
+            native_reference_truncated = true;
+        }
+        native_reference_impacts.extend(native_witnesses.into_iter().take(native_room));
         let graph = incoming(&report)?;
         let witnesses = source_witnesses(&graph, &changed)?;
         candidate_source_count = candidate_source_count
@@ -377,7 +438,7 @@ fn run_core(
             effect_truncated = walk(&graph, &changed, &mut effects)?;
         }
     }
-    let mut truncated = effect_truncated || source_truncated;
+    let mut truncated = effect_truncated || source_truncated || native_reference_truncated;
     if gaps.len() > MAX_GAPS {
         gaps.truncate(MAX_GAPS);
         truncated = true;
@@ -413,6 +474,18 @@ fn run_core(
             ]),
         ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
+        (
+            "native_reference_impacts",
+            Value::array(native_reference_impacts),
+        ),
+        (
+            "native_reference_count",
+            Value::number(native_reference_count),
+        ),
+        (
+            "native_reference_enumeration_complete",
+            Value::Bool(!native_reference_truncated),
+        ),
     ]);
     match selected {
         Mode::Pinned(before, after) => {
@@ -483,6 +556,11 @@ pub fn human(report: &Value) -> Result<String> {
     const PREVIEW_LIMIT: usize = 10;
     let effects = report.get("effects")?.array_ref()?;
     let source_count = report.get("candidate_source_count")?.integer()?;
+    let native_count = report.get("native_reference_count")?.integer()?;
+    let native_complete = report
+        .get("native_reference_enumeration_complete")?
+        .bool()?;
+    let native_candidates = report.get("native_reference_impacts")?.array_ref()?;
     let source_complete = report
         .get("candidate_source_enumeration_complete")?
         .bool()?;
@@ -500,11 +578,19 @@ pub fn human(report: &Value) -> Result<String> {
                 "truncated"
             }
         ),
+        format!(
+            "Java compiler-observed sources: {native_count} (unattested, observed graph {}).",
+            if native_complete {
+                "complete"
+            } else {
+                "truncated"
+            }
+        ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
     ];
     if effects.is_empty() {
-        lines.push("No candidate dependents found in the analyzed scope.".to_owned());
+        lines.push("No static-import or SCIP candidates found in the analyzed scope.".to_owned());
     } else {
         lines.push("Candidate paths (source -> changed dependency):".to_owned());
         for effect in effects.iter().take(PREVIEW_LIMIT) {
@@ -523,6 +609,25 @@ pub fn human(report: &Value) -> Result<String> {
             lines.push(format!(
                 "  ... {} additional candidate paths (use --json to inspect all)",
                 effects.len() - PREVIEW_LIMIT
+            ));
+        }
+    }
+    if !native_candidates.is_empty() {
+        lines.push(
+            "Java compiler-observed source candidates (not runtime dependencies):".to_owned(),
+        );
+        for witness in native_candidates.iter().take(PREVIEW_LIMIT) {
+            lines.push(format!(
+                "  {:?} -> {:?} ({} hops; producer unattested)",
+                witness.get("entity")?.get("path")?.str()?,
+                witness.get("next_hop")?.get("target")?.get("path")?.str()?,
+                witness.get("distance_to_change")?.integer()?,
+            ));
+        }
+        if native_candidates.len() > PREVIEW_LIMIT {
+            lines.push(format!(
+                "  ... {} more Java candidates (use --json)",
+                native_candidates.len() - PREVIEW_LIMIT
             ));
         }
     }
@@ -697,6 +802,87 @@ mod tests {
         assert_ne!(
             from_top[0].get("claim_id").unwrap(),
             from_top[1].get("claim_id").unwrap()
+        );
+    }
+
+    #[test]
+    fn compiler_reference_candidates_preserve_replay_identity_and_refuse_reinterpretation() {
+        let from = obj(&[("path", Value::string("src/Service.java"))]);
+        let to = obj(&[("path", Value::string("src/Helper.java"))]);
+        let payload = obj(&[
+            ("from", from.clone()),
+            ("to", to.clone()),
+            ("relation", Value::string("JAVAC_RESOLVED_SOURCE_REFERENCE")),
+        ]);
+        let observation = obj(&[
+            ("native_kind", Value::string("NATIVE_JAVA_SYMBOL_REFERENCE")),
+            ("status", Value::string("PRODUCER_SUPPLIED_UNATTESTED")),
+            ("producer", Value::string("native:javac-symbols")),
+            ("source", to.clone()),
+            ("subject", from.clone()),
+            ("native_payload", payload.clone()),
+            ("snapshot_id", Value::string("snapshot")),
+            ("receipt_id", Value::string("receipt")),
+            ("observation_id", Value::string("observation")),
+        ]);
+        let report = obj(&[(
+            "configured_observations",
+            Value::array([observation.clone()]),
+        )]);
+        let candidates = source_witnesses(
+            &native_java_incoming(&report).unwrap(),
+            &BTreeSet::from(["src/Helper.java".to_owned()]),
+        )
+        .unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0]
+                .get("entity")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/Service.java"
+        );
+        let evidence = &candidates[0]
+            .get("next_hop")
+            .unwrap()
+            .get("evidence")
+            .unwrap()
+            .array_ref()
+            .unwrap()[0];
+        assert_eq!(
+            evidence.get("receipt_id").unwrap().str().unwrap(),
+            "receipt"
+        );
+
+        let mut forged = observation;
+        forged.entries_mut().unwrap().insert(
+            "subject".to_owned(),
+            obj(&[("path", Value::string("src/Fake.java"))]),
+        );
+        assert!(
+            native_java_incoming(&obj(
+                &[("configured_observations", Value::array([forged])),]
+            ))
+            .is_err()
+        );
+
+        let other = obj(&[(
+            "configured_observations",
+            Value::array([
+                obj(&[("native_kind", Value::string("NATIVE_CONFIGURED_HEADER"))]),
+                obj(&[("native_kind", Value::string("NATIVE_SELECTED_INPUT"))]),
+                obj(&[(
+                    "native_kind",
+                    Value::string("NATIVE_JVM_CLASSPATH_CONFIGURATION"),
+                )]),
+            ]),
+        )]);
+        assert!(
+            native_java_incoming(&other).unwrap().is_empty(),
+            "Clang headers, Go membership and JAR inventory are not Java references"
         );
     }
 

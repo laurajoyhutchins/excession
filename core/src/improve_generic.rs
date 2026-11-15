@@ -45,30 +45,38 @@ impl Finding {
                 if sources.len() != 2 {
                     return refuse("reciprocal candidate requires two source files");
                 }
-                sources.iter().map(|s| Location::from_path(s, "")).collect::<Result<Vec<_>>>()?
+                sources
+                    .iter()
+                    .map(|s| Location::from_path(s, ""))
+                    .collect::<Result<Vec<_>>>()?
             }
             ("scip", "cross_language_symbol_boundary") => {
                 let reference = candidate.get("reference")?;
                 let symbol = reference.get("symbol")?.str()?;
-                ["from", "to"].iter().map(|side| {
-                    Location::from_path(reference.get(side)?, symbol)
-                }).collect::<Result<Vec<_>>>()?
+                ["from", "to"]
+                    .iter()
+                    .map(|side| Location::from_path(reference.get(side)?, symbol))
+                    .collect::<Result<Vec<_>>>()?
             }
             ("indexed", "dependency_cycle") => {
                 let sources = candidate.get("modules")?.array_ref()?;
                 if sources.len() < 2 {
                     return refuse("indexed dependency cycle must contain at least two modules");
                 }
-                sources.iter().map(|s| Location::from_path(s, "")).collect::<Result<Vec<_>>>()?
+                sources
+                    .iter()
+                    .map(|s| Location::from_path(s, ""))
+                    .collect::<Result<Vec<_>>>()?
             }
             ("indexed", "duplicate_body_fingerprint") => {
                 let symbols = candidate.get("symbols")?.array_ref()?;
                 if symbols.len() < 2 {
                     return refuse("indexed duplication requires at least two symbols");
                 }
-                symbols.iter().map(|s| {
-                    Location::from_path(s, s.get("name")?.str()?)
-                }).collect::<Result<Vec<_>>>()?
+                symbols
+                    .iter()
+                    .map(|s| Location::from_path(s, s.get("name")?.str()?))
+                    .collect::<Result<Vec<_>>>()?
             }
             _ => return refuse(format!("unsupported {producer} improvement kind: {kind}")),
         };
@@ -77,13 +85,19 @@ impl Finding {
         if locations.len() < 2 {
             return refuse("candidate must contain at least two distinct source locations");
         }
-        Ok(Self { kind: kind.to_owned(), locations })
+        Ok(Self {
+            kind: kind.to_owned(),
+            locations,
+        })
     }
 
     fn json(&self) -> Value {
         obj(&[
             ("kind", Value::string(&self.kind)),
-            ("locations", Value::array(self.locations.iter().map(Location::json))),
+            (
+                "locations",
+                Value::array(self.locations.iter().map(Location::json)),
+            ),
         ])
     }
 
@@ -160,11 +174,14 @@ pub(crate) fn plan_from_report(report: &Value) -> Result<Value> {
             ("candidate_id", Value::string(id)),
             ("kind", item.get("kind")?.clone()),
             ("finding", finding.json()),
-            ("priority", Value::string(if provider == "scip" && structural.contains(id) {
-                "LIKELY_MODULE_DECLARATION"
-            } else {
-                "REVIEW_PRODUCER_EVIDENCE"
-            })),
+            (
+                "priority",
+                Value::string(if provider == "scip" && structural.contains(id) {
+                    "LIKELY_MODULE_DECLARATION"
+                } else {
+                    "REVIEW_PRODUCER_EVIDENCE"
+                }),
+            ),
             ("edit_capability", Value::string(operation)),
             ("producer_evidence", item.clone()),
             ("automatic_deletion_authorized", Value::Bool(false)),
@@ -179,7 +196,10 @@ pub(crate) fn plan_from_report(report: &Value) -> Result<Value> {
     });
     let report = obj(&[
         ("schema", Value::string("excession.improvement-plan.v1")),
-        ("status", Value::string("OBSERVATIONS_REQUIRE_TRANSFORMATION")),
+        (
+            "status",
+            Value::string("OBSERVATIONS_REQUIRE_TRANSFORMATION"),
+        ),
         ("producer", Value::string(provider)),
         ("source_commit", report.get("source_commit")?.clone()),
         ("source_tree", report.get("source_tree")?.clone()),
@@ -189,7 +209,8 @@ pub(crate) fn plan_from_report(report: &Value) -> Result<Value> {
         ("candidates", Value::array(candidates)),
         ("ready_to_merge", Value::Bool(false)),
         ("automatic_deletion_authorized", Value::Bool(false)),
-    ]).stamp_id("plan_id")?;
+    ])
+    .stamp_id("plan_id")?;
     if report.canonical().len() > MAX_PLAN_BYTES {
         return refuse("improvement plan exceeds 4 MiB; narrow producer scope");
     }
@@ -210,8 +231,10 @@ fn coverage_regressed(before: &Value, after: &Value, provider: &str) -> Result<b
         "indexed" => ("indexed_modules", "indexed_hazards"),
         _ => return refuse("unsupported improvement evidence producer"),
     };
-    Ok(coverage_number(after, sources)? < coverage_number(before, sources)?
-        || coverage_number(after, unresolved)? > coverage_number(before, unresolved)?)
+    Ok(
+        coverage_number(after, sources)? < coverage_number(before, sources)?
+            || coverage_number(after, unresolved)? > coverage_number(before, unresolved)?,
+    )
 }
 
 fn changed_paths(inventory: &Value) -> Result<BTreeSet<String>> {
@@ -262,9 +285,11 @@ pub(crate) fn evaluate_reports(
     let changed = changed_paths(inventory)?;
     let removed: BTreeSet<_> = old.difference(&new).cloned().collect();
     let introduced: BTreeSet<_> = new.difference(&old).cloned().collect();
-    let unexplained: BTreeSet<_> = removed.iter()
+    let unexplained: BTreeSet<_> = removed
+        .iter()
         .filter(|f| !f.touches(&changed))
-        .cloned().collect();
+        .cloned()
+        .collect();
     let mut new_sources = BTreeSet::new();
     for change in inventory.get("changes")?.array_ref()? {
         if change.get("kind")?.str()? != "ADDED" {
@@ -289,7 +314,10 @@ pub(crate) fn evaluate_reports(
         "NO_STRUCTURAL_REDUCTION_OBSERVED"
     };
     let mut result = obj(&[
-        ("schema", Value::string("excession.improvement-evaluation.v1")),
+        (
+            "schema",
+            Value::string("excession.improvement-evaluation.v1"),
+        ),
         ("producer", Value::string(provider)),
         ("status", Value::string(status)),
         ("base_commit", inventory.get("base_commit")?.clone()),
@@ -297,7 +325,10 @@ pub(crate) fn evaluate_reports(
         ("change_inventory_id", inventory.get("report_id")?.clone()),
         ("plan_id", original_plan.get("plan_id")?.clone()),
         ("base_producer_report_id", before.get("report_id")?.clone()),
-        ("candidate_producer_report_id", after.get("report_id")?.clone()),
+        (
+            "candidate_producer_report_id",
+            after.get("report_id")?.clone(),
+        ),
         ("observed_findings_before", Value::number(old.len())),
         ("observed_findings_after", Value::number(new.len())),
         ("removed_findings", values(removed.clone())),
@@ -309,12 +340,15 @@ pub(crate) fn evaluate_reports(
             "introduced_source_paths",
             Value::array(new_sources.into_iter().map(Value::string)),
         ),
-        ("obligations", Value::array([
-            Value::string("INDEPENDENT_NATIVE_BUILD_AND_TEST_REQUIRED"),
-            Value::string("PUBLIC_API_AND_SEMANTIC_COMPATIBILITY_UNVERIFIED"),
-            Value::string("SOURCE_RELATIONSHIP_COVERAGE_UNVERIFIED"),
-            Value::string("BUILD_PROVENANCE_AND_REA_EVIDENCE_NOT_ATTESTED"),
-        ])),
+        (
+            "obligations",
+            Value::array([
+                Value::string("INDEPENDENT_NATIVE_BUILD_AND_TEST_REQUIRED"),
+                Value::string("PUBLIC_API_AND_SEMANTIC_COMPATIBILITY_UNVERIFIED"),
+                Value::string("SOURCE_RELATIONSHIP_COVERAGE_UNVERIFIED"),
+                Value::string("BUILD_PROVENANCE_AND_REA_EVIDENCE_NOT_ATTESTED"),
+            ]),
+        ),
         ("ready_to_merge", Value::Bool(false)),
         ("automatic_deletion_authorized", Value::Bool(false)),
     ]);
@@ -340,34 +374,55 @@ mod tests {
 
     fn fixture(kind: &str, source: &str) -> Value {
         let (candidate, coverage) = if kind == "dependency_cycle" {
-            (obj(&[
-                ("kind", Value::string(kind)),
-                ("candidate_id", Value::string("a")),
-                ("modules", Value::array([
-                    obj(&[("path", Value::string("lib/a.py"))]),
-                    obj(&[("path", Value::string("lib/b.py"))]),
-                ])),
-            ]),obj(&[
-                ("indexed_modules", Value::number(2)),
-                ("indexed_hazards", Value::number(0)),
-            ]))
+            (
+                obj(&[
+                    ("kind", Value::string(kind)),
+                    ("candidate_id", Value::string("a")),
+                    (
+                        "modules",
+                        Value::array([
+                            obj(&[("path", Value::string("lib/a.py"))]),
+                            obj(&[("path", Value::string("lib/b.py"))]),
+                        ]),
+                    ),
+                ]),
+                obj(&[
+                    ("indexed_modules", Value::number(2)),
+                    ("indexed_hazards", Value::number(0)),
+                ]),
+            )
         } else {
-            (obj(&[
-                ("kind", Value::string(kind)),
-                ("candidate_id", Value::string("b")),
-                ("symbols", Value::array([
-                    obj(&[("path", Value::string("web/a.js")), ("name", Value::string("foo"))]),
-                    obj(&[("path", Value::string("web/b.js")), ("name", Value::string("foo"))]),
-                ])),
-            ]),obj(&[
-                ("indexed_modules", Value::number(2)),
-                ("indexed_hazards", Value::number(0)),
-            ]))
+            (
+                obj(&[
+                    ("kind", Value::string(kind)),
+                    ("candidate_id", Value::string("b")),
+                    (
+                        "symbols",
+                        Value::array([
+                            obj(&[
+                                ("path", Value::string("web/a.js")),
+                                ("name", Value::string("foo")),
+                            ]),
+                            obj(&[
+                                ("path", Value::string("web/b.js")),
+                                ("name", Value::string("foo")),
+                            ]),
+                        ]),
+                    ),
+                ]),
+                obj(&[
+                    ("indexed_modules", Value::number(2)),
+                    ("indexed_hazards", Value::number(0)),
+                ]),
+            )
         };
         obj(&[
             ("schema", Value::string("excession.refactor-candidates.v1")),
             ("source_commit", Value::string(source)),
-            ("source_tree", Value::string(if source == "base" {"bt"} else {"ht"})),
+            (
+                "source_tree",
+                Value::string(if source == "base" { "bt" } else { "ht" }),
+            ),
             ("report_id", Value::string("report")),
             ("coverage", coverage),
             ("candidates", Value::array([candidate])),
@@ -381,13 +436,14 @@ mod tests {
             ("head_commit", Value::string("head")),
             ("head_tree", Value::string("ht")),
             ("report_id", Value::string("changes")),
-            ("changes", Value::array([
-                obj(&[
+            (
+                "changes",
+                Value::array([obj(&[
                     ("kind", Value::string("MODIFIED")),
                     ("before", obj(&[("path", Value::string("lib/a.py"))])),
                     ("after", obj(&[("path", Value::string("lib/a.py"))])),
-                ]),
-            ])),
+                ])]),
+            ),
         ])
     }
 
@@ -397,8 +453,17 @@ mod tests {
         let plan = plan_from_report(&report).unwrap();
         assert_eq!(plan.get("producer").unwrap().str().unwrap(), "indexed");
         let item = &plan.get("candidates").unwrap().array_ref().unwrap()[0];
-        assert_eq!(item.get("edit_capability").unwrap().str().unwrap(), "NO_NATIVE_EDIT_PRODUCER");
-        assert!(!plan.get("automatic_deletion_authorized").unwrap().bool().unwrap());
+        assert_eq!(
+            item.get("edit_capability").unwrap().str().unwrap(),
+            "NO_NATIVE_EDIT_PRODUCER"
+        );
+        assert!(
+            !plan
+                .get("automatic_deletion_authorized")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
     }
 
     #[test]
@@ -407,7 +472,10 @@ mod tests {
         let plan = plan_from_report(&report).unwrap();
         assert_eq!(plan.get("candidate_count").unwrap().integer().unwrap(), 1);
         let item = &plan.get("candidates").unwrap().array_ref().unwrap()[0];
-        assert_eq!(item.get("kind").unwrap().str().unwrap(), "duplicate_body_fingerprint");
+        assert_eq!(
+            item.get("kind").unwrap().str().unwrap(),
+            "duplicate_body_fingerprint"
+        );
         assert!(!plan.get("ready_to_merge").unwrap().bool().unwrap());
     }
 
@@ -415,12 +483,23 @@ mod tests {
     fn indexed_cycle_disappearance_is_still_unverified() {
         let base = fixture("dependency_cycle", "base");
         let mut head = fixture("dependency_cycle", "head");
-        head.entries_mut().unwrap().insert("candidates".into(), Value::array([]));
+        head.entries_mut()
+            .unwrap()
+            .insert("candidates".into(), Value::array([]));
         let plan = plan_from_report(&base).unwrap();
         let evaluated = evaluate_reports(&base, &head, &inventory(), &plan).unwrap();
-        assert_eq!(evaluated.get("status").unwrap().str().unwrap(),
-                   "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED");
-        assert_eq!(evaluated.get("observed_findings_after").unwrap().integer().unwrap(), 0);
+        assert_eq!(
+            evaluated.get("status").unwrap().str().unwrap(),
+            "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED"
+        );
+        assert_eq!(
+            evaluated
+                .get("observed_findings_after")
+                .unwrap()
+                .integer()
+                .unwrap(),
+            0
+        );
         assert!(!evaluated.get("ready_to_merge").unwrap().bool().unwrap());
     }
 
@@ -428,14 +507,30 @@ mod tests {
     fn rejects_producer_mismatch_unrelated_disappearance_and_unsupported_shapes() {
         let before = fixture("dependency_cycle", "base");
         let mut after = fixture("dependency_cycle", "head");
-        after.entries_mut().unwrap().insert("candidates".into(), Value::array([]));
+        after
+            .entries_mut()
+            .unwrap()
+            .insert("candidates".into(), Value::array([]));
         let plan = plan_from_report(&before).unwrap();
         let mut unrelated = inventory();
-        unrelated.entries_mut().unwrap().insert("changes".into(), Value::array([]));
-        assert_eq!(evaluate_reports(&before, &after, &unrelated, &plan).unwrap().get("status").unwrap().str().unwrap(),
-                   "INCONCLUSIVE_EVIDENCE_CHANGE");
+        unrelated
+            .entries_mut()
+            .unwrap()
+            .insert("changes".into(), Value::array([]));
+        assert_eq!(
+            evaluate_reports(&before, &after, &unrelated, &plan)
+                .unwrap()
+                .get("status")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "INCONCLUSIVE_EVIDENCE_CHANGE"
+        );
         let mut forged = before.clone();
-        forged.entries_mut().unwrap().insert("schema".into(), Value::string("invented.producer"));
+        forged
+            .entries_mut()
+            .unwrap()
+            .insert("schema".into(), Value::string("invented.producer"));
         assert!(plan_from_report(&forged).is_err());
         assert!(evaluate_reports(&before, &forged, &inventory(), &plan).is_err());
     }
@@ -444,18 +539,39 @@ mod tests {
     fn generic_relocation_does_not_require_rust() {
         let base = fixture("dependency_cycle", "base");
         let mut head = fixture("dependency_cycle", "head");
-        head.entries_mut().unwrap().insert("candidates".into(), Value::array([]));
+        head.entries_mut()
+            .unwrap()
+            .insert("candidates".into(), Value::array([]));
         let plan = plan_from_report(&base).unwrap();
         let mut evidence = inventory();
-        let mut rows = evidence.get("changes").unwrap().array_ref().unwrap().to_vec();
+        let mut rows = evidence
+            .get("changes")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .to_vec();
         rows.push(obj(&[
             ("kind", Value::string("ADDED")),
             ("before", Value::Null),
             ("after", obj(&[("path", Value::string("lib/extracted.py"))])),
         ]));
-        evidence.entries_mut().unwrap().insert("changes".into(), Value::array(rows));
+        evidence
+            .entries_mut()
+            .unwrap()
+            .insert("changes".into(), Value::array(rows));
         let evaluated = evaluate_reports(&base, &head, &evidence, &plan).unwrap();
-        assert_eq!(evaluated.get("status").unwrap().str().unwrap(), "STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED");
-        assert_eq!(evaluated.get("introduced_source_paths").unwrap().array_ref().unwrap().len(), 1);
+        assert_eq!(
+            evaluated.get("status").unwrap().str().unwrap(),
+            "STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED"
+        );
+        assert_eq!(
+            evaluated
+                .get("introduced_source_paths")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .len(),
+            1
+        );
     }
 }

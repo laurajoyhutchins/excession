@@ -825,3 +825,92 @@ pub fn read_plan(db: &Db, repo: &Path, revision: &str, plan: &Plan) -> Result<Ob
         Ok(out)
     })
 }
+
+
+#[cfg(test)]
+mod native_replay_tests {
+    use super::*;
+    use std::fs;
+    use std::process::Command;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    #[test]
+    fn authenticated_sources_are_reused_but_stale_and_conflicting_blobs_fail() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-scip-source-once-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        let git_run = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git_run(&["init", "-q"]);
+        fs::write(root.join("src/reader.rs"), "pub fn read() {}\n").unwrap();
+        git_run(&["add", "."]);
+        git_run(&[
+            "-c", "user.email=test@example.invalid",
+            "-c", "user.name=Excession",
+            "commit", "-qm", "pinned baseline",
+        ]);
+        let commit = git::rev(&root, "HEAD").unwrap();
+        let tree = git::rev(&root, &format!("{commit}^{{tree}}")).unwrap();
+        let original_blob = git::blob(&root, &commit, "src/reader.rs").unwrap();
+        let mut cache = BTreeMap::new();
+
+        let first = source_once(
+            &mut cache, &root, &commit, &tree, "src/reader.rs", &original_blob,
+        ).unwrap();
+        assert_eq!(cache.len(), 1);
+        assert_eq!(first.get("blob").unwrap().str().unwrap(), original_blob);
+
+        // Repeated observations of the same path are served by the replay's
+        // authenticated identity; uncommitted changes never affect the cache.
+        fs::write(root.join("src/reader.rs"), "pub fn dirty() {}\n").unwrap();
+        let again = source_once(
+            &mut cache, &root, &commit, &tree, "src/reader.rs", &original_blob,
+        ).unwrap();
+        assert_eq!(again, first);
+        assert_eq!(cache.len(), 1);
+        assert!(source_once(
+            &mut cache, &root, &commit, &tree, "src/reader.rs", &"f".repeat(40),
+        ).is_err());
+
+        // A new revision must have its own source cache. A blob from the
+        // original commit cannot be silently used under its new Git tree.
+        git_run(&["add", "src/reader.rs"]);
+        git_run(&[
+            "-c", "user.email=test@example.invalid",
+            "-c", "user.name=Excession",
+            "commit", "-qm", "change source",
+        ]);
+        let later_commit = git::rev(&root, "HEAD").unwrap();
+        let later_tree = git::rev(&root, &format!("{later_commit}^{{tree}}")).unwrap();
+        let mut later_cache = BTreeMap::new();
+        assert!(source_once(
+            &mut later_cache, &root, &later_commit, &later_tree,
+            "src/reader.rs", &original_blob,
+        ).is_err());
+        assert!(later_cache.is_empty());
+        let changed_blob = git::blob(&root, &later_commit, "src/reader.rs").unwrap();
+        let changed = source_once(
+            &mut later_cache, &root, &later_commit, &later_tree,
+            "src/reader.rs", &changed_blob,
+        ).unwrap();
+        assert_ne!(changed.get("blob").unwrap(), first.get("blob").unwrap());
+        assert_eq!(later_cache.len(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+}

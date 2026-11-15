@@ -714,6 +714,20 @@ pub(super) fn command() -> Command {
         ).about("Read-only Git reconstruction and trusted-local C compiler feedback"))
         .subcommand(inspect)
         .subcommand(refactor)
+        .subcommand(group(
+            "improve",
+            vec![
+                leaf("plan", &["repo", "rev", "index"], &["source-prefix"]),
+                leaf(
+                    "evaluate",
+                    &[
+                        "base-repo", "candidate-repo", "base", "candidate",
+                        "base-index", "candidate-index", "plan",
+                    ],
+                    &["source-prefix"],
+                ),
+            ],
+        ).about("Replay native refactor evidence and measure candidate structural changes"))
         .subcommand(benchmark)
         .subcommand(configured_graph)
         .subcommand(analyze)

@@ -10,6 +10,7 @@ use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
 use excession::history;
+use excession::history_rewrite;
 use excession::impact_query;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
@@ -653,6 +654,27 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("target"),
                 opt.get("replacement"),
             )?)),
+            "preview-dag" => {
+                let max = opt
+                    .get_or("max-commits", "100000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-commits must be 1..=100000")?;
+                let group = opt
+                    .0
+                    .get("group")
+                    .map(|value| value.parse::<usize>())
+                    .transpose()
+                    .map_err(|_| "--group must be a nonnegative integer")?;
+                Ok(Response::CanonicalJson(
+                    serde_json::to_string(&history_rewrite::preview(
+                        opt.path("repo"),
+                        opt.path("output"),
+                        group,
+                        max,
+                    )?)
+                    .map_err(|e| format!("serialize history DAG preview: {e}"))?,
+                ))
+            }
             _ => refuse(format!("unknown history command {sub}")),
         },
         [top, sub] if top == "agent" => {

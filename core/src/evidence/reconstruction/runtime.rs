@@ -6,7 +6,7 @@ use crate::json::{Value, obj};
 use crate::{Result, digest, refuse};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio, Child};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -57,7 +57,6 @@ pub(super) fn run(program: &str, args: &[&str]) -> Result<()> {
         "trusted-local tool",
     )
 }
-
 
 /// The two reconstruction paths retain distinct deadlines and diagnostics,
 /// but share one bounded process lifecycle and child-reaping rule.
@@ -136,7 +135,6 @@ pub(super) fn sample(left: &[u8], right: &[u8]) -> (usize, Vec<Value>) {
     (mismatches, examples)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,10 +183,13 @@ mod tests {
             fs::write(&path, [4_u8, 5]).unwrap();
             assert_eq!(bounded_file(&path, 2).unwrap(), [4, 5]);
             assert!(bounded_file(&path, 1).is_err());
-            fs::write(&path, []).unwrap();
+            fs::write(&path, b"").unwrap();
             assert!(bounded_file(&path, 2).is_err());
             assert!(bounded_file(&scratch.0, 1024).is_err());
         }
-        assert!(!path.exists(), "the trusted-local scratch directory must be removed");
+        assert!(
+            !path.exists(),
+            "the trusted-local scratch directory must be removed"
+        );
     }
 }

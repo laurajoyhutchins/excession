@@ -219,6 +219,42 @@ def assess(case: Case, result: dict, independent_head_edges: set[tuple[str, str]
     }
 
 
+def verify_agent_obligations(report: dict, case: Case, trees: dict[str, str]) -> dict:
+    """Cross-repository agent verification must not silently grant merge authority."""
+    if report.get("schema") != "excession.agent-verification.v1":
+        raise ValueError("agent verify returned unexpected schema")
+    if (report.get("base_commit") != case.base
+            or report.get("candidate_commit") != case.head
+            or report.get("base_tree") != trees["base_tree"]
+            or report.get("candidate_tree") != trees["head_tree"]):
+        raise ValueError("agent verification does not bind to the requested Git commits/trees")
+    if (report.get("status") != "OPEN_OBLIGATIONS"
+            or report.get("ready_to_merge") is not False
+            or report.get("safe_to_skip_unlisted_tests") is not False):
+        raise ValueError("agent verify gave unsupported correctness or merge authority")
+    obligations = set(report.get("obligations", []))
+    necessary = {
+        "SEMANTIC_CORRECTNESS_NOT_EVALUATED",
+        "INCOMPLETE_DEPENDENCY_COVERAGE",
+        "TEST_SELECTION_NOT_PROVEN",
+        "INDEPENDENT_TEST_RECEIPT_MISSING",
+        "INDEPENDENT_BUILD_RECEIPT_MISSING",
+    }
+    if not necessary.issubset(obligations):
+        raise ValueError("agent verify silently dropped required evidence obligations")
+    if (report.get("replay", {}).get("source") != "RECOMPUTED_FROM_PINNED_GIT"
+            or report.get("coverage", {}).get("status") != "PARTIAL"):
+        raise ValueError("agent replay or coverage status is not source-bound")
+    return {
+        "status": report["status"],
+        "ready_to_merge": False,
+        "safe_to_skip_unlisted_tests": False,
+        "obligations": sorted(obligations),
+        "candidate_source_count": report["candidate_source_count"],
+        "output_truncated": report["coverage"]["truncated"],
+    }
+
+
 def _write_json(path: Path, document: dict) -> str:
     data = (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -251,6 +287,28 @@ def execute_case(case: Case, binary: Path, root: Path) -> dict:
             record["independent_modules"] = modules
             record["independent_unresolved_sites"] = unresolved
             record.update(assess(case, result, edges, set(head_files)))
+            agent_started = time.perf_counter()
+            agent_args = [
+                str(binary), "agent", "verify",
+                "--repo", str(repository),
+                "--base", case.base,
+                "--candidate", case.head,
+                "--roots", ",".join(case.roots),
+                "--db", str(Path(tmp) / "agent-verification.sqlite"),
+                "--limit", "64",
+            ]
+            agent_raw = _command(*agent_args, timeout=180)
+            agent_report = json.loads(agent_raw)
+            record["agent_verification_sha256"] = _write_json(
+                evidence_dir / "agent-verification.json", agent_report
+            )
+            record["agent_verification"] = verify_agent_obligations(
+                agent_report, case, trees
+            )
+            record["cost"]["agent_verify_wall_seconds"] = round(
+                time.perf_counter() - agent_started, 3
+            )
+            record["cost"]["agent_verify_report_bytes"] = len(agent_raw)
     except Exception as exc:
         record["status"] = "FAIL"
         record["failure"] = f"{type(exc).__name__}: {exc}"[:2000]

@@ -119,6 +119,9 @@ jq -n --arg commit "$CANDIDATE" --arg tree "$TREE" \
 jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" '
   .schema == "excession.improvement-evaluation.v1" and
   .base_commit == $base and .candidate_commit == $head and
+  .status == "INCONCLUSIVE_EVIDENCE_CHANGE" and
+  .reciprocal_pairs_before > .reciprocal_pairs_after and
+  .coverage_regressed == true and
   .ready_to_merge == false and .automatic_deletion_authorized == false and
   (.introduced_rust_source_paths | index("core/src/generated_module_name.rs") != null) and
   .source_changes == 3 and

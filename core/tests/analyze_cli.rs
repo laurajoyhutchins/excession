@@ -185,6 +185,8 @@ fn explicit_roots_only_require_their_own_language_adapter() {
     fs::write(repo.join("pkg/a.py"), "import pkg.b\n").unwrap();
     fs::write(repo.join("pkg/b.py"), "VALUE = 1\n").unwrap();
     fs::write(repo.join("web/app.js"), "export const answer = 42;\n").unwrap();
+    // A Python-only selection must never decode an irrelevant JS config.
+    fs::write(repo.join("web/tsconfig.json"), [0xff, 0xfe]).unwrap();
     cmd(&repo, "git", &["add", "."]);
     cmd(
         &repo,

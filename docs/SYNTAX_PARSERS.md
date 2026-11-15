@@ -114,6 +114,29 @@ cargo test --offline --locked --manifest-path core/Cargo.toml preflight::tests
 Tree-sitter installed, including accepted-but-untrusted self-consistent
 forgeries. Full integration tests remain separate.
 
+## One command for multiple languages
+
+```sh
+excession analyze languages
+excession analyze languages --roots src,tests --json > /tmp/language-analysis.json
+```
+
+This command combines the existing pinned Git syntax scan and conservative
+language-specific import candidate resolver **in memory**, without a separate
+report file or reimplementation of each parser. It reports one
+`excession.language-analysis.v1` result with per-language parsed, parse-error,
+unavailable, candidate-edge, and unresolved-import counts; all candidate edges
+retain their pinned source paths and blobs. `--roots .` is accepted by both
+the shorthand and the underlying syntax scan. Source selection is capped at
+500 files/16 MiB and a clean checkout is required. Language grammars are
+optional and must be installed ahead of time. Missing grammars and absent
+semantic resolvers are visible coverage limitations, not success.
+
+The ordinary `analyze .` remains the Python/JavaScript/TypeScript SQLite
+static index and supports dirty checkouts by reading committed blobs. For
+language-native Rust resolution use `analyze rust --trusted-local`, which has
+different execution and trust constraints.
+
 ## Source-bound dependency candidates
 
 The optional resolver maps syntax imports to tracked files using conservative,

@@ -13,6 +13,12 @@ on:
       - 'core/Cargo.lock'
       - 'requirements/research.txt'
       - 'core/src/syntax.rs'
+      - 'core/src/language_analysis.rs'
+      - 'core/tests/language_analysis_cli.rs'
+      - 'core/src/source_capabilities.rs'
+      - 'core/src/module_identity.rs'
+      - 'core/adapters/js_adapter.cjs'
+      - 'tests/js_adapters.test.cjs'
       - 'core/src/preflight.rs'
       - 'core/src/syntax_resolution.rs'
       - 'core/src/semantic_contract.rs'
@@ -87,6 +93,10 @@ jobs:
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --lib native_syntax::tests
       - name: Rust semantic adapter integration
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --test semantic_adapters
+      - name: Multi-language end-to-end analysis and coverage
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test language_analysis_cli --test analyze_cli
+      - name: Native JavaScript and TypeScript adapter flavors
+        run: node --test tests/js_adapters.test.cjs
       - name: Validate ODCS 3.2 and both JSON Schema catalogues
         run: |
           python3 tools/validate_semantic_contract.py

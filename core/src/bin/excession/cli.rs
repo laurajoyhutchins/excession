@@ -444,6 +444,16 @@ pub(super) fn command() -> Command {
         )
         .subcommand(clang())
         .subcommand(
+            leaf("languages", &[], &["repo", "rev", "roots"])
+                .about("Parse tracked source across languages, resolve conservative imports, report gaps")
+                .arg(
+                    Arg::new("json")
+                        .long("json")
+                        .action(clap::ArgAction::SetTrue),
+                )
+                .after_help("Examples:\n  excession analyze languages\n  excession analyze languages --roots src,tests --json\n\nRequires a clean checkout and preinstalled grammars. Missing grammars and unsupported resolvers are reported, never guessed."),
+        )
+        .subcommand(
             leaf(
                 "rust",
                 &[],

@@ -94,9 +94,14 @@ function gitSnapshot(entries, configuration) {
 const resolveImport = Array.isArray(input) ? null : gitSnapshot(items, input.configs || []);
 const printer = ts.createPrinter({removeComments:true});
 const out=[];
+function scriptKind(path) {
+  if (path.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (path.endsWith('.jsx')) return ts.ScriptKind.JSX;
+  if (path.endsWith('.ts') || path.endsWith('.mts') || path.endsWith('.cts')) return ts.ScriptKind.TS;
+  return ts.ScriptKind.JS;
+}
 for (const f of items) {
-  const kind=f.path.endsWith('.ts')?ts.ScriptKind.TS:ts.ScriptKind.JS;
-  const source=ts.createSourceFile(f.path,f.content,ts.ScriptTarget.Latest,true,kind);
+  const source=ts.createSourceFile(f.path,f.content,ts.ScriptTarget.Latest,true,scriptKind(f.path));
   const imports=[];
   const symbols=[];
   const hazards=[];

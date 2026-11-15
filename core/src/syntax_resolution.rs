@@ -78,13 +78,18 @@ fn module_name(contents: &str) -> Option<&str> {
     found
 }
 
-fn go_modules(root: &Path, revision: &str) -> Result<Vec<GoModule>> {
+fn go_modules(root: &Path, revision: &str, go_sources: &[&str]) -> Result<Vec<GoModule>> {
     let mut selected = git::entries(root, revision)?
         .into_iter()
         .filter(|e| {
-            e.kind == "blob"
-                && e.mode == "100644"
-                && (e.path == "go.mod" || e.path.ends_with("/go.mod"))
+            if e.kind != "blob"
+                || e.mode != "100644"
+                || !(e.path == "go.mod" || e.path.ends_with("/go.mod"))
+            {
+                return false;
+            }
+            let parent = e.path.strip_suffix("go.mod").unwrap_or("");
+            go_sources.iter().any(|source| source.starts_with(parent))
         })
         .collect::<Vec<_>>();
     if selected.len() > MAX_GO_MODULES {
@@ -152,7 +157,9 @@ fn relative_candidates(
     let Some(base) = join_relative(source, specifier) else {
         return Vec::new();
     };
-    let extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
+    let extensions = [
+        ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json",
+    ];
     let explicit = extensions.iter().any(|ext| base.ends_with(ext));
     let mut paths = Vec::new();
     if files.contains_key(&base) {
@@ -466,7 +473,18 @@ where
 {
     let revision = git::oid(report.get("source_commit")?.str()?)?;
     let files = paths(report)?;
-    let modules = go_modules(root, &revision)?;
+    let go_sources = files
+        .values()
+        .filter(|source| source.language == "go")
+        .map(|source| source.path)
+        .collect::<Vec<_>>();
+    // Do not inspect or cap unrelated Go modules during a Python/JS-only
+    // analysis. A relevant module must contain at least one parsed Go source.
+    let modules = if go_sources.is_empty() {
+        Vec::new()
+    } else {
+        go_modules(root, &revision, &go_sources)?
+    };
     let mut candidate_edges = Vec::new();
     let mut unresolved_imports = Vec::new();
     let mut skipped_sources = Vec::new();
@@ -671,6 +689,36 @@ mod tests {
         assert_eq!(
             import_target("python", "from .util import answer"),
             Some(".util".into())
+        );
+    }
+
+    #[test]
+    fn typescript_module_flavors_resolve_only_unique_tracked_paths() {
+        let source = |path: &'static str| Source {
+            path,
+            blob: "placeholder",
+            language: "typescript",
+            imports: &[],
+        };
+        let files = ["src/a.mts", "src/b.mts", "src/c.cts", "src/view.tsx"]
+            .into_iter()
+            .map(|p| (p.to_owned(), source(p)))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            relative_candidates("./b", "src/a.mts", &files),
+            ["src/b.mts"]
+        );
+        assert_eq!(
+            relative_candidates("./c", "src/a.mts", &files),
+            ["src/c.cts"]
+        );
+        assert_eq!(
+            relative_candidates("./view", "src/a.mts", &files),
+            ["src/view.tsx"]
+        );
+        assert_eq!(
+            relative_candidates("./missing", "src/a.mts", &files),
+            Vec::<String>::new()
         );
     }
 

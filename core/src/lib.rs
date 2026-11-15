@@ -14,6 +14,7 @@ pub mod compiler_clang;
 pub mod configured_store;
 pub mod contracts;
 pub mod digest;
+pub mod language_analysis;
 
 pub mod discovery;
 pub mod doctor;

@@ -89,9 +89,8 @@ fn pinned_typescript_config_and_package_main_resolve_without_worktree_guessing()
         "missing native tsconfig alias"
     );
     assert!(
-        edges
-            .iter()
-            .any(|r| r[0].as_deref() == Some("src.start.ts") && r[1].as_deref() == Some("pkg.lib")),
+        edges.iter().any(|r| r[0].as_deref() == Some("src.start.ts")
+            && r[1].as_deref() == Some("pkg.lib.index.js")),
         "missing native package main edge"
     );
     let before = db.scalar("SELECT COUNT(*) FROM dependency", &[]).unwrap();

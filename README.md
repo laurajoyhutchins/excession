@@ -68,12 +68,21 @@ also support `--json` and explicit revisions/roots.
 ```sh
 excession                    # focused help
 excession commands           # all specialist families
-excession analyze .          # static source candidates
+excession analyze .          # static Python/JS/TS candidates
+excession analyze languages  # Git-bound syntax for all detected languages
 excession impact .           # compare HEAD~1..HEAD
 excession tests              # plan tests without running them
 excession analyze rust --trusted-local    # execute installed native Rust indexer
 excession analyze rust --trusted-local --json > /tmp/rust.json
 ```
+
+The `analyze languages` command parses tracked sources using preinstalled
+Tree-sitter grammars and reports each language's parsed, unavailable and
+unresolved counts. Python, JavaScript/TypeScript and Go receive conservative
+import candidates where supported. Rust and other languages retain syntax
+observations without fabricated dependency edges. It requires a clean Git
+checkout and accepts `--roots` to narrow the scan. Add `--json` for
+Git-bound evidence. Missing grammars are reported rather than downloaded.
 
 Rust analysis selects the sole tracked Cargo project, including a nested
 project. For multiple projects, specify `--source-prefix`. It requires a

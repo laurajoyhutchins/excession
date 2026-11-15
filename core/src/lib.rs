@@ -39,6 +39,8 @@ pub mod graph_baseline;
 pub mod historical;
 #[path = "source/history.rs"]
 pub mod history;
+#[path = "source/history_rewrite.rs"]
+pub mod history_rewrite;
 #[path = "source/identity.rs"]
 pub mod identity;
 pub mod impact;

@@ -164,11 +164,13 @@ fn select_group(
         let commits = strings(&candidate["commits"])?;
         let parent = candidate["original_parent"].as_str().ok_or("missing group parent")?;
         let mut safe = commits.len() > 1
-            && graph.get(&commits[0]).is_some_and(|n| n.parents == [parent]);
+            && graph.get(&commits[0]).is_some_and(|n| {
+                n.parents.len() == 1 && n.parents[0] == parent
+            });
         let group_set = commits.iter().cloned().collect::<BTreeSet<_>>();
         for (i, oid) in commits.iter().enumerate() {
             let node = graph.get(oid).ok_or("candidate references non-reachable commit")?;
-            if i > 0 && node.parents != [commits[i - 1].clone()] {
+            if i > 0 && (node.parents.len() != 1 || node.parents[0] != commits[i - 1]) {
                 safe = false;
             }
             if i + 1 < commits.len() {

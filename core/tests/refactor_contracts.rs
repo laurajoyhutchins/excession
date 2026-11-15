@@ -81,6 +81,18 @@ impl Fixture {
                 "from pkg import a\n\ndef shared(value):\n    return value + 1\n",
             )
             .unwrap();
+        } else if mode == "javascript" {
+            fs::create_dir_all(repo.join("web")).unwrap();
+            fs::write(
+                repo.join("web/a.js"),
+                "import './b.js';\nexport function shared(value) { return value + 1; }\n",
+            )
+            .unwrap();
+            fs::write(
+                repo.join("web/b.js"),
+                "import './a.js';\nexport function shared(value) { return value + 1; }\n",
+            )
+            .unwrap();
         } else {
             fs::write(repo.join("lib.rs"), "pub fn emit() {}\n").unwrap();
             fs::create_dir_all(repo.join("core/src")).unwrap();
@@ -107,7 +119,7 @@ impl Fixture {
             .trim()
             .to_owned();
         let db = tmp.join("index.sqlite");
-        if mode == "python" {
+        if mode == "python" || mode == "javascript" {
             ok(cli(&[
                 "index",
                 "--repo",
@@ -119,7 +131,7 @@ impl Fixture {
                 "--rev",
                 &commit,
                 "--roots",
-                "pkg",
+                if mode == "python" { "pkg" } else { "web" },
             ]));
         }
         let index = tmp.join("scip.json");
@@ -205,6 +217,33 @@ fn scip_index() -> Value {
         ]
     }"#).unwrap()
 }
+#[test]
+fn indexed_javascript_improvement_preserves_language_specific_observations() {
+    let f = Fixture::new("javascript");
+    let native = f.suggest();
+    let candidates = items(&native, "candidates");
+    assert!(!candidates.is_empty(), "expected real JS parser findings");
+    assert!(candidates.iter().any(|item| {
+        str_at(item, "kind") == "dependency_cycle"
+            || str_at(item, "kind") == "duplicate_body_fingerprint"
+    }));
+
+    let plan = data(&[
+        "improve", "plan", "--producer", "indexed",
+        "--db", f.db.to_str().unwrap(), "--name", "fixture",
+        "--rev", &f.commit,
+    ]);
+    assert_eq!(str_at(&plan, "producer"), "indexed");
+    assert_eq!(
+        plan.get("candidate_count").unwrap().integer().unwrap(),
+        candidates.len() as i64
+    );
+    assert!(items(&plan, "candidates").iter().all(|candidate| {
+        str_at(candidate, "edit_capability") == "NO_NATIVE_EDIT_PRODUCER"
+    }));
+    assert!(!plan.get("automatic_deletion_authorized").unwrap().bool().unwrap());
+}
+
 #[test]
 fn indexed_python_improvement_uses_the_same_evidence_contract_as_scip() {
     let f = Fixture::new("python");

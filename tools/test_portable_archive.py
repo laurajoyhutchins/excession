@@ -54,7 +54,8 @@ def verify(archive: Path) -> None:
             "commit", "-qm", "fixture", cwd=root,
         )
         assert "excession " in run(str(binary), "--version", cwd=source)
-        assert "index" in run(str(binary), "--help", cwd=source)
+        assert "analyze" in run(str(binary), "--help", cwd=source)
+        assert "index" in run(str(binary), "commands", cwd=source)
         index_help = run(str(binary), "index", "--help", cwd=source)
         assert all(flag in index_help for flag in ("--repo", "--db", "--name"))
         import json

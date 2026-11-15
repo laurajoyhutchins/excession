@@ -12,6 +12,7 @@ import hashlib
 import json
 import platform
 import resource
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -23,11 +24,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "benchmarks/experiments"))
+sys.path.insert(0, str(ROOT / "tests"))
+from compiler_cross_repo_probe import CASES as NATIVE_CASES, verify_case  # noqa: E402
 from real_fixtures import checkout, git_blobs, verify_product_workflow  # noqa: E402
 from tools.release_manifest import build_manifest  # noqa: E402
 
 TARGET = "x86_64-unknown-linux-gnu"
 SELECTED = ("h11", "axios")
+NATIVE_REPOS = {"zlib": "madler/zlib", "fmt": "fmtlib/fmt"}
 
 
 def command_version(*args: str) -> str:
@@ -52,6 +56,7 @@ def run_archive(dist: Path, fixture_file: Path) -> dict:
         raise ValueError("required h11 and Axios fixtures not pinned")
     start = time.perf_counter()
     results = []
+    native_results = []
     with tempfile.TemporaryDirectory(prefix="excession-installed-acceptance-") as dirname:
         work = Path(dirname)
         installed = work / "installed"
@@ -86,6 +91,26 @@ def run_archive(dist: Path, fixture_file: Path) -> dict:
                 "source_commit": commit, "source_tree": tree,
                 **case,
             })
+        # The same *installed* release binary must also preserve native Clang
+        # observations on unfamiliar Git-pinned C and C++ source. Explicit
+        # fixture compile commands are not evidence of an actual upstream build.
+        for tool in ("clang", "clang++"):
+            if shutil.which(tool) is None:
+                raise RuntimeError(f"REQUIRED_NATIVE_TOOL_UNAVAILABLE: {tool}")
+        for native in NATIVE_CASES:
+            name = native["name"]
+            upstream = NATIVE_REPOS.get(name)
+            if upstream is None:
+                raise ValueError(f"unsupported native acceptance fixture: {name}")
+            location = work / f"native-{name}"
+            pinned = {
+                "source": "github", "repository": upstream, "commit": native["commit"],
+            }
+            checkout(pinned, location)
+            observation = verify_case(native, location, binary, work)
+            if observation["status"] != "CLANG_AST_OBSERVED_NOT_BUILD_VERIFIED":
+                raise ValueError("native fixture promoted compiler observation into build proof")
+            native_results.append(observation)
     return {
         "schema": "excession.installed-real-repository-acceptance.v1",
         "status": "PASS",
@@ -98,11 +123,12 @@ def run_archive(dist: Path, fixture_file: Path) -> dict:
         "git": command_version("git", "--version"),
         "node": command_version("node", "--version"),
         "cases": results,
+        "native_compiler_observations": native_results,
         "wall_seconds_including_extract_tool_discovery_and_oracles": round(time.perf_counter() - start, 3),
         "peak_child_rss_kib": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
         "peak_rss_scope": "maximum child-process RSS observed across Git, interpreter, and CLI; not a sum or per-step peak",
-        "oracle_scope": "only statically resolved in-repository Python and JS/TS import paths at pinned Git commits",
-        "excluded": "dynamic imports, external packages, runtime behavior, native build semantics, and unconfigured paths",
+        "oracle_scope": "independently checked static Python/JS/TS imports plus Git-pinned Clang C/C++ AST observations; upstream build attribution NOT established",
+        "excluded": "dynamic imports, external packages, runtime behavior, actual upstream build causality, and unconfigured paths",
         "semantic_correctness": "NOT_EVALUATED",
     }
 
@@ -124,6 +150,7 @@ def main() -> int:
             "error": message,
             "failure_type": (
                 "UPSTREAM_OR_NETWORK" if "fetch" in message or "Network" in message
+                else "MISSING_NATIVE_TOOL" if "REQUIRED_NATIVE_TOOL_UNAVAILABLE" in message
                 else "PRODUCT_OR_ENVIRONMENT"
             ),
         }

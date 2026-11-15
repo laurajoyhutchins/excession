@@ -80,11 +80,7 @@ fn refs_before(repo: &Path) -> Result<String> {
     )
 }
 
-fn full_graph(
-    repo: &Path,
-    head: &str,
-    limit: usize,
-) -> Result<SourceGraph> {
+fn full_graph(repo: &Path, head: &str, limit: usize) -> Result<SourceGraph> {
     let ref_report = history::refs(repo, MAX_REFS)?;
     let refs = json_report(&ref_report)?;
     if refs["truncated"] != false {
@@ -221,7 +217,10 @@ fn select_group(
     let mut children = BTreeMap::<String, Vec<String>>::new();
     for (oid, node) in graph {
         for parent in &node.parents {
-            children.entry(parent.clone()).or_default().push(oid.clone());
+            children
+                .entry(parent.clone())
+                .or_default()
+                .push(oid.clone());
         }
     }
     let mut examined = Vec::new();
@@ -239,15 +238,17 @@ fn select_group(
                 .get(&commits[0])
                 .is_some_and(|n| n.parents.len() == 1 && n.parents[0] == parent);
         for (i, oid) in commits.iter().enumerate() {
-            let node = graph.get(oid).ok_or("candidate references unknown commit")?;
+            let node = graph
+                .get(oid)
+                .ok_or("candidate references unknown commit")?;
             if i > 0 && (node.parents.len() != 1 || node.parents[0] != commits[i - 1]) {
                 safe = false;
             }
             if i + 1 < commits.len()
                 && (referenced.contains(oid)
-                    || children.get(oid).is_none_or(|links| {
-                        links.len() != 1 || links[0] != commits[i + 1]
-                    }))
+                    || children
+                        .get(oid)
+                        .is_none_or(|links| links.len() != 1 || links[0] != commits[i + 1]))
             {
                 safe = false;
             }
@@ -406,8 +407,11 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
         refs,
         non_commit_refs,
     } = full_graph(&repo, &head, max)?;
-    if refs["refs"].as_array().ok_or("missing refs")?
-        .iter().any(|r| r["ref"] == PREVIEW_REF)
+    if refs["refs"]
+        .as_array()
+        .ok_or("missing refs")?
+        .iter()
+        .any(|r| r["ref"] == PREVIEW_REF)
     {
         return refuse("original checkout already owns the reserved preview ref");
     }
@@ -560,14 +564,18 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
     if refs_before(&clone)? != cloned_refs {
         return refuse("isolated original refs changed during synthesis");
     }
-    git_run(&clone, &[
-        "update-ref",
-        PREVIEW_REF,
-        &rewritten_head,
-        "0000000000000000000000000000000000000000",
-    ])?;
+    git_run(
+        &clone,
+        &[
+            "update-ref",
+            PREVIEW_REF,
+            &rewritten_head,
+            "0000000000000000000000000000000000000000",
+        ],
+    )?;
     let clone_refs_after = refs_before(&clone)?;
-    let clone_original_refs_after = clone_refs_after.lines()
+    let clone_original_refs_after = clone_refs_after
+        .lines()
         .filter(|line| !line.starts_with(&format!("{PREVIEW_REF} ")))
         .collect::<Vec<_>>()
         .join("\n");

@@ -96,7 +96,7 @@ fn plan_from_report(report: &Value) -> Result<Value> {
         let priority = item.get("priority").and_then(Value::str).unwrap_or("");
         (priority != "REVIEW_NATIVE_REFERENCES", item.canonical())
     });
-    obj(&[
+    let plan = obj(&[
         ("schema", Value::string("excession.improvement-plan.v1")),
         (
             "status",
@@ -111,7 +111,11 @@ fn plan_from_report(report: &Value) -> Result<Value> {
         ("automatic_deletion_authorized", Value::Bool(false)),
         ("ready_to_merge", Value::Bool(false)),
     ])
-    .stamp_id("plan_id")
+    .stamp_id("plan_id")?;
+    if plan.canonical().len() > MAX_PLAN_BYTES {
+        return refuse("improvement plan exceeds 4 MiB; narrow the source index");
+    }
+    Ok(plan)
 }
 
 pub fn plan(repo: &Path, revision: &str, index: &Path, prefix: Option<&str>) -> Result<Value> {
@@ -384,19 +388,24 @@ pub fn trial(request: &Trial<'_>) -> Result<Value> {
     if request.trusted_local != "true" {
         return refuse("improvement trial executes ast-grep; require --trusted-local true");
     }
-    let report = scip_refactor::suggest_with_prefix(
-        request.repo,
-        request.revision,
-        request.index,
-        request.source_prefix,
-    )?;
-    scip_refactor::audit_with_prefix(
+    let audited = scip_refactor::audit_with_prefix(
         request.repo,
         request.revision,
         request.index,
         request.report,
         request.source_prefix,
     )?;
+    let report_bytes = fs::read(request.report)
+        .map_err(|e| format!("read native refactor report: {e}"))?;
+    if report_bytes.len() > 16 * 1024 * 1024 {
+        return refuse("native refactor report exceeds 16 MiB");
+    }
+    let report = json::parse(&report_bytes)?;
+    if report.get("report_id")? != audited.get("report_id")?
+        || !report.content_id_matches("report_id")?
+    {
+        return refuse("native refactor report changed since its source-bound audit");
+    }
     let plan_bytes = fs::read(request.plan).map_err(|e| format!("read improvement plan: {e}"))?;
     if plan_bytes.len() > MAX_PLAN_BYTES {
         return refuse("improvement plan exceeds 4 MiB");
@@ -551,6 +560,7 @@ mod tests {
                 "changes",
                 Value::array(if changed {
                     vec![obj(&[
+                        ("kind", Value::string("MODIFIED")),
                         ("before", obj(&[("path", Value::string("src/a.rs"))])),
                         ("after", obj(&[("path", Value::string("src/a.rs"))])),
                     ])]

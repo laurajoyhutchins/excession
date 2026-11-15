@@ -1,8 +1,8 @@
 //! Deterministic, read-only repository projections over existing Git/SQLite relations.
 //! A view is not a source rewrite, executable checkout, authorization proof, or CVE verdict.
-use crate::json::{Value, obj};
 #[cfg(test)]
 use crate::json;
+use crate::json::{Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, git, index, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -14,11 +14,11 @@ mod model;
 mod workspace;
 
 pub use composition::{compose, compose_replay, mount, mount_replay, select, select_replay};
-pub use workspace::{audit, describe, list, materialize, open, replay};
-pub use model::{Entry, Plan};
-use model::{authenticate_from_table, make_plan, source_table};
 #[cfg(test)]
 use model::MAX_ENTRIES;
+pub use model::{Entry, Plan};
+use model::{authenticate_from_table, make_plan, source_table};
+pub use workspace::{audit, describe, list, materialize, open, replay};
 
 // Shared manifest identity and Git-source authentication live in model.
 // Clock observations are deliberately outside manifest identity and are only

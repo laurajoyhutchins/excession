@@ -1,6 +1,6 @@
 //! Bounded compiler-in-the-loop synthesis for a single C integer function.
 //! Reuse system binutils; never run the target. No semantic or source-recovery claim.
-use super::{FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject};
+use super::runtime::{FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject, wait_for_exit};
 use crate::evidence::artifact;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
@@ -41,21 +41,14 @@ fn tool_output(program: &str, args: &[&str], path: &Path) -> Result<String> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("start trusted-local {program:?}: {e}"))?;
-    let begin = Instant::now();
-    loop {
-        match child.try_wait().map_err(|e| e.to_string())? {
-            Some(status) if status.success() => break,
-            Some(status) => return refuse(format!("trusted-local {program:?} failed: {status}")),
-            // Busy CI workers can delay scheduling even tiny binutils processes.
-            // A bounded 30-second guard avoids false evidence refusals under load.
-            None if begin.elapsed() >= Duration::from_secs(30) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return refuse(format!("trusted-local {program:?} timed out"));
-            }
-            None => std::thread::sleep(Duration::from_millis(10)),
-        }
-    }
+    // Preserve the search-specific 30-second deadline; the manual path uses 15s.
+    wait_for_exit(
+        &mut child,
+        program,
+        Duration::from_secs(30),
+        Duration::from_millis(10),
+        "trusted-local",
+    )?;
     let bytes = bounded_file(path, 256 * 1024)?;
     String::from_utf8(bytes).map_err(|_| "tool output was not UTF-8".into())
 }

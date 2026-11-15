@@ -98,7 +98,10 @@ fn plan_from_report(report: &Value) -> Result<Value> {
     });
     obj(&[
         ("schema", Value::string("excession.improvement-plan.v1")),
-        ("status", Value::string("OBSERVATIONS_REQUIRE_TRANSFORMATION")),
+        (
+            "status",
+            Value::string("OBSERVATIONS_REQUIRE_TRANSFORMATION"),
+        ),
         ("source_commit", report.get("source_commit")?.clone()),
         ("source_tree", report.get("source_tree")?.clone()),
         ("native_report_id", report.get("report_id")?.clone()),
@@ -107,7 +110,8 @@ fn plan_from_report(report: &Value) -> Result<Value> {
         ("candidates", Value::array(proposals)),
         ("automatic_deletion_authorized", Value::Bool(false)),
         ("ready_to_merge", Value::Bool(false)),
-    ]).stamp_id("plan_id")
+    ])
+    .stamp_id("plan_id")
 }
 
 pub fn plan(repo: &Path, revision: &str, index: &Path, prefix: Option<&str>) -> Result<Value> {
@@ -129,9 +133,11 @@ fn changed_paths(inventory: &Value) -> Result<BTreeSet<String>> {
 }
 
 fn pair_values(pairs: impl IntoIterator<Item = Pair>) -> Value {
-    Value::array(pairs.into_iter().map(|(left, right)| {
-        Value::array([Value::string(left), Value::string(right)])
-    }))
+    Value::array(
+        pairs
+            .into_iter()
+            .map(|(left, right)| Value::array([Value::string(left), Value::string(right)])),
+    )
 }
 
 /// Compare stable path pairs, not content-derived IDs that necessarily change
@@ -180,14 +186,20 @@ fn evaluate_reports(
         "NO_STRUCTURAL_REDUCTION_OBSERVED"
     };
     obj(&[
-        ("schema", Value::string("excession.improvement-evaluation.v1")),
+        (
+            "schema",
+            Value::string("excession.improvement-evaluation.v1"),
+        ),
         ("status", Value::string(status)),
         ("base_commit", inventory.get("base_commit")?.clone()),
         ("candidate_commit", inventory.get("head_commit")?.clone()),
         ("change_inventory_id", inventory.get("report_id")?.clone()),
         ("plan_id", original_plan.get("plan_id")?.clone()),
         ("base_native_report_id", before.get("report_id")?.clone()),
-        ("candidate_native_report_id", after.get("report_id")?.clone()),
+        (
+            "candidate_native_report_id",
+            after.get("report_id")?.clone(),
+        ),
         ("reciprocal_pairs_before", Value::number(old.len())),
         ("reciprocal_pairs_after", Value::number(new.len())),
         ("removed_observed_pairs", pair_values(removed)),
@@ -195,15 +207,19 @@ fn evaluate_reports(
         ("unexplained_disappearances", pair_values(unexplained)),
         ("coverage_regressed", Value::Bool(coverage_regressed)),
         ("source_changes", Value::number(modified.len())),
-        ("obligations", Value::array([
-            Value::string("INDEPENDENT_BUILD_AND_TESTS_REQUIRED"),
-            Value::string("PUBLIC_API_AND_SEMANTIC_COMPATIBILITY_UNVERIFIED"),
-            Value::string("SCIP_COVERAGE_AND_INDEXER_CORRECTNESS_UNVERIFIED"),
-            Value::string("BUILD_PROVENANCE_AND_REA_EVIDENCE_NOT_ATTESTED"),
-        ])),
+        (
+            "obligations",
+            Value::array([
+                Value::string("INDEPENDENT_BUILD_AND_TESTS_REQUIRED"),
+                Value::string("PUBLIC_API_AND_SEMANTIC_COMPATIBILITY_UNVERIFIED"),
+                Value::string("SCIP_COVERAGE_AND_INDEXER_CORRECTNESS_UNVERIFIED"),
+                Value::string("BUILD_PROVENANCE_AND_REA_EVIDENCE_NOT_ATTESTED"),
+            ]),
+        ),
         ("ready_to_merge", Value::Bool(false)),
         ("automatic_deletion_authorized", Value::Bool(false)),
-    ]).stamp_id("report_id")
+    ])
+    .stamp_id("report_id")
 }
 
 pub struct Evaluation<'a> {
@@ -232,12 +248,19 @@ pub fn evaluate(request: &Evaluation<'_>) -> Result<Value> {
     }
     let saved = json::parse(&bytes)?;
     let before = scip_refactor::suggest_with_prefix(
-        request.base_repo, &base_commit, request.base_index, request.source_prefix,
+        request.base_repo,
+        &base_commit,
+        request.base_index,
+        request.source_prefix,
     )?;
     let after = scip_refactor::suggest_with_prefix(
-        request.candidate_repo, &candidate_commit, request.candidate_index, request.source_prefix,
+        request.candidate_repo,
+        &candidate_commit,
+        request.candidate_index,
+        request.source_prefix,
     )?;
-    let inventory = change_inventory::inventory(request.candidate_repo, &base_commit, &candidate_commit)?;
+    let inventory =
+        change_inventory::inventory(request.candidate_repo, &base_commit, &candidate_commit)?;
     evaluate_reports(&before, &after, &inventory, &saved)
 }
 
@@ -249,25 +272,44 @@ mod tests {
         let candidate = obj(&[
             ("candidate_id", Value::string("candidate-a")),
             ("kind", Value::string("reciprocal_symbol_references")),
-            ("sources", Value::array([
-                obj(&[("path", Value::string("src/a.rs"))]),
-                obj(&[("path", Value::string("src/b.rs"))]),
-            ])),
+            (
+                "sources",
+                Value::array([
+                    obj(&[("path", Value::string("src/a.rs"))]),
+                    obj(&[("path", Value::string("src/b.rs"))]),
+                ]),
+            ),
         ]);
         obj(&[
             ("schema", Value::string("excession.scip-refactor.v1")),
             ("source_commit", Value::string(commit)),
             ("source_tree", Value::string(tree)),
             ("report_id", Value::string("native-id")),
-            ("coverage", obj(&[
-                ("indexed_documents", Value::number(documents)),
-                ("unresolved_references", Value::number(unresolved)),
-            ])),
-            ("candidates", Value::array(if pair { vec![candidate] } else { vec![] })),
-            ("triage", obj(&[
-                ("review_candidate_ids", Value::array(if pair { vec![Value::string("candidate-a")] } else { vec![] })),
-                ("likely_structural_module_candidate_ids", Value::array([])),
-            ])),
+            (
+                "coverage",
+                obj(&[
+                    ("indexed_documents", Value::number(documents)),
+                    ("unresolved_references", Value::number(unresolved)),
+                ]),
+            ),
+            (
+                "candidates",
+                Value::array(if pair { vec![candidate] } else { vec![] }),
+            ),
+            (
+                "triage",
+                obj(&[
+                    (
+                        "review_candidate_ids",
+                        Value::array(if pair {
+                            vec![Value::string("candidate-a")]
+                        } else {
+                            vec![]
+                        }),
+                    ),
+                    ("likely_structural_module_candidate_ids", Value::array([])),
+                ]),
+            ),
         ])
     }
 
@@ -278,12 +320,17 @@ mod tests {
             ("head_commit", Value::string("head")),
             ("head_tree", Value::string("ht")),
             ("report_id", Value::string("git-id")),
-            ("changes", Value::array(if changed {
-                vec![obj(&[
-                    ("before", obj(&[("path", Value::string("src/a.rs"))])),
-                    ("after", obj(&[("path", Value::string("src/a.rs"))])),
-                ])]
-            } else { vec![] })),
+            (
+                "changes",
+                Value::array(if changed {
+                    vec![obj(&[
+                        ("before", obj(&[("path", Value::string("src/a.rs"))])),
+                        ("after", obj(&[("path", Value::string("src/a.rs"))])),
+                    ])]
+                } else {
+                    vec![]
+                }),
+            ),
         ])
     }
 
@@ -293,10 +340,26 @@ mod tests {
         let after = report("head", "ht", false, 3, 0);
         let plan = plan_from_report(&before).unwrap();
         let result = evaluate_reports(&before, &after, &inventory(true), &plan).unwrap();
-        assert_eq!(result.get("status").unwrap().str().unwrap(), "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED");
+        assert_eq!(
+            result.get("status").unwrap().str().unwrap(),
+            "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED"
+        );
         assert!(!result.get("ready_to_merge").unwrap().bool().unwrap());
-        assert!(!result.get("automatic_deletion_authorized").unwrap().bool().unwrap());
-        assert_eq!(result.get("reciprocal_pairs_before").unwrap().integer().unwrap(), 1);
+        assert!(
+            !result
+                .get("automatic_deletion_authorized")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
+        assert_eq!(
+            result
+                .get("reciprocal_pairs_before")
+                .unwrap()
+                .integer()
+                .unwrap(),
+            1
+        );
     }
 
     #[test]
@@ -306,7 +369,10 @@ mod tests {
         for (documents, unresolved, changed) in [(2, 0, true), (3, 1, true), (3, 0, false)] {
             let after = report("head", "ht", false, documents, unresolved);
             let result = evaluate_reports(&before, &after, &inventory(changed), &plan).unwrap();
-            assert_eq!(result.get("status").unwrap().str().unwrap(), "INCONCLUSIVE_EVIDENCE_CHANGE");
+            assert_eq!(
+                result.get("status").unwrap().str().unwrap(),
+                "INCONCLUSIVE_EVIDENCE_CHANGE"
+            );
         }
     }
 
@@ -315,7 +381,9 @@ mod tests {
         let before = report("base", "bt", true, 3, 0);
         let after = report("head", "ht", false, 3, 0);
         let mut plan = plan_from_report(&before).unwrap();
-        plan.entries_mut().unwrap().insert("candidate_count".into(), Value::number(100));
+        plan.entries_mut()
+            .unwrap()
+            .insert("candidate_count".into(), Value::number(100));
         assert!(evaluate_reports(&before, &after, &inventory(true), &plan).is_err());
         let good_plan = plan_from_report(&before).unwrap();
         let wrong_head = report("other", "ht", false, 3, 0);
@@ -326,16 +394,20 @@ mod tests {
     fn triage_mismatch_and_duplicate_native_pairs_refuse() {
         let mut broken = report("base", "bt", true, 3, 0);
         broken.get("triage").unwrap();
-        broken.entries_mut().unwrap().insert("triage".into(), obj(&[
-            ("review_candidate_ids", Value::array([])),
-            ("likely_structural_module_candidate_ids", Value::array([])),
-        ]));
+        broken.entries_mut().unwrap().insert(
+            "triage".into(),
+            obj(&[
+                ("review_candidate_ids", Value::array([])),
+                ("likely_structural_module_candidate_ids", Value::array([])),
+            ]),
+        );
         assert!(plan_from_report(&broken).is_err());
         let original = report("base", "bt", true, 3, 0);
         let mut duplicate = original.clone();
         let candidate = duplicate.get("candidates").unwrap().array_ref().unwrap()[0].clone();
         duplicate.entries_mut().unwrap().insert(
-            "candidates".into(), Value::array([candidate.clone(), candidate]),
+            "candidates".into(),
+            Value::array([candidate.clone(), candidate]),
         );
         assert!(pairs(&duplicate).is_err());
     }

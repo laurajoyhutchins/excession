@@ -19,7 +19,10 @@ pub struct ResolvedInputs {
 }
 
 fn valid_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
 /// A path in an external Maven/Gradle cache is not a Git object. To use it
@@ -42,7 +45,9 @@ fn jar(path: &str, expected: &str, size: u64) -> Result<PathBuf> {
     if !metadata.file_type().is_file() || metadata.len() != size {
         return refuse("JVM artifact is not a regular file or size changed");
     }
-    let real = literal.canonicalize().map_err(|e| format!("JVM artifact path: {e}"))?;
+    let real = literal
+        .canonicalize()
+        .map_err(|e| format!("JVM artifact path: {e}"))?;
     if real != literal || !real.is_file() {
         return refuse("JVM artifact path must be canonical and not a symlink");
     }
@@ -55,7 +60,8 @@ fn jar(path: &str, expected: &str, size: u64) -> Result<PathBuf> {
 
 pub fn load(path: &Path) -> Result<Value> {
     let size = fs::metadata(path)
-        .map_err(|e| format!("resolved JVM manifest metadata: {e}"))?.len();
+        .map_err(|e| format!("resolved JVM manifest metadata: {e}"))?
+        .len();
     if size > MAX_MANIFEST_BYTES {
         return refuse("resolved JVM manifest exceeds 128 KiB");
     }
@@ -125,13 +131,19 @@ pub fn verify(
         if size <= 0 {
             return refuse("invalid JVM artifact size");
         }
-        total = total.checked_add(size as u64).ok_or("JVM artifact byte budget overflow")?;
+        total = total
+            .checked_add(size as u64)
+            .ok_or("JVM artifact byte budget overflow")?;
         if total > MAX_CLASSPATH_BYTES {
             return refuse("resolved JVM classpath exceeds 64 MiB");
         }
         paths.push(jar(value, item.get("sha256")?.str()?, size as u64)?);
     }
-    Ok(ResolvedInputs { document: document.clone(), classpath_paths: paths, release })
+    Ok(ResolvedInputs {
+        document: document.clone(),
+        classpath_paths: paths,
+        release,
+    })
 }
 
 impl ResolvedInputs {
@@ -155,10 +167,10 @@ impl ResolvedInputs {
         }
         Ok(std::env::join_paths(staged)
             .map_err(|e| format!("staged JVM classpath cannot be represented: {e}"))?
-            .to_string_lossy().into_owned())
+            .to_string_lossy()
+            .into_owned())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

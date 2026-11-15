@@ -217,7 +217,11 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
                 nested.get("source_prefix")?.str()?,
                 &paths,
             )?;
-        } else if nested.entries()?.get("resolved_inputs").is_some_and(|v| v != &Value::Null) {
+        } else if nested
+            .entries()?
+            .get("resolved_inputs")
+            .is_some_and(|v| v != &Value::Null)
+        {
             return refuse("unconfigured Java source report may not claim an external classpath");
         }
         let references = nested.get("references")?.array_ref()?;

@@ -339,7 +339,11 @@ fn select_native(
     let producer = receipt.get("producer")?.str()?;
     if !matches!(
         producer,
-        "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured" | "native:javac-configured"
+        "native:go-list"
+            | "native:clang-ast"
+            | "native:javac-symbols"
+            | "native:javac-configured"
+            | "native:javac-configured"
     ) {
         return refuse("selected receipt is not a supported native producer");
     }

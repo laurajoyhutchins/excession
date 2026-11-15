@@ -786,7 +786,10 @@ fn execute(args: &[String]) -> Result<Response> {
                     compile_db: opt.0.get("compile-db").map(|v| Path::new(v.as_str())),
                     compiler: opt.0.get("compiler").map(String::as_str),
                     source_prefix: opt.0.get("source-prefix").map(String::as_str),
-                    classpath_manifest: opt.0.get("classpath-manifest").map(|v| Path::new(v.as_str())),
+                    classpath_manifest: opt
+                        .0
+                        .get("classpath-manifest")
+                        .map(|v| Path::new(v.as_str())),
                 },
                 opt.get_or("trusted-local", "false"),
             )?;

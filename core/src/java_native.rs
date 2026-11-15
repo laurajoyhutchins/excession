@@ -135,10 +135,17 @@ pub fn scan(
         }
         sources.push(physical);
     }
-    let source_paths = entries.iter().map(|entry| entry.path.clone()).collect::<Vec<_>>();
+    let source_paths = entries
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect::<Vec<_>>();
     let resolved = match resolved_manifest {
         Some(path) => Some(jvm_inputs::verify(
-            &jvm_inputs::load(path)?, &commit, &tree, prefix, &source_paths,
+            &jvm_inputs::load(path)?,
+            &commit,
+            &tree,
+            prefix,
+            &source_paths,
         )?),
         None => None,
     };
@@ -157,7 +164,12 @@ pub fn scan(
         .arg(&root)
         .arg(&empty)
         .arg(&classpath)
-        .arg(resolved.as_ref().and_then(|inputs| inputs.release.as_deref()).unwrap_or("-"))
+        .arg(
+            resolved
+                .as_ref()
+                .and_then(|inputs| inputs.release.as_deref())
+                .unwrap_or("-"),
+        )
         .args(&sources)
         .current_dir(&scratch.0)
         .env_remove("CLASSPATH")
@@ -244,8 +256,12 @@ pub fn scan(
         ),
         ("references", Value::array(refs)),
         ("configuration", Value::string(configuration)),
-        ("resolved_inputs", resolved.as_ref()
-            .map_or(Value::Null, |inputs| inputs.document.clone())),
+        (
+            "resolved_inputs",
+            resolved
+                .as_ref()
+                .map_or(Value::Null, |inputs| inputs.document.clone()),
+        ),
     ])
     .stamp_id("report_id")?;
     obj(&[

@@ -118,7 +118,11 @@ pub fn scan(
     let subject = identity(&root, &commit, &tree, source)?;
     if language == "java" {
         return crate::java_native::scan(
-            &root, &commit, source, source_prefix.unwrap_or("."), classpath_manifest,
+            &root,
+            &commit,
+            source,
+            source_prefix.unwrap_or("."),
+            classpath_manifest,
         );
     }
     let (producer, scope, inputs, source_count, config_count, observation) = if language == "go" {

@@ -994,32 +994,62 @@ fn native_java_rejects_rehashed_fabricated_compiler_references() {
 fn configured_java_fixture(f: &Fixture, provider: &str) -> (Value, PathBuf, String) {
     let vendor = f.parent.join("vendor-src/vendor/Api.java");
     fs::create_dir_all(vendor.parent().unwrap()).unwrap();
-    fs::write(&vendor,
-        "package vendor; public class Api { public static int value() { return 7; } }\n"
-    ).unwrap();
+    fs::write(
+        &vendor,
+        "package vendor; public class Api { public static int value() { return 7; } }\n",
+    )
+    .unwrap();
     let classes = f.parent.join("vendor-classes");
     fs::create_dir_all(&classes).unwrap();
-    ok("javac", &[
-        "-proc:none", "-d", classes.to_str().unwrap(), vendor.to_str().unwrap(),
-    ], &f.repo);
+    ok(
+        "javac",
+        &[
+            "-proc:none",
+            "-d",
+            classes.to_str().unwrap(),
+            vendor.to_str().unwrap(),
+        ],
+        &f.repo,
+    );
     let artifact = f.parent.join("vendor-api.jar");
-    ok("jar", &[
-        "--create", "--file", artifact.to_str().unwrap(),
-        "-C", classes.to_str().unwrap(), ".",
-    ], &f.repo);
+    ok(
+        "jar",
+        &[
+            "--create",
+            "--file",
+            artifact.to_str().unwrap(),
+            "-C",
+            classes.to_str().unwrap(),
+            ".",
+        ],
+        &f.repo,
+    );
     let target = "src/main/java/org/example/Service.java";
     fs::write(f.repo.join(target),
         "package org.example; import vendor.Api; public class Service { public int compute(Helper helper) { return helper.answer() + Api.value(); } }\n"
     ).unwrap();
     ok("git", &["add", target], &f.repo);
-    ok("git", &[
-        "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-        "commit", "-qm", "external dependency requires pre-resolved compiler classpath",
-    ], &f.repo);
+    ok(
+        "git",
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "external dependency requires pre-resolved compiler classpath",
+        ],
+        &f.repo,
+    );
     let commit = String::from_utf8(ok("git", &["rev-parse", "HEAD"], &f.repo))
-        .unwrap().trim().to_owned();
+        .unwrap()
+        .trim()
+        .to_owned();
     let tree = String::from_utf8(ok("git", &["rev-parse", "HEAD^{tree}"], &f.repo))
-        .unwrap().trim().to_owned();
+        .unwrap()
+        .trim()
+        .to_owned();
     let jar_path = artifact.canonicalize().unwrap();
     let content = fs::read(&jar_path).unwrap();
     let manifest = excession::json::obj(&[
@@ -1028,15 +1058,21 @@ fn configured_java_fixture(f: &Fixture, provider: &str) -> (Value, PathBuf, Stri
         ("source_commit", Value::string(&commit)),
         ("source_tree", Value::string(tree)),
         ("source_prefix", Value::string("src/main/java")),
-        ("sources", Value::array([
-            Value::string("src/main/java/org/example/Helper.java"),
-            Value::string(target),
-        ])),
-        ("classpath", Value::array([excession::json::obj(&[
-            ("path", Value::string(jar_path.to_str().unwrap())),
-            ("sha256", Value::string(excession::digest::sha256(&content))),
-            ("size_bytes", Value::number(content.len())),
-        ])])),
+        (
+            "sources",
+            Value::array([
+                Value::string("src/main/java/org/example/Helper.java"),
+                Value::string(target),
+            ]),
+        ),
+        (
+            "classpath",
+            Value::array([excession::json::obj(&[
+                ("path", Value::string(jar_path.to_str().unwrap())),
+                ("sha256", Value::string(excession::digest::sha256(&content))),
+                ("size_bytes", Value::number(content.len())),
+            ])]),
+        ),
         ("release", Value::string("17")),
     ]);
     (manifest, jar_path, commit)
@@ -1058,65 +1094,154 @@ fn native_java_uses_resolved_maven_or_gradle_artifacts_without_running_build_scr
         let manifest_file = path.to_str().unwrap();
         let source = "src/main/java/org/example/Service.java";
         let unconfigured = f.invoke(&[
-            "analyze", "native", "--language", "java", "--source", source,
-            "--source-prefix", "src/main/java", "--trusted-local", "--json",
+            "analyze",
+            "native",
+            "--language",
+            "java",
+            "--source",
+            source,
+            "--source-prefix",
+            "src/main/java",
+            "--trusted-local",
+            "--json",
         ]);
-        assert!(!unconfigured.status.success(), "external symbols must not resolve without inputs");
+        assert!(
+            !unconfigured.status.success(),
+            "external symbols must not resolve without inputs"
+        );
         let report = parsed(f.invoke(&[
-            "analyze", "native", "--language", "java", "--source", source,
-            "--source-prefix", "src/main/java", "--classpath-manifest", manifest_file,
-            "--trusted-local", "--json",
+            "analyze",
+            "native",
+            "--language",
+            "java",
+            "--source",
+            source,
+            "--source-prefix",
+            "src/main/java",
+            "--classpath-manifest",
+            manifest_file,
+            "--trusted-local",
+            "--json",
         ]));
         assert_eq!(field(&report, "producer"), "javac-configured");
-        assert_eq!(field(&report, "scope"), "JAVAC_CONFIGURED_SOURCE_REFERENCES_PARTIAL");
+        assert_eq!(
+            field(&report, "scope"),
+            "JAVAC_CONFIGURED_SOURCE_REFERENCES_PARTIAL"
+        );
         assert!(report.content_id_matches("report_id").unwrap());
         let nested = report.get("observation").unwrap();
-        assert_eq!(field(nested, "configuration"),
-            "EXTERNAL_RESOLVED_CLASSPATH_NO_PROCESSORS");
-        assert_eq!(field(nested.get("resolved_inputs").unwrap(), "provider_claim"), provider);
-        assert_eq!(field(nested.get("resolved_inputs").unwrap(), "source_commit"), commit);
-        assert!(nested.get("references").unwrap().array_ref().unwrap().iter().any(|edge|
-            field(edge.get("from").unwrap(), "path") == source
-                && field(edge.get("to").unwrap(), "path")
-                    == "src/main/java/org/example/Helper.java"
-        ));
+        assert_eq!(
+            field(nested, "configuration"),
+            "EXTERNAL_RESOLVED_CLASSPATH_NO_PROCESSORS"
+        );
+        assert_eq!(
+            field(nested.get("resolved_inputs").unwrap(), "provider_claim"),
+            provider
+        );
+        assert_eq!(
+            field(nested.get("resolved_inputs").unwrap(), "source_commit"),
+            commit
+        );
+        assert!(
+            nested
+                .get("references")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .iter()
+                .any(|edge| field(edge.get("from").unwrap(), "path") == source
+                    && field(edge.get("to").unwrap(), "path")
+                        == "src/main/java/org/example/Helper.java")
+        );
 
         let report_path = f.parent.join("configured-java-report.json");
         fs::write(&report_path, report.canonical()).unwrap();
         let db_path = f.parent.join("configured-jvm-evidence.sqlite");
         let db = db_path.to_str().unwrap();
         let imported = parsed(f.invoke(&[
-            "evidence", "native-import", "--repo", f.repo.to_str().unwrap(),
-            "--rev", &commit, "--db", db,
-            "--report", report_path.to_str().unwrap(),
+            "evidence",
+            "native-import",
+            "--repo",
+            f.repo.to_str().unwrap(),
+            "--rev",
+            &commit,
+            "--db",
+            db,
+            "--report",
+            report_path.to_str().unwrap(),
         ]));
         let snapshot = field(&imported, "snapshot_id");
-        assert_eq!(field(&imported, "semantics"), "PRODUCER_SUPPLIED_UNATTESTED");
+        assert_eq!(
+            field(&imported, "semantics"),
+            "PRODUCER_SUPPLIED_UNATTESTED"
+        );
         let audit = parsed(f.invoke(&[
-            "evidence", "native-store-audit", "--repo", f.repo.to_str().unwrap(),
-            "--rev", &commit, "--db", db, "--snapshot", snapshot,
+            "evidence",
+            "native-store-audit",
+            "--repo",
+            f.repo.to_str().unwrap(),
+            "--rev",
+            &commit,
+            "--db",
+            db,
+            "--snapshot",
+            snapshot,
         ]));
         assert_eq!(field(&audit, "producer"), "javac-configured");
         let analyzed = parsed(f.invoke(&["analyze", ".", "--db", db, "--json"]));
-        assert!(analyzed.get("configured_observations").unwrap().array_ref().unwrap().iter().any(
-            |item| field(item, "native_kind") == "NATIVE_JAVA_SYMBOL_REFERENCE"
-        ));
-        assert!(analyzed.get("relationships").unwrap().array_ref().unwrap().iter().all(
-            |edge| field(edge, "kind") != "JAVAC_RESOLVED_SOURCE_REFERENCE"
-        ));
+        assert!(
+            analyzed
+                .get("configured_observations")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .iter()
+                .any(|item| field(item, "native_kind") == "NATIVE_JAVA_SYMBOL_REFERENCE")
+        );
+        assert!(
+            analyzed
+                .get("relationships")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .iter()
+                .all(|edge| field(edge, "kind") != "JAVAC_RESOLVED_SOURCE_REFERENCE")
+        );
         let before = fs::read(&artifact).unwrap();
         fs::write(&artifact, b"tampered artifact").unwrap();
         let stale = f.invoke(&[
-            "evidence", "native-store-audit", "--repo", f.repo.to_str().unwrap(),
-            "--rev", &commit, "--db", db, "--snapshot", snapshot,
+            "evidence",
+            "native-store-audit",
+            "--repo",
+            f.repo.to_str().unwrap(),
+            "--rev",
+            &commit,
+            "--db",
+            db,
+            "--snapshot",
+            snapshot,
         ]);
-        assert!(!stale.status.success(), "modified JAR must invalidate stored receipt");
+        assert!(
+            !stale.status.success(),
+            "modified JAR must invalidate stored receipt"
+        );
         let analysis = f.invoke(&["analyze", ".", "--db", db, "--json"]);
-        assert!(!analysis.status.success(), "changed JAR must fail selected native replay");
+        assert!(
+            !analysis.status.success(),
+            "changed JAR must fail selected native replay"
+        );
         fs::write(&artifact, &before).unwrap();
         let recovered = parsed(f.invoke(&[
-            "evidence", "native-store-audit", "--repo", f.repo.to_str().unwrap(),
-            "--rev", &commit, "--db", db, "--snapshot", snapshot,
+            "evidence",
+            "native-store-audit",
+            "--repo",
+            f.repo.to_str().unwrap(),
+            "--rev",
+            &commit,
+            "--db",
+            db,
+            "--snapshot",
+            snapshot,
         ]));
         assert_eq!(field(&recovered, "producer"), "javac-configured");
     }
@@ -1124,7 +1249,8 @@ fn native_java_uses_resolved_maven_or_gradle_artifacts_without_running_build_scr
 
 #[test]
 fn native_java_rejects_claimed_build_inputs_without_exact_hash_or_source_inventory() {
-    if !available("java", "-version") || !available("javac", "-version")
+    if !available("java", "-version")
+        || !available("javac", "-version")
         || !available("jar", "--version")
     {
         return;
@@ -1142,53 +1268,80 @@ fn native_java_rejects_claimed_build_inputs_without_exact_hash_or_source_invento
     ] {
         let value = match case {
             "wrong-provider" => {
-                candidate.entries_mut().unwrap().insert(
-                    "provider_claim".into(), Value::string("custom-build"),
-                );
+                candidate
+                    .entries_mut()
+                    .unwrap()
+                    .insert("provider_claim".into(), Value::string("custom-build"));
                 candidate
             }
             "wrong-source" => {
-                candidate.entries_mut().unwrap().insert(
-                    "sources".into(), Value::array([Value::string(source)]),
-                );
+                candidate
+                    .entries_mut()
+                    .unwrap()
+                    .insert("sources".into(), Value::array([Value::string(source)]));
                 candidate
             }
             "wrong-jar-sha" => {
-                let classpath = candidate.entries_mut().unwrap().get_mut("classpath").unwrap();
+                let classpath = candidate
+                    .entries_mut()
+                    .unwrap()
+                    .get_mut("classpath")
+                    .unwrap();
                 if let Value::Array(items) = classpath {
-                    items[0].entries_mut().unwrap().insert(
-                        "sha256".into(), Value::string("0".repeat(64)),
-                    );
+                    items[0]
+                        .entries_mut()
+                        .unwrap()
+                        .insert("sha256".into(), Value::string("0".repeat(64)));
                 }
                 candidate
             }
             "wrong-git-tree" => {
-                candidate.entries_mut().unwrap().insert(
-                    "source_tree".into(), Value::string("0".repeat(40)),
-                );
+                candidate
+                    .entries_mut()
+                    .unwrap()
+                    .insert("source_tree".into(), Value::string("0".repeat(40)));
                 candidate
             }
             _ => {
-                candidate.entries_mut().unwrap().insert(
-                    "release".into(), Value::string("latest"),
-                );
+                candidate
+                    .entries_mut()
+                    .unwrap()
+                    .insert("release".into(), Value::string("latest"));
                 candidate
             }
         };
         fs::write(&input, value.canonical()).unwrap();
         let output = f.invoke(&[
-            "analyze", "native", "--language", "java", "--source", source,
-            "--source-prefix", "src/main/java",
-            "--classpath-manifest", input.to_str().unwrap(),
-            "--trusted-local", "--json",
+            "analyze",
+            "native",
+            "--language",
+            "java",
+            "--source",
+            source,
+            "--source-prefix",
+            "src/main/java",
+            "--classpath-manifest",
+            input.to_str().unwrap(),
+            "--trusted-local",
+            "--json",
         ]);
         assert!(!output.status.success(), "{case} should refuse");
         assert!(output.stdout.is_empty(), "{case} leaked partial evidence");
     }
     let unrelated = f.invoke(&[
-        "analyze", "native", "--language", "go", "--source", "cmd/server/main.go",
-        "--classpath-manifest", input.to_str().unwrap(),
-        "--trusted-local", "--json",
+        "analyze",
+        "native",
+        "--language",
+        "go",
+        "--source",
+        "cmd/server/main.go",
+        "--classpath-manifest",
+        input.to_str().unwrap(),
+        "--trusted-local",
+        "--json",
     ]);
-    assert!(!unrelated.status.success(), "Go must not consume a JVM manifest");
+    assert!(
+        !unrelated.status.success(),
+        "Go must not consume a JVM manifest"
+    );
 }

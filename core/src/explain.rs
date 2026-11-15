@@ -240,8 +240,14 @@ pub fn explain_source(
         .map(|(_, witness)| witness)
         .collect::<Vec<_>>();
     if matches.len() != 1 {
-        if matches.is_empty() && !report.get("candidate_source_enumeration_complete")?.bool()? {
-            return refuse("source absent from bounded witness inventory; enumeration was truncated");
+        if matches.is_empty()
+            && !report
+                .get("candidate_source_enumeration_complete")?
+                .bool()?
+        {
+            return refuse(
+                "source absent from bounded witness inventory; enumeration was truncated",
+            );
         }
         return refuse(if matches.is_empty() {
             "no distinct-source impact witness for selected Git source"
@@ -272,9 +278,15 @@ pub fn explain_all_sources(
     }
     obj(&[
         ("schema", Value::string("excession.source-explanations.v1")),
-        ("replayed_impact_report_id", report.get("report_id")?.clone()),
+        (
+            "replayed_impact_report_id",
+            report.get("report_id")?.clone(),
+        ),
         ("count", Value::number(explanations.len())),
-        ("source_inventory_complete", report.get("candidate_source_enumeration_complete")?.clone()),
+        (
+            "source_inventory_complete",
+            report.get("candidate_source_enumeration_complete")?.clone(),
+        ),
         ("semantic_correctness", Value::string("NOT_EVALUATED")),
         ("coverage", report.get("coverage")?.clone()),
         ("explanations", Value::array(explanations)),
@@ -401,15 +413,21 @@ mod tests {
             ("entity", from_identity.clone()),
             ("assessment", Value::string("CANDIDATE_PATH")),
             ("distance_to_change", Value::number(rank)),
-            ("next_hop", obj(&[
-                ("source", from_identity),
-                ("target", to_identity),
-                ("relation", Value::string("STATIC_IMPORT")),
-                ("evidence", Value::array([obj(&[
-                    ("assessment", Value::string("CANDIDATE")),
-                    ("receipt_id", Value::string("independent-receipt")),
-                ])])),
-            ])),
+            (
+                "next_hop",
+                obj(&[
+                    ("source", from_identity),
+                    ("target", to_identity),
+                    ("relation", Value::string("STATIC_IMPORT")),
+                    (
+                        "evidence",
+                        Value::array([obj(&[
+                            ("assessment", Value::string("CANDIDATE")),
+                            ("receipt_id", Value::string("independent-receipt")),
+                        ])]),
+                    ),
+                ]),
+            ),
         ])
     }
 
@@ -428,12 +446,21 @@ mod tests {
             witness("pkg/b.py", "pkg/changed.py", commit, 1),
         ]);
         let by_source = source_witnesses(&report).unwrap();
-        let a = by_source.get(&(commit.to_owned(), "pkg/a.py".to_owned())).unwrap();
+        let a = by_source
+            .get(&(commit.to_owned(), "pkg/a.py".to_owned()))
+            .unwrap();
         let explanation = explain_witness(&report, &by_source, a).unwrap();
         let hops = explanation.get("steps").unwrap().array_ref().unwrap();
         assert_eq!(hops.len(), 2);
         assert_eq!(
-            hops.last().unwrap().get("target").unwrap().get("path").unwrap().str().unwrap(),
+            hops.last()
+                .unwrap()
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "pkg/changed.py"
         );
         assert!(explanation.content_id_matches("report_id").unwrap());
@@ -470,7 +497,11 @@ mod tests {
             let explanation = explain_witness(&report, &by_source, witness).unwrap();
             assert_eq!(
                 explanation.get("steps").unwrap().array_ref().unwrap().len(),
-                witness.get("distance_to_change").unwrap().integer().unwrap() as usize
+                witness
+                    .get("distance_to_change")
+                    .unwrap()
+                    .integer()
+                    .unwrap() as usize
             );
         }
     }
@@ -481,7 +512,10 @@ mod tests {
         let invalid = source_report(vec![witness("a.py", "b.py", commit, 2)]);
         let mapped = source_witnesses(&invalid).unwrap();
         let w = mapped.get(&(commit.to_owned(), "a.py".to_owned())).unwrap();
-        assert!(explain_witness(&invalid, &mapped, w).is_err(), "missing rank-one witness");
+        assert!(
+            explain_witness(&invalid, &mapped, w).is_err(),
+            "missing rank-one witness"
+        );
 
         let invalid_rank = source_report(vec![
             witness("a.py", "b.py", commit, 2),
@@ -489,7 +523,10 @@ mod tests {
         ]);
         let mapped = source_witnesses(&invalid_rank).unwrap();
         let w = mapped.get(&(commit.to_owned(), "a.py".to_owned())).unwrap();
-        assert!(explain_witness(&invalid_rank, &mapped, w).is_err(), "rank must decrease");
+        assert!(
+            explain_witness(&invalid_rank, &mapped, w).is_err(),
+            "rank must decrease"
+        );
 
         let duplicate = source_report(vec![
             witness("a.py", "changed.py", commit, 1),
@@ -497,10 +534,11 @@ mod tests {
         ]);
         assert!(source_witnesses(&duplicate).is_err());
 
-        let forged = source_report(vec![
-            witness("a.py", "a.py", commit, 1),
-        ]);
-        assert!(source_witnesses(&forged).is_err(), "self edges cannot be source dependents");
+        let forged = source_report(vec![witness("a.py", "a.py", commit, 1)]);
+        assert!(
+            source_witnesses(&forged).is_err(),
+            "self edges cannot be source dependents"
+        );
     }
 
     #[test]

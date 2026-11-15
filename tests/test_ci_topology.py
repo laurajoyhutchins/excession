@@ -80,6 +80,14 @@ class CiTopology(unittest.TestCase):
             4,
         )
         self.assertIn("name: Installed Linux archive vs independent pinned upstream source", source)
+        # On Windows PowerShell, "$EXCESSION_BIN" is not an environment variable.
+        # Package with an explicit Bash shell on every matrix platform.
+        self.assertIn(
+            'name: Construct portable archive and SHA-256 manifest\n'
+            '        shell: bash\n'
+            '        run: python tools/package_release.py --binary "$EXCESSION_BIN"',
+            source,
+        )
 
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):

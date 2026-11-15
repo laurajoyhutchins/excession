@@ -65,6 +65,7 @@ jobs:
             ! otool -L "$EXCESSION_BIN" | grep -E 'libsqlite3|libcrypto'
           fi
       - name: Construct portable archive and SHA-256 manifest
+        shell: bash
         run: python tools/package_release.py --binary "$EXCESSION_BIN" --output dist
       - name: Test extracted archive without repository-side dependencies
         run: python tools/test_portable_archive.py dist

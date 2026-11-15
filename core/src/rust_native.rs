@@ -109,21 +109,54 @@ pub fn scan(
     if git::rev(&root, "HEAD")? != commit {
         return refuse("Rust SCIP analysis requires selected revision at clean HEAD");
     }
-    if let Some(prefix) = source_prefix {
-        git::validate_path(prefix)?;
-    }
-    let manifest = source_prefix.map_or_else(
+    let tracked = git::entries(&root, &commit)?;
+    let prefix = match source_prefix {
+        Some(prefix) => {
+            git::validate_path(prefix)?;
+            Some(prefix.to_owned())
+        }
+        None if tracked.iter().any(|entry| {
+            entry.path == "Cargo.toml" && entry.kind == "blob" && entry.mode == "100644"
+        }) =>
+        {
+            None
+        }
+        None => {
+            let mut candidates = tracked
+                .iter()
+                .filter(|entry| entry.kind == "blob" && entry.mode == "100644")
+                .filter_map(|entry| entry.path.strip_suffix("/Cargo.toml"))
+                .collect::<Vec<_>>();
+            candidates.sort_unstable();
+            candidates.dedup();
+            match candidates.as_slice() {
+                [only] => Some((*only).to_owned()),
+                [] => {
+                    return refuse(
+                        "No tracked Cargo.toml. Run 'excession discover .' to inspect source roots.",
+                    );
+                }
+                _ => {
+                    return refuse(
+                        "Multiple Cargo projects found; choose one with --source-prefix.",
+                    );
+                }
+            }
+        }
+    };
+    let manifest = prefix.as_deref().map_or_else(
         || "Cargo.toml".to_owned(),
         |prefix| format!("{prefix}/Cargo.toml"),
     );
-    let tracked = git::entries(&root, &commit)?;
     if !tracked
         .iter()
         .any(|entry| entry.path == manifest && entry.kind == "blob" && entry.mode == "100644")
     {
         return refuse("selected Rust workspace requires a tracked Cargo.toml");
     }
-    let workspace = source_prefix.map_or_else(|| root.clone(), |prefix| root.join(prefix));
+    let workspace = prefix
+        .as_deref()
+        .map_or_else(|| root.clone(), |prefix| root.join(prefix));
     let workspace = workspace.canonicalize().map_err(|e| e.to_string())?;
     if !workspace.starts_with(&root) || !workspace.is_dir() {
         return refuse("Rust workspace resolves outside the Git checkout");
@@ -172,9 +205,21 @@ pub fn scan(
     if project_root != expected {
         return refuse("native SCIP project_root differs from the selected Cargo workspace");
     }
-    let report = scip_refactor::evidence_from_bytes(&root, &commit, &bytes, source_prefix)?;
+    let report = scip_refactor::evidence_from_bytes(&root, &commit, &bytes, prefix.as_deref())?;
     if report.get("indexer")?.get("name")?.str()? != "rust-analyzer" {
         return refuse("Rust native analysis requires a rust-analyzer SCIP producer");
     }
     Ok(report)
+}
+
+/// A concise view; --json exposes the complete Git-bound native report.
+pub fn human(report: &Value) -> Result<String> {
+    let coverage = report.get("coverage")?;
+    Ok(format!(
+        "Rust SCIP analysis (rust-analyzer)\nRevision: {}\nIndexed files: {}\nCross-file symbol references: {}\nUnresolved occurrences: {}\nCoverage: PARTIAL (references are not necessarily imports or calls)\nUse --json for source-bound evidence.",
+        report.get("source_commit")?.str()?,
+        coverage.get("indexed_documents")?.integer()?,
+        coverage.get("matched_cross_file_references")?.integer()?,
+        coverage.get("unresolved_references")?.integer()?,
+    ))
 }

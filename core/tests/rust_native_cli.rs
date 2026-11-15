@@ -116,6 +116,7 @@ impl Fixture {
             .arg(&self.analyzer)
             .arg("--scip")
             .arg(&self.decoder)
+            .arg("--json")
             .args(extra);
         cmd.output().unwrap()
     }
@@ -202,4 +203,107 @@ fn native_rust_rejects_mismatched_project_root_and_source_mutation() {
     let changed = f.invoke(&[]);
     assert!(!changed.status.success());
     assert!(changed.stdout.is_empty());
+}
+
+#[test]
+fn native_rust_auto_detects_sole_nested_cargo_manifest() {
+    let f = Fixture::new();
+    fs::create_dir_all(f.repo.join("core")).unwrap();
+    fs::rename(f.repo.join("Cargo.toml"), f.repo.join("core/Cargo.toml")).unwrap();
+    fs::rename(f.repo.join("src"), f.repo.join("core/src")).unwrap();
+    git(&f.repo, &["add", "-A"]);
+    git(
+        &f.repo,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "nest Cargo package",
+        ],
+    );
+    let index_path = f.temp.join("decoded.json");
+    let mut index: serde_json::Value =
+        serde_json::from_slice(&fs::read(&index_path).unwrap()).unwrap();
+    let new_root = f.repo.canonicalize().unwrap().join("core");
+    index["metadata"]["project_root"] =
+        serde_json::json!(format!("file://{}", new_root.display()).replace(" ", "%20"));
+    fs::write(index_path, index.to_string()).unwrap();
+
+    let output = f.invoke(&[]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = json::parse(&output.stdout).unwrap();
+    let observations = report.get("observations").unwrap().array_ref().unwrap();
+    assert_eq!(observations.len(), 1);
+    assert_eq!(
+        observations[0]
+            .get("from")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "core/src/a.rs"
+    );
+
+    // A second tracked Cargo project makes auto-selection ambiguous.
+    fs::create_dir_all(f.repo.join("other")).unwrap();
+    fs::write(
+        f.repo.join("other/Cargo.toml"),
+        "[package]\nname=\"second\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
+    )
+    .unwrap();
+    git(&f.repo, &["add", "-A"]);
+    git(
+        &f.repo,
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "second Cargo project",
+        ],
+    );
+    let ambiguous = f.invoke(&[]);
+    assert!(!ambiguous.status.success());
+    assert!(String::from_utf8_lossy(&ambiguous.stderr).contains("--source-prefix"));
+    let selected = f.invoke(&["--source-prefix", "core"]);
+    assert!(
+        selected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&selected.stderr)
+    );
+}
+
+#[test]
+fn rust_native_defaults_to_human_summary_and_accepts_bare_trust_flag() {
+    let f = Fixture::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .current_dir(&f.repo)
+        .args(["analyze", "rust", "--trusted-local", "--rust-analyzer"])
+        .arg(&f.analyzer)
+        .arg("--scip")
+        .arg(&f.decoder)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Rust SCIP analysis"), "{stdout}");
+    assert!(
+        stdout.contains("Cross-file symbol references: 1"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("excession.scip-observations.v1"));
 }

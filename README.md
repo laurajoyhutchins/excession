@@ -37,7 +37,7 @@ From a supported Python or JavaScript repository:
 cd /path/to/repository
 excession discover .
 excession analyze .
-excession impact . --base HEAD~1 --output /tmp/excession-impact.json
+excession impact . --output /tmp/excession-impact.json
 ```
 
 The default impact output lists candidate dependent paths and their full
@@ -62,6 +62,23 @@ These workflows operate on committed revisions. They can read pinned Git
 objects even when the working tree is dirty; they do not include uncommitted
 edits. Default SQLite caches live outside the repository. Exact-output workflows
 also support `--json` and explicit revisions/roots.
+
+## Daily commands
+
+```sh
+excession                    # focused help
+excession commands           # all specialist families
+excession analyze .          # static source candidates
+excession impact .           # compare HEAD~1..HEAD
+excession tests              # plan tests without running them
+excession analyze rust --trusted-local    # execute installed native Rust indexer
+excession analyze rust --trusted-local --json > /tmp/rust.json
+```
+
+Rust analysis selects the sole tracked Cargo project, including a nested
+project. For multiple projects, specify `--source-prefix`. It requires a
+clean checkout and explicitly executes trusted local tooling; this is not a
+sandbox. Specialist commands remain accessible through their own help screens.
 
 ## Plan a Git history consolidation
 

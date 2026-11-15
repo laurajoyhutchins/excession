@@ -7,10 +7,13 @@ use crate::json::{self, Value, obj};
 use crate::observed_relations::{self, Plan, Selection};
 use crate::sqlite::Db;
 use crate::{Result, refuse};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
 const MAX_REPORT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_BATCH_SOURCES: usize = 128;
+const MAX_WITNESS_STEPS: usize = 10_000;
 
 fn supported_report(path: &Path) -> Result<Value> {
     let len = fs::metadata(path)
@@ -51,13 +54,12 @@ fn find_claim<'a>(report: &'a Value, id: &str) -> Result<&'a Value> {
 /// Recompute the complete candidate impact report before selecting a claim.
 /// Matching JSON alone would only establish self-consistency; reindexing
 /// authenticates source against Git objects and repeats the native analyzers.
-fn checked_claim(
+fn checked_report(
     repo: &Path,
     saved_report: &Path,
-    claim_id: &str,
     roots: Option<&str>,
     db: Option<&str>,
-) -> Result<(Value, Value)> {
+) -> Result<Value> {
     let reported = supported_report(saved_report)?;
     let base = reported.get("base_commit")?.str()?;
     let head = reported.get("head_commit")?.str()?;
@@ -118,8 +120,190 @@ fn checked_claim(
             "impact report does not replay against pinned Git source and configured analyzers",
         );
     }
-    let effect = find_claim(&fresh, claim_id)?;
-    Ok((fresh.clone(), effect.clone()))
+    Ok(fresh)
+}
+
+fn checked_claim(
+    repo: &Path,
+    saved_report: &Path,
+    claim_id: &str,
+    roots: Option<&str>,
+    db: Option<&str>,
+) -> Result<(Value, Value)> {
+    let report = checked_report(repo, saved_report, roots, db)?;
+    let effect = find_claim(&report, claim_id)?.clone();
+    Ok((report, effect))
+}
+
+/// One authenticated source witness per (revision, dependent source). A
+/// witness is a decreasing-distance certificate into a changed Git source;
+/// it does not assert that the change affects runtime behavior.
+fn source_witnesses(report: &Value) -> Result<BTreeMap<(String, String), Value>> {
+    let mut by_source = BTreeMap::new();
+    for witness in report.get("candidate_source_impacts")?.array_ref()? {
+        if witness.get("assessment")?.str()? != "CANDIDATE_PATH" {
+            return refuse("distinct-source witness is not a candidate");
+        }
+        let entity = witness.get("entity")?;
+        let hop = witness.get("next_hop")?;
+        let commit = entity.get("source_commit")?.str()?;
+        let path = entity.get("path")?.str()?;
+        let target = hop.get("target")?;
+        if entity != hop.get("source")?
+            || hop.get("source")?.get("source_commit")?.str()? != commit
+            || target.get("source_commit")?.str()? != commit
+            || target.get("path")?.str()? == path
+            || hop.get("evidence")?.array_ref()?.is_empty()
+            || witness.get("distance_to_change")?.integer()? <= 0
+        {
+            return refuse("invalid source witness identity, rank, or evidence");
+        }
+        if by_source
+            .insert((commit.to_owned(), path.to_owned()), witness.clone())
+            .is_some()
+        {
+            return refuse("ambiguous duplicate distinct-source witness");
+        }
+    }
+    Ok(by_source)
+}
+
+fn explain_witness(
+    report: &Value,
+    by_source: &BTreeMap<(String, String), Value>,
+    witness: &Value,
+) -> Result<Value> {
+    let entity = witness.get("entity")?;
+    let commit = entity.get("source_commit")?.str()?;
+    let mut path = entity.get("path")?.str()?.to_owned();
+    let mut rank = witness.get("distance_to_change")?.integer()?;
+    if rank <= 0 {
+        return refuse("source witness rank must be positive");
+    }
+    let mut seen = BTreeSet::new();
+    let mut steps = Vec::new();
+    while rank > 0 {
+        if steps.len() >= MAX_WITNESS_STEPS || !seen.insert(path.clone()) {
+            return refuse("source witness cycle or depth limit");
+        }
+        let current = by_source
+            .get(&(commit.to_owned(), path.clone()))
+            .ok_or("missing intermediate source witness")?;
+        if current.get("distance_to_change")?.integer()? != rank {
+            return refuse("source witness rank does not decrease by one");
+        }
+        let hop = current.get("next_hop")?;
+        if hop.get("source")? != current.get("entity")?
+            || hop.get("target")?.get("source_commit")?.str()? != commit
+            || hop.get("evidence")?.array_ref()?.is_empty()
+        {
+            return refuse("source witness has inconsistent Git evidence");
+        }
+        path = hop.get("target")?.get("path")?.str()?.to_owned();
+        steps.push(hop.clone());
+        rank -= 1;
+    }
+    if seen.contains(&path) {
+        return refuse("source witness terminates in a cycle");
+    }
+    let claim_id = witness.clone().stamp_id("claim_id")?;
+    obj(&[
+        ("schema", Value::string("excession.explanation.v1")),
+        ("selection_kind", Value::string("DISTINCT_SOURCE_WITNESS")),
+        ("claim_id", claim_id.get("claim_id")?.clone()),
+        ("source_commit", Value::string(commit)),
+        ("steps", Value::array(steps)),
+        ("coverage", report.get("coverage")?.clone()),
+    ])
+    .stamp_id("report_id")
+}
+
+/// Replay the *complete* saved impact report from Git and pinned analyzers once,
+/// then reconstruct the requested source path without enumerating alternatives.
+/// A path present in both revisions needs an explicit source commit.
+pub fn explain_source(
+    repo: &Path,
+    saved_report: &Path,
+    source_path: &str,
+    source_commit: Option<&str>,
+    roots: Option<&str>,
+    db: Option<&str>,
+) -> Result<Value> {
+    crate::git::validate_path(source_path)?;
+    let report = checked_report(repo, saved_report, roots, db)?;
+    let by_source = source_witnesses(&report)?;
+    let matches = by_source
+        .iter()
+        .filter(|((commit, path), _)| {
+            path == source_path && source_commit.is_none_or(|selected| commit == selected)
+        })
+        .map(|(_, witness)| witness)
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        if matches.is_empty() && !report.get("candidate_source_enumeration_complete")?.bool()? {
+            return refuse("source absent from bounded witness inventory; enumeration was truncated");
+        }
+        return refuse(if matches.is_empty() {
+            "no distinct-source impact witness for selected Git source"
+        } else {
+            "source exists in multiple revisions; supply --source-commit"
+        });
+    }
+    explain_witness(&report, &by_source, matches[0])
+}
+
+/// Bulk explanations share one exact replay, replacing repeated fresh
+/// analyzer invocations. Refuse oversized result sets rather than silently
+/// truncating, and preserve partial-inventory status in the JSON output.
+pub fn explain_all_sources(
+    repo: &Path,
+    saved_report: &Path,
+    roots: Option<&str>,
+    db: Option<&str>,
+) -> Result<Value> {
+    let report = checked_report(repo, saved_report, roots, db)?;
+    let witnesses = source_witnesses(&report)?;
+    if witnesses.len() > MAX_BATCH_SOURCES {
+        return refuse("too many source witnesses for one batch; use --source");
+    }
+    let mut explanations = Vec::with_capacity(witnesses.len());
+    for witness in witnesses.values() {
+        explanations.push(explain_witness(&report, &witnesses, witness)?);
+    }
+    obj(&[
+        ("schema", Value::string("excession.source-explanations.v1")),
+        ("replayed_impact_report_id", report.get("report_id")?.clone()),
+        ("count", Value::number(explanations.len())),
+        ("source_inventory_complete", report.get("candidate_source_enumeration_complete")?.clone()),
+        ("semantic_correctness", Value::string("NOT_EVALUATED")),
+        ("coverage", report.get("coverage")?.clone()),
+        ("explanations", Value::array(explanations)),
+    ])
+    .stamp_id("report_id")
+}
+
+pub fn audit_source(
+    repo: &Path,
+    saved_report: &Path,
+    source_path: &str,
+    source_commit: Option<&str>,
+    roots: Option<&str>,
+    db: Option<&str>,
+) -> Result<Value> {
+    let explanation = explain_source(repo, saved_report, source_path, source_commit, roots, db)?;
+    let _ = explanation.get("report_id")?;
+    audit_result()
+}
+
+fn audit_result() -> Result<Value> {
+    obj(&[
+        ("schema", Value::string("excession.audit-result.v1")),
+        ("schema_validation", Value::string("NOT_RUN")),
+        ("git_authentication", Value::string("PASS")),
+        ("replay", Value::string("PASS")),
+        ("semantic_correctness", Value::string("NOT_EVALUATED")),
+    ])
+    .stamp_id("report_id")
 }
 
 pub fn explain(
@@ -164,17 +348,9 @@ pub fn audit(
     db: Option<&str>,
 ) -> Result<Value> {
     let explanation = explain(repo, saved_report, claim_id, roots, db)?;
-    let result = obj(&[
-        ("schema", Value::string("excession.audit-result.v1")),
-        ("schema_validation", Value::string("NOT_RUN")),
-        ("git_authentication", Value::string("PASS")),
-        ("replay", Value::string("PASS")),
-        ("semantic_correctness", Value::string("NOT_EVALUATED")),
-    ]);
-    // Replaying the source authenticates the supported observation path,
-    // but independent semantic truth remains deliberately unassessed.
+    // Source replay authenticates the candidate path, not runtime behavior.
     let _ = explanation.get("report_id")?;
-    result.stamp_id("report_id")
+    audit_result()
 }
 
 pub fn human(explanation: &Value) -> Result<String> {

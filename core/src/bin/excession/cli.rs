@@ -581,6 +581,11 @@ pub(super) fn command() -> Command {
     let agent = group(
         "agent",
         vec![
+            leaf("init", &[], &["repo", "client"])
+                .about("Plan or create project-level MCP configuration without replacing existing files")
+                .arg(Arg::new("write").long("write")
+                    .help("Explicitly create missing config files; default is read-only plan")
+                    .action(clap::ArgAction::SetTrue)),
             leaf(
                 "locate",
                 &["repo", "task"],
@@ -799,6 +804,8 @@ pub(super) fn command() -> Command {
         .subcommand(configured_graph)
         .subcommand(kernel)
         .subcommand(agent)
+        .subcommand(leaf("mcp", &[], &["repo","roots","db"])
+            .about("Serve read-only, repository-scoped MCP tools over stdio"))
         .subcommand(tests)
         .subcommand(
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
@@ -820,7 +827,7 @@ pub(super) struct Parsed {
 /// Render names and descriptions from the same clap grammar used for execution.
 pub(super) fn catalog() -> String {
     const EVERYDAY: &[&str] = &[
-        "analyze", "impact", "explain", "changes", "discover", "tests", "agent", "doctor",
+        "analyze", "impact", "explain", "changes", "discover", "tests", "agent", "mcp", "doctor",
     ];
     let mut everyday = Vec::new();
     let mut specialist = Vec::new();
@@ -982,6 +989,20 @@ mod tests {
             panic!("help expected");
         };
         assert!(syntax.contains("native-audit"));
+    }
+
+    #[test]
+    fn agent_init_requires_explicit_write_for_files() {
+        let ParseOutcome::Command(planned) = parse(&strings(&["agent", "init"])).unwrap() else {
+            panic!("expected agent init");
+        };
+        assert_eq!(planned.path, ["agent", "init"]);
+        assert!(!planned.options.0.contains_key("write"));
+        let ParseOutcome::Command(writing) = parse(&strings(&[
+            "agent", "init", "--client", "codex", "--write"
+        ])).unwrap() else { panic!("expected agent init --write"); };
+        assert_eq!(writing.options.get("write"), "true");
+        assert!(parse(&strings(&["mcp", "--repo", "."])).is_ok());
     }
 
     #[test]

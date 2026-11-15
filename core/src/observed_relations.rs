@@ -339,7 +339,11 @@ fn select_native(
     let producer = receipt.get("producer")?.str()?;
     if !matches!(
         producer,
-        "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured" | "native:rust-analyzer-scip"
+        "native:go-list"
+            | "native:clang-ast"
+            | "native:javac-symbols"
+            | "native:javac-configured"
+            | "native:rust-analyzer-scip"
     ) {
         return refuse("selected receipt is not a supported native producer");
     }
@@ -378,20 +382,26 @@ fn select_native(
                 ("source", from_source.clone()),
                 ("target", to_source),
                 ("kind", Value::string("SCIP_REFERENCE")),
-                ("evidence", Value::array([obj(&[
-                    ("receipt_id", Value::string(receipt_id)),
-                    ("producer", Value::string(producer)),
-                    ("observation_kind", Value::string("SCIP_REFERENCE")),
-                    ("assessment", Value::string("OBSERVED")),
-                    ("source", from_source),
-                ])])),
-                ("native_observation", obj(&[
-                    ("snapshot_id", Value::string(snapshot)),
-                    ("observation_id", entry.get("observation_id")?.clone()),
-                    ("native_kind", Value::string(kind)),
-                    ("symbol", payload.get("symbol")?.clone()),
-                    ("line", payload.get("line")?.clone()),
-                ])),
+                (
+                    "evidence",
+                    Value::array([obj(&[
+                        ("receipt_id", Value::string(receipt_id)),
+                        ("producer", Value::string(producer)),
+                        ("observation_kind", Value::string("SCIP_REFERENCE")),
+                        ("assessment", Value::string("OBSERVED")),
+                        ("source", from_source),
+                    ])]),
+                ),
+                (
+                    "native_observation",
+                    obj(&[
+                        ("snapshot_id", Value::string(snapshot)),
+                        ("observation_id", entry.get("observation_id")?.clone()),
+                        ("native_kind", Value::string(kind)),
+                        ("symbol", payload.get("symbol")?.clone()),
+                        ("line", payload.get("line")?.clone()),
+                    ]),
+                ),
             ]));
             continue;
         }

@@ -94,7 +94,9 @@ pub fn scan(
     if !expected_ext {
         return refuse("source extension does not match selected native language");
     }
-    if language == "rust" && (compile_db.is_some() || compiler.is_some() || classpath_manifest.is_some()) {
+    if language == "rust"
+        && (compile_db.is_some() || compiler.is_some() || classpath_manifest.is_some())
+    {
         return refuse("Rust SCIP does not use --compile-db, --compiler or --classpath-manifest");
     }
     if language != "rust" && (rust_analyzer.is_some() || scip.is_some()) {
@@ -148,7 +150,9 @@ pub fn scan(
             || native.get("source_tree")?.str()? != tree
             || native.get("indexer")?.get("name")?.str()? != "rust-analyzer"
         {
-            return refuse("Rust SCIP observations do not match selected Git revision and producer");
+            return refuse(
+                "Rust SCIP observations do not match selected Git revision and producer",
+            );
         }
         return obj(&[
             ("schema", Value::string("excession.native-analysis.v1")),
@@ -158,22 +162,37 @@ pub fn scan(
             ("source", subject.clone()),
             ("language", Value::string("rust")),
             ("producer", Value::string("rust-analyzer-scip")),
-            ("scope", Value::string("SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED")),
+            (
+                "scope",
+                Value::string("SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED"),
+            ),
             ("execution", Value::string("TRUSTED_LOCAL_NOT_ATTESTED")),
             ("input_sources", Value::number(1)),
             ("input_configurations", Value::number(0)),
-            ("inputs", Value::array([obj(&[
-                ("source", subject),
-                ("role", Value::string("source")),
-            ])])),
+            (
+                "inputs",
+                Value::array([obj(&[
+                    ("source", subject),
+                    ("role", Value::string("source")),
+                ])]),
+            ),
             ("observation", native),
-            ("limitations", Value::array([
-                Value::string("SCIP is a workspace index, not a rustc build or typecheck receipt"),
-                Value::string("The requested Git source is not proof that the indexer covered that file"),
-                Value::string("Cross-file symbol references are not necessarily imports or calls"),
-                Value::string("Absent references are not proof of unreachable or unused code"),
-                Value::string("Trusted-local indexer execution is not independent attestation"),
-            ])),
+            (
+                "limitations",
+                Value::array([
+                    Value::string(
+                        "SCIP is a workspace index, not a rustc build or typecheck receipt",
+                    ),
+                    Value::string(
+                        "The requested Git source is not proof that the indexer covered that file",
+                    ),
+                    Value::string(
+                        "Cross-file symbol references are not necessarily imports or calls",
+                    ),
+                    Value::string("Absent references are not proof of unreachable or unused code"),
+                    Value::string("Trusted-local indexer execution is not independent attestation"),
+                ]),
+            ),
         ])
         .stamp_id("report_id");
     }

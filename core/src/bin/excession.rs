@@ -775,7 +775,13 @@ fn execute(args: &[String]) -> Result<Response> {
                 "false" => false,
                 _ => return refuse("--trusted-local requires true or false"),
             };
-            let db = excession::sqlite::Db::open(opt.path("db"))?;
+            if !trusted {
+                return refuse("compiler checks require --trusted-local true; no sandbox is provided");
+            }
+            let db_path = analyze::checked_external_destination(
+                opt.path("repo"), opt.path("db"), "compiler check evidence",
+            )?;
+            let db = excession::sqlite::Db::open(&db_path)?;
             let result = excession::compiler_check::run(
                 &db,
                 excession::compiler_check::Request {

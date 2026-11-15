@@ -6,8 +6,8 @@ use crate::evidence::artifact;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, refuse};
-use runtime::{FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject};
 pub use automatic::{SearchOptions, search, searches};
+use runtime::{FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject};
 use std::fs;
 use std::path::Path;
 

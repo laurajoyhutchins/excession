@@ -384,9 +384,17 @@ fn shared_native_rust_report_replays_real_scip_edges_and_refuses_forged_git_blob
     let store = excession::sqlite::Db::open(&db).unwrap();
     let plan = excession::observed_relations::default_plan(&store, &f.repo, "HEAD").unwrap();
     assert_eq!(plan.native.len(), 1);
-    let observed = excession::observed_relations::read_plan(&store, &f.repo, "HEAD", &plan).unwrap();
+    let observed =
+        excession::observed_relations::read_plan(&store, &f.repo, "HEAD", &plan).unwrap();
     assert_eq!(observed.relationships.len(), 1);
-    assert_eq!(observed.relationships[0].get("kind").unwrap().str().unwrap(), "SCIP_REFERENCE");
+    assert_eq!(
+        observed.relationships[0]
+            .get("kind")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "SCIP_REFERENCE"
+    );
     assert_eq!(observed.coverage.len(), 1);
     let audit = Command::new(exe)
         .args(["evidence", "native-store-audit", "--repo"])

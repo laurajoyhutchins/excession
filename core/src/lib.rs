@@ -45,6 +45,7 @@ pub mod history_rewrite;
 pub mod identity;
 pub mod impact;
 pub mod impact_query;
+pub mod improve;
 mod incremental_python;
 pub mod index;
 mod indexed_tree;

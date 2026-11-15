@@ -1092,16 +1092,19 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top, sub] if top == "improve" => {
             let required = |key: &str| -> Result<&str> {
-                opt.0.get(key).map(String::as_str).ok_or_else(|| {
-                    format!("improve command requires --{key}")
-                })
+                opt.0
+                    .get(key)
+                    .map(String::as_str)
+                    .ok_or_else(|| format!("improve command requires --{key}"))
             };
             let producer = opt.get_or("producer", "scip");
             match sub.as_str() {
                 "plan" => Ok(json(match producer {
                     "scip" => {
                         if opt.0.contains_key("db") || opt.0.contains_key("name") {
-                            return refuse("SCIP planning does not accept indexed database options");
+                            return refuse(
+                                "SCIP planning does not accept indexed database options",
+                            );
                         }
                         improve::plan(
                             Path::new(required("repo")?),
@@ -1148,7 +1151,9 @@ fn execute(args: &[String]) -> Result<Response> {
                             || opt.0.contains_key("name")
                             || opt.0.contains_key("repo")
                         {
-                            return refuse("SCIP evaluation does not accept indexed database options");
+                            return refuse(
+                                "SCIP evaluation does not accept indexed database options",
+                            );
                         }
                         improve::evaluate(&improve::Evaluation {
                             base_repo: Path::new(required("base-repo")?),
@@ -1162,10 +1167,19 @@ fn execute(args: &[String]) -> Result<Response> {
                         })?
                     }
                     "indexed" => {
-                        if ["base-repo", "candidate-repo", "base-index",
-                            "candidate-index", "source-prefix"].iter().any(|key| opt.0.contains_key(*key))
+                        if [
+                            "base-repo",
+                            "candidate-repo",
+                            "base-index",
+                            "candidate-index",
+                            "source-prefix",
+                        ]
+                        .iter()
+                        .any(|key| opt.0.contains_key(*key))
                         {
-                            return refuse("indexed evaluation does not accept SCIP source options");
+                            return refuse(
+                                "indexed evaluation does not accept SCIP source options",
+                            );
                         }
                         let db = Db::open(Path::new(required("db")?))?;
                         improve::evaluate_indexed(
@@ -1181,7 +1195,7 @@ fn execute(args: &[String]) -> Result<Response> {
                 })),
                 _ => refuse(format!("unknown improvement command {sub}")),
             }
-        },
+        }
         [top, sub] if top == "benchmark" => match sub.as_str() {
             "review-prepare" => {
                 let repetition = opt

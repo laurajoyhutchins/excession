@@ -842,6 +842,52 @@ mod tests {
         values.iter().map(|s| (*s).to_owned()).collect()
     }
 
+
+    #[test]
+    fn everyday_help_is_focused_but_specialist_commands_are_discoverable() {
+        let ParseOutcome::Help(help) = parse(&strings(&[])).unwrap() else {
+            panic!("root help expected");
+        };
+        assert!(help.contains("excession impact ."));
+        assert!(help.contains("commands"));
+        assert!(!help.contains("reconstruct"), "{help}");
+        let catalog = catalog();
+        for family in ["analyze", "impact", "tests", "security", "reconstruct", "refactor"] {
+            assert!(catalog.contains(family), "{family} absent from catalog");
+        }
+        assert!(parse(&strings(&["refactor", "--help"])).is_ok());
+    }
+
+    #[test]
+    fn common_comparison_commands_have_optional_base() {
+        for command in ["impact", "changes"] {
+            let ParseOutcome::Command(parsed) = parse(&strings(&[command, "."])).unwrap() else {
+                panic!("command expected");
+            };
+            assert!(!parsed.options.0.contains_key("base"));
+        }
+    }
+
+    #[test]
+    fn rust_native_trust_flag_is_explicit_and_json_opt_in() {
+        let ParseOutcome::Command(parsed) =
+            parse(&strings(&["analyze", "rust", "--trusted-local"])).unwrap()
+        else {
+            panic!("Rust subcommand expected");
+        };
+        assert_eq!(parsed.path, ["analyze", "rust"]);
+        assert_eq!(parsed.options.get("trusted-local"), "true");
+        assert!(!parsed.options.0.contains_key("repo"));
+        assert!(!parsed.options.0.contains_key("json"));
+        let ParseOutcome::Command(legacy) =
+            parse(&strings(&["analyze", "rust", "--trusted-local", "true", "--json"])).unwrap()
+        else {
+            panic!("Rust explicit-true form expected");
+        };
+        assert_eq!(legacy.options.get("trusted-local"), "true");
+        assert_eq!(legacy.options.get("json"), "true");
+    }
+
     #[test]
     fn nested_help_is_generated_from_the_actual_command_grammar() {
         let ParseOutcome::Help(text) =

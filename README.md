@@ -181,6 +181,20 @@ Build membership is never silently promoted to a source dependency.
 
 ## Coding-agent interface
 
+For MCP-capable coding agents, configure Excession in the target repository
+without replacing existing agent instructions:
+
+```sh
+excession agent init                 # inspect the proposed Codex/Claude config
+excession agent init --write         # create only missing project config files
+```
+
+This registers `excession mcp`, a local, repository-scoped, read-only MCP
+server with source search, context, impact, test planning, coverage and
+verification tools. Existing `.mcp.json`, `.codex/config.toml`, `AGENTS.md`
+and `CLAUDE.md` are preserved; merge into existing MCP configurations
+manually. The installed binary must be on PATH. See [coding-agent MCP setup](docs/MCP.md).
+
 Find candidate code without knowing its paths first:
 
 ```sh

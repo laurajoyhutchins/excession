@@ -1,0 +1,50 @@
+name: Configured compiler receipts
+
+on:
+  pull_request:
+    paths:
+      - core/src/compiler_check.rs
+      - core/src/adapter.rs
+      - core/tests/compiler_check_cli.rs
+      - core/src/bin/excession.rs
+      - core/src/bin/excession/cli.rs
+      - .github/workflows/compiler-checks.yml
+  push:
+    branches: [main]
+    paths:
+      - core/src/compiler_check.rs
+      - core/src/adapter.rs
+      - core/tests/compiler_check_cli.rs
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  configured:
+    name: Real Cargo, TypeScript and mypy checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - name: Install pinned TypeScript without package scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - name: Install pinned optional Python typechecker
+        run: python -m pip install --disable-pip-version-check mypy==2.4.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Prefetch locked Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Real configured check receipts and audit adversarial tests
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test compiler_check_cli

@@ -65,6 +65,13 @@ impl Fixture {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, contents).unwrap();
         }
+        // Irrelevant Go workspaces must not exhaust the Go resolver's
+        // module budget for this otherwise small mixed-language repository.
+        for i in 0..33 {
+            let dir = repo.join(format!("third_party/mod{i}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("go.mod"), format!("module example.org/unrelated/{i}\n")).unwrap();
+        }
         checked("git", &["add", "."], &repo);
         checked(
             "git",

@@ -78,13 +78,18 @@ fn module_name(contents: &str) -> Option<&str> {
     found
 }
 
-fn go_modules(root: &Path, revision: &str) -> Result<Vec<GoModule>> {
+fn go_modules(root: &Path, revision: &str, go_sources: &[&str]) -> Result<Vec<GoModule>> {
     let mut selected = git::entries(root, revision)?
         .into_iter()
         .filter(|e| {
-            e.kind == "blob"
-                && e.mode == "100644"
-                && (e.path == "go.mod" || e.path.ends_with("/go.mod"))
+            if e.kind != "blob"
+                || e.mode != "100644"
+                || !(e.path == "go.mod" || e.path.ends_with("/go.mod"))
+            {
+                return false;
+            }
+            let parent = e.path.strip_suffix("go.mod").unwrap_or("");
+            go_sources.iter().any(|source| source.starts_with(parent))
         })
         .collect::<Vec<_>>();
     if selected.len() > MAX_GO_MODULES {
@@ -466,7 +471,18 @@ where
 {
     let revision = git::oid(report.get("source_commit")?.str()?)?;
     let files = paths(report)?;
-    let modules = go_modules(root, &revision)?;
+    let go_sources = files
+        .values()
+        .filter(|source| source.language == "go")
+        .map(|source| source.path)
+        .collect::<Vec<_>>();
+    // Do not inspect or cap unrelated Go modules during a Python/JS-only
+    // analysis. A relevant module must contain at least one parsed Go source.
+    let modules = if go_sources.is_empty() {
+        Vec::new()
+    } else {
+        go_modules(root, &revision, &go_sources)?
+    };
     let mut candidate_edges = Vec::new();
     let mut unresolved_imports = Vec::new();
     let mut skipped_sources = Vec::new();

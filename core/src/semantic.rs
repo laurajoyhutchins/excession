@@ -126,20 +126,43 @@ pub(crate) fn prepare_sources(
         if e.kind != "blob" || !matches!(e.mode.as_str(), "100644" | "100755") {
             continue;
         }
-        if ["package.json", "tsconfig.json", "jsconfig.json"]
-            .iter()
-            .any(|name| e.path == *name || e.path.ends_with(&format!("/{name}")))
-        {
-            let content = String::from_utf8(blob_reader.read_capped(&e.oid, 1024 * 1024)?)
-                .map_err(|_| "Git configuration file is not UTF-8")?;
-            configs.push(adapter::js_entry(&e.path, &content));
-        }
         if let Some((name, _)) = module_name_with_import_base(&e.path, roots, import_base) {
             if modules.insert(name.clone(), e.path.clone()).is_some() {
                 return refuse("duplicate logical module identity");
             }
             files.insert(e.path.clone(), (name, e.oid.clone()));
         }
+    }
+    // A scoped Python analysis must not fail because an unrelated JS
+    // configuration elsewhere in a polyglot tree is invalid or too large.
+    // For JS resolution, retain only configs that can govern indexed sources.
+    let js_paths = files
+        .keys()
+        .filter(|path| !path.ends_with(".py"))
+        .collect::<Vec<_>>();
+    for e in entries {
+        if js_paths.is_empty()
+            || e.kind != "blob"
+            || !matches!(e.mode.as_str(), "100644" | "100755")
+        {
+            continue;
+        }
+        if !["package.json", "tsconfig.json", "jsconfig.json"]
+            .iter()
+            .any(|name| e.path == *name || e.path.ends_with(&format!("/{name}")))
+        {
+            continue;
+        }
+        let parent = e.path.rsplit_once('/').map_or("", |(folder, _)| folder);
+        if !parent.is_empty() {
+            let prefix = format!("{parent}/");
+            if !js_paths.iter().any(|path| path.starts_with(&prefix)) {
+                continue;
+            }
+        }
+        let content = String::from_utf8(blob_reader.read_capped(&e.oid, 1024 * 1024)?)
+            .map_err(|_| "Git configuration file is not UTF-8")?;
+        configs.push(adapter::js_entry(&e.path, &content));
     }
     let catalog = files
         .iter()

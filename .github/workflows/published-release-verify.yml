@@ -71,7 +71,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/test_release_candidate.py --dist dist \
+          # The acceptance runner intentionally admits exactly one Linux x86-64
+          # archive; the preceding manifest gate already verified all six.
+          mkdir -p linux-acceptance-dist
+          cp dist/excession-v*-x86_64-unknown-linux-gnu.tar.gz \
+            dist/excession-v*-x86_64-unknown-linux-gnu.tar.gz.sha256 \
+            linux-acceptance-dist/
+          python3 tools/test_release_candidate.py --dist linux-acceptance-dist \
             --manifest benchmarks/fixtures/real-repositories.json \
             --out published-acceptance.json
       - name: Retain published-release independent receipts

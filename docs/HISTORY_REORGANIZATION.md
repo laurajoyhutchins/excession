@@ -106,3 +106,31 @@ reproducible self-replay. It is not a scalable production history
 reorganizer: multi-ref dependent rewriting, immutable old-to-new
 mapping across the full DAG, external PR/REA receipts, and independent
 semantic validation remain outstanding.
+
+## Dependency-preserving reconstruction across all local refs
+
+`excession history preview-dag --repo . --output /tmp/excession-dag-preview`
+reads the full **locally reachable** original Git DAG. It refuses shallow
+checkouts, truncated plans, replacement refs and existing or in-checkout
+output paths. It selects one safe contiguous same-scope group, or accepts
+`--group N` to select a specific group from the original history plan.
+
+A group is only eligible if none of its intermediate commits has a
+side-branch child or local ref. The command creates a separate bare mirror
+clone, collapses that group to one **synthetic commit** with its terminal
+tree, then reconstructs all affected descendants in topological order.
+It verifies every reconstructed parent and tree, including at merge
+boundaries, and rejects collapsing two merge parents into one identity.
+Unchanged commits retain their original IDs.
+
+The output contains `mapping.json` (every original commit to candidate OID,
+including which intermediate snapshots are intentionally lost), `refs.json`
+(local-ref mapping proposals without publication), `obligations.json`
+(affected build, PR, REA and signature evidence), and `summary.json`.
+Only the detached clone gets a new `refs/heads/excession-dag-preview` ref.
+Original refs, tags, commit objects and working-tree edits are not modified.
+
+No result claims behavioral, signing, audit-chain or outside GitHub reference
+equivalence. Receipts whose commit identity changed require independent
+revalidation. This is an executable candidate reconstruction, **not**
+an authorized rewrite of `main` or publication of a replacement history.

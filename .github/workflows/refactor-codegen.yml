@@ -6,6 +6,7 @@ on:
       - 'core/src/refactor_rust_analyzer.rs'
       - 'core/src/refactor_rust_repair.rs'
       - 'core/src/refactor_module_api.rs'
+      - 'core/src/improve.rs'
       - 'tests/fixtures/rust-api/**'
       - 'core/src/agent.rs'
       - 'contracts/agent/**'
@@ -69,6 +70,9 @@ jobs:
           name: excession-refactor-codegen-replay
           path: |
             ${{ runner.temp }}/excession-codegen-test/scip-report.json
+            ${{ runner.temp }}/excession-codegen-test/improve-plan.json
+            ${{ runner.temp }}/excession-codegen-test/improve-trial.json
+            ${{ runner.temp }}/excession-codegen-test/improve-evaluation.json
             ${{ runner.temp }}/excession-codegen-test/preview.json
             ${{ runner.temp }}/excession-codegen-test/applied.json
             ${{ runner.temp }}/excession-codegen-test/agent-context.json

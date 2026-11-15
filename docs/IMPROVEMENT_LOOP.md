@@ -125,26 +125,37 @@ binding and module initialization survive, compile TypeScript independently,
 run the resulting code, and reject stale source identities and unsafe cases.
 The native tool never commits the edited worktree or sets `ready_to_merge`.
 
-### Held-out real repository acceptance
+### Held-out independently authored repository acceptance
 
-The independent [clod-pet acceptance run](https://github.com/laurajoyhutchins/excession/actions/runs/43740990391)
-uses commit `ba9b87d7434d70ce2569fbdb7420ec2b73a73729` in a separate public
-repository. The native TypeScript producer identified the existing unused
-`PetWindowOptions` binding in `app/src/main/pet-manager.ts` without injecting
-a synthetic mistake.
+The [third-party held-out acceptance](https://github.com/laurajoyhutchins/excession/actions/runs/43755236879)
+uses **[piyushrav1/ai-interview-v.01](https://github.com/piyushrav1/ai-interview-v.01)**,
+pinned at `78c6a78b8a367c2c19398b05d39274ea3bcacadb`.
+This repository is not owned by the Excession author. The selected revision
+predates upstream's own [unused-import cleanup](https://github.com/piyushrav1/ai-interview-v.01/commit/dea7976fcf620fc19c9731edef06a3d294f0451c);
+no synthetic unused source is inserted.
 
-The source changed from **26,991 to 26,968 bytes** (23 bytes removed);
-exactly one tracked source file changed and no new file was created. The
-application's own TypeScript build and targeted PetManager Jest tests passed
-on **both** the original and isolated candidate. The native edit artifact,
-byte-exact diff, independent build/test logs, and measurement JSON are archived
-by the workflow.
+The native TypeScript 5.8.3 producer identifies the pre-existing unused
+**type-only** `Turn` import in `packages/core/src/machine/types.ts`
+using diagnostic `TS6196` and TypeScript's own `unusedIdentifier` fix.
+The generated exact-blob edit deletes **6 source bytes (840 → 834)** from
+one existing file, with **zero new modules**. Its diff matches the upstream
+author's later change to that import.
 
-This is observed, tested source reduction in an unfamiliar application. It
-is **not** evidence that every application configuration, public contract or
-runtime behavior has been checked. The separate original repository was not
-mutated or updated. Native producer attestations, REA records and unattended
-merge authorization remain open.
+The independently executed before/after checks passed for both source trees:
+a full core TypeScript typecheck using the upstream tsconfig and compatible
+**TypeScript 5.6.3** (separately pinned from the producer), followed by
+the upstream's **Vitest core test suite** from the workspace root. The
+historical upstream lock resolves TS5.9.3, which rejects the original
+`baseUrl` setting before any edits; the acceptance therefore installs a
+compatible compiler from upstream's declared `^5.6.0` range without
+modifying the lockfile or either source tree. Separate pnpm installations
+are used for each tree to prevent workspace-link cross-contamination.
+
+The workflow archives native edit plans, the exact Git diff, compilation
+and test logs, and the measurement report. Neither upstream repository nor
+its default branch is modified. The result demonstrates real source reduction,
+**not** universal behavioral equivalence, completeness of all configurations,
+independent native-producer attestation, REA provenance, or merge authorization.
 
 ## SCIP producer
 

@@ -467,9 +467,9 @@ pub(super) fn command() -> Command {
             leaf(
                 "native",
                 &["language", "source"],
-                &["repo", "rev", "compile-db", "compiler", "source-prefix", "classpath-manifest"],
+                &["repo", "rev", "compile-db", "compiler", "source-prefix", "classpath-manifest", "rust-analyzer", "scip"],
             )
-            .about("Run an explicitly trusted Go, Java or configured Clang producer")
+            .about("Run a Git-bound Go, Java, C/C++ or Rust native tool")
             .arg(
                 Arg::new("trusted-local")
                     .long("trusted-local")
@@ -484,7 +484,7 @@ pub(super) fn command() -> Command {
                     .help("Emit Git-bound native producer evidence")
                     .action(clap::ArgAction::SetTrue),
             )
-            .after_help("Go:    excession analyze native --language go --source cmd/main.go --trusted-local\nClang: excession analyze native --language c --source src/main.c --compile-db build/compile_commands.json --trusted-local\nJava:  excession analyze native --language java --source src/main/java/pkg/Service.java --source-prefix src/main/java --trusted-local\nConfigured Java: add --classpath-manifest /tmp/resolved-inputs.json\n\nInputs are pinned to Git; build and runtime completeness are not established. Java and other compilers remain unsupported here."),
+            .after_help("Go:    excession analyze native --language go --source cmd/main.go --trusted-local\nClang: excession analyze native --language c --source src/main.c --compile-db build/compile_commands.json --trusted-local\nJava:  excession analyze native --language java --source src/main/java/pkg/Service.java --source-prefix src/main/java --trusted-local\nConfigured Java: add --classpath-manifest /tmp/resolved-inputs.json\nRust:  excession analyze native --language rust --source src/lib.rs --trusted-local\n       Optionally set --source-prefix, --rust-analyzer and --scip.\n\nGo selects compiler inputs; Clang observes one configured TU; javac resolves source references; rust-analyzer observes SCIP symbols. None alone proves build/runtime completeness."),
         )
         .subcommand(
             leaf("languages", &[], &["repo", "rev", "roots"])

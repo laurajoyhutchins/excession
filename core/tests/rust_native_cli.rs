@@ -307,3 +307,180 @@ fn rust_native_defaults_to_human_summary_and_accepts_bare_trust_flag() {
     );
     assert!(!stdout.contains("excession.scip-observations.v1"));
 }
+
+#[test]
+fn shared_native_rust_report_replays_real_scip_edges_and_refuses_forged_git_blobs() {
+    let f = Fixture::new();
+    let exe = env!("CARGO_BIN_EXE_excession");
+    let output = Command::new(exe)
+        .args(["analyze", "native", "--repo"])
+        .arg(&f.repo)
+        .args([
+            "--language",
+            "rust",
+            "--source",
+            "src/a.rs",
+            "--trusted-local",
+            "true",
+            "--rust-analyzer",
+        ])
+        .arg(&f.analyzer)
+        .arg("--scip")
+        .arg(&f.decoder)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = json::parse(&output.stdout).unwrap();
+    let field = |key: &str| report.get(key).unwrap().str().unwrap().to_owned();
+    assert_eq!(field("schema"), "excession.native-analysis.v1");
+    assert_eq!(field("language"), "rust");
+    assert_eq!(field("producer"), "rust-analyzer-scip");
+    assert_eq!(
+        field("scope"),
+        "SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED"
+    );
+    assert_eq!(field("execution"), "TRUSTED_LOCAL_NOT_ATTESTED");
+    assert!(report.content_id_matches("report_id").unwrap());
+    assert_eq!(report.get("inputs").unwrap().array_ref().unwrap().len(), 1);
+    let nested = report.get("observation").unwrap();
+    assert_eq!(
+        nested.get("schema").unwrap().str().unwrap(),
+        "excession.scip-observations.v1"
+    );
+    assert_eq!(
+        nested
+            .get("observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let path = f.temp.join("native-rust.json");
+    fs::write(&path, report.canonical()).unwrap();
+    let db = f.temp.join("native-rust.sqlite");
+    let import = Command::new(exe)
+        .args(["evidence", "native-import", "--repo"])
+        .arg(&f.repo)
+        .args(["--rev", "HEAD", "--report"])
+        .arg(&path)
+        .arg("--db")
+        .arg(&db)
+        .output()
+        .unwrap();
+    assert!(
+        import.status.success(),
+        "{}",
+        String::from_utf8_lossy(&import.stderr)
+    );
+    let receipt = json::parse(&import.stdout).unwrap();
+    let snapshot = receipt.get("snapshot_id").unwrap().str().unwrap();
+    let store = excession::sqlite::Db::open(&db).unwrap();
+    let plan = excession::observed_relations::default_plan(&store, &f.repo, "HEAD").unwrap();
+    assert_eq!(plan.native.len(), 1);
+    let observed =
+        excession::observed_relations::read_plan(&store, &f.repo, "HEAD", &plan).unwrap();
+    assert_eq!(observed.relationships.len(), 1);
+    assert_eq!(
+        observed.relationships[0]
+            .get("kind")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "SCIP_REFERENCE"
+    );
+    assert_eq!(observed.coverage.len(), 1);
+    let audit = Command::new(exe)
+        .args(["evidence", "native-store-audit", "--repo"])
+        .arg(&f.repo)
+        .args(["--rev", "HEAD", "--snapshot", snapshot, "--db"])
+        .arg(&db)
+        .output()
+        .unwrap();
+    assert!(
+        audit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit.stderr)
+    );
+    assert_eq!(
+        json::parse(&audit.stdout)
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "REPLAYED_GIT_BOUND_NATIVE_OBSERVATIONS"
+    );
+
+    // A self-consistent rehashed report must still fail replay if a producer
+    // fabricates a different Git blob for a SCIP reference endpoint.
+    let mut forged_native = nested.clone();
+    let mut edges = forged_native
+        .get("observations")
+        .unwrap()
+        .array_ref()
+        .unwrap()
+        .to_vec();
+    let mut edge = edges[0].clone();
+    let mut to = edge.get("to").unwrap().clone();
+    to.entries_mut().unwrap().insert(
+        "blob".into(),
+        excession::json::Value::string("0".repeat(40)),
+    );
+    edge.entries_mut().unwrap().insert("to".into(), to);
+    edges[0] = edge;
+    forged_native
+        .entries_mut()
+        .unwrap()
+        .insert("observations".into(), excession::json::Value::array(edges));
+    forged_native.entries_mut().unwrap().remove("report_id");
+    let forged_native = forged_native.stamp_id("report_id").unwrap();
+    let mut forged = report.clone();
+    forged
+        .entries_mut()
+        .unwrap()
+        .insert("observation".into(), forged_native);
+    forged.entries_mut().unwrap().remove("report_id");
+    let forged = forged.stamp_id("report_id").unwrap();
+    fs::write(&path, forged.canonical()).unwrap();
+    let rejected = Command::new(exe)
+        .args(["evidence", "native-import", "--repo"])
+        .arg(&f.repo)
+        .args(["--rev", "HEAD", "--report"])
+        .arg(&path)
+        .arg("--db")
+        .arg(&db)
+        .output()
+        .unwrap();
+    assert!(!rejected.status.success(), "forged Git blob was accepted");
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("pinned Git blob"));
+}
+
+#[test]
+fn shared_rust_cli_rejects_inapplicable_compiler_options_before_launch() {
+    let f = Fixture::new();
+    let output = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .args([
+            "analyze",
+            "native",
+            "--language",
+            "rust",
+            "--source",
+            "src/a.rs",
+            "--compiler",
+            "clang",
+            "--trusted-local",
+        ])
+        .arg("--repo")
+        .arg(&f.repo)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Rust SCIP does not use"));
+}

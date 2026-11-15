@@ -339,7 +339,11 @@ fn select_native(
     let producer = receipt.get("producer")?.str()?;
     if !matches!(
         producer,
-        "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured"
+        "native:go-list"
+            | "native:clang-ast"
+            | "native:javac-symbols"
+            | "native:javac-configured"
+            | "native:rust-analyzer-scip"
     ) {
         return refuse("selected receipt is not a supported native producer");
     }
@@ -348,7 +352,7 @@ fn select_native(
         "SELECT document FROM evidence_observation_v1 WHERE snapshot_id=? ORDER BY observation_id",
         &[Param::Text(snapshot)],
     )?;
-    if obs.len() > 4096 {
+    if obs.len() > 4098 {
         return refuse("selected native observations exceed composition budget");
     }
     for row in obs {
@@ -359,9 +363,52 @@ fn select_native(
                 .as_bytes(),
         )?;
         let kind = entry.get("native_kind")?.str()?;
+        if kind == "SCIP_SYMBOL_REFERENCE" {
+            if producer != "native:rust-analyzer-scip" {
+                return refuse("SCIP references are unsupported for this native producer");
+            }
+            let payload = entry.get("payload")?;
+            let from = payload.get("from")?;
+            let to = payload.get("to")?;
+            let from_path = from.get("path")?.str()?;
+            let to_path = to.get("path")?.str()?;
+            let from_source = source(repo, commit, tree, from_path, from.get("blob")?.str()?)?;
+            let to_source = source(repo, commit, tree, to_path, to.get("blob")?.str()?)?;
+            out.source_paths.insert(from_path.to_owned());
+            out.source_paths.insert(to_path.to_owned());
+            let receipt_id = entry.get("receipt_id")?.str()?;
+            out.receipt_ids.insert(receipt_id.to_owned());
+            out.relationships.push(obj(&[
+                ("source", from_source.clone()),
+                ("target", to_source),
+                ("kind", Value::string("SCIP_REFERENCE")),
+                (
+                    "evidence",
+                    Value::array([obj(&[
+                        ("receipt_id", Value::string(receipt_id)),
+                        ("producer", Value::string(producer)),
+                        ("observation_kind", Value::string("SCIP_REFERENCE")),
+                        ("assessment", Value::string("OBSERVED")),
+                        ("source", from_source),
+                    ])]),
+                ),
+                (
+                    "native_observation",
+                    obj(&[
+                        ("snapshot_id", Value::string(snapshot)),
+                        ("observation_id", entry.get("observation_id")?.clone()),
+                        ("native_kind", Value::string(kind)),
+                        ("symbol", payload.get("symbol")?.clone()),
+                        ("line", payload.get("line")?.clone()),
+                    ]),
+                ),
+            ]));
+            continue;
+        }
         if !matches!(
             kind,
-            "NATIVE_SELECTED_INPUT"
+            "NATIVE_RUST_WORKSPACE_INDEX"
+                | "NATIVE_SELECTED_INPUT"
                 | "NATIVE_CONFIGURED_TU"
                 | "NATIVE_CONFIGURED_HEADER"
                 | "NATIVE_JAVA_SYMBOL_REFERENCE"
@@ -523,7 +570,7 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
                         ("source_prefix", prefix.as_deref().map_or(Value::Null, Value::string)),
                         ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
                     ]));
-                } else if matches!(producer, "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured") {
+                } else if matches!(producer, "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured" | "native:rust-analyzer-scip") {
                     crate::evidence_store::audit(db, snapshot)?;
                     let report = json::parse(receipt.get("raw_json")?.str()?.as_bytes())?;
                     native.push(obj(&[

@@ -435,8 +435,11 @@ pub(super) fn command() -> Command {
         )
         .subcommand(clang())
         .subcommand(
-            leaf("rust", &["repo", "trusted-local"],
-                &["rev", "source-prefix", "rust-analyzer", "scip"])
+            leaf(
+                "rust",
+                &["repo", "trusted-local"],
+                &["rev", "source-prefix", "rust-analyzer", "scip"],
+            )
             .about("Run trusted-local rust-analyzer SCIP and validate Git-bound symbol references"),
         );
     let kernel = group(

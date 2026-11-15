@@ -51,9 +51,7 @@ impl Drop for Scratch {
 /// budget applies while the child is running, not merely after its exit.
 fn run_bounded(mut command: Command, label: &str, artifact: &Path) -> Result<()> {
     command.stdin(Stdio::null()).stderr(Stdio::null());
-    let mut process = command
-        .spawn()
-        .map_err(|e| format!("start {label}: {e}"))?;
+    let mut process = command.spawn().map_err(|e| format!("start {label}: {e}"))?;
     let deadline = Instant::now() + DEADLINE;
     loop {
         if artifact.metadata().is_ok_and(|m| m.len() > MAX_INDEX_BYTES) {
@@ -61,7 +59,10 @@ fn run_bounded(mut command: Command, label: &str, artifact: &Path) -> Result<()>
             let _ = process.wait();
             return refuse(format!("{label} output exceeds 32 MiB"));
         }
-        match process.try_wait().map_err(|e| format!("wait for {label}: {e}"))? {
+        match process
+            .try_wait()
+            .map_err(|e| format!("wait for {label}: {e}"))?
+        {
             Some(status) if status.success() => break,
             Some(status) => return refuse(format!("{label} failed ({status})")),
             None if Instant::now() >= deadline => {
@@ -96,7 +97,9 @@ pub fn scan(
     if trusted_local != "true" {
         return refuse("Rust SCIP execution requires --trusted-local true");
     }
-    let root = repo.canonicalize().map_err(|e| format!("resolve Git checkout: {e}"))?;
+    let root = repo
+        .canonicalize()
+        .map_err(|e| format!("resolve Git checkout: {e}"))?;
     git::verify_repo(&root)?;
     git::clean(&root)?;
     let commit = git::rev(&root, revision)?;
@@ -114,9 +117,10 @@ pub fn scan(
         |prefix| format!("{prefix}/Cargo.toml"),
     );
     let tracked = git::entries(&root, &commit)?;
-    if !tracked.iter().any(|entry| {
-        entry.path == manifest && entry.kind == "blob" && entry.mode == "100644"
-    }) {
+    if !tracked
+        .iter()
+        .any(|entry| entry.path == manifest && entry.kind == "blob" && entry.mode == "100644")
+    {
         return refuse("selected Rust workspace requires a tracked Cargo.toml");
     }
     let workspace = source_prefix.map_or_else(|| root.clone(), |prefix| root.join(prefix));

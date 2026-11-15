@@ -39,6 +39,10 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install upstream's pinned pnpm 9.0.0 in CI worker
         run: npm install --global --ignore-scripts --no-audit --no-fund pnpm@9.0.0
+      - name: Install independent compiler compatible with upstream TypeScript range
+        run: |
+          npm install --prefix "$RUNNER_TEMP/heldout-tsc" --no-save --ignore-scripts --no-audit --no-fund typescript@5.6.3
+          node "$RUNNER_TEMP/heldout-tsc/node_modules/typescript/bin/tsc" --version
       - name: Build Excession language-neutral replay CLI
         run: |
           rustup toolchain install 1.99.1 --profile minimal
@@ -54,6 +58,8 @@ jobs:
           fetch-depth: 1
       - name: Run held-out native edit and independent build/test acceptance
         shell: bash
+        env:
+          HELDOUT_TSC: ${{ runner.temp }}/heldout-tsc/node_modules/typescript/bin/tsc
         run: |
           bash tests/heldout_improve_upstream.sh \
             "$GITHUB_WORKSPACE" \

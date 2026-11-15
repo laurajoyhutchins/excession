@@ -174,9 +174,11 @@ pub(crate) fn plan_from_report(report: &Value) -> Result<Value> {
                 .and_then(|value| value.get("name").ok())
                 .and_then(|value| value.str().ok())
                 == Some("rust-analyzer")
-            && item.get("sources")?.array_ref()?.iter().all(|source| {
-                source.get("language").and_then(Value::str).ok() == Some("rust")
-            });
+            && item
+                .get("sources")?
+                .array_ref()?
+                .iter()
+                .all(|source| source.get("language").and_then(Value::str).ok() == Some("rust"));
         let operation = if rust_action {
             "RUST_AST_EXTRACTION_IF_SUPPORTED"
         } else {
@@ -464,16 +466,19 @@ mod tests {
         let candidate = obj(&[
             ("candidate_id", Value::string("scip-candidate")),
             ("kind", Value::string("reciprocal_symbol_references")),
-            ("sources", Value::array([
-                obj(&[
-                    ("path", Value::string("src/a.go")),
-                    ("language", Value::string("go")),
+            (
+                "sources",
+                Value::array([
+                    obj(&[
+                        ("path", Value::string("src/a.go")),
+                        ("language", Value::string("go")),
+                    ]),
+                    obj(&[
+                        ("path", Value::string("src/b.go")),
+                        ("language", Value::string("go")),
+                    ]),
                 ]),
-                obj(&[
-                    ("path", Value::string("src/b.go")),
-                    ("language", Value::string("go")),
-                ]),
-            ])),
+            ),
         ]);
         let scip = obj(&[
             ("schema", Value::string("excession.scip-refactor.v1")),
@@ -483,15 +488,23 @@ mod tests {
             ("indexer", obj(&[("name", Value::string("rust-analyzer"))])),
             ("coverage", obj(&[])),
             ("candidates", Value::array([candidate])),
-            ("triage", obj(&[
-                ("review_candidate_ids", Value::array([Value::string("scip-candidate")])),
-                ("likely_structural_module_candidate_ids", Value::array([])),
-            ])),
+            (
+                "triage",
+                obj(&[
+                    (
+                        "review_candidate_ids",
+                        Value::array([Value::string("scip-candidate")]),
+                    ),
+                    ("likely_structural_module_candidate_ids", Value::array([])),
+                ]),
+            ),
         ]);
         let plan = plan_from_report(&scip).unwrap();
         let chosen = &plan.get("candidates").unwrap().array_ref().unwrap()[0];
-        assert_eq!(chosen.get("edit_capability").unwrap().str().unwrap(),
-                   "NO_NATIVE_EDIT_PRODUCER");
+        assert_eq!(
+            chosen.get("edit_capability").unwrap().str().unwrap(),
+            "NO_NATIVE_EDIT_PRODUCER"
+        );
     }
 
     #[test]

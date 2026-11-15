@@ -8,6 +8,29 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+/// Report only the native Rust action which can actually interpret this
+/// source-bound producer/candidate pair. Other languages remain read-only.
+pub(super) fn edit_capability(report: &Value, candidate: &Value) -> Result<&'static str> {
+    let enabled = report.get("schema")?.str()? == "excession.scip-refactor.v1"
+        && candidate.get("kind")?.str()? == "reciprocal_symbol_references"
+        && report
+            .get("indexer")
+            .ok()
+            .and_then(|value| value.get("name").ok())
+            .and_then(|value| value.str().ok())
+            == Some("rust-analyzer")
+        && candidate
+            .get("sources")?
+            .array_ref()?
+            .iter()
+            .all(|source| source.get("language").and_then(Value::str).ok() == Some("rust"));
+    Ok(if enabled {
+        "RUST_AST_EXTRACTION_IF_SUPPORTED"
+    } else {
+        "NO_NATIVE_EDIT_PRODUCER"
+    })
+}
+
 /// A constrained native extraction trial. A preview is source-bound and
 /// read-only; application can only create a new detached worktree.
 pub struct Trial<'a> {

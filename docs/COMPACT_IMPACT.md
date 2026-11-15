@@ -46,6 +46,45 @@ discovered source is present in the emitted inventory**. If output is capped,
 the JSON report marks this false and records a `TRUNCATED` coverage gap.
 A legacy path truncation can occur while source enumeration remains complete.
 
+## Replaying a source witness
+
+The source inventory can be larger than the legacy `effects` path list. To
+explain a dependent **source**, select its Git-relative path instead of trying
+to find a legacy claim ID among the first 512 enumerated paths:
+
+```sh
+excession impact . --output /tmp/impact.json
+excession explain . --report /tmp/impact.json --source src/pkg/handler.py --json
+excession explain . --report /tmp/impact.json --source src/pkg/handler.py --audit
+excession explain . --report /tmp/impact.json --all-sources --json
+```
+
+Use `--source-commit COMMIT` when the same path has witnesses at the base
+and head revisions. Excession refuses an ambiguous selection instead of
+selecting an arbitrary revision. `--id` is still available for legacy
+individual-path claims.
+
+The source explanation follows the exact `next_hop` evidence at decreasing
+`distance_to_change` until reaching a changed source. Missing, duplicate,
+cyclic, or non-decreasing source witnesses are refused. The source claim ID
+identifies the **compact witness**, not one of the legacy effect claim IDs.
+Both source and legacy explanations re-run the full pinned analysis and compare
+the saved JSON report against the newly authenticated report. No unauthenticated
+cache or source relationship is admitted.
+
+`--all-sources` replays Git and configured analyzers **once** before
+reconstructing all output source witnesses. It fails explicitly beyond
+128 source certificates and returns `source_inventory_complete` separately
+from legacy alternative-path truncation. The batch is not advertised as
+complete if the original distinct-source inventory hit its 10,000-source cap.
+This avoids paying the full source-replay cost once **per** explanation,
+but does not eliminate the time required for one replay or the existing
+512-alternative-path report construction.
+
+These are only paths in Excession's *observed source graph*. A passing replay
+does not establish that the program behavior or tests are affected, nor
+authorize skipping any unlisted tests.
+
 ## Proof boundary
 
 **Soundness relative to the observed graph:** every emitted record links to a

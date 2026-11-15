@@ -557,7 +557,9 @@ pub fn human(report: &Value) -> Result<String> {
     let effects = report.get("effects")?.array_ref()?;
     let source_count = report.get("candidate_source_count")?.integer()?;
     let native_count = report.get("native_reference_count")?.integer()?;
-    let native_complete = report.get("native_reference_enumeration_complete")?.bool()?;
+    let native_complete = report
+        .get("native_reference_enumeration_complete")?
+        .bool()?;
     let native_candidates = report.get("native_reference_impacts")?.array_ref()?;
     let source_complete = report
         .get("candidate_source_enumeration_complete")?
@@ -578,7 +580,11 @@ pub fn human(report: &Value) -> Result<String> {
         ),
         format!(
             "Java compiler-observed sources: {native_count} (unattested, observed graph {}).",
-            if native_complete { "complete" } else { "truncated" }
+            if native_complete {
+                "complete"
+            } else {
+                "truncated"
+            }
         ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
@@ -607,7 +613,9 @@ pub fn human(report: &Value) -> Result<String> {
         }
     }
     if !native_candidates.is_empty() {
-        lines.push("Java compiler-observed source candidates (not runtime dependencies):".to_owned());
+        lines.push(
+            "Java compiler-observed source candidates (not runtime dependencies):".to_owned(),
+        );
         for witness in native_candidates.iter().take(PREVIEW_LIMIT) {
             lines.push(format!(
                 "  {:?} -> {:?} ({} hops; producer unattested)",

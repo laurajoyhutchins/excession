@@ -150,12 +150,21 @@ fn replay_local_refs(
     let mut expected_trees = BTreeMap::<String, String>::new();
     for row in git(
         repo,
-        &["log", "--all", "--no-show-signature", "--format=%H:%T", "HEAD"],
+        &[
+            "log",
+            "--all",
+            "--no-show-signature",
+            "--format=%H:%T",
+            "HEAD",
+        ],
     )?
     .lines()
     {
         let (commit, tree) = row.split_once(':').ok_or("malformed all-ref tree record")?;
-        if expected_trees.insert(commit.to_owned(), tree.to_owned()).is_some() {
+        if expected_trees
+            .insert(commit.to_owned(), tree.to_owned())
+            .is_some()
+        {
             return Err("duplicate all-ref tree record".into());
         }
     }
@@ -186,17 +195,26 @@ fn replay_local_refs(
         {
             return Err(format!("ref tip {tip} has incomplete ancestry"));
         }
-        let rows = report["commits"].as_array().ok_or("missing branch commits")?;
+        let rows = report["commits"]
+            .as_array()
+            .ok_or("missing branch commits")?;
         for row in rows {
             let oid = required(row, "commit")?;
-            let original = independent.get(oid).ok_or("ref plan includes an unreachable commit")?;
-            let parents = row["parents"].as_array().ok_or("missing ref parents")?
-                .iter().map(|p| p.as_str().ok_or("invalid ref parent").map(str::to_owned))
+            let original = independent
+                .get(oid)
+                .ok_or("ref plan includes an unreachable commit")?;
+            let parents = row["parents"]
+                .as_array()
+                .ok_or("missing ref parents")?
+                .iter()
+                .map(|p| p.as_str().ok_or("invalid ref parent").map(str::to_owned))
                 .collect::<Result<Vec<_>, _>>()?;
             if &parents != original
                 || expected_trees.get(oid).map(String::as_str) != Some(required(row, "tree")?)
             {
-                return Err(format!("ref plan differs from independent Git object at {oid}"));
+                return Err(format!(
+                    "ref plan differs from independent Git object at {oid}"
+                ));
             }
             seen.insert(oid.to_owned());
         }
@@ -227,7 +245,8 @@ fn replay_local_refs(
             "plans":manifests,
             "external_refs_complete":false,
             "rewrite_authorized":false
-        })).map_err(|e| e.to_string())?,
+        }))
+        .map_err(|e| e.to_string())?,
     )?;
     Ok((seen.len(), tips.len(), non_commit_refs))
 }

@@ -132,10 +132,7 @@ fn tracked_selection(root: &Path, commit: &str, output: &[u8]) -> Result<Vec<Str
             let Component::Normal(name) = component else {
                 return refuse("Jest selected a non-normalized relative test path");
             };
-            parts.push(
-                name.to_str()
-                    .ok_or("Jest selected a non-UTF-8 Git path")?,
-            );
+            parts.push(name.to_str().ok_or("Jest selected a non-UTF-8 Git path")?);
         }
         if parts.is_empty() {
             return refuse("Jest selected the repository root instead of a test");

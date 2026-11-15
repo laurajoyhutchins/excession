@@ -315,26 +315,52 @@ fn shared_native_rust_report_replays_real_scip_edges_and_refuses_forged_git_blob
     let output = Command::new(exe)
         .args(["analyze", "native", "--repo"])
         .arg(&f.repo)
-        .args(["--language", "rust", "--source", "src/a.rs", "--trusted-local", "true", "--rust-analyzer"])
+        .args([
+            "--language",
+            "rust",
+            "--source",
+            "src/a.rs",
+            "--trusted-local",
+            "true",
+            "--rust-analyzer",
+        ])
         .arg(&f.analyzer)
         .arg("--scip")
         .arg(&f.decoder)
         .arg("--json")
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let report = json::parse(&output.stdout).unwrap();
     let field = |key: &str| report.get(key).unwrap().str().unwrap().to_owned();
     assert_eq!(field("schema"), "excession.native-analysis.v1");
     assert_eq!(field("language"), "rust");
     assert_eq!(field("producer"), "rust-analyzer-scip");
-    assert_eq!(field("scope"), "SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED");
+    assert_eq!(
+        field("scope"),
+        "SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED"
+    );
     assert_eq!(field("execution"), "TRUSTED_LOCAL_NOT_ATTESTED");
     assert!(report.content_id_matches("report_id").unwrap());
     assert_eq!(report.get("inputs").unwrap().array_ref().unwrap().len(), 1);
     let nested = report.get("observation").unwrap();
-    assert_eq!(nested.get("schema").unwrap().str().unwrap(), "excession.scip-observations.v1");
-    assert_eq!(nested.get("observations").unwrap().array_ref().unwrap().len(), 1);
+    assert_eq!(
+        nested.get("schema").unwrap().str().unwrap(),
+        "excession.scip-observations.v1"
+    );
+    assert_eq!(
+        nested
+            .get("observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
 
     let path = f.temp.join("native-rust.json");
     fs::write(&path, report.canonical()).unwrap();
@@ -348,7 +374,11 @@ fn shared_native_rust_report_replays_real_scip_edges_and_refuses_forged_git_blob
         .arg(&db)
         .output()
         .unwrap();
-    assert!(import.status.success(), "{}", String::from_utf8_lossy(&import.stderr));
+    assert!(
+        import.status.success(),
+        "{}",
+        String::from_utf8_lossy(&import.stderr)
+    );
     let receipt = json::parse(&import.stdout).unwrap();
     let snapshot = receipt.get("snapshot_id").unwrap().str().unwrap();
     let audit = Command::new(exe)
@@ -358,28 +388,49 @@ fn shared_native_rust_report_replays_real_scip_edges_and_refuses_forged_git_blob
         .arg(&db)
         .output()
         .unwrap();
-    assert!(audit.status.success(), "{}", String::from_utf8_lossy(&audit.stderr));
+    assert!(
+        audit.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit.stderr)
+    );
     assert_eq!(
-        json::parse(&audit.stdout).unwrap().get("status").unwrap().str().unwrap(),
+        json::parse(&audit.stdout)
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
         "REPLAYED_GIT_BOUND_NATIVE_OBSERVATIONS"
     );
 
     // A self-consistent rehashed report must still fail replay if a producer
     // fabricates a different Git blob for a SCIP reference endpoint.
     let mut forged_native = nested.clone();
-    let mut edges = forged_native.get("observations").unwrap().array_ref().unwrap().to_vec();
+    let mut edges = forged_native
+        .get("observations")
+        .unwrap()
+        .array_ref()
+        .unwrap()
+        .to_vec();
     let mut edge = edges[0].clone();
     let mut to = edge.get("to").unwrap().clone();
-    to.entries_mut().unwrap().insert("blob".into(), excession::json::Value::string("0".repeat(40)));
+    to.entries_mut().unwrap().insert(
+        "blob".into(),
+        excession::json::Value::string("0".repeat(40)),
+    );
     edge.entries_mut().unwrap().insert("to".into(), to);
     edges[0] = edge;
-    forged_native.entries_mut().unwrap().insert(
-        "observations".into(), excession::json::Value::array(edges)
-    );
+    forged_native
+        .entries_mut()
+        .unwrap()
+        .insert("observations".into(), excession::json::Value::array(edges));
     forged_native.entries_mut().unwrap().remove("report_id");
     let forged_native = forged_native.stamp_id("report_id").unwrap();
     let mut forged = report.clone();
-    forged.entries_mut().unwrap().insert("observation".into(), forged_native);
+    forged
+        .entries_mut()
+        .unwrap()
+        .insert("observation".into(), forged_native);
     forged.entries_mut().unwrap().remove("report_id");
     let forged = forged.stamp_id("report_id").unwrap();
     fs::write(&path, forged.canonical()).unwrap();
@@ -401,8 +452,15 @@ fn shared_rust_cli_rejects_inapplicable_compiler_options_before_launch() {
     let f = Fixture::new();
     let output = Command::new(env!("CARGO_BIN_EXE_excession"))
         .args([
-            "analyze", "native", "--language", "rust", "--source", "src/a.rs",
-            "--compiler", "clang", "--trusted-local"
+            "analyze",
+            "native",
+            "--language",
+            "rust",
+            "--source",
+            "src/a.rs",
+            "--compiler",
+            "clang",
+            "--trusted-local",
         ])
         .arg("--repo")
         .arg(&f.repo)

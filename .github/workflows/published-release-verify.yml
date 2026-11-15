@@ -1,0 +1,86 @@
+name: Verify published release assets
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Immutable published Excession version tag"
+        required: true
+        default: "v0.2.0"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  published-artifacts:
+    name: Verify downloaded release against pinned source and oracles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Validate versioned release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.-]+)?$ ]]
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install pinned independent JavaScript import oracle
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Download published archives and manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir dist --pattern 'excession-v*' --pattern 'release-manifest.json'
+          test -s dist/release-manifest.json
+          cp dist/release-manifest.json "$RUNNER_TEMP/published-release-manifest.json"
+      - name: Validate exact tagged source, checksums and all six archive targets
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          python3 tools/release_manifest.py --dist dist \
+            --source-commit "$SOURCE_SHA" --tag "$RELEASE_TAG" \
+            --required-target x86_64-unknown-linux-gnu \
+            --required-target aarch64-unknown-linux-gnu \
+            --required-target x86_64-unknown-linux-musl \
+            --required-target aarch64-apple-darwin \
+            --required-target x86_64-apple-darwin \
+            --required-target x86_64-pc-windows-msvc
+          cmp "$RUNNER_TEMP/published-release-manifest.json" dist/release-manifest.json
+          cp "$RUNNER_TEMP/published-release-manifest.json" published-release-manifest.json
+      - name: Replay published Linux archive against pinned independent upstream sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/test_release_candidate.py --dist dist \
+            --manifest benchmarks/fixtures/real-repositories.json \
+            --out published-acceptance.json
+      - name: Retain published-release independent receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-release-verification
+          path: |
+            published-acceptance.json
+            published-release-manifest.json
+          if-no-files-found: warn
+          retention-days: 30

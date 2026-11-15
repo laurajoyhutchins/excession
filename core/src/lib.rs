@@ -47,6 +47,7 @@ pub mod impact;
 pub mod impact_query;
 pub mod improve;
 pub mod improve_generic;
+pub mod improve_edits;
 mod incremental_python;
 pub mod index;
 mod indexed_tree;

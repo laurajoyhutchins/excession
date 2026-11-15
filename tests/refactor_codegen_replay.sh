@@ -12,6 +12,31 @@ rustup run 1.99.1 rust-analyzer scip "$OLD/core" --output "$TMP/index.scip"
   --index "$TMP/index.scip.json" --source-prefix core > "$TMP/scip-report.json"
 ID="$(jq -r 'first(.candidates[] | select(.kind == "reciprocal_symbol_references") | select(any(.sources[]; .path == "core/src/semantic.rs")) | .candidate_id) // empty' "$TMP/scip-report.json")"
 test -n "$ID"
+# Exercise the actual improvement planner and a bounded native extraction.
+# The trial is deliberately still APPLIED_UNVERIFIED; compilation comes later.
+"$BIN" improve plan --repo "$OLD" --rev "$OLD_REV" \
+  --index "$TMP/index.scip.json" --source-prefix core > "$TMP/improve-plan.json"
+jq -e --arg id "$ID" '
+  .schema == "excession.improvement-plan.v1" and
+  (.candidates | any(.candidate_id == $id)) and
+  .ready_to_merge == false and .automatic_deletion_authorized == false
+' "$TMP/improve-plan.json"
+"$BIN" improve trial --repo "$OLD" --rev "$OLD_REV" \
+  --index "$TMP/index.scip.json" --report "$TMP/scip-report.json" \
+  --plan "$TMP/improve-plan.json" --candidate "$ID" \
+  --symbol module_name_with_import_base --trusted-local true \
+  --source-prefix core --ast-grep "$AST_GREP" \
+  --output "$TMP/improve-trial-worktree" > "$TMP/improve-trial.json"
+jq -e '
+  .schema == "excession.improvement-trial.v1" and
+  .status == "APPLIED_UNVERIFIED" and
+  .symbol == "module_name_with_import_base" and
+  .native_result.plan_id != null and
+  .ready_to_merge == false and
+  .automatic_deletion_authorized == false
+' "$TMP/improve-trial.json"
+test -e "$TMP/improve-trial-worktree/core/src/semantic_module_name_with_import_base_extracted.rs"
+test -z "$(git -C "$OLD" status --porcelain --untracked-files=all)"
 "$BIN" agent context --repo "$OLD" --rev "$OLD_REV" \
   --focus core/src/semantic.rs --task "Extract a shared Rust module" \
   --roots core/src --limit 8 > "$TMP/agent-context.json"
@@ -83,6 +108,28 @@ jq -n --arg commit "$CANDIDATE" --arg tree "$TREE" \
 "$BIN" agent verify --repo "$OUT" --base "$OLD_REV" \
   --candidate "$CANDIDATE" --roots core/src --limit 16 \
   --receipts "$TMP/agent-receipts.json" > "$TMP/agent-verification.json"
+# Compare fresh native source evidence after the independently compiled
+# and tested two-function extraction, without accepting relocation as debt removal.
+"$BIN" improve evaluate --base-repo "$OLD" --candidate-repo "$OUT" \
+  --base "$OLD_REV" --candidate "$CANDIDATE" \
+  --base-index "$TMP/index.scip.json" \
+  --candidate-index "$TMP/generated.scip.json" \
+  --plan "$TMP/improve-plan.json" --source-prefix core \
+  > "$TMP/improve-evaluation.json"
+jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" '
+  .schema == "excession.improvement-evaluation.v1" and
+  .base_commit == $base and .candidate_commit == $head and
+  .status == "INCONCLUSIVE_EVIDENCE_CHANGE" and
+  .reciprocal_pairs_before > .reciprocal_pairs_after and
+  .coverage_regressed == true and
+  .ready_to_merge == false and .automatic_deletion_authorized == false and
+  (.introduced_source_paths | index("core/src/generated_module_name.rs") != null) and
+  .source_changes == 3 and
+  (.obligations | index("PUBLIC_API_AND_SEMANTIC_COMPATIBILITY_UNVERIFIED") != null)
+' "$TMP/improve-evaluation.json"
+jq -c '{status, reciprocal_pairs_before, reciprocal_pairs_after, coverage_regressed, introduced_source_paths}' \
+  "$TMP/improve-evaluation.json"
+
 jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" --arg tree "$TREE" \
   '.schema == "excession.agent-verification.v1" and .base_commit == $base
    and .candidate_commit == $head and .candidate_tree == $tree

@@ -265,6 +265,16 @@ by an existing SCIP indexer instead of implementing another language parser.
 See [refactoring](docs/REFACTORING.md) and
 [self-analysis](docs/SELF_ANALYSIS.md).
 
+### Measure a refactor before trusting it
+
+`excession improve plan` and `excession improve evaluate` share one
+source-bound evidence contract across SCIP and indexed Python/JavaScript
+observations. They compare normalized source locations, Git changes, and
+producer-specific coverage without inferring behavioral equivalence. Rust
+extraction is an optional native edit adapter, not an assumption baked into
+the improvement evaluator. No improvement result permits automatic deletion
+or merge. See [the improvement loop](docs/IMPROVEMENT_LOOP.md).
+
 ### Inspect scanner evidence
 
 Given an existing CodeQL SARIF report:

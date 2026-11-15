@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Held-out third-party acceptance at the revision immediately before the
+# upstream author's independently recorded unused-import cleanup.
+# No modification to the upstream repository, and no synthetic source injected.
+set -euo pipefail
+
+if [[ "$#" -ne 4 ]]; then
+  echo "usage: heldout_improve_upstream.sh EXCESSION_ROOT BASE_REPO CANDIDATE_WORKTREE RECEIPTS" >&2
+  exit 2
+fi
+
+EXCESSION_ROOT="$1"
+BASE_REPO="$2"
+CANDIDATE="$3"
+RECEIPTS="$4"
+SOURCE="packages/reactivity/__tests__/computed.spec.ts"
+PIN="d16a2138a33b106b9e1499bbb9e1c67790370c97"
+OWNER="vuejs/core"
+UPSTREAM_FIX="492a720fd00750d6d4eef6db1cda5d3c911dafe0"
+mkdir -p "$RECEIPTS"
+
+if [[ "$(git -C "$BASE_REPO" rev-parse HEAD)" != "$PIN" ]]; then
+  echo "third-party repository revision differs from pinned upstream base" >&2
+  exit 1
+fi
+if [[ -n "$(git -C "$BASE_REPO" status --porcelain --untracked-files=all)" ]]; then
+  echo "third-party source checkout must be clean before native analysis" >&2
+  exit 1
+fi
+
+PLAN="$RECEIPTS/plan.json"
+EDITS="$RECEIPTS/edits.json"
+EXCESSION="$EXCESSION_ROOT/core/target/debug/excession"
+
+# Native TypeScript language service sees the exact authenticated Git blob,
+# independently of the developer's uncommitted changes or workspace modules.
+node "$EXCESSION_ROOT/core/adapters/improve_typescript.cjs" \
+  --repo "$BASE_REPO" --rev "$PIN" --source "$SOURCE" \
+  --symbol ReactiveEffect --plan-out "$PLAN" --edits-out "$EDITS" \
+  > "$RECEIPTS/native-proposal.json"
+
+jq -e --arg pin "$PIN" --arg path "$SOURCE" '
+  .schema == "excession.improvement-plan.v1" and
+  .source_commit == $pin and
+  .producer == "typescript-native" and
+  .ready_to_merge == false and
+  (.candidate_count == 1) and
+  (.candidates[0].finding.locations[0].path == $path) and
+  (.candidates[0].finding.locations[0].symbol == "ReactiveEffect")
+' "$PLAN" > /dev/null
+jq -e --arg pin "$PIN" --arg path "$SOURCE" '
+  .schema == "excession.improvement-native-edits.v1" and
+  .source_commit == $pin and
+  .native_producer == "typescript-language-service@5.8.3" and
+  (.edits | length) >= 1 and
+  all(.edits[]; .path == $path and .replacement == "" and .end_byte > .start_byte)
+' "$EDITS" > /dev/null
+
+"$EXCESSION" improve replay --repo "$BASE_REPO" --rev "$PIN" \
+  --plan "$PLAN" --edits "$EDITS" > "$RECEIPTS/preview.json"
+jq -e '
+  .status == "UNVERIFIED_EDIT_PREVIEW" and
+  .ready_to_merge == false and
+  .automatic_deletion_authorized == false and
+  (.obligations | index("NATIVE_PRODUCER_AUTHENTICITY_UNVERIFIED") != null)
+' "$RECEIPTS/preview.json" > /dev/null
+
+"$EXCESSION" improve replay --repo "$BASE_REPO" --rev "$PIN" \
+  --plan "$PLAN" --edits "$EDITS" --output "$CANDIDATE" \
+  > "$RECEIPTS/applied.json"
+jq -e '
+  .status == "APPLIED_UNVERIFIED" and
+  .source_changes == 1 and
+  .ready_to_merge == false and
+  .automatic_deletion_authorized == false
+' "$RECEIPTS/applied.json" > /dev/null
+
+git -C "$CANDIDATE" diff -- "$SOURCE" > "$RECEIPTS/change.diff"
+if [[ "$(git -C "$CANDIDATE" diff --name-only)" != "$SOURCE" ]]; then
+  echo "native edit unexpectedly touched additional Git source files" >&2
+  exit 1
+fi
+
+node - "$BASE_REPO/$SOURCE" "$CANDIDATE/$SOURCE" "$RECEIPTS/measurement.json" "$PIN" "$OWNER" "$UPSTREAM_FIX" <<'NODE'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const [oldPath, newPath, reportPath, pin, owner, fix] = process.argv.slice(2);
+const oldSource = fs.readFileSync(oldPath, 'utf8');
+const newSource = fs.readFileSync(newPath, 'utf8');
+assert.equal((oldSource.match(/\bReactiveEffect\b/g) || []).length, 1);
+assert.equal((newSource.match(/\bReactiveEffect\b/g) || []).length, 0);
+for (const name of ['ITERATE_KEY', 'TrackOpTypes', 'TriggerOpTypes', 'computed', 'reactive', 'WritableComputedRef']) {
+  assert.ok(newSource.includes(name), `preserved binding disappeared: ${name}`);
+}
+assert.ok(newSource.includes("from '../src'"));
+const before = Buffer.byteLength(oldSource);
+const after = Buffer.byteLength(newSource);
+assert.ok(after < before, 'native edit must delete actual bytes');
+const receipt = {
+  schema: 'excession.heldout-source-reduction.v1',
+  upstream_repository: owner,
+  source_commit: pin,
+  independently_authored_cleanup_commit: fix,
+  before_bytes: before,
+  after_bytes: after,
+  removed_bytes: before - after,
+  deleted_import_binding: 'ReactiveEffect',
+  new_source_files: 0,
+  changed_files: 1,
+  code_compiles_and_tests: 'NOT_YET_RUN',
+  ready_to_merge: false,
+};
+fs.writeFileSync(reportPath, JSON.stringify(receipt, null, 2) + '\n');
+NODE
+
+# Two independent installations using the pinned upstream lockfile, so
+# workspace links in one checkout cannot silently resolve to the other.
+# Ignore lifecycle scripts. No untrusted package hooks run on this worker.
+pnpm --dir "$BASE_REPO" install --frozen-lockfile --ignore-scripts \
+  > "$RECEIPTS/baseline-dependencies.log" 2>&1
+pnpm --dir "$CANDIDATE" install --frozen-lockfile --ignore-scripts \
+  > "$RECEIPTS/candidate-dependencies.log" 2>&1
+
+# Vue 3.4.14's original strict TypeScript config intentionally fails
+# on precisely the existing TS6133 unused import we are deleting. Record
+# and compare this diagnostic rather than hiding or calling it a passing
+# baseline. With only noUnusedLocals suppressed, baseline must typecheck;
+# the edited candidate must pass the ORIGINAL strict project config.
+(
+  cd "$BASE_REPO"
+  pnpm exec tsc --noEmit --project tsconfig.json --noUnusedLocals false
+) > "$RECEIPTS/baseline-build.log" 2>&1
+(
+  cd "$BASE_REPO"
+  if pnpm exec tsc --noEmit --project tsconfig.json > "$RECEIPTS/baseline-strict-diagnostic.log" 2>&1; then
+    echo "Expected original Vue unused-import TS6133 diagnostic was missing" >&2
+    exit 1
+  fi
+)
+EXPECTED="packages/reactivity/__tests__/computed.spec.ts(5,3): error TS6133: 'ReactiveEffect' is declared but its value is never read."
+if [[ "$(wc -l < "$RECEIPTS/baseline-strict-diagnostic.log")" -ne 1 ]] ||
+    ! grep -Fxq "$EXPECTED" "$RECEIPTS/baseline-strict-diagnostic.log"; then
+  echo "Baseline had unexpected TypeScript diagnostics; refusing to claim isolated fix" >&2
+  cat "$RECEIPTS/baseline-strict-diagnostic.log" >&2
+  exit 1
+fi
+(
+  cd "$CANDIDATE"
+  pnpm exec tsc --noEmit --project tsconfig.json
+) > "$RECEIPTS/candidate-build.log" 2>&1
+(
+  cd "$BASE_REPO"
+  pnpm exec vitest run --config vitest.unit.config.ts \
+    packages/reactivity/__tests__/computed.spec.ts --maxWorkers=2 --minWorkers=1
+) > "$RECEIPTS/baseline-test.log" 2>&1
+(
+  cd "$CANDIDATE"
+  pnpm exec vitest run --config vitest.unit.config.ts \
+    packages/reactivity/__tests__/computed.spec.ts --maxWorkers=2 --minWorkers=1
+) > "$RECEIPTS/candidate-test.log" 2>&1
+
+if [[ "$(git -C "$CANDIDATE" diff --name-only)" != "$SOURCE" ]]; then
+  echo "third-party candidate unexpectedly changed tracked source during tests" >&2
+  exit 1
+fi
+if [[ -n "$(git -C "$BASE_REPO" diff --name-only)" ]]; then
+  echo "third-party baseline unexpectedly changed tracked source during tests" >&2
+  exit 1
+fi
+node - "$RECEIPTS/measurement.json" <<'NODE'
+const fs = require('node:fs');
+const path = process.argv[2];
+const result = JSON.parse(fs.readFileSync(path, 'utf8'));
+result.code_compiles_and_tests = 'BASELINE_ONLY_TS6133_CANDIDATE_STRICT_TYPECHECK_PASSED_BOTH_COMPUTED_TESTS';
+fs.writeFileSync(path, JSON.stringify(result, null, 2) + '\n');
+console.log(JSON.stringify(result));
+NODE
+echo "Third-party source reduction OBSERVED_UNVERIFIED; no upstream change or auto-merge."

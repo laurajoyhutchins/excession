@@ -795,6 +795,38 @@ pub(super) fn command() -> Command {
         ).about("Read-only Git reconstruction and trusted-local C compiler feedback").hide(true))
         .subcommand(inspect)
         .subcommand(refactor)
+        .subcommand(group(
+            "improve",
+            vec![
+                leaf(
+                    "plan",
+                    &["rev"],
+                    &["producer", "repo", "index", "source-prefix", "db", "name"],
+                ),
+                leaf(
+                    "replay",
+                    &["repo", "rev", "plan", "edits"],
+                    &["output"],
+                ).about("Preview or replay pinned language-native edits in a detached worktree"),
+                leaf(
+                    "trial",
+                    &[
+                        "repo", "rev", "index", "report", "plan",
+                        "candidate", "trusted-local",
+                    ],
+                    &["producer", "source-prefix", "ast-grep", "symbol", "output"],
+                ),
+                leaf(
+                    "evaluate",
+                    &["base", "candidate", "plan"],
+                    &[
+                        "producer", "base-repo", "candidate-repo",
+                        "base-index", "candidate-index", "source-prefix",
+                        "repo", "db", "name",
+                    ],
+                ),
+            ],
+        ).about("Compare Git-bound improvement hypotheses across supported language producers"))
         .subcommand(benchmark)
         .subcommand(configured_graph)
         .subcommand(kernel)

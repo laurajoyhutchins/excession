@@ -1,0 +1,73 @@
+name: Held-out TypeScript improvement acceptance
+
+# Full native toolchain and independent application tests, not commit-fast CI.
+# Use a pinned public third-party Git source, authored by someone else.
+on:
+  pull_request:
+    paths:
+      - 'core/adapters/improve_typescript.cjs'
+      - 'core/src/improve_edits.rs'
+      - 'tests/improve_typescript.test.cjs'
+      - 'tests/heldout_improve_upstream.sh'
+      - '.github/workflows/heldout-improve.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  heldout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      HELDOUT_SHA: d16a2138a33b106b9e1499bbb9e1c67790370c97
+      HELDOUT_REPOSITORY: vuejs/core
+      npm_config_ignore_scripts: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up pinned Node and Rust
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Install pinned Excession producer dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Vue 3.4.14's pinned pnpm 8.14.1 in CI worker
+        run: npm install --global --ignore-scripts --no-audit --no-fund pnpm@8.14.1
+      - name: Build Excession language-neutral replay CLI
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Checkout independently authored public upstream repository
+        uses: actions/checkout@v4
+        with:
+          repository: vuejs/core
+          ref: d16a2138a33b106b9e1499bbb9e1c67790370c97
+          path: heldout/upstream
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Run held-out native edit and independent build/test acceptance
+        shell: bash
+        run: |
+          bash tests/heldout_improve_upstream.sh \
+            "$GITHUB_WORKSPACE" \
+            "$GITHUB_WORKSPACE/heldout/upstream" \
+            "$RUNNER_TEMP/excession-heldout-candidate" \
+            "$RUNNER_TEMP/excession-heldout-evidence"
+      - name: Retain real held-out acceptance receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-heldout-improve
+          path: |
+            ${{ runner.temp }}/excession-heldout-evidence/*.json
+            ${{ runner.temp }}/excession-heldout-evidence/*.log
+            ${{ runner.temp }}/excession-heldout-evidence/*.diff
+            ${{ runner.temp }}/excession-heldout-evidence/*.txt
+          if-no-files-found: warn

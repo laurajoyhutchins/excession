@@ -1,6 +1,6 @@
 //! Controlled Git and SCIP inputs for native refactor suggestions.
 //! These are hypotheses, never evidence of independently observed behavior.
-use excession::json::{self, Value};
+use excession::json::{self, Value, obj};
 use excession::sqlite::Db;
 use std::fs;
 use std::path::PathBuf;
@@ -81,6 +81,18 @@ impl Fixture {
                 "from pkg import a\n\ndef shared(value):\n    return value + 1\n",
             )
             .unwrap();
+        } else if mode == "javascript" {
+            fs::create_dir_all(repo.join("web")).unwrap();
+            fs::write(
+                repo.join("web/a.js"),
+                "import './b.js';\nexport function shared(value) { return value + 1; }\n",
+            )
+            .unwrap();
+            fs::write(
+                repo.join("web/b.js"),
+                "import './a.js';\nexport function shared(value) { return value + 1; }\n",
+            )
+            .unwrap();
         } else {
             fs::write(repo.join("lib.rs"), "pub fn emit() {}\n").unwrap();
             fs::create_dir_all(repo.join("core/src")).unwrap();
@@ -107,7 +119,7 @@ impl Fixture {
             .trim()
             .to_owned();
         let db = tmp.join("index.sqlite");
-        if mode == "python" {
+        if mode == "python" || mode == "javascript" {
             ok(cli(&[
                 "index",
                 "--repo",
@@ -119,7 +131,7 @@ impl Fixture {
                 "--rev",
                 &commit,
                 "--roots",
-                "pkg",
+                if mode == "python" { "pkg" } else { "web" },
             ]));
         }
         let index = tmp.join("scip.json");
@@ -205,6 +217,366 @@ fn scip_index() -> Value {
         ]
     }"#).unwrap()
 }
+#[test]
+fn generic_native_edit_replay_is_bounded_and_unverified_for_python_and_javascript() {
+    for language in ["python", "javascript"] {
+        let f = Fixture::new(language);
+        let plan = data(&[
+            "improve",
+            "plan",
+            "--producer",
+            "indexed",
+            "--db",
+            f.db.to_str().unwrap(),
+            "--name",
+            "fixture",
+            "--rev",
+            &f.commit,
+        ]);
+        let candidate = items(&plan, "candidates")
+            .iter()
+            .find(|item| {
+                items(item.get("finding").unwrap(), "locations")
+                    .iter()
+                    .any(|loc| {
+                        let path = str_at(loc, "path");
+                        fs::read_to_string(f.repo.join(path))
+                            .unwrap()
+                            .contains("shared")
+                    })
+            })
+            .unwrap();
+        let candidate_id = str_at(candidate, "candidate_id");
+        let path = items(candidate.get("finding").unwrap(), "locations")
+            .iter()
+            .map(|loc| str_at(loc, "path"))
+            .find(|path| {
+                fs::read_to_string(f.repo.join(path))
+                    .unwrap()
+                    .contains("shared")
+            })
+            .unwrap();
+        let original = fs::read_to_string(f.repo.join(path)).unwrap();
+        let start = original.find("shared").unwrap();
+        let blob_name = format!("{}:{path}", f.commit);
+        let blob = String::from_utf8(ok(run("git", &["-C", f.repo(), "rev-parse", &blob_name])))
+            .unwrap()
+            .trim()
+            .to_owned();
+        let edit = obj(&[
+            ("path", Value::string(path)),
+            ("original_blob", Value::string(&blob)),
+            ("start_byte", Value::number(start)),
+            ("end_byte", Value::number(start + 6)),
+            ("replacement", Value::string("shared_v2")),
+        ]);
+        let native = obj(&[
+            (
+                "schema",
+                Value::string("excession.improvement-native-edits.v1"),
+            ),
+            (
+                "native_producer",
+                Value::string("untrusted-controlled-fixture"),
+            ),
+            ("source_commit", plan.get("source_commit").unwrap().clone()),
+            ("source_tree", plan.get("source_tree").unwrap().clone()),
+            ("improvement_plan_id", plan.get("plan_id").unwrap().clone()),
+            ("candidate_id", Value::string(candidate_id)),
+            ("edits", Value::array([edit])),
+        ])
+        .stamp_id("edit_plan_id")
+        .unwrap();
+        let plan_path = f.tmp.join("improve-plan.json");
+        let edit_path = f.tmp.join("native-edits.json");
+        fs::write(&plan_path, plan.canonical()).unwrap();
+        fs::write(&edit_path, native.canonical()).unwrap();
+        let output = f.tmp.join("candidate");
+        let arguments = [
+            "improve",
+            "replay",
+            "--repo",
+            f.repo(),
+            "--rev",
+            &f.commit,
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--edits",
+            edit_path.to_str().unwrap(),
+        ];
+        let preview = data(&arguments);
+        assert_eq!(str_at(&preview, "status"), "UNVERIFIED_EDIT_PREVIEW");
+        assert_eq!(preview.get("source_changes").unwrap().integer().unwrap(), 1);
+        assert!(!preview.get("ready_to_merge").unwrap().bool().unwrap());
+        assert!(!output.exists());
+        let applied = data(&[
+            "improve",
+            "replay",
+            "--repo",
+            f.repo(),
+            "--rev",
+            &f.commit,
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--edits",
+            edit_path.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+        ]);
+        assert_eq!(str_at(&applied, "status"), "APPLIED_UNVERIFIED");
+        assert_eq!(
+            applied.get("edit_plan_id").unwrap(),
+            preview.get("edit_plan_id").unwrap()
+        );
+        assert_eq!(fs::read_to_string(f.repo.join(path)).unwrap(), original);
+        assert!(
+            fs::read_to_string(output.join(path))
+                .unwrap()
+                .contains("shared_v2")
+        );
+        assert_eq!(
+            String::from_utf8(ok(run("git", &["-C", f.repo(), "rev-parse", "HEAD",])))
+                .unwrap()
+                .trim(),
+            f.commit
+        );
+        assert!(
+            !applied
+                .get("automatic_deletion_authorized")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
+        assert!(items(&applied, "obligations").iter().any(|obligation| {
+            obligation.str().unwrap() == "NATIVE_PRODUCER_AUTHENTICITY_UNVERIFIED"
+        }));
+        // Applying twice must not reuse an existing destination.
+        denied(cli(&[
+            "improve",
+            "replay",
+            "--repo",
+            f.repo(),
+            "--rev",
+            &f.commit,
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--edits",
+            edit_path.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+        ]));
+        // An altered blob hash remains forbidden even with a valid new
+        // unsigned content digest.
+        let mut tampered = native.clone();
+        let mut forged = tampered.get("edits").unwrap().array_ref().unwrap()[0].clone();
+        forged.entries_mut().unwrap().insert(
+            "original_blob".into(),
+            Value::string("0000000000000000000000000000000000000000"),
+        );
+        tampered
+            .entries_mut()
+            .unwrap()
+            .insert("edits".into(), Value::array([forged]));
+        tampered.entries_mut().unwrap().remove("edit_plan_id");
+        fs::write(
+            &edit_path,
+            tampered.stamp_id("edit_plan_id").unwrap().canonical(),
+        )
+        .unwrap();
+        denied(cli(&arguments));
+    }
+}
+
+#[test]
+fn indexed_javascript_improvement_preserves_language_specific_observations() {
+    let f = Fixture::new("javascript");
+    let native = f.suggest();
+    let candidates = items(&native, "candidates");
+    assert!(!candidates.is_empty(), "expected real JS parser findings");
+    assert!(candidates.iter().any(|item| {
+        str_at(item, "kind") == "dependency_cycle"
+            || str_at(item, "kind") == "duplicate_body_fingerprint"
+    }));
+
+    let plan = data(&[
+        "improve",
+        "plan",
+        "--producer",
+        "indexed",
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--rev",
+        &f.commit,
+    ]);
+    assert_eq!(str_at(&plan, "producer"), "indexed");
+    assert_eq!(
+        plan.get("candidate_count").unwrap().integer().unwrap(),
+        candidates.len() as i64
+    );
+    assert!(
+        items(&plan, "candidates")
+            .iter()
+            .all(|candidate| { str_at(candidate, "edit_capability") == "NO_NATIVE_EDIT_PRODUCER" })
+    );
+    assert!(
+        !plan
+            .get("automatic_deletion_authorized")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
+}
+
+#[test]
+fn indexed_python_improvement_uses_the_same_evidence_contract_as_scip() {
+    let f = Fixture::new("python");
+    let plan = data(&[
+        "improve",
+        "plan",
+        "--producer",
+        "indexed",
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--rev",
+        &f.commit,
+    ]);
+    assert_eq!(str_at(&plan, "producer"), "indexed");
+    assert_eq!(plan.get("candidate_count").unwrap().integer().unwrap(), 2);
+    assert!(
+        items(&plan, "candidates")
+            .iter()
+            .all(|candidate| { str_at(candidate, "edit_capability") == "NO_NATIVE_EDIT_PRODUCER" })
+    );
+    assert!(!plan.get("ready_to_merge").unwrap().bool().unwrap());
+
+    let saved = f.tmp.join("improvement.json");
+    fs::write(&saved, plan.canonical()).unwrap();
+    // Remove one import edge but deliberately retain a duplicate function:
+    // fewer source-bound findings is an observation, not proof of equivalence.
+    fs::write(
+        f.repo.join("pkg/b.py"),
+        "def shared(value):\n    return value + 1\n",
+    )
+    .unwrap();
+    ok(run("git", &["-C", f.repo(), "add", "pkg/b.py"]));
+    ok(run(
+        "git",
+        &[
+            "-C",
+            f.repo(),
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "remove one static import candidate",
+        ],
+    ));
+    let head = String::from_utf8(ok(run("git", &["-C", f.repo(), "rev-parse", "HEAD"])))
+        .unwrap()
+        .trim()
+        .to_owned();
+    ok(cli(&[
+        "index",
+        "--repo",
+        f.repo(),
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--rev",
+        &head,
+        "--roots",
+        "pkg",
+    ]));
+
+    let args = [
+        "improve",
+        "evaluate",
+        "--producer",
+        "indexed",
+        "--repo",
+        f.repo(),
+        "--db",
+        f.db.to_str().unwrap(),
+        "--name",
+        "fixture",
+        "--base",
+        &f.commit,
+        "--candidate",
+        &head,
+        "--plan",
+        saved.to_str().unwrap(),
+    ];
+    let evaluated = data(&args);
+    assert_eq!(str_at(&evaluated, "producer"), "indexed");
+    assert_eq!(
+        str_at(&evaluated, "status"),
+        "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED"
+    );
+    assert_eq!(
+        evaluated
+            .get("observed_findings_before")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        evaluated
+            .get("observed_findings_after")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        evaluated.get("source_changes").unwrap().integer().unwrap(),
+        1
+    );
+    assert!(!evaluated.get("ready_to_merge").unwrap().bool().unwrap());
+    assert!(
+        !evaluated
+            .get("automatic_deletion_authorized")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
+
+    let mut invalid = plan.clone();
+    invalid
+        .entries_mut()
+        .unwrap()
+        .insert("candidate_count".into(), Value::number(0));
+    fs::write(&saved, invalid.canonical()).unwrap();
+    denied(cli(&args));
+    denied(cli(&[
+        "improve",
+        "trial",
+        "--producer",
+        "indexed",
+        "--repo",
+        f.repo(),
+        "--rev",
+        &f.commit,
+        "--index",
+        "unused",
+        "--report",
+        "unused",
+        "--plan",
+        saved.to_str().unwrap(),
+        "--candidate",
+        "untrusted",
+        "--trusted-local",
+        "true",
+    ]));
+}
+
 #[test]
 fn source_bound_refactor_cycle_and_duplicate_body_replay() {
     let f = Fixture::new("python");

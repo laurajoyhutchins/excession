@@ -56,6 +56,10 @@ jobs:
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --doc
       - name: Build CLI for mandatory impact acceptance
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Native TypeScript import deletion through language-neutral Excession replay
+        env:
+          EXCESSION_BIN: ${{ github.workspace }}/core/target/debug/excession
+        run: node --test tests/improve_typescript.test.cjs
       - name: Dogfood read-only Git history planning and target-tree verification
         shell: bash
         run: |

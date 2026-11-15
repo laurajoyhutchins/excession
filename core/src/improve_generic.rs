@@ -166,9 +166,21 @@ pub(crate) fn plan_from_report(report: &Value) -> Result<Value> {
         if !found_locations.insert(finding.clone()) {
             return refuse("duplicate producer candidate locations");
         }
-        let operation = match (provider, item.get("kind")?.str()?) {
-            ("scip", "reciprocal_symbol_references") => "RUST_AST_EXTRACTION_IF_SUPPORTED",
-            _ => "NO_NATIVE_EDIT_PRODUCER",
+        let rust_action = provider == "scip"
+            && item.get("kind")?.str()? == "reciprocal_symbol_references"
+            && report
+                .get("indexer")
+                .ok()
+                .and_then(|value| value.get("name").ok())
+                .and_then(|value| value.str().ok())
+                == Some("rust-analyzer")
+            && item.get("sources")?.array_ref()?.iter().all(|source| {
+                source.get("language").and_then(Value::str).ok() == Some("rust")
+            });
+        let operation = if rust_action {
+            "RUST_AST_EXTRACTION_IF_SUPPORTED"
+        } else {
+            "NO_NATIVE_EDIT_PRODUCER"
         };
         candidates.push(obj(&[
             ("candidate_id", Value::string(id)),
@@ -445,6 +457,41 @@ mod tests {
                 ])]),
             ),
         ])
+    }
+
+    #[test]
+    fn non_rust_scip_candidates_never_advertise_rust_edits() {
+        let candidate = obj(&[
+            ("candidate_id", Value::string("scip-candidate")),
+            ("kind", Value::string("reciprocal_symbol_references")),
+            ("sources", Value::array([
+                obj(&[
+                    ("path", Value::string("src/a.go")),
+                    ("language", Value::string("go")),
+                ]),
+                obj(&[
+                    ("path", Value::string("src/b.go")),
+                    ("language", Value::string("go")),
+                ]),
+            ])),
+        ]);
+        let scip = obj(&[
+            ("schema", Value::string("excession.scip-refactor.v1")),
+            ("source_commit", Value::string("head")),
+            ("source_tree", Value::string("tree")),
+            ("report_id", Value::string("report")),
+            ("indexer", obj(&[("name", Value::string("rust-analyzer"))])),
+            ("coverage", obj(&[])),
+            ("candidates", Value::array([candidate])),
+            ("triage", obj(&[
+                ("review_candidate_ids", Value::array([Value::string("scip-candidate")])),
+                ("likely_structural_module_candidate_ids", Value::array([])),
+            ])),
+        ]);
+        let plan = plan_from_report(&scip).unwrap();
+        let chosen = &plan.get("candidates").unwrap().array_ref().unwrap()[0];
+        assert_eq!(chosen.get("edit_capability").unwrap().str().unwrap(),
+                   "NO_NATIVE_EDIT_PRODUCER");
     }
 
     #[test]

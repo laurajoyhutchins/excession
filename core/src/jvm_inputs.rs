@@ -14,7 +14,7 @@ const MAX_MANIFEST_BYTES: u64 = 128 * 1024;
 
 pub struct ResolvedInputs {
     pub document: Value,
-    pub classpath: String,
+    pub classpath_paths: Vec<PathBuf>,
     pub release: Option<String>,
 }
 
@@ -131,11 +131,34 @@ pub fn verify(
         }
         paths.push(jar(value, item.get("sha256")?.str()?, size as u64)?);
     }
-    let classpath = std::env::join_paths(&paths)
-        .map_err(|e| format!("JVM classpath path cannot be represented: {e}"))?
-        .to_string_lossy().into_owned();
-    Ok(ResolvedInputs { document: document.clone(), classpath, release })
+    Ok(ResolvedInputs { document: document.clone(), classpath_paths: paths, release })
 }
+
+impl ResolvedInputs {
+    /// Snapshot immutable JAR bytes into private compiler scratch space.
+    /// The JDK never reads the mutable Maven/Gradle cache directly.
+    pub fn stage_classpath(&self, scratch: &Path) -> Result<String> {
+        let destination = scratch.join("jars");
+        fs::create_dir(&destination).map_err(|e| format!("stage JVM classpath: {e}"))?;
+        let expected = self.document.get("classpath")?.array_ref()?;
+        let mut staged = Vec::new();
+        for (i, (source, record)) in self.classpath_paths.iter().zip(expected).enumerate() {
+            let target = destination.join(format!("{i}.jar"));
+            fs::copy(source, &target).map_err(|e| format!("snapshot JVM artifact: {e}"))?;
+            let data = fs::read(&target).map_err(|e| format!("read staged JVM artifact: {e}"))?;
+            if data.len() as i64 != record.get("size_bytes")?.integer()?
+                || digest::sha256(&data) != record.get("sha256")?.str()?
+            {
+                return refuse("staged JVM artifact differs from hash-checked input");
+            }
+            staged.push(target);
+        }
+        Ok(std::env::join_paths(staged)
+            .map_err(|e| format!("staged JVM classpath cannot be represented: {e}"))?
+            .to_string_lossy().into_owned())
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

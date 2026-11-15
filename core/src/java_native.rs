@@ -147,12 +147,16 @@ pub fn scan(
     fs::write(&helper, JAVA_ADAPTER).map_err(|e| format!("write JDK adapter: {e}"))?;
     let empty = scratch.0.join("empty-classpath");
     fs::create_dir(&empty).map_err(|e| format!("create empty Java classpath: {e}"))?;
+    let classpath = match &resolved {
+        Some(inputs) => inputs.stage_classpath(&scratch.0)?,
+        None => empty.to_string_lossy().into_owned(),
+    };
     let mut command = Command::new("java");
     command
         .arg(&helper)
         .arg(&root)
         .arg(&empty)
-        .arg(resolved.as_ref().map_or("", |inputs| inputs.classpath.as_str()))
+        .arg(&classpath)
         .arg(resolved.as_ref().and_then(|inputs| inputs.release.as_deref()).unwrap_or("-"))
         .args(&sources)
         .current_dir(&scratch.0)

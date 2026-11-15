@@ -165,7 +165,11 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
         if effect.get("assessment") != "CANDIDATE_PATH" or not check_source(entity):
             invalid.append(f"unearned/invalid source claim {entity.get('path')}")
             continue
-        actual[commit].add(entity["path"])
+        # A changed seed can also appear as an importer of another changed
+        # seed. It is already in Git's change inventory, not a newly
+        # discovered dependent; its hops must still pass evidence checks.
+        if entity["path"] not in changed:
+            actual[commit].add(entity["path"])
         hops = effect["hops"]
         if not hops or hops[-1]["target"]["path"] not in changed:
             invalid.append(f"nonterminating path {entity['path']}")

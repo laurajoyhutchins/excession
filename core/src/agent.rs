@@ -100,6 +100,8 @@ pub fn context(
 
     let mut gaps = Vec::new();
     let mut relations = Vec::new();
+    let mut configured_observations = Vec::new();
+    let mut total_configured = 0usize;
     let mut total_relations = 0usize;
     let mut truncated = false;
     // Include revision-authenticated SCIP and configured-graph observations
@@ -115,6 +117,18 @@ pub fn context(
                     total_relations += 1;
                     if relations.len() < limit {
                         relations.push(relationship.clone());
+                    } else {
+                        truncated = true;
+                    }
+                }
+            }
+            for item in analysis.get("configured_observations")?.array_ref()? {
+                let source_path = item.get("source")?.get("path")?.str()?;
+                let selected_path = item.get("subject")?.get("path")?.str()?;
+                if focus.contains(source_path) || focus.contains(selected_path) {
+                    total_configured += 1;
+                    if configured_observations.len() < limit {
+                        configured_observations.push(item.clone());
                     } else {
                         truncated = true;
                     }
@@ -168,6 +182,8 @@ pub fn context(
         ("sources", Value::array(sources)),
         ("relationships", Value::array(relations)),
         ("relationship_count", Value::number(total_relations)),
+        ("configured_observations", Value::array(configured_observations)),
+        ("configured_observation_count", Value::number(total_configured)),
         ("test_candidates", Value::array(test_candidates)),
         ("test_candidate_count", Value::number(total_tests)),
         (

@@ -84,10 +84,16 @@ inconclusive. Fewer indexed documents or more unresolved references are also
 inconclusive. This is a conservative coverage heuristic, not a completeness
 proof.
 
-`STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED` means the reported observations
-became structurally simpler without those specific coverage regressions. It
-does **not** establish semantic equivalence, dead code, preserved public API,
-or source-to-binary provenance. Even this outcome always includes open
+`STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED` is emitted when a reciprocal
+pair disappears while the candidate introduces a Rust source file. Moving a
+function to a new module can erase a reciprocal path pair without eliminating
+any implementation. The evaluator explicitly records introduced Rust paths
+rather than treating that movement as technical-debt reduction.
+
+`STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED` means reported reciprocal pairs
+decreased without an introduced Rust file or those specific coverage
+regressions. It still does **not** establish semantic equivalence, dead code,
+preserved public API, fewer implementations, or source-to-binary provenance. Even this outcome always includes open
 obligations, `ready_to_merge=false`, and
 `automatic_deletion_authorized=false`.
 
@@ -99,11 +105,16 @@ execution attestation.
 
 ## Next implementation boundary
 
-To make this a full autonomous debt-reduction loop, add a bounded executor that
-selects one mechanically supported native action, applies it to an isolated
-worktree, and requests independent build/test/API verification. The result
-should become an auditable candidate PR, not an automatic merge until execution
-attestation, coverage and compatibility requirements are independently satisfied.
+The narrow native extraction trial is implemented, but independent
+build/test/API verification and an objective maintenance-surface measurement
+are still missing from the coordinator. The historical Excession native test
+now runs a real SCIP plan, trial and before/after evaluation as an advisory
+acceptance fixture. Future transformations should demonstrate eliminated
+implementation ownership, not merely moved modules.
+
+Only after reliable execution attestation, coverage and compatibility checks
+should the coordinator emit an auditable candidate PR. Unattended merge is not
+authorized by these structural measurements.
 
 Avoid a second semantic parser, data store, or custom Rust refactoring engine.
 Existing native transformation code should be the only edit producer.

@@ -152,7 +152,7 @@ fn relative_candidates(
     let Some(base) = join_relative(source, specifier) else {
         return Vec::new();
     };
-    let extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
+    let extensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"];
     let explicit = extensions.iter().any(|ext| base.ends_with(ext));
     let mut paths = Vec::new();
     if files.contains_key(&base) {
@@ -672,6 +672,26 @@ mod tests {
             import_target("python", "from .util import answer"),
             Some(".util".into())
         );
+    }
+
+    #[test]
+    fn typescript_module_flavors_resolve_only_unique_tracked_paths() {
+        let source = |path: &'static str| Source {
+            path,
+            blob: "placeholder",
+            language: "typescript",
+            imports: &[],
+        };
+        let files = [
+            "src/a.mts", "src/b.mts", "src/c.cts", "src/view.tsx",
+        ]
+        .into_iter()
+        .map(|p| (p.to_owned(), source(p)))
+        .collect::<BTreeMap<_, _>>();
+        assert_eq!(relative_candidates("./b", "src/a.mts", &files), ["src/b.mts"]);
+        assert_eq!(relative_candidates("./c", "src/a.mts", &files), ["src/c.cts"]);
+        assert_eq!(relative_candidates("./view", "src/a.mts", &files), ["src/view.tsx"]);
+        assert_eq!(relative_candidates("./missing", "src/a.mts", &files), Vec::<String>::new());
     }
 
     #[test]

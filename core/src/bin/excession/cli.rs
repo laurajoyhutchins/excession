@@ -671,6 +671,8 @@ pub(super) fn command() -> Command {
                         .long("source-commit")
                         .help("Disambiguate a dependent source present in both revisions")
                         .requires("source")
+                        .conflicts_with("id")
+                        .conflicts_with("all-sources")
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
                 )

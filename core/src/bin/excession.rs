@@ -907,9 +907,7 @@ fn execute(args: &[String]) -> Result<Response> {
                         repo, report, source, commit, roots, db,
                     )?))
                 } else {
-                    let result = explain::explain_source(
-                        repo, report, source, commit, roots, db,
-                    )?;
+                    let result = explain::explain_source(repo, report, source, commit, roots, db)?;
                     if as_json {
                         Ok(json(result))
                     } else {
@@ -918,7 +916,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 }
             } else if opt.get_or("all-sources", "false") == "true" {
                 if auditing {
-                    return refuse("batch source explanations are replayed already; use --json, not --audit");
+                    return refuse(
+                        "batch source explanations are replayed already; use --json, not --audit",
+                    );
                 }
                 let result = explain::explain_all_sources(repo, report, roots, db)?;
                 if as_json {

@@ -790,6 +790,8 @@ fn execute(args: &[String]) -> Result<Response> {
                         .0
                         .get("classpath-manifest")
                         .map(|v| Path::new(v.as_str())),
+                    rust_analyzer: opt.0.get("rust-analyzer").map(String::as_str),
+                    scip: opt.0.get("scip").map(String::as_str),
                 },
                 opt.get_or("trusted-local", "false"),
             )?;

@@ -10,6 +10,8 @@ on:
     paths:
       - 'core/src/json.rs'
       - 'core/src/scip_refactor.rs'
+      - 'core/src/evidence/reconstruction.rs'
+      - 'core/src/evidence/reconstruction/**'
       - '.github/workflows/self-analysis.yml'
   # Re-check when SCIP interpretation or the indexing boundaries selected
   # for real Excession-on-Excession refactors change on main.

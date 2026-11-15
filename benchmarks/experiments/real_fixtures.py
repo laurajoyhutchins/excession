@@ -474,7 +474,8 @@ def verify_product_workflow(
     }
 
 
-def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -> dict:
+def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int,
+                    product_fixtures: frozenset[str] = frozenset(("h11", "axios"))) -> dict:
     name = fixture["name"]
     repo = work / name
     commit, tree = checkout(fixture, repo)
@@ -501,11 +502,11 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -
     from dependency_oracle import verify_dependencies
     dependency_audit = verify_dependencies(db, repo, commit, source)
     dependency_mutations = dependency_mutation_checks(db, repo, commit, source, work, name)
-    # The product workflow is tested on a pinned Python and a pinned JS repo.
-    # Keep expensive end-to-end oracle work out of the ordinary commit gate.
+    # Explicitly selected product fixtures run the same independent source oracle.
+    # Keep additional expensive end-to-end cases out of ordinary commit gates.
     product = (
         verify_product_workflow(binary, repo, work, fixture, commit, tree, source)
-        if name in ("h11", "axios") else None
+        if name in product_fixtures else None
     )
     for result in results:
         del result["source_paths"]
@@ -522,12 +523,28 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int) -
     }
 
 
+def select_fixtures(fixtures: list[dict], selected: list[str], products: list[str]) -> tuple[list[dict], frozenset[str]]:
+    names = [f["name"] for f in fixtures]
+    if len(names) != len(set(names)):
+        raise ValueError("duplicate fixture names in manifest")
+    if len(selected) != len(set(selected)) or len(products) != len(set(products)):
+        raise ValueError("duplicate fixture selection")
+    wanted = set(selected) if selected else set(names)
+    unknown = sorted(wanted - set(names) | (set(products) - wanted))
+    if unknown:
+        raise ValueError("unrecognized or unselected product fixtures: " + ", ".join(unknown))
+    # Preserve manifest order, not caller-selected or producer-derived order.
+    return [f for f in fixtures if f["name"] in wanted], frozenset(products) if products else frozenset(("h11", "axios")) & wanted
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", required=True, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--fixture", action="append", default=[], help="Select a named pinned source fixture; repeatable")
+    parser.add_argument("--product-fixture", action="append", default=[], help="Run full independent product workflow for this selected fixture")
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("repetitions must be positive")
@@ -536,11 +553,14 @@ def main() -> None:
     fixtures = json.loads(fixtures_file.read_text())
     if fixtures["schema"] != "excession.real-projection-fixtures.v1":
         raise ValueError("unknown fixture declaration schema")
+    selected, products = select_fixtures(fixtures["fixtures"], args.fixture, args.product_fixture)
     report = {
         "schema": "excession.real-projection-fixture-results.v1",
         "fixture_spec_sha256": hashlib.sha256(fixtures_file.read_bytes()).hexdigest(),
         "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         "repetitions": args.repetitions,
+        "selected_fixtures": [f["name"] for f in selected],
+        "product_fixtures": sorted(products),
         "fixtures": [],
         "limitations": (
             "Source OIDs, compact/full parity, and tamper refusal are checked. "
@@ -555,9 +575,9 @@ def main() -> None:
     }
     with tempfile.TemporaryDirectory(prefix="excession-real-fixtures-") as tmp:
         work = Path(tmp)
-        for fixture in fixtures["fixtures"]:
+        for fixture in selected:
             try:
-                result = inspect_fixture(binary, fixture, work, args.repetitions)
+                result = inspect_fixture(binary, fixture, work, args.repetitions, products)
                 report["fixtures"].append(result)
                 audit = result["dependency_audit"]["counts"]
                 print(f"{result['status'].upper()} {result['name']}: "

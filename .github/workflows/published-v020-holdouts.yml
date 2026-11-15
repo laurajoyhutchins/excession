@@ -1,0 +1,78 @@
+name: Published Excession v0.2.0 independent holdout acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-holdouts:
+    name: Pinned external Python product impact oracles (released executable)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install locked independent TypeScript resolver
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test fixture selection and fail-closed cases
+        run: python3 -m unittest discover -s tests -p test_holdout_fixture_selection.py -v
+      - name: Fetch immutable published v0.2.0 assets and tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin refs/tags/v0.2.0:refs/tags/v0.2.0
+          test "$(git rev-parse 'refs/tags/v0.2.0^{commit}')" = eab215a690b1654ed89ee41159abf0e525c85b76
+          mkdir -p dist
+          gh release download v0.2.0 --repo "$GITHUB_REPOSITORY" \
+            --dir dist --pattern 'excession-v*' --pattern 'release-manifest.json'
+          cp dist/release-manifest.json "$RUNNER_TEMP/published-manifest.json"
+      - name: Independently validate all published archive bytes and source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/release_manifest.py --dist dist \
+            --source-commit eab215a690b1654ed89ee41159abf0e525c85b76 \
+            --tag v0.2.0 \
+            --required-target x86_64-unknown-linux-gnu \
+            --required-target aarch64-unknown-linux-gnu \
+            --required-target x86_64-unknown-linux-musl \
+            --required-target aarch64-apple-darwin \
+            --required-target x86_64-apple-darwin \
+            --required-target x86_64-pc-windows-msvc
+          cmp "$RUNNER_TEMP/published-manifest.json" dist/release-manifest.json
+          mkdir -p installed
+          tar -xzf dist/excession-v0.2.0-x86_64-unknown-linux-gnu.tar.gz -C installed
+          test -x installed/excession/excession
+          test "$(installed/excession/excession --version)" = "excession 0.2.0"
+      - name: Verify independent Git/AST product paths and adversarial refusals
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/excession-published-holdout
+          python3 benchmarks/experiments/real_fixtures.py \
+            --bin installed/excession/excession \
+            --manifest benchmarks/fixtures/real-repositories.json \
+            --out /tmp/excession-published-holdout/outcomes.json \
+            --repetitions 1 \
+            --fixture itsdangerous --fixture click --fixture requests \
+            --product-fixture itsdangerous --product-fixture click --product-fixture requests
+      - name: Preserve independent receipts, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v0.2.0-published-holdout-acceptance
+          path: /tmp/excession-published-holdout/
+          if-no-files-found: warn
+          retention-days: 30

@@ -53,20 +53,22 @@ pub fn scan(
     language: &str,
     compile_db: Option<&Path>,
     compiler: Option<&str>,
+    source_prefix: Option<&str>,
     trusted_local: &str,
 ) -> Result<Value> {
     if trusted_local != "true" {
         return refuse("native analysis requires explicit --trusted-local true");
     }
-    if !matches!(language, "go" | "c" | "cpp") {
+    if !matches!(language, "go" | "c" | "cpp" | "java") {
         return refuse(
-            "native producer unavailable: supported languages are go, c, cpp; use analyze languages for syntax-only coverage",
+            "native producer unavailable: supported languages are go, c, cpp, java; use analyze languages for syntax-only coverage",
         );
     }
     git::validate_path(source)?;
     let expected_ext = match language {
         "go" => source.ends_with(".go"),
         "c" => source.ends_with(".c"),
+        "java" => source.ends_with(".java"),
         "cpp" => [".cc", ".cpp", ".cxx", ".C"]
             .iter()
             .any(|ext| source.ends_with(ext)),
@@ -75,10 +77,16 @@ pub fn scan(
     if !expected_ext {
         return refuse("source extension does not match selected native language");
     }
+    if language == "java" && (compile_db.is_some() || compiler.is_some()) {
+        return refuse("Java uses the installed JDK, not --compile-db or --compiler");
+    }
+    if language != "java" && source_prefix.is_some() {
+        return refuse("--source-prefix currently applies only to Java native analysis");
+    }
     if language == "go" && (compile_db.is_some() || compiler.is_some()) {
         return refuse("Go does not use --compile-db or --compiler");
     }
-    if language != "go" && compile_db.is_none() {
+    if matches!(language, "c" | "cpp") && compile_db.is_none() {
         return refuse("Clang requires --compile-db for a configured translation unit");
     }
     let root = repo
@@ -93,6 +101,9 @@ pub fn scan(
     }
     let tree = git::rev(&root, &format!("{commit}^{{tree}}"))?;
     let subject = identity(&root, &commit, &tree, source)?;
+    if language == "java" {
+        return crate::java_native::scan(&root, &commit, source, source_prefix.unwrap_or("."));
+    }
     let (producer, scope, inputs, source_count, config_count, observation) = if language == "go" {
         let result = native_discovery::discover(&root, &commit, source, "go", None, true)?;
         let declaration = result.get("declaration")?;
@@ -203,27 +214,27 @@ mod tests {
     fn refuses_untrusted_and_unsupported_before_invoking_toolchains() {
         let repo = Path::new("/does-not-exist");
         assert!(
-            scan(repo, "HEAD", "a.go", "go", None, None, "false")
+            scan(repo, "HEAD", "a.go", "go", None, None, None, "false")
                 .unwrap_err()
                 .contains("--trusted-local")
         );
         assert!(
-            scan(repo, "HEAD", "a.java", "java", None, None, "true")
+            scan(repo, "HEAD", "a.java", "java", Some(Path::new("compile.json")), None, None, "true")
                 .unwrap_err()
-                .contains("native producer unavailable")
+                .contains("Java uses the installed JDK")
         );
         assert!(
-            scan(repo, "HEAD", "a.go", "go", None, Some("clang"), "true")
+            scan(repo, "HEAD", "a.go", "go", None, Some("clang"), None, "true")
                 .unwrap_err()
                 .contains("does not use")
         );
         assert!(
-            scan(repo, "HEAD", "a.cpp", "cpp", None, None, "true")
+            scan(repo, "HEAD", "a.cpp", "cpp", None, None, None, "true")
                 .unwrap_err()
                 .contains("--compile-db")
         );
         assert!(
-            scan(repo, "HEAD", "a.c", "cpp", None, None, "true")
+            scan(repo, "HEAD", "a.c", "cpp", None, None, None, "true")
                 .unwrap_err()
                 .contains("source extension")
         );

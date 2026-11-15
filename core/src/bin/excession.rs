@@ -784,6 +784,7 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("language"),
                 opt.0.get("compile-db").map(|v| Path::new(v.as_str())),
                 opt.0.get("compiler").map(String::as_str),
+                opt.0.get("source-prefix").map(String::as_str),
                 opt.get_or("trusted-local", "false"),
             )?;
             if opt.get_or("json", "false") == "true" {

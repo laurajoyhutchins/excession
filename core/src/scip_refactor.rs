@@ -27,7 +27,7 @@ const SCIP_URI_ESCAPE: &AsciiSet = &CONTROLS
     .add(b'<')
     .add(b'>')
     .add(b'?')
-    .add(b'\u0060')
+    .add(b'\x60')
     .add(b'{')
     .add(b'}');
 

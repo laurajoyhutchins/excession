@@ -395,8 +395,8 @@ pub fn trial(request: &Trial<'_>) -> Result<Value> {
         request.report,
         request.source_prefix,
     )?;
-    let report_bytes = fs::read(request.report)
-        .map_err(|e| format!("read native refactor report: {e}"))?;
+    let report_bytes =
+        fs::read(request.report).map_err(|e| format!("read native refactor report: {e}"))?;
     if report_bytes.len() > 16 * 1024 * 1024 {
         return refuse("native refactor report exceeds 16 MiB");
     }

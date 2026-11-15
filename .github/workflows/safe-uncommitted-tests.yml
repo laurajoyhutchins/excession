@@ -8,6 +8,8 @@ on:
       - '.github/workflows/safe-uncommitted-tests.yml'
       - 'core/src/native_test_workflow.rs'
       - 'core/tests/dirty_checkout.rs'
+      - 'tools/bootstrap-test-sandbox.sh'
+      - 'tools/sandbox/**'
   workflow_dispatch:
 
 concurrency:
@@ -45,14 +47,9 @@ jobs:
           assert host['cgroupVersion']=='v2',host
           assert host['serviceIsRemote'] is False,host
           PY
-          mkdir -p "$RUNNER_TEMP/sandbox-image"
-          cat > "$RUNNER_TEMP/sandbox-image/Dockerfile" <<'DOCKERFILE'
-          FROM docker.io/library/ubuntu:24.04
-          RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends git coreutils python3 python3-pip && rm -rf /var/lib/apt/lists/*
-          RUN python3 -m pip install --break-system-packages --no-cache-dir pytest==8.4.2 pytest-testmon==2.3.0 pytest-json-report==1.5.0
-          DOCKERFILE
-          podman build --pull=always --network=host -t excession-snapshot-test "$RUNNER_TEMP/sandbox-image"
-          IMAGE_ID="$(podman image inspect --format '{{.Id}}' excession-snapshot-test)"
+          sh -n tools/bootstrap-test-sandbox.sh
+          sh tools/bootstrap-test-sandbox.sh
+          IMAGE_ID="$(podman image inspect --format '{{.Id}}' localhost/excession-test-sandbox:latest)"
           printf 'sha256:%s\n' "${IMAGE_ID#sha256:}" > "$RUNNER_TEMP/sandbox-image-id"
           grep -E '^sha256:[0-9a-f]{64}$' "$RUNNER_TEMP/sandbox-image-id"
       - name: Test actual isolated changed source without original checkout mutation
@@ -96,7 +93,17 @@ jobs:
           BIN="$GITHUB_WORKSPACE/core/target/release/excession"
           IMAGE="$(cat "$RUNNER_TEMP/sandbox-image-id")"
 
-          "$BIN" tests --repo "$ROOT" --sandbox-image "$IMAGE" --json > "$RUNNER_TEMP/snapshot-plan.json"
+          "$BIN" tests --doctor --json > "$RUNNER_TEMP/sandbox-doctor.json"
+          python3 - "$RUNNER_TEMP/sandbox-doctor.json" "$IMAGE" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['schema']=='excession.sandbox-doctor.v1',d
+          assert d['status']=='READY',d
+          assert d['image_source']=='LOCAL_DISCOVERY',d
+          assert d['image']==sys.argv[2],d
+          assert not d['project_code_executed'],d
+          PY
+          "$BIN" tests --repo "$ROOT" --json > "$RUNNER_TEMP/snapshot-plan.json"
           python3 - "$RUNNER_TEMP/snapshot-plan.json" "$HEAD" <<'PY'
           import json,sys
           p=json.load(open(sys.argv[1]))
@@ -108,8 +115,12 @@ jobs:
           assert set(p['changed_sources'])=={'src/value.py','tests/test_untracked.py'}
           assert p['next_argv'][-1]!='--unknown'
           assert '--expected-snapshot' in p['next_argv']
+          assert '--sandbox-image' in p['next_argv'],p
+          assert p['next_argv'][p['next_argv'].index('--sandbox-image')+1].startswith('sha256:'),p
           PY
-          if "$BIN" tests --repo "$ROOT" --run --json >/dev/null 2>&1; then
+          # An explicit nonexistent image must still fail closed, never execute on host.
+          BAD_IMAGE="sha256:$(printf '0%.0s' $(seq 1 64))"
+          if "$BIN" tests --repo "$ROOT" --run --sandbox-image "$BAD_IMAGE" --json >/dev/null 2>&1; then
             echo 'Unsafe host fallback accepted' >&2; exit 1
           fi
           python3 - "$RUNNER_TEMP/snapshot-plan.json" "$BIN" "$RUNNER_TEMP/snapshot-result.json" <<'PY'
@@ -143,12 +154,38 @@ jobs:
           assert result.returncode==2,(result.returncode,result.stdout,result.stderr)
           assert 'fingerprint changed' in result.stderr,result.stderr
           PY
+          # Fresh Python projects have no testmon database. The new workflow
+          # must build it from the base inside Podman, never on the source host.
+          rm .testmondata
+          "$BIN" tests --repo "$ROOT" --json > "$RUNNER_TEMP/snapshot-no-baseline-plan.json"
+          python3 - "$RUNNER_TEMP/snapshot-no-baseline-plan.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1]))
+          assert p['status']=='READY',p
+          assert 'TESTMON_BASELINE_MISSING' not in p['blockers'],p
+          PY
+          set +e
+          "$BIN" tests --repo "$ROOT" --run --json > "$RUNNER_TEMP/snapshot-no-baseline-result.json"
+          missing_baseline_exit=$?
+          set -e
+          test "$missing_baseline_exit" -eq 1
+          python3 - "$RUNNER_TEMP/snapshot-no-baseline-result.json" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1]))
+          assert p['status']=='FAIL',p
+          assert p['working_tree']['receipt_trust']=='EPHEMERAL_LOCAL_SANDBOX_UNATTESTED',p
+          assert p['executed_test_count']>=1,p
+          PY
+          test ! -e .testmondata
       - name: Retain safe isolated result
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: safe-uncommitted-test-evidence
           path: |
+            ${{ runner.temp }}/sandbox-doctor.json
             ${{ runner.temp }}/snapshot-plan.json
             ${{ runner.temp }}/snapshot-result.json
+            ${{ runner.temp }}/snapshot-no-baseline-plan.json
+            ${{ runner.temp }}/snapshot-no-baseline-result.json
           if-no-files-found: ignore

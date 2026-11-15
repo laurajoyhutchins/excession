@@ -104,17 +104,32 @@ Run Excession inside a Git checkout. Its default is a read-only
 test plan, not an unexpected execution of project configuration:
 
 ~~~sh
-excession tests
-excession tests --run
-excession tests --run --verify --json
-excession tests --run --sandbox-image registry.example/test@sha256:DIGEST
+# Once per Linux machine, after installing rootless Podman:
+sh tools/bootstrap-test-sandbox.sh
+
+# From any directory: show runtime/image readiness without executing tests
+excession tests --doctor
+
+# From your project: plan first, then run the same source snapshot safely
+excession tests --json
+excession tests --run --json
 ~~~
+
+For **uncommitted** changes, the one-time setup image is found locally by
+its Excession label and resolved to its immutable SHA-256 ID. There is no
+need to copy a digest into every command. The JSON plan's `next_argv`
+pins both image and source fingerprint for agents. Use `--sandbox-image
+sha256:<ID>` for a different preinstalled image. `--doctor --json`
+lists explicit blockers and setup actions without requiring a Git checkout.
+Provisioning downloads packages only when the developer explicitly invokes
+the setup script; normal tests never download or install dependencies.
 
 Excession chooses the revision comparison and detects installed Jest or a
 Python pytest-testmon project. Jest discovers **and runs** related tests;
 pytest-testmon selects and runs tests from a previous coverage baseline.
-\`--run\` deliberately executes trusted project tools; in agent workflows
-use an isolated checkout. Failing tests return exit code 1, an inconclusive
+\`--run\` executes a dirty working tree only inside rootless Podman, without
+modifying the original checkout. Clean committed checkouts retain trusted
+native execution. A first-run Python baseline is built inside the sandbox. Failing tests return exit code 1, an inconclusive
 run returns 3, and setup refusals return 2. JSON includes source identity,
 executed test IDs, and optional verification obligations.
 

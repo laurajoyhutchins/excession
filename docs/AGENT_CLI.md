@@ -136,6 +136,39 @@ revision identities with real ones):
 Use the exact candidate commit/tree values from `excession changes` or Git.
 No command in a receipt is executed by Excession.
 
+## Working-tree tests without commits
+
+For a locally edited project, use the native-test workflow rather than
+inventing a commit or running tools directly against the agent's checkout:
+
+```sh
+excession tests --doctor --json
+excession tests --repo /work/project --json
+```
+
+Check `schema=excession.test-workflow.v2`, `status=READY`,
+`safe_to_skip_unlisted_tests=false`, and the `working_tree` object.
+`next_argv` contains a source fingerprint and an immutable, preinstalled
+sandbox image ID. **Execute the complete returned argument vector**, not a
+reconstructed shell command, only when execution is authorized. If the
+fingerprint changed, re-plan and review before running anything.
+
+`--doctor` reports setup blockers without requiring a repository or
+executing project code. A developer can explicitly provision the
+sandbox once with `sh tools/bootstrap-test-sandbox.sh` from an Excession
+checkout; that opt-in setup uses the network. Normal test runs never pull
+images. When no explicit image is supplied, Excession only recognizes the
+labeled local sandbox and pins its digest. Missing runtime, image or
+dependencies cause a refusal; there is no trusted-host fallback for
+uncommitted code. A missing Python testmon baseline is generated from
+the committed base **inside the sandbox**, not in the developer checkout.
+
+The resulting snapshot and test receipts are ephemeral local evidence,
+not persisted commits or independently attested receipts. Do not pass
+their ephemeral commit ID to `agent verify` after the temporary clone is
+deleted. `agent context` and `agent verify` still operate on durable
+committed Git revisions.
+
 ## Protocol boundaries
 
 - Context and verification both accept `--limit` in 1–64 (default 32).

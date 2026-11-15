@@ -24,6 +24,9 @@ const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_GIT_DB_KIB: u64 = 256 * 1024;
 const MAX_SECONDS: u64 = 600;
+const LOCAL_SANDBOX_TAG: &str = "localhost/excession-test-sandbox:latest";
+const LOCAL_SANDBOX_LABEL: &str = "io.excession.sandbox";
+const LOCAL_SANDBOX_LABEL_VALUE: &str = "v1";
 
 pub struct Request<'a> {
     pub repo: &'a Path,
@@ -697,60 +700,226 @@ fn confined_podman() -> Command {
     command
 }
 
+/// Resolve our opt-in local sandbox alias to an immutable local image ID.
+/// The alias itself is never executed or included in a runnable plan.
+fn local_image_id(raw: &[u8]) -> Option<String> {
+    let inspected: serde_json::Value = serde_json::from_slice(raw).ok()?;
+    let image = inspected
+        .as_array()
+        .and_then(|images| images.first())
+        .unwrap_or(&inspected);
+    let labels = image
+        .get("Labels")
+        .or_else(|| image.pointer("/Config/Labels"))?;
+    if labels.get(LOCAL_SANDBOX_LABEL)?.as_str()? != LOCAL_SANDBOX_LABEL_VALUE {
+        return None;
+    }
+    let id = image.get("Id")?.as_str()?;
+    let id = if id.starts_with("sha256:") {
+        id.to_owned()
+    } else {
+        format!("sha256:{id}")
+    };
+    valid_image(&id).then_some(id)
+}
+
+/// Never pull, build, run, or inspect arbitrary project configuration during discovery.
+fn discover_local_image() -> Option<String> {
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let output = confined_podman()
+            .args([
+                "--remote=false",
+                "image",
+                "inspect",
+                "--format",
+                "json",
+                LOCAL_SANDBOX_TAG,
+            ])
+            .output()
+            .ok()?;
+        if output.status.success() {
+            local_image_id(&output.stdout)
+        } else {
+            None
+        }
+    }
+}
+
+fn resolve_image(requested: Option<&str>) -> Option<String> {
+    match requested {
+        Some("auto") | None => discover_local_image(),
+        Some(value) => Some(value.to_owned()),
+    }
+}
+
 fn sandbox_preflight(image: Option<&str>) -> Vec<String> {
     let mut blocked = Vec::new();
-    let Some(image) = image else {
-        blocked.push("PINNED_SANDBOX_IMAGE_REQUIRED".to_owned());
-        return blocked;
+    let valid = match image {
+        Some(image) if valid_image(image) => true,
+        Some(_) => {
+            blocked.push("SANDBOX_IMAGE_MUST_BE_PINNED_SHA256".to_owned());
+            false
+        }
+        None => {
+            blocked.push("PINNED_SANDBOX_IMAGE_REQUIRED".to_owned());
+            false
+        }
     };
-    if !valid_image(image) {
-        blocked.push("SANDBOX_IMAGE_MUST_BE_PINNED_SHA256".to_owned());
-        return blocked;
-    }
     #[cfg(not(target_os = "linux"))]
     {
         blocked.push("ROOTLESS_PODMAN_LINUX_REQUIRED".to_owned());
         return blocked;
     }
-    let info = confined_podman()
-        .args(["--remote=false", "info", "--format", "json"])
-        .output();
-    let secure = match info {
-        Ok(output) if output.status.success() => {
-            serde_json::from_slice::<serde_json::Value>(&output.stdout)
-                .ok()
-                .is_some_and(|report| {
-                    report
-                        .pointer("/host/security/rootless")
-                        .and_then(serde_json::Value::as_bool)
-                        == Some(true)
-                        && report
-                            .pointer("/host/security/seccompEnabled")
+    #[cfg(target_os = "linux")]
+    {
+        let info = confined_podman()
+            .args(["--remote=false", "info", "--format", "json"])
+            .output();
+        let secure = match info {
+            Ok(output) if output.status.success() => {
+                serde_json::from_slice::<serde_json::Value>(&output.stdout)
+                    .ok()
+                    .is_some_and(|report| {
+                        report
+                            .pointer("/host/security/rootless")
                             .and_then(serde_json::Value::as_bool)
                             == Some(true)
-                        && report
-                            .pointer("/host/serviceIsRemote")
-                            .and_then(serde_json::Value::as_bool)
-                            == Some(false)
-                        && report
-                            .pointer("/host/cgroupVersion")
-                            .and_then(serde_json::Value::as_str)
-                            == Some("v2")
-                })
+                            && report
+                                .pointer("/host/security/seccompEnabled")
+                                .and_then(serde_json::Value::as_bool)
+                                == Some(true)
+                            && report
+                                .pointer("/host/serviceIsRemote")
+                                .and_then(serde_json::Value::as_bool)
+                                == Some(false)
+                            && report
+                                .pointer("/host/cgroupVersion")
+                                .and_then(serde_json::Value::as_str)
+                                == Some("v2")
+                    })
+            }
+            _ => false,
+        };
+        if !secure {
+            blocked.push("ROOTLESS_LOCAL_PODMAN_SECCOMP_CGROUP_V2_REQUIRED".to_owned());
         }
-        _ => false,
-    };
-    if !secure {
-        blocked.push("ROOTLESS_LOCAL_PODMAN_SECCOMP_CGROUP_V2_REQUIRED".to_owned());
-    }
-    let image_found = confined_podman()
-        .args(["--remote=false", "image", "exists", image])
-        .output()
-        .is_ok_and(|output| output.status.success());
-    if !image_found {
-        blocked.push("PREINSTALLED_PINNED_IMAGE_REQUIRED_NO_PULL".to_owned());
+        if valid
+            && !confined_podman()
+                .args([
+                    "--remote=false",
+                    "image",
+                    "exists",
+                    image.unwrap_or_default(),
+                ])
+                .output()
+                .is_ok_and(|output| output.status.success())
+        {
+            blocked.push("PREINSTALLED_PINNED_IMAGE_REQUIRED_NO_PULL".to_owned());
+        }
     }
     blocked
+}
+
+/// A read-only capability check usable from anywhere, including outside Git.
+/// It never executes project code and does not download or build container images.
+pub fn sandbox_doctor(requested: Option<&str>) -> Value {
+    let image = resolve_image(requested);
+    let blockers = sandbox_preflight(image.as_deref());
+    let mut guidance = Vec::new();
+    if cfg!(not(target_os = "linux")) {
+        guidance.push("Use a Linux machine or isolated Linux worker for rootless test execution");
+    }
+    if blockers
+        .iter()
+        .any(|v| v == "ROOTLESS_LOCAL_PODMAN_SECCOMP_CGROUP_V2_REQUIRED")
+    {
+        guidance
+            .push("Install Linux rootless Podman with seccomp and cgroup v2; check podman info");
+    }
+    if blockers
+        .iter()
+        .any(|v| v == "PINNED_SANDBOX_IMAGE_REQUIRED")
+    {
+        guidance.push(
+            "Once per machine: sh tools/bootstrap-test-sandbox.sh from an Excession checkout",
+        );
+    }
+    if blockers
+        .iter()
+        .any(|v| v == "SANDBOX_IMAGE_MUST_BE_PINNED_SHA256")
+    {
+        guidance.push("Use a local sha256:<64-hex-ID> or registry/name@sha256:<64-hex-digest>");
+    }
+    if blockers
+        .iter()
+        .any(|v| v == "PREINSTALLED_PINNED_IMAGE_REQUIRED_NO_PULL")
+    {
+        guidance.push("Install the selected pinned image locally; execution never pulls images");
+    }
+    if blockers.is_empty() {
+        guidance.push("Run excession tests, then execute its pinned next_argv with --run");
+    }
+    obj(&[
+        ("schema", Value::string("excession.sandbox-doctor.v1")),
+        (
+            "status",
+            Value::string(if blockers.is_empty() {
+                "READY"
+            } else {
+                "BLOCKED"
+            }),
+        ),
+        ("local_image_alias", Value::string(LOCAL_SANDBOX_TAG)),
+        (
+            "image",
+            image.as_ref().map(Value::string).unwrap_or(Value::Null),
+        ),
+        (
+            "image_source",
+            Value::string(if matches!(requested, Some(v) if v != "auto") {
+                "EXPLICIT"
+            } else if image.is_some() {
+                "LOCAL_DISCOVERY"
+            } else {
+                "NONE"
+            }),
+        ),
+        (
+            "blockers",
+            Value::array(blockers.into_iter().map(Value::string)),
+        ),
+        (
+            "setup",
+            Value::array(guidance.into_iter().map(Value::string)),
+        ),
+        ("network_used", Value::Bool(false)),
+        ("project_code_executed", Value::Bool(false)),
+    ])
+}
+
+pub fn sandbox_doctor_summary(report: &Value) -> Result<String> {
+    let mut lines = vec![format!("Sandbox: {}", report.get("status")?.str()?)];
+    match report.get("image")? {
+        Value::Null => lines.push("Image: no labeled, preinstalled local image found".to_owned()),
+        value => lines.push(format!(
+            "Image: {} ({})",
+            value.str()?,
+            report.get("image_source")?.str()?
+        )),
+    }
+    for blocker in report.get("blockers")?.array_ref()? {
+        lines.push(format!("  Blocked: {}", blocker.str()?));
+    }
+    for step in report.get("setup")?.array_ref()? {
+        lines.push(format!("Next: {}", step.str()?));
+    }
+    lines.push("Doctor only inspects prerequisites; no project code is executed.".to_owned());
+    Ok(lines.join("\n"))
 }
 
 fn tool_in_image(path: Option<&str>, provider: &str) -> Result<String> {
@@ -897,10 +1066,34 @@ fn execute_isolated(args: SandboxExecution<'_>) -> Result<Value> {
         binary.display()
     ));
     command.arg(image);
-    command.args(["-c",
-        "mkdir -p /work/repo && cp -a /input/. /work/repo/ && cd /work/repo && exec /usr/local/bin/excession \"$@\"",
-        "sh", "tests", "--run", "--json", "--repo", "/work/repo",
-        "--base", base, "--candidate", candidate, "--provider", provider,
+    command.args([
+        "-c",
+        r#"mkdir -p /work/repo && cp -a /input/. /work/repo/ && cd /work/repo || exit 2
+if [ "$1" = pytest-testmon ] && [ ! -f .testmondata ]; then
+  git -c core.hooksPath=/dev/null -c core.fsmonitor=false checkout -qf --detach "$2" \
+    && /usr/local/bin/python3 -m pytest --testmon --testmon-noselect -q >/tmp/excession-baseline.log 2>&1 \
+    && test -s .testmondata \
+    && git -c core.hooksPath=/dev/null -c core.fsmonitor=false checkout -qf --detach "$3" \
+    && git -c core.hooksPath=/dev/null clean -qffdx -e .testmondata \
+    || { echo 'isolated pytest baseline generation failed or was incomplete' >&2; exit 2; }
+fi
+shift 3
+exec /usr/local/bin/excession "$@""#,
+        "sh",
+        provider,
+        base,
+        candidate,
+        "tests",
+        "--run",
+        "--json",
+        "--repo",
+        "/work/repo",
+        "--base",
+        base,
+        "--candidate",
+        candidate,
+        "--provider",
+        provider,
     ]);
     if let Some(tool) = tool {
         command.args(["--tool", tool]);
@@ -1017,8 +1210,8 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     {
         return refuse("working-tree fingerprint changed since the approved test plan");
     }
-    let image = request.sandbox_image;
-    let mut blockers = sandbox_preflight(image)
+    let image = resolve_image(request.sandbox_image);
+    let mut blockers = sandbox_preflight(image.as_deref())
         .into_iter()
         .collect::<BTreeSet<_>>();
     let safe_temp_parent = temporary_parent_outside_checkout(&root)?;
@@ -1057,7 +1250,12 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
     };
     for reason in plan.get("blockers")?.array_ref()? {
         let name = reason.str()?;
-        if name != "JEST_NOT_INSTALLED" {
+        // A missing Python baseline is built from the committed base inside
+        // the isolated container, never by running project code on the host.
+        if name != "JEST_NOT_INSTALLED"
+            && !(name == "TESTMON_BASELINE_MISSING"
+                && provider.as_deref() == Some("pytest-testmon"))
+        {
             blockers.insert(name.to_owned());
         }
     }
@@ -1083,8 +1281,8 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         "--timeout".to_owned(),
         request.timeout_seconds.to_string(),
     ];
-    if let Some(image) = image {
-        argv.extend(["--sandbox-image".to_owned(), image.to_owned()]);
+    if let Some(ref image) = image {
+        argv.extend(["--sandbox-image".to_owned(), image.clone()]);
     }
     if let Some(ref selected) = provider {
         argv.extend(["--provider".to_owned(), selected.clone()]);
@@ -1141,7 +1339,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         let mut result = execute_isolated(SandboxExecution {
             checkout: &checkout,
             directory: &temp.path,
-            image: image.ok_or("missing pinned image")?,
+            image: image.as_deref().ok_or("missing pinned image")?,
             base: &base,
             candidate: &commit,
             provider: &provider,
@@ -1202,7 +1400,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
         );
         entries.insert("next_command".to_owned(), Value::string(next_command));
         entries.insert("guidance".to_owned(), Value::string(if blockers.contains("PINNED_SANDBOX_IMAGE_REQUIRED") {
-            "Pass --sandbox-image registry/image@sha256:<digest> with preinstalled tests, Git and Excession-compatible libc"
+            "One-time setup: sh tools/bootstrap-test-sandbox.sh from the Excession checkout, then re-run excession tests --doctor"
         } else if blockers.is_empty() {
             "Explicit --run executes only in rootless Podman with no network, no host credentials or writable mounts"
         } else {
@@ -1398,6 +1596,40 @@ mod tests {
                 name == key && value == Some(std::ffi::OsStr::new("/dev/null"))
             }));
         }
+    }
+
+    #[test]
+    fn labeled_local_sandbox_must_have_pinned_id() {
+        let digest = "a".repeat(64);
+        let image =
+            format!(r#"[{{"Id":"sha256:{digest}","Labels":{{"io.excession.sandbox":"v1"}}}}]"#);
+        assert_eq!(
+            local_image_id(image.as_bytes()),
+            Some(format!("sha256:{digest}"))
+        );
+        let untrusted = image.replace(r#""v1""#, r#""other""#);
+        assert!(local_image_id(untrusted.as_bytes()).is_none());
+        assert!(
+            local_image_id(br#"[{"Id":"latest","Labels":{"io.excession.sandbox":"v1"}}]"#)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn sandbox_doctor_is_machine_readable_and_never_runs_project_code() {
+        let id = format!("sha256:{}", "f".repeat(64));
+        let report = sandbox_doctor(Some(&id));
+        assert_eq!(
+            report.get("schema").unwrap().str().unwrap(),
+            "excession.sandbox-doctor.v1"
+        );
+        assert_eq!(report.get("image").unwrap().str().unwrap(), id);
+        assert_eq!(
+            report.get("image_source").unwrap().str().unwrap(),
+            "EXPLICIT"
+        );
+        assert!(!report.get("project_code_executed").unwrap().bool().unwrap());
+        assert!(!report.get("network_used").unwrap().bool().unwrap());
     }
 
     #[test]

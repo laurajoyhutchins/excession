@@ -1,6 +1,6 @@
 //! Declarative command grammar. Keep CLI parsing separate from Git/SQLite execution.
 //! Command discovery and execution consume the same parsed ArgMatches.
-use clap::{Arg, Command, builder::NonEmptyStringValueParser, error::ErrorKind};
+use clap::{Arg, ArgGroup, Command, builder::NonEmptyStringValueParser, error::ErrorKind};
 use excession::Result;
 use std::collections::BTreeMap;
 use std::iter;
@@ -636,7 +636,11 @@ pub(super) fn command() -> Command {
         )
         .subcommand(
             Command::new("explain")
-                .about("Recompute and explain a pinned source-bound impact claim")
+                .about("Replay and explain a claim, distinct source, or batch of source witnesses")
+                .group(ArgGroup::new("explanation-target")
+                    .args(["id", "source", "all-sources"])
+                    .required(true)
+                    .multiple(false))
                 .arg(
                     Arg::new("path")
                         .index(1)
@@ -652,9 +656,29 @@ pub(super) fn command() -> Command {
                 .arg(
                     Arg::new("id")
                         .long("id")
-                        .required(true)
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("source")
+                        .long("source")
+                        .help("Git-relative path of a distinct impacted source")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("source-commit")
+                        .long("source-commit")
+                        .help("Disambiguate a dependent source present in both revisions")
+                        .requires("source")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("all-sources")
+                        .long("all-sources")
+                        .help("Batch reconstruct distinct-source witnesses with one pinned replay")
+                        .action(clap::ArgAction::SetTrue),
                 )
                 .arg(
                     Arg::new("db")

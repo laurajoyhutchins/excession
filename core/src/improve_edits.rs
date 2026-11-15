@@ -29,10 +29,14 @@ fn read(path: &Path) -> Result<Value> {
 }
 
 fn selected_paths(plan: &Value, candidate: &str) -> Result<BTreeSet<String>> {
-    let mut candidates = plan.get("candidates")?.array_ref()?.iter().filter(|item| {
-        item.get("candidate_id").and_then(Value::str).ok() == Some(candidate)
-    });
-    let found = candidates.next().ok_or("edit target absent from improvement plan")?;
+    let mut candidates = plan
+        .get("candidates")?
+        .array_ref()?
+        .iter()
+        .filter(|item| item.get("candidate_id").and_then(Value::str).ok() == Some(candidate));
+    let found = candidates
+        .next()
+        .ok_or("edit target absent from improvement plan")?;
     if candidates.next().is_some() {
         return refuse("ambiguous improvement candidate ID");
     }
@@ -71,8 +75,10 @@ fn replay_file(original: &[u8], mut edits: Vec<Edit>) -> Result<Vec<u8>> {
         .map_err(|_| "native edit replay currently supports UTF-8 source only".to_owned())?;
     edits.sort_by_key(|edit| (edit.start, edit.end));
     for (index, edit) in edits.iter().enumerate() {
-        if edit.start > edit.end || edit.end > original.len()
-            || !source.is_char_boundary(edit.start) || !source.is_char_boundary(edit.end)
+        if edit.start > edit.end
+            || edit.end > original.len()
+            || !source.is_char_boundary(edit.start)
+            || !source.is_char_boundary(edit.end)
         {
             return refuse("native edit crosses a source or UTF-8 boundary");
         }
@@ -104,7 +110,9 @@ fn prepare(repo: &Path, commit: &str, plan: &Value, native: &Value) -> Result<Ve
         || native.get("source_commit")?.str()? != commit
         || native.get("improvement_plan_id")? != plan.get("plan_id")?
     {
-        return refuse("native edits are not bound to the selected improvement plan and Git revision");
+        return refuse(
+            "native edits are not bound to the selected improvement plan and Git revision",
+        );
     }
     let producer = native.get("native_producer")?.str()?;
     if producer.is_empty() || producer.len() > 128 {
@@ -148,14 +156,20 @@ fn prepare(repo: &Path, commit: &str, plan: &Value, native: &Value) -> Result<Ve
     let mut changed = Vec::new();
     for (path, (oid, edits)) in by_path {
         let entry = git::entry_at(repo, commit, &path)?;
-        if entry.kind != "blob" || !matches!(entry.mode.as_str(), "100644" | "100755")
+        if entry.kind != "blob"
+            || !matches!(entry.mode.as_str(), "100644" | "100755")
             || entry.oid != oid
         {
             return refuse("native edit source is not the exact pinned regular Git blob");
         }
         let original = reader.read_capped(&oid, MAX_SOURCE_BYTES)?;
         let rewritten = replay_file(&original, edits)?;
-        changed.push(Changed { path, original_blob: oid, original, rewritten });
+        changed.push(Changed {
+            path,
+            original_blob: oid,
+            original,
+            rewritten,
+        });
     }
     reader.finish()?;
     Ok(changed)
@@ -167,28 +181,53 @@ fn apply(repo: &Path, commit: &str, output: &Path, changed: &[Changed]) -> Resul
         return refuse("improvement worktree destination already exists");
     }
     let output_str = checked.to_str().ok_or("non-UTF-8 output worktree path")?;
-    git::command(repo, &[
-        "-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", output_str, commit,
-    ])?;
+    git::command(
+        repo,
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "worktree",
+            "add",
+            "--detach",
+            output_str,
+            commit,
+        ],
+    )?;
     let result = (|| -> Result<()> {
-        let root = checked.canonicalize()
+        let root = checked
+            .canonicalize()
             .map_err(|e| format!("resolve candidate worktree: {e}"))?;
         for item in changed {
             let target = checked.join(&item.path);
             let parent = target.parent().ok_or("native edit path has no parent")?;
-            if !parent.canonicalize().map_err(|e| format!("resolve native edit parent: {e}"))?.starts_with(&root) {
+            if !parent
+                .canonicalize()
+                .map_err(|e| format!("resolve native edit parent: {e}"))?
+                .starts_with(&root)
+            {
                 return refuse("native edit path escapes through a symlink");
             }
-            if fs::read(&target).map_err(|e| format!("read candidate source: {e}"))? != item.original {
+            if fs::read(&target).map_err(|e| format!("read candidate source: {e}"))?
+                != item.original
+            {
                 return refuse("candidate worktree source differs from pinned Git blob");
             }
-            fs::write(&target, &item.rewritten).map_err(|e| format!("write candidate source: {e}"))?;
+            fs::write(&target, &item.rewritten)
+                .map_err(|e| format!("write candidate source: {e}"))?;
         }
         Ok(())
     })();
     if let Err(error) = result {
         let _ = git::command(
-            repo, &["-c", "core.hooksPath=/dev/null", "worktree", "remove", "--force", output_str],
+            repo,
+            &[
+                "-c",
+                "core.hooksPath=/dev/null",
+                "worktree",
+                "remove",
+                "--force",
+                output_str,
+            ],
         );
         return Err(error);
     }
@@ -214,12 +253,18 @@ pub fn execute(request: &Request<'_>) -> Result<Value> {
         apply(request.repo, &commit, output, &changed)?;
     }
     obj(&[
-        ("schema", Value::string("excession.improvement-native-replay.v1")),
-        ("status", Value::string(if request.output.is_some() {
-            "APPLIED_UNVERIFIED"
-        } else {
-            "UNVERIFIED_EDIT_PREVIEW"
-        })),
+        (
+            "schema",
+            Value::string("excession.improvement-native-replay.v1"),
+        ),
+        (
+            "status",
+            Value::string(if request.output.is_some() {
+                "APPLIED_UNVERIFIED"
+            } else {
+                "UNVERIFIED_EDIT_PREVIEW"
+            }),
+        ),
         ("source_commit", Value::string(commit)),
         ("source_tree", Value::string(tree)),
         ("improvement_plan_id", plan.get("plan_id")?.clone()),
@@ -227,23 +272,47 @@ pub fn execute(request: &Request<'_>) -> Result<Value> {
         ("native_producer", native.get("native_producer")?.clone()),
         ("candidate_id", native.get("candidate_id")?.clone()),
         ("source_changes", Value::number(changed.len())),
-        ("changes", Value::array(changed.iter().map(|item| obj(&[
-            ("path", Value::string(&item.path)),
-            ("original_blob", Value::string(&item.original_blob)),
-            ("rewritten_sha256", Value::string(digest::sha256(&item.rewritten))),
-            ("removed_bytes", Value::number(item.original.len().saturating_sub(item.rewritten.len()))),
-            ("added_bytes", Value::number(item.rewritten.len().saturating_sub(item.original.len()))),
-        ])))),
-        ("worktree", request.output.map(|p| Value::string(p.to_string_lossy())).unwrap_or(Value::Null)),
-        ("obligations", Value::array([
-            Value::string("NATIVE_PRODUCER_AUTHENTICITY_UNVERIFIED"),
-            Value::string("INDEPENDENT_BUILD_TEST_AND_API_VERIFICATION_REQUIRED"),
-            Value::string("CONFIGURATION_COVERAGE_UNVERIFIED"),
-            Value::string("BUILD_PROVENANCE_AND_REA_EVIDENCE_NOT_ATTESTED"),
-        ])),
+        (
+            "changes",
+            Value::array(changed.iter().map(|item| {
+                obj(&[
+                    ("path", Value::string(&item.path)),
+                    ("original_blob", Value::string(&item.original_blob)),
+                    (
+                        "rewritten_sha256",
+                        Value::string(digest::sha256(&item.rewritten)),
+                    ),
+                    (
+                        "removed_bytes",
+                        Value::number(item.original.len().saturating_sub(item.rewritten.len())),
+                    ),
+                    (
+                        "added_bytes",
+                        Value::number(item.rewritten.len().saturating_sub(item.original.len())),
+                    ),
+                ])
+            })),
+        ),
+        (
+            "worktree",
+            request
+                .output
+                .map(|p| Value::string(p.to_string_lossy()))
+                .unwrap_or(Value::Null),
+        ),
+        (
+            "obligations",
+            Value::array([
+                Value::string("NATIVE_PRODUCER_AUTHENTICITY_UNVERIFIED"),
+                Value::string("INDEPENDENT_BUILD_TEST_AND_API_VERIFICATION_REQUIRED"),
+                Value::string("CONFIGURATION_COVERAGE_UNVERIFIED"),
+                Value::string("BUILD_PROVENANCE_AND_REA_EVIDENCE_NOT_ATTESTED"),
+            ]),
+        ),
         ("ready_to_merge", Value::Bool(false)),
         ("automatic_deletion_authorized", Value::Bool(false)),
-    ]).stamp_id("report_id")
+    ])
+    .stamp_id("report_id")
 }
 
 #[cfg(test)]
@@ -253,18 +322,57 @@ mod tests {
     #[test]
     fn byte_offsets_require_unambiguous_valid_utf8() {
         let source = "aéb".as_bytes();
-        assert!(replay_file(source, vec![Edit {
-            start: 1, end: 2, replacement: String::new(),
-        }]).is_err());
-        assert!(replay_file(source, vec![
-            Edit { start: 0, end: 1, replacement: String::new() },
-            Edit { start: 1, end: 1, replacement: "x".to_owned() },
-        ]).is_err());
-        assert_eq!(replay_file(source, vec![Edit {
-            start: 1, end: 3, replacement: String::new(),
-        }]).unwrap(), b"ab");
-        assert!(replay_file(source, vec![Edit {
-            start: 0, end: 0, replacement: String::new(),
-        }]).is_err());
+        assert!(
+            replay_file(
+                source,
+                vec![Edit {
+                    start: 1,
+                    end: 2,
+                    replacement: String::new(),
+                }]
+            )
+            .is_err()
+        );
+        assert!(
+            replay_file(
+                source,
+                vec![
+                    Edit {
+                        start: 0,
+                        end: 1,
+                        replacement: String::new()
+                    },
+                    Edit {
+                        start: 1,
+                        end: 1,
+                        replacement: "x".to_owned()
+                    },
+                ]
+            )
+            .is_err()
+        );
+        assert_eq!(
+            replay_file(
+                source,
+                vec![Edit {
+                    start: 1,
+                    end: 3,
+                    replacement: String::new(),
+                }]
+            )
+            .unwrap(),
+            b"ab"
+        );
+        assert!(
+            replay_file(
+                source,
+                vec![Edit {
+                    start: 0,
+                    end: 0,
+                    replacement: String::new(),
+                }]
+            )
+            .is_err()
+        );
     }
 }

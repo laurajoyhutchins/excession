@@ -1,11 +1,53 @@
 # Evidence-bound improvement loop
 
-The first improvement coordinator evaluates **structural observations**, not
-automatically safe deletions. It reuses existing rust-analyzer SCIP evidence,
-Git identity, and refactoring primitives. This command does not run compilers,
-tests or an agent, write source files, or authorize a merge.
+The improvement coordinator is language-neutral. It takes independently
+generated, Git-bound candidate observations from supported producers,
+normalizes **source paths and symbols**, and compares exact revision evidence.
+The first producers are:
 
-## Plan on a clean, pinned checkout
+- `scip`: source-bound SCIP symbol references (Rust indexing demonstrated;
+  other SCIP languages are admitted only where real symbol observations exist)
+- `indexed`: Excession's existing Python/JavaScript module dependency-cycle
+  and same-language duplicate-body-fingerprint candidates
+
+Candidate reports are never proof of semantic equivalence, dead code,
+completeness, or safe test elision. No producer's missing edge establishes a
+symbol as unused.
+
+## Indexed Python or JavaScript repositories
+
+First index each exact revision using Excession's existing static index
+with language-appropriate roots, then plan and evaluate the results:
+
+```sh
+excession index --repo /work/repo --db /tmp/evidence.sqlite \
+  --name application --rev BASE_SHA --roots src
+
+excession improve plan --producer indexed --db /tmp/evidence.sqlite \
+  --name application --rev BASE_SHA > /tmp/improve-plan.json
+
+# After a separately produced and committed candidate:
+excession index --repo /work/repo --db /tmp/evidence.sqlite \
+  --name application --rev CANDIDATE_SHA --roots src
+
+excession improve evaluate --producer indexed --repo /work/repo \
+  --db /tmp/evidence.sqlite --name application \
+  --base BASE_SHA --candidate CANDIDATE_SHA \
+  --plan /tmp/improve-plan.json
+```
+
+The indexed producer detects supported Python and JavaScript relationships.
+It can *propose* a consolidation but has no automatic edit producer in this
+workflow. `improve trial --producer indexed` refuses: never silently substitute
+a Rust-specific AST tool or a regex rewrite for another language.
+
+## SCIP producer
+
+SCIP reports and exact source identities are supplied by their existing
+language-native indexers; the generic planner never translates source text
+or invents cross-language call semantics.
+
+### Plan on a clean, pinned checkout
 
 Index Rust with the existing native tools in an isolated, trusted environment.
 The SCIP JSON must be decoded by the official `scip print --json` producer,
@@ -19,13 +61,13 @@ excession improve plan --repo /work/base --rev BASE_SHA \
   --index /tmp/base.scip.json --source-prefix core > /tmp/improve-plan.json
 ```
 
-`improve plan` regenerates the Git-bound native report, retains exact
-`candidate_id` and producer evidence, and orders review candidates before
-likely crate-root module-declaration candidates. It does not declare any
+`improve plan` regenerates the Git-bound producer report, retains exact
+`candidate_id`, source locations and producer evidence, and orders native review
+candidates before likely crate-root module-declaration candidates. It does not declare any
 candidate dead or automatically removable. The report contains a stable
 `plan_id` binding the complete evidence and ordering.
 
-## Preview or apply a single supported native extraction
+### Preview or apply the supported Rust extraction
 
 An explicit trial selects one refactor hypothesis, then derives eligible Rust
 function targets from its exact SCIP symbol references. The existing
@@ -84,15 +126,15 @@ inconclusive. Fewer indexed documents or more unresolved references are also
 inconclusive. This is a conservative coverage heuristic, not a completeness
 proof.
 
-`STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED` is emitted when a reciprocal
-pair disappears while the candidate introduces a Rust source file. Moving a
-function to a new module can erase a reciprocal path pair without eliminating
-any implementation. The evaluator explicitly records introduced Rust paths
-rather than treating that movement as technical-debt reduction.
+`STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED` is emitted when a normalized
+candidate finding disappears while a new language-recognized source file is
+introduced. Moving a Rust function, Python definition, JavaScript module or
+another recognized source location can erase observed graph relationships
+without eliminating an implementation. `introduced_source_paths` records that
+evidence instead of counting it as debt removal.
 
-`STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED` means reported reciprocal pairs
-decreased without an introduced Rust file or those specific coverage
-regressions. It still does **not** establish semantic equivalence, dead code,
+`STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED` means normalized findings decreased
+without introduced source files or those specific coverage regressions. It still does **not** establish semantic equivalence, dead code,
 preserved public API, fewer implementations, or source-to-binary provenance. Even this outcome always includes open
 obligations, `ready_to_merge=false`, and
 `automatic_deletion_authorized=false`.
@@ -133,5 +175,7 @@ Only after reliable execution attestation, coverage and compatibility checks
 should the coordinator emit an auditable candidate PR. Unattended merge is not
 authorized by these structural measurements.
 
-Avoid a second semantic parser, data store, or custom Rust refactoring engine.
-Existing native transformation code should be the only edit producer.
+Avoid a second semantic parser, graph authority, custom regex rewriting
+engine, or new persistent evidence store. Any new edit producer must declare
+a language, supported action, native oracle, public-contract checks, and
+independent verification capability before it is allowed to mutate source.

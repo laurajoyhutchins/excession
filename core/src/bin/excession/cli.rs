@@ -555,7 +555,7 @@ pub(super) fn command() -> Command {
     .about("Bounded, machine-readable context and verification for coding agents");
     Command::new("excession")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Git-grounded code analysis with explicit evidence and uncertainty")
+        .about("Excession: Git-grounded analysis with evidence and explicit unknowns")
         .after_help("Start here:\n  excession analyze .\n  excession impact .             # HEAD~1..HEAD\n  excession tests                # plan only\n  excession doctor\n\nRun 'excession commands' for the full catalog.\nNative analysis and test execution are always opt-in.")
         .subcommand_required(true)
         .subcommand(analyze)

@@ -2,7 +2,7 @@
 //! Native predicates and configured-build memberships retain separate meanings.
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
-use crate::{Result, git, refuse, scip_evidence};
+use crate::{Result, git, native_evidence, refuse, scip_evidence};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -307,6 +307,94 @@ fn select_graph(
     Ok(())
 }
 
+
+/// Reconstruct native observations from retained original producer bytes and
+/// authenticate every input to this Git revision before using its SQLite rows.
+/// These are configuration-scoped observations, not dependency-graph edges.
+fn select_native(
+    db: &Db,
+    repo: &Path,
+    commit: &str,
+    tree: &str,
+    snapshot: &str,
+    out: &mut Observed,
+) -> Result<()> {
+    digest_id(snapshot)?;
+    let audit = native_evidence::audit_source(repo, commit, db, snapshot)?;
+    if audit.get("source_commit")?.str()? != commit
+        || audit.get("source_tree")?.str()? != tree
+    {
+        return refuse("native evidence replay differs from requested Git revision");
+    }
+    let receipt_rows = db.query(
+        "SELECT document FROM evidence_receipt_v1 WHERE snapshot_id=?",
+        &[Param::Text(snapshot)],
+    )?;
+    if receipt_rows.len() != 1 {
+        return refuse("selected native evidence lacks one original receipt");
+    }
+    let receipt = json::parse(
+        receipt_rows[0][0].as_deref().ok_or("missing native receipt")?.as_bytes(),
+    )?;
+    let producer = receipt.get("producer")?.str()?;
+    if !matches!(producer, "native:go-list" | "native:clang-ast") {
+        return refuse("selected receipt is not a supported native producer");
+    }
+    let report = json::parse(receipt.get("raw_json")?.str()?.as_bytes())?;
+    let obs = db.query(
+        "SELECT document FROM evidence_observation_v1 WHERE snapshot_id=? ORDER BY observation_id",
+        &[Param::Text(snapshot)],
+    )?;
+    if obs.len() > 1024 {
+        return refuse("selected native observations exceed composition budget");
+    }
+    for row in obs {
+        let entry = json::parse(
+            row[0].as_deref().ok_or("missing native observation")?.as_bytes(),
+        )?;
+        let kind = entry.get("native_kind")?.str()?;
+        if !matches!(kind, "NATIVE_SELECTED_INPUT" | "NATIVE_CONFIGURED_TU") {
+            return refuse("unknown selected native observation kind");
+        }
+        let payload = entry.get("payload")?;
+        let item = payload.get("source")?;
+        let path = item.get("path")?.str()?;
+        let authenticated = source(repo, commit, tree, path, item.get("blob")?.str()?)?;
+        if item.get("source_commit")?.str()? != commit
+            || item.get("source_tree")?.str()? != tree
+            || item.get("mode")? != authenticated.get("mode")?
+        {
+            return refuse("native input Git mode or revision differs from selected observation");
+        }
+        out.source_paths.insert(path.to_owned());
+        let receipt_id = entry.get("receipt_id")?.str()?;
+        out.receipt_ids.insert(receipt_id.to_owned());
+        out.configured_observations.push(obj(&[
+            ("source", authenticated),
+            ("subject", payload.get("subject")?.clone()),
+            ("scope", payload.get("scope")?.clone()),
+            ("native_kind", Value::string(kind)),
+            ("role", payload.get("role")?.clone()),
+            ("status", Value::string("PRODUCER_SUPPLIED_UNATTESTED")),
+            ("producer", Value::string(producer)),
+            ("snapshot_id", Value::string(snapshot)),
+            ("observation_id", entry.get("observation_id")?.clone()),
+            ("receipt_id", Value::string(receipt_id)),
+            ("native_payload", payload.clone()),
+        ]));
+    }
+    out.coverage.push(obj(&[
+        ("producer", Value::string(producer)),
+        ("snapshot_id", Value::string(snapshot)),
+        ("scope", report.get("scope")?.clone()),
+        ("status", Value::string("PARTIAL")),
+        ("source_count", report.get("input_sources")?.clone()),
+        ("limitations", report.get("limitations")?.clone()),
+        ("attestation", Value::string("NOT_ESTABLISHED")),
+    ]));
+    Ok(())
+}
+
 /// Compose selected evidence in a consistent read transaction; selected
 /// producer receipts must replay against exactly the requested Git revision.
 pub fn read(db: &Db, repo: &Path, revision: &str, selection: Selection<'_>) -> Result<Observed> {
@@ -388,6 +476,7 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
     let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
     db.read_transaction(|db| {
         let mut scip = Vec::new();
+        let mut native = Vec::new();
         let mut graphs = Vec::new();
         if has_table(db, "evidence_snapshot_v1")? {
             let rows = db.query(
@@ -411,20 +500,27 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
                     receipts[0][0].as_deref().ok_or("native receipt missing")?.as_bytes(),
                 )?;
                 let producer = receipt.get("producer")?.str()?;
-                if !producer.starts_with("scip:") {
-                    continue;
+                if producer.starts_with("scip:") {
+                    crate::evidence_store::audit(db, snapshot)?;
+                    let prefix = scip_prefix(repo, receipt.get("raw_json")?.str()?)?;
+                    scip.push(obj(&[
+                        ("snapshot_id", Value::string(snapshot)),
+                        ("producer", Value::string(producer)),
+                        ("version", receipt.get("version")?.clone()),
+                        ("source_prefix", prefix.as_deref().map_or(Value::Null, Value::string)),
+                        ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
+                    ]));
+                } else if matches!(producer, "native:go-list" | "native:clang-ast") {
+                    crate::evidence_store::audit(db, snapshot)?;
+                    let report = json::parse(receipt.get("raw_json")?.str()?.as_bytes())?;
+                    native.push(obj(&[
+                        ("snapshot_id", Value::string(snapshot)),
+                        ("producer", Value::string(producer)),
+                        ("subject", report.get("source")?.get("path")?.clone()),
+                        ("scope", report.get("scope")?.clone()),
+                        ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
+                    ]));
                 }
-                // Verify the immutable manifest and its exact receipt/observation
-                // membership before offering this snapshot as a candidate.
-                crate::evidence_store::audit(db, snapshot)?;
-                let prefix = scip_prefix(repo, receipt.get("raw_json")?.str()?)?;
-                scip.push(obj(&[
-                    ("snapshot_id", Value::string(snapshot)),
-                    ("producer", Value::string(producer)),
-                    ("version", receipt.get("version")?.clone()),
-                    ("source_prefix", prefix.as_deref().map_or(Value::Null, Value::string)),
-                    ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
-                ]));
             }
         }
         if has_table(db, "configured_graph")? {
@@ -486,14 +582,18 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
             ("source_commit", Value::string(commit)),
             ("source_tree", Value::string(tree)),
             ("status", Value::string(if ambiguous { "AMBIGUOUS" }
-                else if scip.is_empty() && graphs.is_empty() { "NO_IMPORTED_EVIDENCE" }
+                else if scip.is_empty() && graphs.is_empty() && native.is_empty() { "NO_IMPORTED_EVIDENCE" }
                 else { "UNAMBIGUOUS" })),
             ("scip_candidates", Value::array(scip)),
+            ("native_candidates", Value::array(native.clone())),
             ("graph_candidates", Value::array(graphs)),
             ("selection", obj(&[
                 ("scip_snapshot", chosen_scip),
                 ("graph_id", chosen_graph),
                 ("source_prefix", chosen_prefix),
+                ("native_snapshots", Value::array(native.iter().map(|item| {
+                    item.get("snapshot_id").cloned().unwrap_or(Value::Null)
+                }))),
             ])),
             ("selection_policy", Value::string("UNIQUE_ID_HINTS_WITH_CONFLICT_ISOLATED_COMPOSITION")),
             ("source_authentication", Value::string("REQUIRES_GIT_REPLAY_ON_USE")),
@@ -518,17 +618,18 @@ pub struct ScipInput {
 pub struct Plan {
     pub scip: Vec<ScipInput>,
     pub graphs: Vec<String>,
+    pub native: Vec<String>,
     pub blocked_paths: BTreeSet<String>,
     pub gaps: Vec<Value>,
 }
 
 impl Plan {
     pub fn is_empty(&self) -> bool {
-        self.scip.is_empty() && self.graphs.is_empty()
+        self.scip.is_empty() && self.graphs.is_empty() && self.native.is_empty()
     }
 
     pub fn document(&self) -> Value {
-        obj(&[
+        let mut document = obj(&[
             (
                 "scip",
                 Value::array(self.scip.iter().map(|x| {
@@ -552,7 +653,16 @@ impl Plan {
                 Value::array(self.blocked_paths.iter().map(Value::string)),
             ),
             ("gaps", Value::array(self.gaps.clone())),
-        ])
+        ]);
+        // Keep the previously serialized plan byte-identical if it has no
+        // native evidence. Old saved impact reports still replay exactly.
+        if !self.native.is_empty() {
+            document.entries_mut().expect("plan is an object").insert(
+                "native".into(),
+                Value::array(self.native.iter().map(Value::string)),
+            );
+        }
+        document
     }
 }
 
@@ -566,8 +676,11 @@ fn plan_from_ids(
     revision: &str,
     scip: Vec<ScipInput>,
     graphs: Vec<String>,
+    native: Vec<String>,
 ) -> Result<Plan> {
-    if scip.len() > MAX_PLAN_ITEMS || graphs.len() > MAX_PLAN_ITEMS {
+    if scip.len() > MAX_PLAN_ITEMS || graphs.len() > MAX_PLAN_ITEMS
+        || native.len() > MAX_PLAN_ITEMS
+    {
         return refuse("more than 24 source evidence producers for one revision");
     }
     let commit = git::rev(repo, revision)?;
@@ -685,12 +798,36 @@ fn plan_from_ids(
             ]));
         }
     }
+    let mut seen_native = BTreeSet::new();
+    let mut native_by_subject = BTreeMap::<String, BTreeSet<String>>::new();
+    for id in &native {
+        digest_id(id)?;
+        if !seen_native.insert(id.clone()) {
+            return refuse("duplicate native producer snapshot in source evidence plan");
+        }
+        // Full immutable-store audit followed by source-bound replay.
+        let receipt = native_evidence::audit_source(repo, &commit, db, id)?;
+        let path = receipt.get("source")?.get("path")?.str()?;
+        native_by_subject.entry(path.to_owned()).or_default().insert(id.clone());
+    }
+    for (path, ids) in native_by_subject {
+        if ids.len() > 1 {
+            gaps.push(obj(&[
+                ("reason", Value::string("MISSING_CONFIGURATION")),
+                ("path", Value::string(path)),
+                ("detail", Value::string(
+                    "Multiple native configurations for this source; observations are separate, never merged as a call or import graph",
+                )),
+            ]));
+        }
+    }
     if gaps.len() > 9999 {
         return refuse("native evidence conflicts exceed coverage budget");
     }
     Ok(Plan {
         scip,
         graphs,
+        native,
         blocked_paths,
         gaps,
     })
@@ -722,7 +859,13 @@ pub fn default_plan(db: &Db, repo: &Path, revision: &str) -> Result<Plan> {
         .iter()
         .map(|entry| Ok(entry.get("graph_id")?.str()?.to_owned()))
         .collect::<Result<Vec<_>>>()?;
-    plan_from_ids(db, repo, revision, scip, graphs)
+    let native = candidates
+        .get("native_candidates")?
+        .array_ref()?
+        .iter()
+        .map(|entry| Ok(entry.get("snapshot_id")?.str()?.to_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    plan_from_ids(db, repo, revision, scip, graphs, native)
 }
 
 /// Replay only the identities sealed in a saved report. Newly imported
@@ -749,7 +892,13 @@ pub fn pinned_plan(db: &Db, repo: &Path, revision: &str, record: &Value) -> Resu
         .iter()
         .map(|item| Ok(item.str()?.to_owned()))
         .collect::<Result<Vec<_>>>()?;
-    let reconstructed = plan_from_ids(db, repo, revision, scip, graphs)?;
+    let native = match record.entries()?.get("native") {
+        Some(items) => items.array_ref()?.iter()
+            .map(|item| Ok(item.str()?.to_owned()))
+            .collect::<Result<Vec<_>>>()?,
+        None => Vec::new(),
+    };
+    let reconstructed = plan_from_ids(db, repo, revision, scip, graphs, native)?;
     if reconstructed.document() != *record {
         return refuse(
             "recorded native evidence conflicts or selection identities differ on replay",
@@ -789,6 +938,9 @@ pub fn read_plan(db: &Db, repo: &Path, revision: &str, plan: &Plan) -> Result<Ob
         }
         for id in &plan.graphs {
             select_graph(db, repo, &commit, &tree, id, &mut out)?;
+        }
+        for id in &plan.native {
+            select_native(db, repo, &commit, &tree, id, &mut out)?;
         }
         if out.relationships.len() > MAX_COMPOSED_EDGES
             || out.configured_observations.len() > MAX_COMPOSED_EDGES

@@ -1090,7 +1090,7 @@ fn native_java_uses_resolved_maven_or_gradle_artifacts_without_running_build_scr
         let f = Fixture::new();
         let (manifest, artifact, commit) = configured_java_fixture(&f, provider);
         let exported = f.parent.join("trusted-build-classpath.txt");
-        fs::write(&exported, format!("{}\\n", artifact.display()).replace("\\\\n", "\\n")).unwrap();
+        fs::write(&exported, format!("{}{}", artifact.display(), char::from(10))).unwrap();
         let captured = parsed(f.invoke(&[
             "evidence", "jvm-inputs-capture",
             "--repo", f.repo.to_str().unwrap(), "--rev", &commit,

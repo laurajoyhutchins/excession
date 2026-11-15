@@ -63,7 +63,49 @@ objects even when the working tree is dirty; they do not include uncommitted
 edits. Default SQLite caches live outside the repository. Exact-output workflows
 also support `--json` and explicit revisions/roots.
 
-For advanced reproducible queries, the existing `index`, `inspect`,
+## Plan a Git history consolidation
+
+Excession can inventory a local Git SHA-1 history, audit the resulting read-only plan,
+enumerate local refs, and verify that a separately reconstructed history has the
+same exact source tree as a frozen architectural target:
+
+```sh
+excession history plan --repo . --rev HEAD --max-commits 10000 > /tmp/history-plan.json
+excession history audit --repo . --plan /tmp/history-plan.json
+excession history refs --repo . --max-refs 10000
+excession history verify-target --repo . --target main --replacement curated-branch
+```
+
+These commands do not rewrite Git history or authorize a ref update. Adjacent
+commit-message scopes are only proposals for review, not correctness proofs.
+See [target architecture](docs/TARGET_ARCHITECTURE.md) and
+[history safety contract](docs/HISTORY_REORGANIZATION.md).
+
+## Test what changed
+
+Run Excession inside a Git checkout. Its default is a read-only
+test plan, not an unexpected execution of project configuration:
+
+~~~sh
+excession tests
+excession tests --run
+excession tests --run --verify --json
+excession tests --run --sandbox-image registry.example/test@sha256:DIGEST
+~~~
+
+Excession chooses the revision comparison and detects installed Jest or a
+Python pytest-testmon project. Jest discovers **and runs** related tests;
+pytest-testmon selects and runs tests from a previous coverage baseline.
+\`--run\` deliberately executes trusted project tools; in agent workflows
+use an isolated checkout. Failing tests return exit code 1, an inconclusive
+run returns 3, and setup refusals return 2. JSON includes source identity,
+executed test IDs, and optional verification obligations.
+
+Use \`--base\`, \`--candidate\`, \`--provider\`, or \`--focus\` to override
+discovery. Mixed frameworks require explicit provider choice.
+See [native test workflow](docs/NATIVE_TEST_SELECTORS.md).
+
+For advanced reproducible queries, the existing \`index\`, \`inspect\`,
 `view`, `browse`, `graph`, `refactor` and `security` commands remain
 available. See [CLI usage](docs/CLI.md), [release portability](docs/PORTABILITY.md), [release procedure](docs/RELEASE.md),
 and [development setup](docs/DEVELOPMENT.md).
@@ -77,6 +119,22 @@ selection still narrows scope. See
 Build membership is never silently promoted to a source dependency.
 
 ## Coding-agent interface
+
+Find candidate code without knowing its paths first:
+
+```sh
+excession agent locate --repo . --task "Fix worker lease recovery" --limit 20 --json
+```
+
+The locator now uses an incrementally cached, **256-segment** FTS5/BM25
+index over authenticated Git sources and reuses `agent context` for
+relationships and test suggestions. The default refresh budget is eight
+segments per call; use `--index-segments 256` for an explicit full warmup.
+Partial coverage is reported instead of silently searching stale partitions.
+This is lexical discovery, **not semantic proof**, and does not include
+uncommitted edits. Related Git-bound SCIP and static-import neighbors, when
+available, appear separately with original producer evidence and uncertainty. See [agent commands](docs/AGENT_CLI.md).
+
 
 `excession agent context` returns bounded Git source identities, candidate
 relationships, coverage gaps and heuristic test suggestions for exact focus

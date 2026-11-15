@@ -7,12 +7,14 @@ on:
       - 'core/adapters/clang_ast.py'
       - 'core/src/kernel_clang.rs'
       - 'core/src/adapter.rs'
-      - 'core/src/bin/excession.rs'
-      - 'core/src/lib.rs'
       - 'tests/test_clang_ast.py'
       - 'tests/clang_linux_probe.py'
       - 'docs/CLANG_TU.md'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

@@ -38,9 +38,7 @@ fn find_claim<'a>(report: &'a Value, id: &str) -> Result<&'a Value> {
     let mut found = None;
     for effect in report.get("effects")?.array_ref()? {
         let actual = effect.get("claim_id")?.str()?;
-        let mut unsigned = effect.clone();
-        unsigned.entries_mut()?.remove("claim_id");
-        if unsigned.sha256() != actual {
+        if !effect.content_id_matches("claim_id")? {
             return refuse("impact claim identifier disagrees with its content");
         }
         if actual == id && found.replace(effect).is_some() {
@@ -148,17 +146,14 @@ pub fn explain(
             return refuse("claim explanation has no supporting observation");
         }
     }
-    let mut out = obj(&[
+    let out = obj(&[
         ("schema", Value::string("excession.explanation.v1")),
         ("claim_id", Value::string(claim_id)),
         ("source_commit", Value::string(commit)),
         ("steps", steps),
         ("coverage", report.get("coverage")?.clone()),
     ]);
-    let report_id = out.sha256();
-    out.entries_mut()?
-        .insert("report_id".into(), Value::string(report_id));
-    Ok(out)
+    out.stamp_id("report_id")
 }
 
 pub fn audit(
@@ -169,7 +164,7 @@ pub fn audit(
     db: Option<&str>,
 ) -> Result<Value> {
     let explanation = explain(repo, saved_report, claim_id, roots, db)?;
-    let mut result = obj(&[
+    let result = obj(&[
         ("schema", Value::string("excession.audit-result.v1")),
         ("schema_validation", Value::string("NOT_RUN")),
         ("git_authentication", Value::string("PASS")),
@@ -179,11 +174,7 @@ pub fn audit(
     // Replaying the source authenticates the supported observation path,
     // but independent semantic truth remains deliberately unassessed.
     let _ = explanation.get("report_id")?;
-    let id = result.sha256();
-    result
-        .entries_mut()?
-        .insert("report_id".into(), Value::string(id));
-    Ok(result)
+    result.stamp_id("report_id")
 }
 
 pub fn human(explanation: &Value) -> Result<String> {

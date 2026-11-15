@@ -1,6 +1,13 @@
 //! Set operations and namespaced views over authenticated source identities.
 //! Every operation produces a deterministic manifest; none copies source files.
-use super::*;
+use super::model::{
+    Entry, Plan, authenticate_from_table, checked_plan, make_plan, read_plan, source_table,
+};
+use super::workspace::replay;
+use crate::json::{Value, obj};
+use crate::{Result, git, refuse};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 fn same_revision(left: &Plan, right: &Plan) -> Result<()> {
     if left.commit != right.commit || left.tree != right.tree {

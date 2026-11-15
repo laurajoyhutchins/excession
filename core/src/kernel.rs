@@ -338,11 +338,7 @@ fn scan_impl(
             ),
         ]);
     }
-    let body = obj(&fields);
-    let id = body.sha256();
-    let mut report = body.entries()?.clone();
-    report.insert("report_id".into(), Value::string(id));
-    Ok(Value::Object(report))
+    obj(&fields).stamp_id("report_id")
 }
 
 #[cfg(test)]

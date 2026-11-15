@@ -6,9 +6,13 @@ use crate::{Result, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const MAX_INDEX_BYTES: usize = 16 * 1024 * 1024;
+// The 2026-11-14 self-index contains 20,950,375 decoded JSON bytes.
+// Bound ingestion separately from the existing 16 MiB report output cap.
+const MAX_INPUT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_REPORT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_DOCUMENTS: usize = 1500;
-const MAX_OCCURRENCES: usize = 100_000;
+// The pinned self-index has 113,823 occurrences across 121 documents.
+const MAX_OCCURRENCES: usize = 150_000;
 const MAX_BLOB_BYTES: usize = 512 * 1024;
 const MAX_SOURCE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_CANDIDATES: usize = 128;
@@ -151,12 +155,8 @@ fn range_line(occ: &Value, lines: &[usize], encoding: usize) -> Result<usize> {
     Ok(start_line)
 }
 
-fn candidate(mut value: Value) -> Result<Value> {
-    let id = value.sha256();
-    value
-        .entries_mut()?
-        .insert("candidate_id".into(), Value::string(id));
-    Ok(value)
+fn candidate(value: Value) -> Result<Value> {
+    value.stamp_id("candidate_id")
 }
 
 fn source(document: &Document) -> Value {
@@ -198,6 +198,56 @@ fn crate_root_sibling_module<'a>(root: &str, child: &'a str) -> Option<&'a str> 
     Some(module)
 }
 
+/// Parent `foo.rs` and child `foo/bar.rs` share one Rust module tree.
+/// Explicit `#[path]` test children are also common in this repository.
+/// A path match alone is never sufficient: the SCIP reference must include
+/// a native module symbol from parent to child.
+fn nested_rust_module(parent: &str, child: &str) -> bool {
+    let Some((directory, name)) = parent.rsplit_once('/') else {
+        return false;
+    };
+    let Some(stem) = name.strip_suffix(".rs") else {
+        return false;
+    };
+    let Some(sibling) = child
+        .strip_prefix(directory)
+        .and_then(|s| s.strip_prefix('/'))
+    else {
+        return false;
+    };
+    if stem != "mod" && sibling == format!("{stem}_tests.rs") {
+        return true;
+    }
+    let nested = if stem == "mod" {
+        sibling
+    } else {
+        let Some(nested) = sibling.strip_prefix(stem).and_then(|s| s.strip_prefix('/')) else {
+            return false;
+        };
+        nested
+    };
+    !nested.contains('/')
+        && nested.ends_with(".rs")
+        && !matches!(nested, "mod.rs" | "lib.rs" | "main.rs")
+}
+
+/// An ordinary module integration edge is lower-priority for refactoring
+/// review even when its parent also invokes child APIs. This never removes
+/// references, changes the evidence identity, or proves absence of a cycle.
+fn explicit_child_module_link(
+    parent: &Document,
+    child: &Document,
+    parent_to_child: &[Reference],
+) -> bool {
+    nested_rust_module(&parent.path, &child.path)
+        && parent_to_child.iter().any(|reference| {
+            reference.symbol.starts_with("rust-analyzer cargo ")
+                && reference.symbol.ends_with('/')
+                && reference.from == parent.path
+                && reference.to == child.path
+        })
+}
+
 fn likely_rust_module_structure(
     indexer: &str,
     left: &Document,
@@ -207,6 +257,11 @@ fn likely_rust_module_structure(
 ) -> bool {
     if indexer != "rust-analyzer" || left.language != "rust" || right.language != "rust" {
         return false;
+    }
+    if explicit_child_module_link(left, right, forward)
+        || explicit_child_module_link(right, left, backward)
+    {
+        return true;
     }
     let (module, root_to_child) =
         if let Some(module) = crate_root_sibling_module(&left.path, &right.path) {
@@ -269,8 +324,8 @@ fn analyze_bytes(
         return refuse("SCIP revision must be a commit");
     }
     let tree = git::rev(repo, &format!("{commit}^{{tree}}"))?;
-    if bytes.len() > MAX_INDEX_BYTES {
-        return refuse("SCIP JSON exceeds 16 MiB, narrow the source index");
+    if bytes.len() > MAX_INPUT_BYTES {
+        return refuse("SCIP JSON exceeds 32 MiB, narrow the source index");
     }
     let parsed = json::parse(bytes)?;
     let metadata = parsed.get("metadata")?;
@@ -602,11 +657,8 @@ fn analyze_bytes(
             ),
         );
     }
-    let id = report.sha256();
-    report
-        .entries_mut()?
-        .insert("report_id".into(), Value::string(id));
-    if report.canonical().len() > MAX_INDEX_BYTES {
+    let report = report.stamp_id("report_id")?;
+    if report.canonical().len() > MAX_REPORT_BYTES {
         return refuse("SCIP refactor report exceeds 16 MiB");
     }
     Ok(report)
@@ -624,7 +676,7 @@ pub fn audit_with_prefix(
     source_prefix: Option<&str>,
 ) -> Result<Value> {
     let data = std::fs::read(report).map_err(|e| format!("SCIP report read: {e}"))?;
-    if data.len() > MAX_INDEX_BYTES {
+    if data.len() > MAX_REPORT_BYTES {
         return refuse("SCIP report exceeds 16 MiB");
     }
     let saved = json::parse(&data)?;
@@ -733,6 +785,95 @@ mod tests {
             &nested,
             &[declaration],
             &[shared_type]
+        ));
+    }
+
+    #[test]
+    fn nested_module_pairs_from_real_self_analysis_are_structural_not_cycles() {
+        let parent = Document {
+            path: "core/src/transactions.rs".into(),
+            language: "rust".into(),
+            blob: "a".repeat(40),
+        };
+        let child = Document {
+            path: "core/src/transactions/execution.rs".into(),
+            language: "rust".into(),
+            blob: "b".repeat(40),
+        };
+        let declaration = Reference {
+            from: parent.path.clone(),
+            to: child.path.clone(),
+            symbol: "rust-analyzer cargo excession 0.2.0 transactions/execution/".into(),
+            line: 12,
+        };
+        let call = Reference {
+            symbol: "rust-analyzer cargo excession 0.2.0 transactions/execution/compose().".into(),
+            ..declaration.clone()
+        };
+        let parent_type = Reference {
+            from: child.path.clone(),
+            to: parent.path.clone(),
+            symbol: "rust-analyzer cargo excession 0.2.0 transactions/Spec#".into(),
+            line: 10,
+        };
+        assert!(likely_rust_module_structure(
+            "rust-analyzer",
+            &parent,
+            &child,
+            &[declaration.clone(), call.clone()],
+            std::slice::from_ref(&parent_type),
+        ));
+        // Without the native module declaration, a reciprocal API reference
+        // is still an ordinary review candidate, never structurally inferred.
+        assert!(!likely_rust_module_structure(
+            "rust-analyzer",
+            &parent,
+            &child,
+            &[call],
+            std::slice::from_ref(&parent_type),
+        ));
+        assert!(!likely_rust_module_structure(
+            "unverified-indexer",
+            &parent,
+            &child,
+            &[declaration],
+            std::slice::from_ref(&parent_type),
+        ));
+        let unrelated = Document {
+            path: "core/src/elsewhere.rs".into(),
+            ..child.clone()
+        };
+        assert!(!nested_rust_module(&parent.path, &unrelated.path));
+        // Every originally untriaged pair in the pinned self-analysis artifact
+        // has a parent/child layout, including the explicit sibling tests file.
+        for (parent, child) in [
+            (
+                "core/src/transactions.rs",
+                "core/src/transactions/execution.rs",
+            ),
+            (
+                "core/src/transactions.rs",
+                "core/src/transactions/verification.rs",
+            ),
+            (
+                "core/src/projection.rs",
+                "core/src/projection/composition.rs",
+            ),
+            ("core/src/projection.rs", "core/src/projection/workspace.rs"),
+            (
+                "core/src/bin/excession.rs",
+                "core/src/bin/excession/graph.rs",
+            ),
+            (
+                "core/src/evidence_store.rs",
+                "core/src/evidence_store_tests.rs",
+            ),
+        ] {
+            assert!(nested_rust_module(parent, child), "{parent} => {child}");
+        }
+        assert!(!nested_rust_module(
+            "core/src/transactions.rs",
+            "core/src/transactions/another/nested.rs"
         ));
     }
 

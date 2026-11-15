@@ -113,6 +113,30 @@ impl Value {
     pub fn sha256(&self) -> String {
         crate::digest::sha256(self.canonical().as_bytes())
     }
+
+    /// Bind an unsigned JSON object to the canonical bytes it contains.
+    ///
+    /// The identifier is computed *before* its field is inserted. Existing
+    /// identifiers are refused rather than silently overwritten or rehashed.
+    /// This preserves the v1 receipt and candidate ID contracts.
+    pub fn stamp_id(mut self, field: &str) -> Result<Self> {
+        if self.entries()?.contains_key(field) {
+            return refuse(format!("cannot stamp existing content-id field: {field}"));
+        }
+        let id = self.sha256();
+        self.entries_mut()?
+            .insert(field.to_owned(), Self::string(id));
+        Ok(self)
+    }
+
+    /// Check a persisted content ID against the rest of its JSON object.
+    /// This authenticates payload consistency, not the producer or semantics.
+    pub fn content_id_matches(&self, field: &str) -> Result<bool> {
+        let expected = self.get(field)?.str()?;
+        let mut unsigned = self.clone();
+        unsigned.entries_mut()?.remove(field);
+        Ok(unsigned.sha256() == expected)
+    }
 }
 
 pub fn obj(pairs: &[(&str, Value)]) -> Value {
@@ -474,6 +498,45 @@ mod tests {
         let old = reference_canonical(&sample);
         assert_eq!(sample.canonical(), old);
         assert_eq!(crate::json::parse(old.as_bytes()).unwrap(), sample);
+    }
+
+    #[test]
+    fn canonical_content_ids_match_prior_wire_format() {
+        let unsigned = obj(&[
+            ("schema", Value::string("excession.sample.v1")),
+            ("sources", Value::array([Value::string("a.rs")])),
+        ]);
+        let expected = unsigned.sha256();
+        let stamped = unsigned.clone().stamp_id("report_id").unwrap();
+        assert_eq!(stamped.get("report_id").unwrap().str().unwrap(), expected);
+        assert_eq!(
+            stamped.canonical(),
+            format!(
+                r#"{{"report_id":"{expected}","schema":"excession.sample.v1","sources":["a.rs"]}}"#
+            )
+        );
+        assert!(stamped.content_id_matches("report_id").unwrap());
+        assert!(stamped.clone().stamp_id("report_id").is_err());
+        assert!(Value::array([]).stamp_id("report_id").is_err());
+    }
+
+    #[test]
+    fn stamped_payload_rejects_changed_and_missing_content_ids() {
+        let stamped = obj(&[("a", Value::number(1))])
+            .stamp_id("claim_id")
+            .unwrap();
+        let mut modified = stamped.clone();
+        modified
+            .entries_mut()
+            .unwrap()
+            .insert("a".into(), Value::number(2));
+        assert!(!modified.content_id_matches("claim_id").unwrap());
+        assert!(modified.content_id_matches("missing_id").is_err());
+        assert!(
+            !obj(&[("claim_id", Value::string("not a digest"))])
+                .content_id_matches("claim_id")
+                .unwrap()
+        );
     }
 
     #[test]

@@ -1,0 +1,46 @@
+name: Segmented source index scale acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'core/src/agent_locate_cache.rs'
+      - '.github/workflows/agent-locate-scale.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-index-scale-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  segmented-index:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Prefetch pinned dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Run real Git fixture with 6,400 source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/time -v cargo test --offline --locked \
+            --manifest-path core/Cargo.toml --lib \
+            agent_locate_cache::tests::indexes_more_than_the_previous_repository_wide_cap \
+            -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/segment-scale.log"
+      - name: Preserve exact test and resource receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-locate-scale-receipt
+          path: ${{ runner.temp }}/segment-scale.log
+          if-no-files-found: warn
+          retention-days: 7

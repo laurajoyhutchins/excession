@@ -1,5 +1,16 @@
 # External pytest change-impact validation (2026-11-13)
 
+> **Reconciled November 15, 2026.** These numeric measurements are
+> historical results of the November 13 branch, not current `main`
+> performance. The old distinct-path-first traversal was superseded by the
+> newer mainline source inventory (`candidate_source_impacts`), whose
+> rank-decreasing witnesses are independent of capped alternative-path
+> explanations. The adapted Git/CPython AST oracle fails if any distinct
+> source impact is missing or invented. Missing explanation paths are
+> permitted only when output declares `TRUNCATED`. The held-out behavioral
+> regression and source-bound receipt checks remain mandatory.
+
+
 ## Experiment and independent control
 
 An independently maintained real repository: https://github.com/pytest-dev/pytest
@@ -44,10 +55,12 @@ head-revision paths. [Initial run 43483964174](https://github.com/laurajoyhutchi
 That run incorrectly had an overall success conclusion because the oracle
 evaluation only printed `MISMATCH` instead of failing the step.
 
-The repaired Rust traversal prioritizes distinct dependent files, interleaves
-base/head results, then emits alternate path evidence only with remaining
-capacity. The workflow now requires `MATCH` or fails. Its behavioral
-regression probe is also a required step, not a silently permitted failure.
+The November 13 branch repaired this by prioritizing distinct paths and
+interleaving revisions. That implementation is **not merged over the
+current mainline algorithm**. Main now emits authenticated, rank-decreasing
+source witnesses independently of the capped explanation budget. The
+adapted experiment requires `MATCH` or fails; the historical behavioral
+regression probe remains mandatory.
 
 [Validated run 43486404246](https://github.com/laurajoyhutchins/excession/actions/runs/43486404246):
 the independent source oracle reports `MATCH`, and the old source

@@ -82,32 +82,140 @@
     "producer_selection_plan": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["base", "head"],
+      "required": [
+        "base",
+        "head"
+      ],
       "properties": {
-        "base": { "$ref": "analysis.v1.schema.json#/$defs/producer_plan" },
-        "head": { "$ref": "analysis.v1.schema.json#/$defs/producer_plan" }
+        "base": {
+          "$ref": "analysis.v1.schema.json#/$defs/producer_plan"
+        },
+        "head": {
+          "$ref": "analysis.v1.schema.json#/$defs/producer_plan"
+        }
       }
     },
     "producer_selections": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["base_scip_snapshot", "head_scip_snapshot", "base_graph_id", "head_graph_id", "base_source_prefix", "head_source_prefix"],
+      "required": [
+        "base_scip_snapshot",
+        "head_scip_snapshot",
+        "base_graph_id",
+        "head_graph_id",
+        "base_source_prefix",
+        "head_source_prefix"
+      ],
       "properties": {
-        "base_scip_snapshot": { "oneOf": [{ "$ref": "common.v1.schema.json#/$defs/sha256" }, { "type": "null" }] },
-        "head_scip_snapshot": { "oneOf": [{ "$ref": "common.v1.schema.json#/$defs/sha256" }, { "type": "null" }] },
-        "base_graph_id": { "oneOf": [{ "$ref": "common.v1.schema.json#/$defs/sha256" }, { "type": "null" }] },
-        "head_graph_id": { "oneOf": [{ "$ref": "common.v1.schema.json#/$defs/sha256" }, { "type": "null" }] },
-        "base_source_prefix": { "type": ["string", "null"] },
-        "head_source_prefix": { "type": ["string", "null"] }
+        "base_scip_snapshot": {
+          "oneOf": [
+            {
+              "$ref": "common.v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head_scip_snapshot": {
+          "oneOf": [
+            {
+              "$ref": "common.v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "base_graph_id": {
+          "oneOf": [
+            {
+              "$ref": "common.v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head_graph_id": {
+          "oneOf": [
+            {
+              "$ref": "common.v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "base_source_prefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head_source_prefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
-    "producer_coverage": { "type": "array", "items": { "type": "object" } },
-    "configured_observations": { "type": "array", "items": { "$ref": "analysis.v1.schema.json#/$defs/configured_observation" } },
+    "producer_coverage": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "configured_observations": {
+      "type": "array",
+      "items": {
+        "$ref": "analysis.v1.schema.json#/$defs/configured_observation"
+      }
+    },
     "ontology_links": {
       "type": "array",
       "items": {
         "$ref": "common.v1.schema.json#/$defs/ontology_link_ref"
       }
+    },
+    "candidate_source_impacts": {
+      "type": "array",
+      "description": "One decreasing-rank parent edge per distinct reachable source in the two observed revision graphs. This is not a claim that the observed graph is semantically complete.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entity",
+          "assessment",
+          "next_hop",
+          "distance_to_change"
+        ],
+        "properties": {
+          "entity": {
+            "$ref": "common.v1.schema.json#/$defs/source_ref"
+          },
+          "assessment": {
+            "const": "CANDIDATE_PATH"
+          },
+          "next_hop": {
+            "$ref": "#/$defs/hop"
+          },
+          "distance_to_change": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "candidate_source_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Exact number of distinct reachable non-seed sources counted separately per revision before output bounding."
+    },
+    "candidate_source_enumeration_complete": {
+      "type": "boolean",
+      "description": "Whether candidate_source_impacts contains every source reachable in the observed graphs. This says nothing about unobserved dependencies."
     }
   },
   "$defs": {

@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/agent/test-workflow.v2.schema.json",
+  "title": "Isolated ephemeral uncommitted working-tree test workflow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "mode",
+    "status",
+    "provider",
+    "detected_providers",
+    "repo",
+    "base_commit",
+    "base_strategy",
+    "candidate_commit",
+    "candidate_tree",
+    "changed_sources",
+    "blockers",
+    "next_command",
+    "selected_test_files",
+    "executed_test_count",
+    "failed_test_count_lower_bound",
+    "selection",
+    "native_execution",
+    "verification",
+    "safe_to_skip_unlisted_tests",
+    "report_id",
+    "guidance",
+    "next_argv",
+    "working_tree"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.test-workflow.v2"
+    },
+    "mode": {
+      "enum": [
+        "PLAN",
+        "RUN"
+      ]
+    },
+    "status": {
+      "enum": [
+        "READY",
+        "BLOCKED",
+        "PASS",
+        "FAIL",
+        "INCONCLUSIVE"
+      ]
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "enum": [
+            "jest",
+            "pytest-testmon"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "detected_providers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "jest",
+          "pytest-testmon"
+        ]
+      }
+    },
+    "repo": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "base_strategy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_commit": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "candidate_tree": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "changed_sources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "next_command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selected_test_files": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "executed_test_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_test_count_lower_bound": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "selection": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "native_execution": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "verification": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "safe_to_skip_unlisted_tests": {
+      "const": false
+    },
+    "report_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "guidance": {
+      "type": "string",
+      "minLength": 1
+    },
+    "next_argv": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "working_tree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_head",
+        "snapshot_sha256",
+        "snapshot_commit",
+        "snapshot_tree",
+        "untracked_paths",
+        "ephemeral",
+        "replayable_after_completion",
+        "source_checkout_modified",
+        "receipt_trust"
+      ],
+      "properties": {
+        "source_head": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "snapshot_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "snapshot_commit": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "snapshot_tree": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "untracked_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "ephemeral": {
+          "const": true
+        },
+        "replayable_after_completion": {
+          "const": false
+        },
+        "source_checkout_modified": {
+          "const": false
+        },
+        "receipt_trust": {
+          "const": "EPHEMERAL_LOCAL_SANDBOX_UNATTESTED"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

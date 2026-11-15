@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/evidence-core/git-reconstruction-evidence.v1.schema.json",
+  "title": "Git reconstruction build and REA receipt replay bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "bindings"],
+  "properties": {
+    "schema": {"const": "excession.git-reconstruction-evidence.v1"},
+    "bindings": {
+      "type": "array", "maxItems": 512,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["phase", "checkpoint", "contract", "artifact", "build_snapshot", "rea_bundle"],
+        "properties": {
+          "phase": {"enum": ["INTRODUCTION", "INTEGRATION"]},
+          "checkpoint": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+          "contract": {"type": "string", "minLength": 1, "maxLength": 128},
+          "artifact": {"type": "string", "minLength": 1},
+          "build_snapshot": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "rea_bundle": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

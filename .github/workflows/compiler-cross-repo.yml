@@ -8,12 +8,14 @@ on:
       - 'core/src/compiler_clang.rs'
       - 'core/src/kernel_clang.rs'
       - 'core/src/adapter.rs'
-      - 'core/src/bin/excession.rs'
-      - 'core/src/lib.rs'
       - 'tests/test_clang_ast.py'
       - 'tests/compiler_cross_repo_probe.py'
       - 'docs/COMPILER_ANALYSIS.md'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

@@ -34,12 +34,8 @@ fn gap(code: &str) -> Value {
     obj(&[("reason", Value::string(code))])
 }
 
-fn report_id(mut value: Value) -> Result<Value> {
-    let id = value.sha256();
-    value
-        .entries_mut()?
-        .insert("report_id".to_owned(), Value::string(id));
-    Ok(value)
+fn report_id(value: Value) -> Result<Value> {
+    value.stamp_id("report_id")
 }
 
 fn is_test(path: &str) -> bool {
@@ -106,8 +102,12 @@ pub fn context(
     let mut relations = Vec::new();
     let mut total_relations = 0usize;
     let mut truncated = false;
-    match analyze::run_if_supported(&discovered.root, &discovered.commit, roots, database)? {
-        Some((analysis, _)) => {
+    // Include revision-authenticated SCIP and configured-graph observations
+    // already present in the evidence store, alongside static import candidates.
+    // The default plan only selects producer evidence compatible with the
+    // requested exact Git revision. No inferred edge becomes a verified fact.
+    match analyze::run_default(&discovered.root, &discovered.commit, roots, database) {
+        Ok((analysis, _)) => {
             for relationship in analysis.get("relationships")?.array_ref()? {
                 let from = relationship.get("source")?.get("path")?.str()?;
                 let to = relationship.get("target")?.get("path")?.str()?;
@@ -128,7 +128,7 @@ pub fn context(
                 }
             }
         }
-        None => gaps.push(gap("NO_SUPPORTED_STATIC_MODULE_INDEX")),
+        Err(error) => return Err(error),
     }
 
     let mut test_candidates = Vec::new();
@@ -326,11 +326,20 @@ pub fn verify(
 
     let all_changes = changes.get("changes")?.array_ref()?;
     let effects = impact.get("effects")?.array_ref()?;
+    let candidate_sources = impact.get("candidate_source_impacts")?.array_ref()?;
+    let candidate_source_count = impact.get("candidate_source_count")?.integer()?;
+    let candidate_source_complete = impact
+        .get("candidate_source_enumeration_complete")?
+        .bool()?;
     let unknown = impact.get("unknown")?.array_ref()?;
     if !unknown.is_empty() {
         obligations.insert("UNRESOLVED_SOURCE_COVERAGE".into());
     }
-    let truncated = all_changes.len() > limit || effects.len() > limit || unknown.len() > limit;
+    let truncated = all_changes.len() > limit
+        || effects.len() > limit
+        || candidate_sources.len() > limit
+        || !candidate_source_complete
+        || unknown.len() > limit;
     if truncated {
         obligations.insert("TRUNCATED_OUTPUT".into());
     }
@@ -349,6 +358,18 @@ pub fn verify(
             Value::array(take_bounded(effects, limit)),
         ),
         ("candidate_impact_count", Value::number(effects.len())),
+        (
+            "candidate_source_impacts",
+            Value::array(take_bounded(candidate_sources, limit)),
+        ),
+        (
+            "candidate_source_count",
+            Value::number(candidate_source_count),
+        ),
+        (
+            "candidate_source_enumeration_complete",
+            Value::Bool(candidate_source_complete && candidate_sources.len() <= limit),
+        ),
         ("unknown", Value::array(take_bounded(unknown, limit))),
         ("receipts", Value::array(imported)),
         (

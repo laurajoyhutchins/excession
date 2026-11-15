@@ -10,6 +10,7 @@ use std::path::Path;
 
 const MAX_DEPTH: usize = 8;
 const MAX_EFFECTS: usize = 512;
+const MAX_SOURCE_IMPACTS: usize = 10_000;
 const MAX_GAPS: usize = 9999;
 
 /// Return each producer's native relationship and its evidence unchanged.
@@ -93,16 +94,12 @@ fn walk(
                     hops.push(edge.clone());
                     hops.extend(suffix.iter().cloned());
                     let entity = edge.get("source")?.clone();
-                    let mut effect = obj(&[
+                    let effect = obj(&[
                         ("entity", entity),
                         ("assessment", Value::string("CANDIDATE_PATH")),
                         ("hops", Value::array(hops.clone())),
                     ]);
-                    let claim_id = effect.sha256();
-                    effect
-                        .entries_mut()?
-                        .insert("claim_id".to_owned(), Value::string(claim_id));
-                    effects.push(effect);
+                    effects.push(effect.stamp_id("claim_id")?);
                     if effects.len() >= MAX_EFFECTS {
                         return Ok(true);
                     }
@@ -116,63 +113,41 @@ fn walk(
     Ok(false)
 }
 
-/// Enumerate distinct dependent source paths before spending the result budget
-/// on alternative evidence chains. One shortest, source-authenticated witness
-/// is sufficient to preserve a candidate path in the bounded report.
-///
-/// This is graph reachability over declared observations, not a claim that
-/// every possible runtime dependency has been discovered.
-fn walk_first_paths(
+/// One parent edge per *distinct source*, rather than one entry per simple
+/// path. Multi-source reverse BFS discovers every reachable source in the
+/// observed graph exactly once. The distance is a decreasing rank certificate:
+/// every next_hop points to a changed seed (rank 0) or an earlier entry with
+/// rank one smaller. This proves reachability *in the observed graph*, not that
+/// the graph captures all semantic dependencies.
+fn source_witnesses(
     incoming: &BTreeMap<String, Vec<Value>>,
     changed: &BTreeSet<String>,
-) -> Result<(Vec<Value>, bool)> {
-    let mut effects = Vec::new();
-    let mut emitted = BTreeSet::new();
-    let mut depth_truncated = false;
-
-    for seed in changed {
-        // Each changed source is a seed, not an impacted dependent. The
-        // change inventory already accounts for changed paths explicitly.
-        let mut visited = changed.clone();
-        let mut queue = VecDeque::from([(seed.to_owned(), Vec::<Value>::new())]);
-        while let Some((target, suffix)) = queue.pop_front() {
-            let Some(edges) = incoming.get(&target) else {
-                continue;
-            };
+) -> Result<Vec<Value>> {
+    let mut visited = changed.clone();
+    let mut queue = changed
+        .iter()
+        .map(|path| (path.clone(), 0usize))
+        .collect::<VecDeque<_>>();
+    let mut witnesses = Vec::new();
+    while let Some((target, distance)) = queue.pop_front() {
+        if let Some(edges) = incoming.get(&target) {
             for edge in edges {
                 let path = edge.get("source")?.get("path")?.str()?.to_owned();
-                if visited.contains(&path) {
+                if !visited.insert(path.clone()) {
                     continue;
                 }
-                if suffix.len() >= MAX_DEPTH {
-                    depth_truncated = true;
-                    continue;
-                }
-                visited.insert(path.clone());
-                let mut hops = Vec::with_capacity(suffix.len() + 1);
-                hops.push(edge.clone());
-                hops.extend(suffix.iter().cloned());
-
-                if emitted.insert(path.clone()) {
-                    let mut effect = obj(&[
-                        ("entity", edge.get("source")?.clone()),
-                        ("assessment", Value::string("CANDIDATE_PATH")),
-                        ("hops", Value::array(hops.clone())),
-                    ]);
-                    let claim_id = effect.sha256();
-                    effect
-                        .entries_mut()?
-                        .insert("claim_id".to_owned(), Value::string(claim_id));
-                    effects.push(effect);
-                    if effects.len() >= MAX_EFFECTS {
-                        return Ok((effects, true));
-                    }
-                }
-                queue.push_back((path, hops));
+                let next_distance = distance.checked_add(1).ok_or("impact distance overflow")?;
+                queue.push_back((path, next_distance));
+                witnesses.push(obj(&[
+                    ("entity", edge.get("source")?.clone()),
+                    ("assessment", Value::string("CANDIDATE_PATH")),
+                    ("next_hop", edge.clone()),
+                    ("distance_to_change", Value::number(next_distance)),
+                ]));
             }
         }
     }
-    Ok((effects, depth_truncated))
+    Ok(witnesses)
 }
 
 fn indexed_language(path: &str) -> bool {
@@ -269,15 +244,14 @@ fn run_core(
     let base_commit = changes.get("base_commit")?.str()?;
     let head_commit = changes.get("head_commit")?.str()?;
     let mut effects = Vec::new();
-    // Preserve separate budgets for unique changed-source dependents and
-    // alternative path witnesses. The latter must never starve the former.
-    let mut primary_paths = Vec::<Vec<Value>>::new();
-    let mut alternative_graphs = Vec::<(BTreeMap<String, Vec<Value>>, BTreeSet<String>)>::new();
+    let mut candidate_source_impacts = Vec::new();
+    let mut candidate_source_count = 0usize;
+    let mut effect_truncated = false;
+    let mut source_truncated = false;
     let mut configured_observations = Vec::new();
     let mut producer_coverage = Vec::new();
     let mut gaps = Vec::new();
     let mut source_count = 0i64;
-    let mut truncated = false;
     for (revision, side) in [(base_commit, "before"), (head_commit, "after")] {
         let changed = changed_paths(&changes, side)?;
         let scope = match selected {
@@ -359,67 +333,23 @@ fn run_core(
             }
         }
         let graph = incoming(&report)?;
-        let (primary, depth_or_count_truncated) = walk_first_paths(&graph, &changed)?;
-        truncated |= depth_or_count_truncated;
-        primary_paths.push(primary);
-        alternative_graphs.push((graph, changed));
-    }
-
-    // Interleave the two revisions so a large base graph cannot leave zero
-    // visibility into the candidate/head revision.
-    let mut primary = primary_paths
-        .into_iter()
-        .map(Vec::into_iter)
-        .collect::<Vec<_>>();
-    loop {
-        let mut progressed = false;
-        for iter in &mut primary {
-            let Some(effect) = iter.next() else {
-                continue;
-            };
-            if effects.len() >= MAX_EFFECTS {
-                truncated = true;
-                break;
-            }
-            effects.push(effect);
-            progressed = true;
+        let witnesses = source_witnesses(&graph, &changed)?;
+        candidate_source_count = candidate_source_count
+            .checked_add(witnesses.len())
+            .ok_or("candidate source count overflow")?;
+        let room = MAX_SOURCE_IMPACTS.saturating_sub(candidate_source_impacts.len());
+        if witnesses.len() > room {
+            source_truncated = true;
         }
-        if !progressed || effects.len() >= MAX_EFFECTS {
-            break;
+        candidate_source_impacts.extend(witnesses.into_iter().take(room));
+        // The legacy explanations enumerate distinct paths and may hit their
+        // output bound. Never let that bound suppress the next revision or
+        // the distinct-source impact inventory.
+        if !effect_truncated {
+            effect_truncated = walk(&graph, &changed, &mut effects)?;
         }
     }
-
-    // Retain distinct alternative paths when capacity allows. The original
-    // path-enumeration contract is still exercised by the diamond test.
-    if effects.len() < MAX_EFFECTS {
-        let mut claims = BTreeSet::new();
-        for effect in &effects {
-            claims.insert(effect.get("claim_id")?.str()?.to_owned());
-        }
-        for (graph, changed) in alternative_graphs {
-            let mut alternatives = Vec::new();
-            truncated |= walk(&graph, &changed, &mut alternatives)?;
-            for effect in alternatives {
-                // Changed files already appear in the change inventory and
-                // are not a discovered dependent of themselves.
-                if changed.contains(effect.get("entity")?.get("path")?.str()?) {
-                    continue;
-                }
-                if !claims.insert(effect.get("claim_id")?.str()?.to_owned()) {
-                    continue;
-                }
-                if effects.len() >= MAX_EFFECTS {
-                    truncated = true;
-                    break;
-                }
-                effects.push(effect);
-            }
-            if effects.len() >= MAX_EFFECTS {
-                truncated = true;
-                break;
-            }
-        }
-    }
+    let mut truncated = effect_truncated || source_truncated;
     if gaps.len() > MAX_GAPS {
         gaps.truncate(MAX_GAPS);
         truncated = true;
@@ -433,6 +363,18 @@ fn run_core(
         ("head_commit", Value::string(head_commit)),
         ("change_inventory_id", changes.get("report_id")?.clone()),
         ("effects", Value::array(effects)),
+        (
+            "candidate_source_impacts",
+            Value::array(candidate_source_impacts),
+        ),
+        (
+            "candidate_source_count",
+            Value::number(candidate_source_count),
+        ),
+        (
+            "candidate_source_enumeration_complete",
+            Value::Bool(!source_truncated),
+        ),
         ("unknown", Value::array(gaps.clone())),
         (
             "coverage",
@@ -506,21 +448,29 @@ fn run_core(
         }
         Mode::Explicit(_) => {}
     }
-    let id = result.sha256();
-    result
-        .entries_mut()?
-        .insert("report_id".to_owned(), Value::string(id));
-    Ok(result)
+    result.stamp_id("report_id")
 }
 
 pub fn human(report: &Value) -> Result<String> {
     const PREVIEW_LIMIT: usize = 10;
     let effects = report.get("effects")?.array_ref()?;
+    let source_count = report.get("candidate_source_count")?.integer()?;
+    let source_complete = report
+        .get("candidate_source_enumeration_complete")?
+        .bool()?;
     let gaps = report.get("unknown")?.array_ref()?.len();
     let mut lines = vec![
         format!(
             "Excession change impact: {} candidate dependent paths.",
             effects.len()
+        ),
+        format!(
+            "Distinct dependent sources: {source_count} (observed-graph inventory {}).",
+            if source_complete {
+                "complete"
+            } else {
+                "truncated"
+            }
         ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
@@ -560,6 +510,99 @@ pub fn human(report: &Value) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_witnesses_cover_layered_fanout_when_path_enumeration_truncates() {
+        let make_edge = |source: &str, target: &str| {
+            obj(&[
+                ("kind", Value::string("STATIC_IMPORT")),
+                ("source", obj(&[("path", Value::string(source))])),
+                ("target", obj(&[("path", Value::string(target))])),
+                (
+                    "evidence",
+                    Value::array([obj(&[
+                        ("assessment", Value::string("CANDIDATE")),
+                        ("receipt_id", Value::string("native-observation")),
+                    ])]),
+                ),
+            ])
+        };
+        // Only 21 affected sources, but 3 + 9 + ... + 2187 different
+        // source-to-change paths within the legacy eight-hop bound.
+        let mut edges = Vec::new();
+        let mut parents = vec!["pkg/changed.py".to_owned()];
+        for level in 1..=7 {
+            let current = (0..3)
+                .map(|i| format!("pkg/l{level}_{i}.py"))
+                .collect::<Vec<_>>();
+            for source in &current {
+                for target in &parents {
+                    edges.push(make_edge(source, target));
+                }
+            }
+            parents = current;
+        }
+        let analysis = obj(&[("relationships", Value::array(edges))]);
+        let graph = incoming(&analysis).unwrap();
+        let seeds = BTreeSet::from(["pkg/changed.py".to_owned()]);
+        let mut enumerated_paths = Vec::new();
+        assert!(walk(&graph, &seeds, &mut enumerated_paths).unwrap());
+        assert_eq!(enumerated_paths.len(), MAX_EFFECTS);
+
+        let witnesses = source_witnesses(&graph, &seeds).unwrap();
+        assert_eq!(witnesses.len(), 21);
+        let mut ranks = BTreeMap::from([("pkg/changed.py".to_owned(), 0i64)]);
+        for witness in &witnesses {
+            let path = witness
+                .get("entity")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap();
+            let target = witness
+                .get("next_hop")
+                .unwrap()
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap();
+            let rank = witness
+                .get("distance_to_change")
+                .unwrap()
+                .integer()
+                .unwrap();
+            assert_eq!(ranks.get(target), Some(&(rank - 1)));
+            assert!(ranks.insert(path.to_owned(), rank).is_none());
+            assert_eq!(
+                witness.get("assessment").unwrap().str().unwrap(),
+                "CANDIDATE_PATH"
+            );
+        }
+        for leaf in parents {
+            assert_eq!(ranks.get(&leaf), Some(&7));
+        }
+    }
+
+    #[test]
+    fn changed_seeds_are_not_mistaken_for_distinct_dependents() {
+        let graph = BTreeMap::from([(
+            "pkg/a.py".to_owned(),
+            vec![obj(&[
+                ("source", obj(&[("path", Value::string("pkg/b.py"))])),
+                ("target", obj(&[("path", Value::string("pkg/a.py"))])),
+                ("relation", Value::string("STATIC_IMPORT")),
+                (
+                    "evidence",
+                    Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])]),
+                ),
+            ])],
+        )]);
+        let seeds = BTreeSet::from(["pkg/a.py".to_owned(), "pkg/b.py".to_owned()]);
+        assert!(source_witnesses(&graph, &seeds).unwrap().is_empty());
+    }
 
     #[test]
     fn refuses_promoting_static_candidates_into_observed_proof() {
@@ -627,56 +670,6 @@ mod tests {
             from_top[0].get("claim_id").unwrap(),
             from_top[1].get("claim_id").unwrap()
         );
-    }
-
-    #[test]
-    fn distinct_paths_survive_alternative_path_budget_exhaustion() {
-        // A realistic import fan-in can create far more path witnesses than
-        // distinct affected files. An alternative-path-first budget misses
-        // entire revisions even though the distinct reachable set is small.
-        let edge = |source: &str, target: &str| {
-            obj(&[
-                ("kind", Value::string("STATIC_IMPORT")),
-                ("source", obj(&[("path", Value::string(source))])),
-                ("target", obj(&[("path", Value::string(target))])),
-                (
-                    "evidence",
-                    Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])]),
-                ),
-            ])
-        };
-        let mut relations = Vec::new();
-        for index in 0..300 {
-            let intermediate = format!("pkg/importer_{index:03}.py");
-            relations.push(edge(&intermediate, "pkg/changed.py"));
-            relations.push(edge("pkg/aggregator.py", &intermediate));
-        }
-        let input = obj(&[("relationships", Value::array(relations))]);
-        let graph = incoming(&input).unwrap();
-        let changed = BTreeSet::from(["pkg/changed.py".to_owned()]);
-
-        let mut path_first = Vec::new();
-        assert!(walk(&graph, &changed, &mut path_first).unwrap());
-        assert_eq!(path_first.len(), MAX_EFFECTS);
-
-        let (distinct, truncated) = walk_first_paths(&graph, &changed).unwrap();
-        assert!(!truncated);
-        assert_eq!(distinct.len(), 301);
-        let paths = distinct
-            .iter()
-            .map(|effect| {
-                effect
-                    .get("entity")
-                    .unwrap()
-                    .get("path")
-                    .unwrap()
-                    .str()
-                    .unwrap()
-                    .to_owned()
-            })
-            .collect::<BTreeSet<_>>();
-        assert_eq!(paths.len(), 301);
-        assert!(paths.contains("pkg/aggregator.py"));
     }
 
     #[test]

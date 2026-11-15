@@ -8,11 +8,14 @@ on:
       - 'core/src/kbuild_graph.rs'
       - 'core/src/configured_store.rs'
       - 'core/src/graph_assembly.rs'
-      - 'core/src/lib.rs'
-      - 'core/src/bin/excession.rs'
       - 'tests/kbuild_graph_probe.py'
       - 'docs/KBUILD_GRAPHS.md'
+      - 'core/src/bin/excession/graph.rs'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

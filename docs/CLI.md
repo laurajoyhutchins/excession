@@ -178,6 +178,15 @@ The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL
 
 ## Agent-facing commands
 
+`excession agent locate --repo REPO --task TEXT [--rev HEAD] [--limit 20] [--json]`
+finds ranked lexical source candidates from pinned Git blobs using an
+segmented, incremental, external SQLite FTS5 index (up to eight
+segments refreshed by default, configurable via `--index-segments`), with exact
+source identities, bounded excerpts, and an embedded agent context report.
+Candidates are **unverified text matches** and uncommitted edits are excluded.
+No model or external index service is required. See [agent locate](AGENT_CLI.md).
+
+
 `excession agent context --repo REPO --rev COMMIT --focus PATH[,PATH...] [--task TEXT] [--limit 32]`
 returns versioned JSON with exact source identities, existing candidate
 relationships, coverage gaps, and explicitly heuristic test suggestions.

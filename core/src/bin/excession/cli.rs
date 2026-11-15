@@ -242,6 +242,17 @@ pub(super) fn command() -> Command {
     let benchmark = group(
         "benchmark",
         vec![
+            leaf(
+                "review-prepare",
+                &["study", "case", "condition", "repetition", "out"],
+                &[],
+            ),
+            leaf(
+                "review-record",
+                &["assignment", "transcript", "decision", "out"],
+                &["input-tokens", "output-tokens"],
+            ),
+            leaf("review-evaluate", &["study", "attempts", "out"], &[]),
             leaf("validate", &["report"], &[]),
             leaf("report", &["kind", "directory"], &["input"]),
             leaf(
@@ -434,9 +445,62 @@ pub(super) fn command() -> Command {
         ],
     )
     .about("Bounded, Git-bound Linux source observations and coverage");
+    let tests = leaf(
+        "tests",
+        &[],
+        &[
+            "repo",
+            "base",
+            "candidate",
+            "provider",
+            "tool",
+            "focus",
+            "sandbox-image",
+            "expected-snapshot",
+            "timeout",
+        ],
+    )
+    .visible_alias("test")
+    .about("Plan and run native tests for committed or safely sandboxed uncommitted code")
+    .arg(
+        Arg::new("working-tree")
+            .long("working-tree")
+            .action(clap::ArgAction::SetTrue)
+            .help("Explicitly snapshot the uncommitted working tree (also auto-detected)"),
+    )
+    .arg(
+        Arg::new("run")
+            .long("run")
+            .action(clap::ArgAction::SetTrue)
+            .help("Execute native project tooling in this trusted checkout"),
+    )
+    .arg(
+        Arg::new("verify")
+            .long("verify")
+            .action(clap::ArgAction::SetTrue)
+            .help("Carry native test receipts into agent verification (requires --run)"),
+    )
+    .arg(
+        Arg::new("json")
+            .long("json")
+            .action(clap::ArgAction::SetTrue)
+            .help("Emit canonical JSON for an agent or script"),
+    );
     let agent = group(
         "agent",
         vec![
+            leaf(
+                "locate",
+                &["repo", "task"],
+                &["rev", "limit", "roots", "db", "index-segments"],
+            )
+            .about("Find ranked Git-pinned source candidates for a natural-language task")
+            .arg(
+                Arg::new("json")
+                    .long("json")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Emit canonical JSON (also the default for agent locate)"),
+            ),
             leaf(
                 "context",
                 &["repo", "rev", "focus"],
@@ -447,6 +511,12 @@ pub(super) fn command() -> Command {
                 &["repo", "base", "candidate"],
                 &["limit", "roots", "db", "receipts"],
             ),
+            leaf(
+                "select-tests",
+                &["repo", "base", "candidate", "provider", "trusted-local"],
+                &["tool", "focus"],
+            )
+            .about("Delegate selection to installed Jest or pytest-testmon on a trusted checkout"),
         ],
     )
     .about("Bounded, machine-readable context and verification for coding agents");
@@ -612,14 +682,27 @@ pub(super) fn command() -> Command {
         .subcommand(security)
         .subcommand(evidence)
         .subcommand(group(
+            "history",
+            vec![
+                leaf("plan", &["repo"], &["rev", "base", "max-commits"]),
+                leaf("audit", &["repo", "plan"], &[]),
+                leaf("refs", &["repo"], &["max-refs"]),
+                leaf("verify-target", &["repo", "target", "replacement"], &[]),
+            ],
+        ).about("Read-only Git history consolidation plans and exact source-DAG replay"))
+        .subcommand(group(
             "reconstruct",
             vec![
                 leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),
                 leaf("history", &["db", "target"], &["limit"]),
                 leaf("auto", &["db", "target", "out", "trusted-local"], &["compiler", "objcopy", "objdump", "nm", "max-candidates", "time-budget-seconds"]),
                 leaf("searches", &["db", "target"], &["limit"]),
+                leaf("git", &["repo", "plan"], &[]),
+                leaf("git-synthesize", &["repo", "seed", "output"], &["max-candidates", "feedback"]),
+                leaf("git-evidence", &["repo", "plan", "db", "evidence"], &[]),
+                leaf("git-oracles", &["repo", "plan", "db", "evidence", "checks", "trusted-local"], &[]),
             ],
-        ).about("Trusted-local compiler feedback for C object-code reconstruction"))
+        ).about("Read-only Git reconstruction and trusted-local C compiler feedback"))
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)
@@ -627,6 +710,7 @@ pub(super) fn command() -> Command {
         .subcommand(analyze)
         .subcommand(kernel)
         .subcommand(agent)
+        .subcommand(tests)
         .subcommand(
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
                 .about("Read-only virtual source browser"),
@@ -727,6 +811,55 @@ mod tests {
     }
 
     #[test]
+    fn agent_locate_requires_task_and_supports_explicit_revision() {
+        assert!(parse(&strings(&["agent", "locate", "--repo", "x"])).is_err());
+        assert!(parse(&strings(&["agent", "locate", "--task", "worker lease"])).is_err());
+        let ParseOutcome::Command(parsed) = parse(&strings(&[
+            "agent",
+            "locate",
+            "--repo",
+            "x",
+            "--task",
+            "worker lease",
+            "--rev",
+            "HEAD",
+            "--limit",
+            "8",
+            "--json",
+        ]))
+        .unwrap() else {
+            panic!("expected a command");
+        };
+        assert_eq!(parsed.path, ["agent", "locate"]);
+        assert_eq!(parsed.options.get("task"), "worker lease");
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "worker lease",
+                "--index-segments",
+                "256",
+            ]))
+            .is_ok()
+        );
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "lease",
+                "--unknown",
+            ]))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn agent_grammar_requires_pinned_focus_or_candidate() {
         assert!(
             parse(&strings(&[
@@ -770,6 +903,24 @@ mod tests {
             ]))
             .is_ok()
         );
+    }
+
+    #[test]
+    fn test_workflow_is_short_and_explicit_about_execution() {
+        assert!(parse(&strings(&["tests"])).is_ok());
+        assert!(parse(&strings(&["test", "--json"])).is_ok());
+        assert!(parse(&strings(&["tests", "--run", "--verify", "--json"])).is_ok());
+        assert!(
+            parse(&strings(&[
+                "tests",
+                "--run",
+                "--sandbox-image",
+                "example@sha256:abc",
+                "--working-tree"
+            ]))
+            .is_ok()
+        );
+        assert!(parse(&strings(&["tests", "--unknown"])).is_err());
     }
 
     #[test]

@@ -40,6 +40,9 @@ jobs:
           git -C "$PYTEST_REPO" diff --name-only "$HEAD_SHA^" "$HEAD_SHA" > "$OUT/changed.txt"
           git -C "$PYTEST_REPO" ls-tree -r --name-only HEAD | wc -l > "$OUT/total-files.txt"
           sha256sum core/target/release/excession > "$OUT/excession.sha256"
+      - name: Validate bounded-explanation source-inventory acceptance
+        shell: bash
+        run: python3 -m unittest discover -s tests -p 'test_impact_heldout_contract.py' -v
       - name: Independent full import-reachability oracle versus Excession
         shell: bash
         run: |
@@ -99,15 +102,19 @@ jobs:
           edges, nmodules, unresolved = independent_edges(repo, head, entries, {'src', 'testing'})
           direct = {src for src, target in edges if target in changed}
           transitive = reachable(edges, changed)
+          witnesses = cold['candidate_source_impacts']
+          assert cold['candidate_source_enumeration_complete'] is True
+          assert cold['candidate_source_count'] == len(witnesses)
           produced = {
-              effect['entity']['path'] for effect in cold['effects']
-              if effect['entity']['source_commit'] == head
+              item['entity']['path'] for item in witnesses
+              if item['entity']['source_commit'] == head
           }
+          assert produced == transitive, 'independent AST oracle and source inventory differ'
           tests = {p for p in transitive if p.startswith('testing/')}
-          head_effects = [effect for effect in cold['effects']
-                          if effect['entity']['source_commit'] == head]
-          witness_targets = {p: sorted({effect['entity']['path'] for effect in head_effects
-              if effect['hops'] and effect['hops'][-1]['target']['path'] == p})
+          head_witnesses = [item for item in witnesses
+                            if item['entity']['source_commit'] == head]
+          witness_targets = {p: sorted({item['entity']['path'] for item in head_witnesses
+              if item['next_hop']['target']['path'] == p})
               for p in sorted(changed)}
           beyond_changed = transitive - changed
           beyond_direct = transitive - direct - changed
@@ -137,10 +144,14 @@ jobs:
               'excession_report_truncated': any(
                   gap.get('reason') == 'TRUNCATED' for gap in cold['coverage']['gaps']),
               'excession_effect_count': len(cold['effects']),
+              'excession_source_witness_count': len(witnesses),
+              'excession_source_witnesses_complete': cold['candidate_source_enumeration_complete'],
+              'excession_legacy_explanations_truncated': any(
+                  gap.get('reason') == 'TRUNCATED' for gap in cold['coverage']['gaps']),
               'head_affected_paths_by_changed_source': {k: len(v) for k,v in witness_targets.items()},
               'oracle_and_impact_wall_seconds': report.get('measured_wall_seconds'),
               'excession_report_coverage': cold['coverage'].get('status'),
-              'independent_full_explanation_audit': report.get('status'),
+              'independent_source_witness_audit': report.get('status'),
               'independent_audit_error': report.get('error'),
               'baseline': {
                   'git_diff_changed_files_only': len(changed),
@@ -153,7 +164,7 @@ jobs:
                   'Import reachability is a candidate, not demonstrated behavior breakage',
                   'The independent AST oracle itself is bounded to literal in-tree Python imports',
                   'The full CI test suite and native semantic indexers are not equivalent baselines',
-                  'Truncated Excession results cannot establish complete recall',
+                  'Truncated legacy explanations cannot establish complete paths; source witnesses require independent validation',
                   'No coding-agent task success is inferred from candidate paths'
               ],
           }

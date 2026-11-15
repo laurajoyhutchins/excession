@@ -2,16 +2,21 @@
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
 use excession::agent;
+use excession::agent_locate;
 use excession::analyze;
 use excession::change_inventory;
 use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
+use excession::history;
 use excession::impact_query;
+use excession::native_test_selectors;
+use excession::native_test_workflow;
 use excession::observed_relations::{self, Plan, Selection};
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
+use excession::working_tree_tests;
 use excession::{
     Result, benchmark, compiler_clang, git, graph_assembly, graph_baseline, index, kbuild_graph,
     kernel, kernel_coverage, native_boundary, preflight, projection, refactor, refactor_codegen,
@@ -32,6 +37,7 @@ use cli::{Options, ParseOutcome};
 
 enum Response {
     Json(excession::json::Value),
+    Test(excession::json::Value, bool),
     CanonicalJson(String),
     Message(String),
     Bytes(Vec<u8>),
@@ -39,14 +45,108 @@ enum Response {
 impl Response {
     fn emit(self) -> Result<()> {
         let mut out = io::stdout().lock();
+        let write_error = |error: io::Error| format!("stdout write failed: {error}");
         match self {
-            Self::Json(j) => writeln!(out, "{}", j.canonical()),
-            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}"),
-            Self::Bytes(bytes) => out.write_all(&bytes),
+            Self::Json(j) => writeln!(out, "{}", j.canonical()).map_err(write_error),
+            Self::Test(report, as_json) => {
+                let phase = report.get("status")?.str()?.to_owned();
+                let message = if as_json {
+                    report.canonical()
+                } else {
+                    test_summary(&report)?
+                };
+                writeln!(out, "{message}").map_err(write_error)?;
+                out.flush().map_err(write_error)?;
+                if phase == "FAIL" {
+                    std::process::exit(1);
+                }
+                if phase == "INCONCLUSIVE" {
+                    std::process::exit(3);
+                }
+                Ok(())
+            }
+            Self::CanonicalJson(s) | Self::Message(s) => writeln!(out, "{s}").map_err(write_error),
+            Self::Bytes(bytes) => out.write_all(&bytes).map_err(write_error),
         }
-        .map_err(|e| format!("stdout write failed: {e}"))
     }
 }
+fn test_summary(report: &excession::json::Value) -> Result<String> {
+    use excession::json::Value;
+    let provider = match report.get("provider")? {
+        Value::Null => "not resolved",
+        value => value.str()?,
+    };
+    let phase = report.get("status")?.str()?;
+    let mode = report.get("mode")?.str()?;
+    let base = report.get("base_commit")?.str()?;
+    let head = report.get("candidate_commit")?.str()?;
+    let short = |oid: &str| oid.chars().take(12).collect::<String>();
+    let changed = report.get("changed_sources")?.array_ref()?.len();
+    let worktree = report.entries()?.get("working_tree");
+    let repo_path = report.get("repo")?.str()?;
+    let mut lines = vec![
+        format!("Tests: {phase} ({mode}, {provider})"),
+        format!("Repository: {repo_path}"),
+        format!(
+            "Source: {}",
+            if worktree.is_some() {
+                "ephemeral uncommitted snapshot"
+            } else {
+                "committed Git revision"
+            }
+        ),
+        format!(
+            "Revision: {}..{} | {changed} changed file(s)",
+            short(base),
+            short(head)
+        ),
+    ];
+    if let Some(snapshot) = worktree {
+        lines.push(format!(
+            "Snapshot: {} | original checkout stays untouched",
+            snapshot
+                .get("snapshot_sha256")?
+                .str()?
+                .chars()
+                .take(12)
+                .collect::<String>()
+        ));
+    }
+    for reason in report.get("blockers")?.array_ref()? {
+        lines.push(format!("  Blocked: {}", reason.str()?));
+    }
+    if mode == "PLAN" {
+        if phase == "BLOCKED" {
+            lines.push(format!("Fix: {}", report.get("guidance")?.str()?));
+        }
+        lines.push(format!("Next: {}", report.get("next_command")?.str()?));
+        if phase == "READY" {
+            lines.push("This is a read-only plan. --run executes native project tools.".to_owned());
+        }
+    } else {
+        let selected = report.get("selected_test_files")?.array_ref()?;
+        lines.push(format!(
+            "Selected: {} test file(s) | Executed: {} test(s)",
+            selected.len(),
+            report.get("executed_test_count")?.integer()?
+        ));
+        for path in selected.iter().take(8) {
+            lines.push(format!("  {}", path.str()?));
+        }
+        if selected.len() > 8 {
+            lines.push(format!("  ... and {} more", selected.len() - 8));
+        }
+        if report.get("verification")? != &Value::Null {
+            lines.push(format!(
+                "Excession verification: {}",
+                report.get("verification")?.get("status")?.str()?
+            ));
+        }
+    }
+    lines.push("Coverage remains partial; unlisted tests are not proven safe to skip.".to_owned());
+    Ok(lines.join("\n"))
+}
+
 fn json(v: excession::json::Value) -> Response {
     Response::Json(v)
 }
@@ -452,7 +552,7 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown syntax command {sub}")),
         },
         [top, sub] if top == "graph" => match sub.as_str() {
-            "import" | "ls" | "show" | "deps" | "path" => graph_cli::run(sub, opt),
+            "import" | "ls" | "show" | "deps" | "path" => Ok(json(graph_cli::run(sub, opt)?)),
             "kbuild" => {
                 let db = Db::open(opt.path("db"))?;
                 Ok(json(kbuild_graph::assemble(
@@ -478,6 +578,83 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown graph command: {sub}")),
         },
+        [top] if top == "tests" || top == "test" => {
+            let repo = Path::new(opt.get_or("repo", "."));
+            let explicit_worktree = opt.get_or("working-tree", "false") == "true";
+            let sandbox_image = opt.0.get("sandbox-image").map(String::as_str);
+            let expected_snapshot = opt.0.get("expected-snapshot").map(String::as_str);
+            let timeout_seconds = opt
+                .get_or("timeout", "120")
+                .parse::<u64>()
+                .map_err(|_| "--timeout must be an integer from 1 to 600")?;
+            let dirty_source = working_tree_tests::has_source_changes(repo)?;
+            if explicit_worktree || dirty_source {
+                let report = working_tree_tests::execute(working_tree_tests::Request {
+                    repo,
+                    base: opt.0.get("base").map(String::as_str),
+                    candidate: opt.0.get("candidate").map(String::as_str),
+                    provider: opt.0.get("provider").map(String::as_str),
+                    tool: opt.0.get("tool").map(String::as_str),
+                    focus: opt.0.get("focus").map(String::as_str),
+                    run: opt.get_or("run", "false") == "true",
+                    verify: opt.get_or("verify", "false") == "true",
+                    sandbox_image,
+                    expected_snapshot,
+                    timeout_seconds,
+                })?;
+                return Ok(Response::Test(
+                    report,
+                    opt.get_or("json", "false") == "true",
+                ));
+            }
+            if sandbox_image.is_some() || expected_snapshot.is_some() {
+                return refuse(
+                    "sandbox flags require uncommitted source changes or --working-tree",
+                );
+            }
+            let report = native_test_workflow::execute(native_test_workflow::Request {
+                repo: Path::new(opt.get_or("repo", ".")),
+                base: opt.0.get("base").map(String::as_str),
+                candidate: opt.0.get("candidate").map(String::as_str),
+                provider: opt.0.get("provider").map(String::as_str),
+                tool: opt.0.get("tool").map(String::as_str),
+                focus: opt.0.get("focus").map(String::as_str),
+                run: opt.get_or("run", "false") == "true",
+                verify: opt.get_or("verify", "false") == "true",
+            })?;
+            Ok(Response::Test(
+                report,
+                opt.get_or("json", "false") == "true",
+            ))
+        }
+        [top, sub] if top == "history" => match sub.as_str() {
+            "plan" => {
+                let max = opt
+                    .get_or("max-commits", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-commits must be an integer from 1 to 100000")?;
+                Ok(json(history::plan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.0.get("base").map(String::as_str),
+                    max,
+                )?))
+            }
+            "audit" => Ok(json(history::audit(opt.path("repo"), opt.path("plan"))?)),
+            "refs" => {
+                let max = opt
+                    .get_or("max-refs", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-refs must be an integer from 1 to 100000")?;
+                Ok(json(history::refs(opt.path("repo"), max)?))
+            }
+            "verify-target" => Ok(json(history::verify_target(
+                opt.path("repo"),
+                opt.get("target"),
+                opt.get("replacement"),
+            )?)),
+            _ => refuse(format!("unknown history command {sub}")),
+        },
         [top, sub] if top == "agent" => {
             let limit = opt
                 .get_or("limit", "32")
@@ -486,6 +663,21 @@ fn execute(args: &[String]) -> Result<Response> {
             let roots = opt.0.get("roots").map(String::as_str);
             let db = opt.0.get("db").map(String::as_str);
             match sub.as_str() {
+                "locate" => {
+                    let budget = opt
+                        .get_or("index-segments", "8")
+                        .parse::<usize>()
+                        .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
+                    Ok(json(agent_locate::locate_with_budget(
+                        opt.path("repo"),
+                        opt.get_or("rev", "HEAD"),
+                        opt.get("task"),
+                        limit,
+                        roots,
+                        db,
+                        budget,
+                    )?))
+                }
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),
                     opt.get("rev"),
@@ -503,6 +695,15 @@ fn execute(args: &[String]) -> Result<Response> {
                     roots,
                     db,
                     opt.0.get("receipts").map(Path::new),
+                )?)),
+                "select-tests" => Ok(json(native_test_selectors::run(
+                    opt.path("repo"),
+                    opt.get("base"),
+                    opt.get("candidate"),
+                    opt.get("provider"),
+                    opt.0.get("tool").map(String::as_str),
+                    opt.0.get("focus").map(String::as_str),
+                    opt.get("trusted-local"),
                 )?)),
                 _ => refuse(format!("unknown agent command: {sub}")),
             }
@@ -859,6 +1060,48 @@ fn execute(args: &[String]) -> Result<Response> {
             }))
         }
         [top, sub] if top == "benchmark" => match sub.as_str() {
+            "review-prepare" => {
+                let repetition = opt
+                    .get("repetition")
+                    .parse::<u64>()
+                    .map_err(|_| "invalid --repetition".to_owned())?;
+                let assignment = benchmark::historical_review::prepare(
+                    opt.path("study"),
+                    opt.get("case"),
+                    opt.get("condition"),
+                    repetition,
+                    opt.path("out"),
+                )?;
+                Ok(Response::Message(format!(
+                    "PREPARED {}",
+                    assignment.display()
+                )))
+            }
+            "review-record" => {
+                let parse_tokens = |key: &str| -> Result<Option<u64>> {
+                    opt.0
+                        .get(key)
+                        .map(|v| v.parse::<u64>().map_err(|_| format!("invalid --{key}")))
+                        .transpose()
+                };
+                benchmark::historical_review::record(
+                    opt.path("assignment"),
+                    opt.path("transcript"),
+                    opt.get("decision"),
+                    opt.path("out"),
+                    parse_tokens("input-tokens")?,
+                    parse_tokens("output-tokens")?,
+                )?;
+                Ok(Response::Message(format!("RECORDED {}", opt.get("out"))))
+            }
+            "review-evaluate" => {
+                benchmark::historical_review::evaluate(
+                    opt.path("study"),
+                    opt.path("attempts"),
+                    opt.path("out"),
+                )?;
+                Ok(Response::Message(format!("EVALUATED {}", opt.get("out"))))
+            }
             "validate" => {
                 benchmark::validate(opt.path("report"))?;
                 Ok(Response::Message(format!("VALID {}", opt.get("report"))))
@@ -914,6 +1157,53 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "git-synthesize" => {
+            let count = opt
+                .get_or("max-candidates", "2")
+                .parse::<usize>()
+                .map_err(|_| "invalid reconstruction candidate count")?;
+            Ok(json(excession::git_reconstruction_synthesis::synthesize(
+                opt.path("repo"),
+                opt.path("seed"),
+                opt.path("output"),
+                count,
+                opt.0.get("feedback").map(Path::new),
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git-oracles" => {
+            if !opt.path("db").is_file() {
+                return refuse("Git reconstruction oracles need an existing SQLite database");
+            }
+            let trusted = match opt.get("trusted-local") {
+                "true" => true,
+                "false" => false,
+                _ => return refuse("--trusted-local requires true or false"),
+            };
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_oracles::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+                opt.path("checks"),
+                trusted,
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git-evidence" => {
+            if !opt.path("db").is_file() {
+                return refuse("Git reconstruction evidence needs an existing SQLite database");
+            }
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_evidence::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git" => Ok(json(
+            excession::git_reconstruction::verify(opt.path("repo"), opt.path("plan"))?,
+        )),
         [top, sub] if top == "reconstruct" && sub == "evaluate" => {
             let db = Db::open(opt.path("db"))?;
             let trusted = match opt.get("trusted-local") {
@@ -1221,6 +1511,41 @@ mod tests {
     fn strings(x: &[&str]) -> Vec<String> {
         x.iter().map(|s| (*s).to_owned()).collect()
     }
+    #[test]
+    fn graph_route_serializes_domain_json_at_cli_boundary() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "excession-self-graph-route-{}-{unique}.sqlite",
+            std::process::id()
+        ));
+        {
+            let db = Db::open(&path).unwrap();
+            db.init_schema().unwrap();
+            // The configured-graph tables are provisioned by the graph
+            // importer, not by the general Excession evidence schema.
+            db.exec(
+                "CREATE TABLE configured_graph (graph_id TEXT PRIMARY KEY, target TEXT, document TEXT)",
+            )
+            .unwrap();
+        }
+        let response = execute(&strings(&["graph", "ls", "--db", path.to_str().unwrap()])).unwrap();
+        match response {
+            Response::Json(value) => {
+                assert_eq!(
+                    value.get("schema").unwrap().str().unwrap(),
+                    "excession.graph-list.v1"
+                );
+                assert_eq!(value.get("count").unwrap().integer().unwrap(), 0);
+                assert!(value.get("graphs").unwrap().array_ref().unwrap().is_empty());
+            }
+            _ => panic!("graph ls must remain a canonical JSON response"),
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn options_are_validated_once_by_clap() {
         assert!(

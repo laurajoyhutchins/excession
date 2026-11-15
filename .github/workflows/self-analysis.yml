@@ -3,6 +3,18 @@ name: Excession self-analysis (advisory)
 # Deep dogfooding is scheduled/on-demand, not a PR admission gate.
 on:
   workflow_dispatch:
+  # One advisory run at opening and an optional exact-head ready-for-review
+  # checkpoint. Avoid expensive runs on every intermediate commit.
+  pull_request:
+    types: [opened, ready_for_review]
+    paths:
+      - 'core/src/json.rs'
+      - 'core/src/scip_refactor.rs'
+      - 'core/src/evidence/reconstruction.rs'
+      - 'core/src/evidence/reconstruction/**'
+      - 'core/src/projection.rs'
+      - 'core/src/projection/**'
+      - '.github/workflows/self-analysis.yml'
   # Re-check when SCIP interpretation or the indexing boundaries selected
   # for real Excession-on-Excession refactors change on main.
   # This remains advisory and is not a per-commit or PR admission gate.
@@ -32,7 +44,10 @@ jobs:
   self-analysis:
     name: Audit pinned self-source and dependency candidates
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      TREE_SITTER_LANGUAGE_PACK_CACHE_DIR: /tmp/excession-grammars
+      MISE_ENABLE_TOOLS: rust,python,node,go
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,10 +72,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13.5'
-      - name: Install and prefetch optional Tree-sitter grammars
-        run: |
-          python3 -m pip install --disable-pip-version-check tree-sitter-language-pack==1.25.0
-          python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "python", "javascript", "typescript", "go", "c", "java"])'
+      # Excession uses the Rust language-pack registry, not Python's wheel cache.
+      # Reuse the same native setup as the successful syntax-parsers workflow.
+      - uses: jdx/mise-action@v5
+      - name: Prefetch native Tree-sitter grammars
+        run: mise run syntax-setup
+      - name: Check native Rust/Python/Go grammars are available offline
+        run: cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --lib native_syntax::tests::prefetched_multi_language_grammars_parse_natively -- --exact
       - name: Build actual Excession binary
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
       - name: Adversarial self-analysis reporting tests

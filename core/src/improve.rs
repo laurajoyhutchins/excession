@@ -163,6 +163,18 @@ fn evaluate_reports(
     let old = pairs(before)?;
     let new = pairs(after)?;
     let modified = changed_paths(inventory)?;
+    // Moving one endpoint to a new source file can erase a reciprocal pair
+    // without eliminating an implementation or reducing maintenance debt.
+    let mut added_rust_sources = BTreeSet::new();
+    for change in inventory.get("changes")?.array_ref()? {
+        if change.get("kind")?.str()? == "ADDED" {
+            let added = change.get("after")?.get("path")?.str()?;
+            git::validate_path(added)?;
+            if added.ends_with(".rs") {
+                added_rust_sources.insert(added.to_owned());
+            }
+        }
+    }
     let removed: BTreeSet<_> = old.difference(&new).cloned().collect();
     let added: BTreeSet<_> = new.difference(&old).cloned().collect();
     let unexplained = removed
@@ -178,6 +190,8 @@ fn evaluate_reports(
         after_documents < before_documents || after_unresolved > before_unresolved;
     let status = if coverage_regressed || !unexplained.is_empty() {
         "INCONCLUSIVE_EVIDENCE_CHANGE"
+    } else if !removed.is_empty() && !added_rust_sources.is_empty() {
+        "STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED"
     } else if !removed.is_empty() && added.is_empty() {
         "STRUCTURAL_REDUCTION_OBSERVED_UNVERIFIED"
     } else if !removed.is_empty() {
@@ -207,6 +221,10 @@ fn evaluate_reports(
         ("unexplained_disappearances", pair_values(unexplained)),
         ("coverage_regressed", Value::Bool(coverage_regressed)),
         ("source_changes", Value::number(modified.len())),
+        (
+            "introduced_rust_source_paths",
+            Value::array(added_rust_sources.into_iter().map(Value::string)),
+        ),
         (
             "obligations",
             Value::array([
@@ -637,6 +655,42 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn moving_a_function_to_a_new_module_is_not_debt_removal() {
+        let before = report("base", "bt", true, 3, 0);
+        let after = report("head", "ht", false, 4, 0);
+        let plan = plan_from_report(&before).unwrap();
+        let mut changes = inventory(true);
+        let mut items = changes.get("changes").unwrap().array_ref().unwrap().to_vec();
+        items.push(obj(&[
+            ("kind", Value::string("ADDED")),
+            ("before", Value::Null),
+            (
+                "after",
+                obj(&[("path", Value::string("src/a_selected_extracted.rs"))]),
+            ),
+        ]));
+        changes
+            .entries_mut()
+            .unwrap()
+            .insert("changes".into(), Value::array(items));
+        let result = evaluate_reports(&before, &after, &changes, &plan).unwrap();
+        assert_eq!(
+            result.get("status").unwrap().str().unwrap(),
+            "STRUCTURAL_RELOCATION_OBSERVED_UNVERIFIED"
+        );
+        assert_eq!(
+            result
+                .get("introduced_rust_source_paths")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(!result.get("ready_to_merge").unwrap().bool().unwrap());
     }
 
     #[test]

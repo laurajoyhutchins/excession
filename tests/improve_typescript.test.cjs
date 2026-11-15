@@ -135,6 +135,47 @@ for (const suffix of ['ts', 'js']) {
   });
 }
 
+test('native TypeScript codefix removes an unused type-only binding without removing used types', t => {
+  const f = fixture('ts');
+  t.after(() => {
+    if (fs.existsSync(f.candidate)) {
+      run('git', ['worktree', 'remove', '--force', f.candidate], f.repo, true);
+    }
+    fs.rmSync(f.root, {recursive: true, force: true});
+  });
+  fs.writeFileSync(path.join(f.repo, f.source),
+    '// Pinned upstream-style type import with multiple bindings.\\n'
+    + "import type { Phase, Turn, CodeSnapshot, Interview } from './math';\\n"
+    + 'export interface InterviewState extends Interview { phase: Phase; }\\n'
+    + 'export type InterviewContext = { codeSnapshot?: CodeSnapshot };\\n');
+  fs.writeFileSync(path.join(f.repo, 'src/math.ts'),
+    'export type Phase = "intro" | "done";\\n'
+    + 'export type Turn = { message: string };\\n'
+    + 'export type CodeSnapshot = { source: string };\\n'
+    + 'export type Interview = { id: string };\\n');
+  run('git', ['add', '.'], f.repo);
+  run('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+    'commit', '-qm', 'upstream-style unused type import'], f.repo);
+  f.rev = run('git', ['rev-parse', 'HEAD'], f.repo).stdout.trim();
+  assert.notEqual(propose(f, 'Phase').status, 0, 'used type must not be removable');
+  const native = propose(f, 'Turn');
+  assert.equal(native.status, 0, native.stderr);
+  const plan = JSON.parse(fs.readFileSync(f.plan));
+  assert.equal(plan.candidates[0].producer_evidence.diagnostic_code, 6196);
+  const candidate = JSON.parse(replay(f, true).stdout);
+  assert.equal(candidate.status, 'APPLIED_UNVERIFIED');
+  assert.equal(candidate.ready_to_merge, false);
+  const changed = fs.readFileSync(path.join(f.candidate, f.source), 'utf8');
+  assert.ok(changed.includes('import type { Phase, CodeSnapshot, Interview }'));
+  assert.ok(!changed.includes('Turn,'));
+  run(process.execPath, [
+    require.resolve('typescript/bin/tsc'), '--strict', '--noUnusedLocals',
+    '--target', 'ES2022', '--module', 'commonjs',
+    '--moduleResolution', 'node', '--noEmit',
+    path.join(f.candidate, f.source), path.join(f.candidate, 'src/math.ts'),
+  ], f.candidate);
+});
+
 test('native producer refuses to remove a sole named import and preserve unknown module effects', t => {
   const f = fixture('js');
   t.after(() => fs.rmSync(f.root, {recursive: true, force: true}));

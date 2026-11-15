@@ -5,7 +5,7 @@ version = "0.2.0"
 edition = "2024"
 rust-version = "1.99.1"
 license = "MIT"
-description = "Excession: Git-backed relational views and auditable security evidence"
+description = "Excession: Git-grounded auditable code intelligence and evidence"
 
 [lib]
 name = "excession"

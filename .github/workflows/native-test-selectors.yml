@@ -3,10 +3,14 @@ on:
   pull_request:
     paths:
       - core/src/native_test_selectors.rs
-      - core/src/bin/excession.rs
-      - core/src/bin/excession/cli.rs
       - .github/workflows/native-test-selectors.yml
+      - 'core/src/native_test_workflow.rs'
+      - 'core/tests/cli_contracts.rs'
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

@@ -9,6 +9,7 @@ use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
+use excession::history;
 use excession::impact_query;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
@@ -626,6 +627,34 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get_or("json", "false") == "true",
             ))
         }
+        [top, sub] if top == "history" => match sub.as_str() {
+            "plan" => {
+                let max = opt
+                    .get_or("max-commits", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-commits must be an integer from 1 to 100000")?;
+                Ok(json(history::plan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.0.get("base").map(String::as_str),
+                    max,
+                )?))
+            }
+            "audit" => Ok(json(history::audit(opt.path("repo"), opt.path("plan"))?)),
+            "refs" => {
+                let max = opt
+                    .get_or("max-refs", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-refs must be an integer from 1 to 100000")?;
+                Ok(json(history::refs(opt.path("repo"), max)?))
+            }
+            "verify-target" => Ok(json(history::verify_target(
+                opt.path("repo"),
+                opt.get("target"),
+                opt.get("replacement"),
+            )?)),
+            _ => refuse(format!("unknown history command {sub}")),
+        },
         [top, sub] if top == "agent" => {
             let limit = opt
                 .get_or("limit", "32")
@@ -1128,6 +1157,53 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "git-synthesize" => {
+            let count = opt
+                .get_or("max-candidates", "2")
+                .parse::<usize>()
+                .map_err(|_| "invalid reconstruction candidate count")?;
+            Ok(json(excession::git_reconstruction_synthesis::synthesize(
+                opt.path("repo"),
+                opt.path("seed"),
+                opt.path("output"),
+                count,
+                opt.0.get("feedback").map(Path::new),
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git-oracles" => {
+            if !opt.path("db").is_file() {
+                return refuse("Git reconstruction oracles need an existing SQLite database");
+            }
+            let trusted = match opt.get("trusted-local") {
+                "true" => true,
+                "false" => false,
+                _ => return refuse("--trusted-local requires true or false"),
+            };
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_oracles::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+                opt.path("checks"),
+                trusted,
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git-evidence" => {
+            if !opt.path("db").is_file() {
+                return refuse("Git reconstruction evidence needs an existing SQLite database");
+            }
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_evidence::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git" => Ok(json(
+            excession::git_reconstruction::verify(opt.path("repo"), opt.path("plan"))?,
+        )),
         [top, sub] if top == "reconstruct" && sub == "evaluate" => {
             let db = Db::open(opt.path("db"))?;
             let trusted = match opt.get("trusted-local") {

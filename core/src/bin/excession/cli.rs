@@ -682,14 +682,27 @@ pub(super) fn command() -> Command {
         .subcommand(security)
         .subcommand(evidence)
         .subcommand(group(
+            "history",
+            vec![
+                leaf("plan", &["repo"], &["rev", "base", "max-commits"]),
+                leaf("audit", &["repo", "plan"], &[]),
+                leaf("refs", &["repo"], &["max-refs"]),
+                leaf("verify-target", &["repo", "target", "replacement"], &[]),
+            ],
+        ).about("Read-only Git history consolidation plans and exact source-DAG replay"))
+        .subcommand(group(
             "reconstruct",
             vec![
                 leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),
                 leaf("history", &["db", "target"], &["limit"]),
                 leaf("auto", &["db", "target", "out", "trusted-local"], &["compiler", "objcopy", "objdump", "nm", "max-candidates", "time-budget-seconds"]),
                 leaf("searches", &["db", "target"], &["limit"]),
+                leaf("git", &["repo", "plan"], &[]),
+                leaf("git-synthesize", &["repo", "seed", "output"], &["max-candidates", "feedback"]),
+                leaf("git-evidence", &["repo", "plan", "db", "evidence"], &[]),
+                leaf("git-oracles", &["repo", "plan", "db", "evidence", "checks", "trusted-local"], &[]),
             ],
-        ).about("Trusted-local compiler feedback for C object-code reconstruction"))
+        ).about("Read-only Git reconstruction and trusted-local C compiler feedback"))
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)

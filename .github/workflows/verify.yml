@@ -27,6 +27,10 @@ jobs:
       - uses: jdx/mise-action@v5
       - name: Confirm Rust toolchain
         run: rustup show active-toolchain
+      - name: Format
+        run: cargo fmt --manifest-path core/Cargo.toml -- --check
+      - name: Check CI topology before dependency setup
+        run: python3 -m unittest discover -s tests -p 'test_ci_topology.py' -v
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: core -> target
@@ -38,8 +42,6 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest@0.9.151
-      - name: Format
-        run: cargo fmt --manifest-path core/Cargo.toml -- --check
       - name: Clippy
         run: cargo clippy --offline --locked --manifest-path core/Cargo.toml --all-targets -- -D warnings
       - name: Install pinned optional Python for independent oracles
@@ -54,6 +56,39 @@ jobs:
         run: cargo test --offline --locked --manifest-path core/Cargo.toml --doc
       - name: Build CLI for mandatory impact acceptance
         run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Dogfood read-only Git history planning and target-tree verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/excession-history"
+          mkdir -p "$OUT"
+          core/target/debug/excession history plan --repo . --rev HEAD --max-commits 10000 > "$OUT/plan.json"
+          core/target/debug/excession history audit --repo . --plan "$OUT/plan.json" > "$OUT/audit.json"
+          core/target/debug/excession history refs --repo . --max-refs 10000 > "$OUT/refs.json"
+          core/target/debug/excession history verify-target --repo . --target HEAD --replacement HEAD > "$OUT/target.json"
+          python3 - "$OUT" <<'PY'
+          import json
+          import pathlib
+          import subprocess
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          plan, audit, refs, target = (
+              json.loads((root / name).read_text())
+              for name in ("plan.json", "audit.json", "refs.json", "target.json")
+          )
+          git = lambda *args: subprocess.check_output(("git", *args), text=True).strip()
+          assert plan["original_tip"] == git("rev-parse", "HEAD")
+          assert plan["original_tip_tree"] == git("rev-parse", "HEAD^{tree}")
+          assert plan["coverage"]["commit_range"] in {"COMPLETE", "SHALLOW", "TRUNCATED"}
+          assert plan["safety"]["rewrite_authorized"] is False
+          assert audit["plan_id"] == plan["report_id"]
+          assert audit["status"] == "SOURCE_DAG_REPLAY_VERIFIED"
+          assert refs["external_refs_complete"] is False
+          assert target["exact_tree_equal"] is True
+          assert target["rewrite_authorized"] is False
+          print("History self-audit: pinned DAG and target tree verified; rewrite stays disabled")
+          PY
       - name: Dogfood source-bound agent contracts on Excession itself
         shell: bash
         run: |
@@ -97,8 +132,10 @@ jobs:
           assert verification["replay"]["semantic_correctness"] == "NOT_EVALUATED"
           assert verification["coverage"]["status"] == "PARTIAL"
           assert "SEMANTIC_CORRECTNESS_NOT_EVALUATED" in verification["obligations"]
+          # Excession records rename as deletion + addition of exact Git paths.
+          # Disable Git's similarity heuristic in the independent path oracle.
           expected = set(filter(None, subprocess.check_output(
-              ("git", "diff", "--name-only", "-z", base, head)
+              ("git", "diff", "--no-renames", "--name-only", "-z", base, head)
           ).decode().split("\0")))
           assert verification["change_count"] == len(expected)
           if not verification["coverage"]["truncated"]:

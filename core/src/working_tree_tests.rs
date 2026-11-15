@@ -5,6 +5,7 @@
 use crate::json::{self, Value, obj};
 use crate::{Result, digest, discovery, git, native_test_workflow, refuse};
 use std::collections::BTreeSet;
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -1217,6 +1218,7 @@ pub fn execute(request: Request<'_>) -> Result<Value> {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn snapshot_preserves_mixed_git_changes_without_touching_original() {
         let base = Temporary::new().unwrap();
@@ -1304,6 +1306,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn source_symlinks_cannot_escape_snapshot() {
         let source = Temporary::new().unwrap();
@@ -1335,6 +1338,18 @@ mod tests {
         assert!(capture(&root, &head).is_err());
     }
 
+    // Unsupported host platforms must refuse creation rather than silently
+    // substituting host execution for Linux's rootless Podman isolation.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn unsupported_host_refuses_snapshot_creation_and_sandbox_execution() {
+        assert!(Temporary::new().is_err());
+        let image = format!("docker.io/library/debian@sha256:{}", "a".repeat(64));
+        assert!(
+            sandbox_preflight(Some(&image)).contains(&"ROOTLESS_PODMAN_LINUX_REQUIRED".to_owned())
+        );
+    }
+
     #[test]
     fn digest_pins_sandbox_images_and_rejects_tags() {
         assert!(valid_image(&format!(
@@ -1358,6 +1373,7 @@ mod tests {
         assert!(tool_in_image(Some("/usr/bin/../bin/sh"), "jest").is_err());
         assert_eq!(tool_in_image(None, "jest").unwrap(), "/usr/local/bin/jest");
     }
+    #[cfg(target_os = "linux")]
     #[test]
     fn snapshot_temporary_directory_must_be_outside_source_checkout() {
         let root = Temporary::new().unwrap();

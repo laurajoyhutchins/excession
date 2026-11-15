@@ -6,12 +6,16 @@ on:
       - '.github/workflows/kernel-whole-inventory.yml'
       - 'core/src/kernel.rs'
       - 'core/src/kernel_coverage.rs'
-      - 'core/src/lib.rs'
-      - 'core/src/bin/excession.rs'
       - 'tests/kernel_partition_probe.py'
       - 'tests/linux_partition_sweep.py'
       - 'docs/LINUX_WHOLE_SOURCE.md'
+      - 'core/src/source/git.rs'
+      - 'core/src/source/change_inventory.rs'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

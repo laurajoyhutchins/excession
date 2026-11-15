@@ -7,12 +7,12 @@ existing [Portable CLI workflow](../.github/workflows/portable-cli.yml).
 ## Gate
 
 1. Select an exact clean main commit and confirm its full `Verify` run.
-2. Run the full portability matrix (label a review PR `ci:full-portability`
-   **before pushing its next commit**, or invoke the existing manual Portable
-   CLI workflow). The default PR trigger does not run on label changes alone;
-   the next PR synchronize event must see the label. Verify Linux x86-64,
-   Linux ARM64, macOS Apple Silicon, macOS Intel, Windows, and musl/Alpine
-   independently. Do not include a target that failed.
+2. Run the full portability matrix (label a review PR `ci:full-portability`,
+   use a `release/` review branch, or manually dispatch the Portable CLI workflow).
+   The label event immediately schedules the full matrix. Routine feature PRs
+   do not launch release portability jobs. Verify Linux x86-64, Linux ARM64,
+   macOS Apple Silicon, macOS Intel, Windows, and musl/Alpine independently.
+   Do not include a target that failed.
 3. Confirm the `acceptance` job in the Portable CLI workflow used the
    **extracted packaged x86-64 Linux executable**, not the build-tree binary,
    to run `analyze → impact → explain → audit` against independently

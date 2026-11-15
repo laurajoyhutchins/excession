@@ -37,6 +37,7 @@ mod scan;
 use cli::{Options, ParseOutcome};
 
 enum Response {
+    CompilerCheck(excession::json::Value),
     Json(excession::json::Value),
     Test(excession::json::Value, bool),
     CanonicalJson(String),
@@ -48,6 +49,13 @@ impl Response {
         let mut out = io::stdout().lock();
         let write_error = |error: io::Error| format!("stdout write failed: {error}");
         match self {
+            Self::CompilerCheck(report) => {
+                let failed = report.get("status")?.str()? == "FAIL";
+                writeln!(out, "{}", report.canonical()).map_err(write_error)?;
+                out.flush().map_err(write_error)?;
+                if failed { std::process::exit(1); }
+                Ok(())
+            }
             Self::Json(j) => writeln!(out, "{}", j.canonical()).map_err(write_error),
             Self::Test(report, as_json) => {
                 let phase = report.get("status")?.str()?.to_owned();
@@ -761,6 +769,36 @@ fn execute(args: &[String]) -> Result<Response> {
             }
         }
         [top] if top == "commands" => Ok(Response::Message(cli::catalog())),
+        [top, sub] if top == "check" && sub == "run" => {
+            let trusted = match opt.get("trusted-local") {
+                "true" => true,
+                "false" => false,
+                _ => return refuse("--trusted-local requires true or false"),
+            };
+            let db = excession::sqlite::Db::open(opt.path("db"))?;
+            let result = excession::compiler_check::run(
+                &db,
+                excession::compiler_check::Request {
+                    repo: opt.path("repo"),
+                    revision: opt.get_or("rev", "HEAD"),
+                    language: opt.get("language"),
+                    configuration: opt.get("config"),
+                    source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                    executable: opt.0.get("tool").map(String::as_str),
+                    trusted_local: trusted,
+                },
+            )?;
+            Ok(Response::CompilerCheck(result))
+        }
+        [top, sub] if top == "check" && sub == "audit" => {
+            let db = excession::sqlite::Db::open(opt.path("db"))?;
+            Ok(json(excession::compiler_check::audit(
+                &db,
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.get("snapshot"),
+            )?))
+        }
         [top, sub] if top == "analyze" && sub == "languages" => {
             let roots = opt.get_or("roots", ".").split(',').collect::<Vec<_>>();
             let report = excession::language_analysis::run(

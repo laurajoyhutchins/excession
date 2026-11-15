@@ -556,6 +556,9 @@ pub fn human(report: &Value) -> Result<String> {
     const PREVIEW_LIMIT: usize = 10;
     let effects = report.get("effects")?.array_ref()?;
     let source_count = report.get("candidate_source_count")?.integer()?;
+    let native_count = report.get("native_reference_count")?.integer()?;
+    let native_complete = report.get("native_reference_enumeration_complete")?.bool()?;
+    let native_candidates = report.get("native_reference_impacts")?.array_ref()?;
     let source_complete = report
         .get("candidate_source_enumeration_complete")?
         .bool()?;
@@ -573,11 +576,15 @@ pub fn human(report: &Value) -> Result<String> {
                 "truncated"
             }
         ),
+        format!(
+            "Java compiler-observed sources: {native_count} (unattested, observed graph {}).",
+            if native_complete { "complete" } else { "truncated" }
+        ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
     ];
     if effects.is_empty() {
-        lines.push("No candidate dependents found in the analyzed scope.".to_owned());
+        lines.push("No static-import or SCIP candidates found in the analyzed scope.".to_owned());
     } else {
         lines.push("Candidate paths (source -> changed dependency):".to_owned());
         for effect in effects.iter().take(PREVIEW_LIMIT) {
@@ -596,6 +603,23 @@ pub fn human(report: &Value) -> Result<String> {
             lines.push(format!(
                 "  ... {} additional candidate paths (use --json to inspect all)",
                 effects.len() - PREVIEW_LIMIT
+            ));
+        }
+    }
+    if !native_candidates.is_empty() {
+        lines.push("Java compiler-observed source candidates (not runtime dependencies):".to_owned());
+        for witness in native_candidates.iter().take(PREVIEW_LIMIT) {
+            lines.push(format!(
+                "  {:?} -> {:?} ({} hops; producer unattested)",
+                witness.get("entity")?.get("path")?.str()?,
+                witness.get("next_hop")?.get("target")?.get("path")?.str()?,
+                witness.get("distance_to_change")?.integer()?,
+            ));
+        }
+        if native_candidates.len() > PREVIEW_LIMIT {
+            lines.push(format!(
+                "  ... {} more Java candidates (use --json)",
+                native_candidates.len() - PREVIEW_LIMIT
             ));
         }
     }

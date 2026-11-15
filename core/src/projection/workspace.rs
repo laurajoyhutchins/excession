@@ -1,6 +1,8 @@
 //! Read-only navigation and bounded materialization of verified Git view manifests.
 //! Materialized files are not executable checkouts.
-use super::model::{Entry, Plan, authenticate, checked_plan, make_plan, read_plan};
+use super::model::{Entry, Plan, authenticate, checked_plan, read_plan};
+#[cfg(test)]
+use super::model::make_plan;
 use crate::json::{Value, obj};
 use crate::{Result, digest, git, refuse};
 use std::collections::{BTreeMap, BTreeSet};

@@ -68,6 +68,7 @@ pub mod refactor_codegen;
 mod refactor_module_api;
 pub mod refactor_rust_analyzer;
 pub mod refactor_rust_repair;
+pub mod rust_native;
 pub mod scip_evidence;
 pub mod scip_refactor;
 pub mod scoped;

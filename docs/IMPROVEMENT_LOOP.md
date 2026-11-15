@@ -83,6 +83,48 @@ its own legitimate syntax/semantic action, including configuration-dependent
 usage and public API checks. Tests demonstrate the shared replay mechanism
 using deliberately *untrusted* edit plans, not automatic safe deletion.
 
+## Native TypeScript unused-import producer
+
+The first edit producer using the shared replay contract is the existing,
+pinned TypeScript 5.8.3 language service. It works on JavaScript and TypeScript
+source files. Excession does not implement JavaScript syntax, dependency
+resolution or import-rewriting rules in Rust.
+
+```sh
+node core/adapters/improve_typescript.cjs \
+  --repo /work/repo --rev BASE_SHA --source src/main.ts \
+  --symbol unusedBinding \
+  --plan-out /tmp/improve-plan.json \
+  --edits-out /tmp/native-edits.json
+
+excession improve replay --repo /work/repo --rev BASE_SHA \
+  --plan /tmp/improve-plan.json --edits /tmp/native-edits.json
+
+excession improve replay --repo /work/repo --rev BASE_SHA \
+  --plan /tmp/improve-plan.json --edits /tmp/native-edits.json \
+  --output /work/new-candidate
+```
+
+The producer reads the source blob from Git, not from the working tree. It
+uses TypeScript's *unused identifier* diagnostic and its own
+`unusedIdentifier` code fix. To keep the first experiment bounded, it accepts
+only **pure deletions of an unused binding in an existing multi-binding named
+import**, with no rewriting of the import module or side-effect imports.
+Ambiguous fixes, whole-import deletion, arbitrary code changes, non-UTF-8
+source, or nonexistent Git source are refused. Offsets are converted from
+TypeScript UTF-16 positions to Git UTF-8 source bytes.
+
+This is a single-file diagnostic with deliberately incomplete project and
+configuration coverage. An unused binding diagnosis does not establish the
+absence of side effects, dynamic uses, transpiler behavior or public-contract
+regressions. Its output continues to require independent compiler, runtime,
+type-checking, configuration, API, and provenance checks.
+
+The CI acceptance fixtures exercise both languages, check that the used
+binding and module initialization survive, compile TypeScript independently,
+run the resulting code, and reject stale source identities and unsafe cases.
+The native tool never commits the edited worktree or sets `ready_to_merge`.
+
 ## SCIP producer
 
 SCIP reports and exact source identities are supplied by their existing

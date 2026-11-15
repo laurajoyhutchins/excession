@@ -224,6 +224,25 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
         {
             return refuse("unconfigured Java source report may not claim an external classpath");
         }
+        if producer == "javac-configured" {
+            let original = nested.get("resolved_inputs")?;
+            observations.push(Observation {
+                receipt_id: receipt_id.clone(),
+                subject_id: Subject::Source(subject_ref.clone()).id()?,
+                native_kind: "NATIVE_JVM_CLASSPATH_CONFIGURATION".to_owned(),
+                payload: obj(&[
+                    ("source", source_value(&subject_ref)),
+                    ("subject", source_value(&subject_ref)),
+                    ("scope", Value::string(scope)),
+                    ("role", Value::string("external-compile-classpath")),
+                    ("producer", Value::string(producer)),
+                    ("provider_claim", original.get("provider_claim")?.clone()),
+                    ("classpath", original.get("classpath")?.clone()),
+                    ("release", original.get("release")?.clone()),
+                    ("attestation", Value::string("NOT_ESTABLISHED")),
+                ]),
+            });
+        }
         let references = nested.get("references")?.array_ref()?;
         if references.len() > 4096 {
             return refuse("Java resolved references exceed evidence budget");

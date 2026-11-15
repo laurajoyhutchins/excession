@@ -365,6 +365,7 @@ fn select_native(
                 | "NATIVE_CONFIGURED_TU"
                 | "NATIVE_CONFIGURED_HEADER"
                 | "NATIVE_JAVA_SYMBOL_REFERENCE"
+                | "NATIVE_JVM_CLASSPATH_CONFIGURATION"
         ) {
             return refuse("unknown selected native observation kind");
         }

@@ -19,6 +19,18 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 const JAVA_ADAPTER: &str = include_str!("../adapters/ExcessionJavaNative.java");
 
 struct Scratch(PathBuf);
+
+fn create_private_dir(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir(path)
+    }
+}
 impl Scratch {
     fn new() -> Result<Self> {
         for _ in 0..16 {
@@ -27,7 +39,7 @@ impl Scratch {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-            match fs::create_dir(&dir) {
+            match create_private_dir(&dir) {
                 Ok(()) => return Ok(Self(dir)),
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return refuse(format!("create Java analysis scratch: {e}")),
@@ -321,6 +333,14 @@ pub fn scan(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn temporary_compiler_inputs_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = Scratch::new().unwrap();
+        assert_eq!(fs::metadata(&scratch.0).unwrap().permissions().mode() & 0o077, 0);
+    }
 
     #[test]
     fn percent_decoded_paths_are_strict() {

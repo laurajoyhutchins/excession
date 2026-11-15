@@ -1,0 +1,30 @@
+{
+  "schema": "excession.native-impact-baselines.v1",
+  "cases": [
+    {
+      "id": "json-java",
+      "repository": "stleary/JSON-java",
+      "commit": "2cd0a8c2112a3bc17d33ba8546c54ecb613613f1",
+      "language": "java",
+      "source": "src/main/java/org/json/JSONTokener.java",
+      "source_prefix": "src/main/java",
+      "changed_path": "src/main/java/org/json/JSONObject.java"
+    },
+    {
+      "id": "golang-lru",
+      "repository": "hashicorp/golang-lru",
+      "commit": "2bb29091a6c341aba625d23fea354c4fbaef5d6f",
+      "language": "go",
+      "source": "lru.go",
+      "changed_path": "lru.go"
+    },
+    {
+      "id": "zlib-clang",
+      "repository": "madler/zlib",
+      "commit": "99623ef7097352da7993ba614161fd6a311e046e",
+      "language": "c",
+      "source": "test/example.c",
+      "changed_path": "zlib.h"
+    }
+  ]
+}

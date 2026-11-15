@@ -5,9 +5,9 @@ use crate::{Result, analyze, digest, git, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::path::Path;
 
 const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SOURCE_BYTES: usize = 512 * 1024;
@@ -182,8 +182,8 @@ fn prepare(repo: &Path, commit: &str, plan: &Value, native: &Value) -> Result<Ve
 /// descriptor. Never follow a symlink in a candidate's final path, even if
 /// that path changes after Git checkout and before the write.
 fn write_pinned_regular_file(target: &Path, original: &[u8], rewritten: &[u8]) -> Result<()> {
-    let path_meta = fs::symlink_metadata(target)
-        .map_err(|e| format!("inspect candidate source: {e}"))?;
+    let path_meta =
+        fs::symlink_metadata(target).map_err(|e| format!("inspect candidate source: {e}"))?;
     if !path_meta.file_type().is_file() {
         return refuse("candidate edit target is not a regular file");
     }
@@ -201,9 +201,7 @@ fn write_pinned_regular_file(target: &Path, original: &[u8], rewritten: &[u8]) -
         return refuse("opened candidate source is not a bounded regular file");
     }
     #[cfg(unix)]
-    if (path_meta.dev(), path_meta.ino()) != (opened.dev(), opened.ino())
-        || opened.nlink() != 1
-    {
+    if (path_meta.dev(), path_meta.ino()) != (opened.dev(), opened.ino()) || opened.nlink() != 1 {
         return refuse("candidate source was replaced or hardlinked during edit");
     }
     let mut actual = Vec::new();

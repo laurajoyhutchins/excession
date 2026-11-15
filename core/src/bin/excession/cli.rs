@@ -207,6 +207,12 @@ pub(super) fn command() -> Command {
     let evidence = group(
         "evidence",
         vec![
+            leaf(
+                "jvm-inputs-capture",
+                &["repo", "rev", "source-prefix", "classpath-file", "provider-claim"],
+                &["release"],
+            )
+            .about("Hash an existing Maven/Gradle classpath export without executing a build"),
             leaf("native-import", &["repo", "rev", "report", "db"], &[])
                 .about("Persist a Git-replayed Go/Clang producer report without executing it"),
             leaf(

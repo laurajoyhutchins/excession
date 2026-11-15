@@ -1,7 +1,7 @@
 //! Replay externally resolved Maven/Gradle JVM inputs without invoking a build.
 //! The provider label is producer-supplied, NEVER an attested Maven/Gradle run.
 //! All byte identities and source selections are independently rechecked.
-use crate::json::{self, Value};
+use crate::json::{self, Value, obj};
 use crate::{Result, digest, git, refuse};
 use std::collections::BTreeSet;
 use std::fs;
@@ -56,6 +56,98 @@ fn jar(path: &str, expected: &str, size: u64) -> Result<PathBuf> {
         return refuse("JVM artifact SHA-256 differs from resolved-input receipt");
     }
     Ok(real)
+}
+
+
+pub struct Capture<'a> {
+    pub repo: &'a Path,
+    pub revision: &'a str,
+    pub source_prefix: &'a str,
+    pub provider_claim: &'a str,
+    pub classpath_file: &'a Path,
+    pub release: Option<&'a str>,
+}
+
+/// Capture an already exported classpath from trusted CI. This operation
+/// executes Git read-only and hashes artifacts: no Maven/Gradle invocation.
+pub fn capture(request: &Capture<'_>) -> Result<Value> {
+    if request.source_prefix != "." {
+        git::validate_path(request.source_prefix)?;
+    }
+    if !matches!(request.provider_claim, "maven" | "gradle") {
+        return refuse("JVM classpath provider claim must be maven or gradle");
+    }
+    let repo = request.repo.canonicalize()
+        .map_err(|e| format!("resolved JVM checkout: {e}"))?;
+    git::verify_repo(&repo)?;
+    git::clean(&repo)?;
+    let commit = git::rev(&repo, request.revision)?;
+    if git::rev(&repo, "HEAD")? != commit {
+        return refuse("JVM classpath capture requires selected clean HEAD");
+    }
+    let tree = git::rev(&repo, &format!("{commit}^{{tree}}"))?;
+    let mut sources = git::entries(&repo, &commit)?
+        .into_iter()
+        .filter(|entry| entry.kind == "blob"
+            && matches!(entry.mode.as_str(), "100644" | "100755")
+            && entry.path.ends_with(".java")
+            && (request.source_prefix == "."
+                || entry.path.starts_with(&format!("{}/", request.source_prefix))))
+        .map(|entry| entry.path)
+        .collect::<Vec<_>>();
+    sources.sort();
+    if sources.is_empty() || sources.len() > 128 {
+        return refuse("resolved JVM source set requires 1..=128 tracked Java files");
+    }
+    let size = fs::metadata(request.classpath_file)
+        .map_err(|e| format!("JVM classpath export metadata: {e}"))?.len();
+    if size > MAX_MANIFEST_BYTES {
+        return refuse("JVM classpath export exceeds 128 KiB");
+    }
+    let bytes = fs::read(request.classpath_file)
+        .map_err(|e| format!("JVM classpath export read: {e}"))?;
+    if bytes.len() as u64 > MAX_MANIFEST_BYTES {
+        return refuse("JVM classpath export grew beyond 128 KiB");
+    }
+    let raw = std::str::from_utf8(&bytes).map_err(|_| "JVM classpath export must be UTF-8")?;
+    let line = raw.trim_end_matches(&['\r', '\n'][..]);
+    if line.contains('\n') || line.contains('\r') || line.is_empty() {
+        return refuse("JVM classpath export must contain one platform-separated path list");
+    }
+    let paths = std::env::split_paths(line).collect::<Vec<_>>();
+    if paths.is_empty() || paths.len() > MAX_JARS {
+        return refuse("JVM classpath export requires 1..=16 JARs");
+    }
+    let mut classpath = Vec::new();
+    for path in paths {
+        let path = path.to_str().ok_or("JVM classpath export contains non-UTF8 path")?;
+        let metadata = fs::symlink_metadata(path)
+            .map_err(|e| format!("JVM classpath artifact metadata: {e}"))?;
+        if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_JAR_BYTES {
+            return refuse("JVM classpath artifact is not a bounded regular JAR file");
+        }
+        let data = fs::read(path).map_err(|e| format!("JVM classpath artifact read: {e}"))?;
+        if data.len() as u64 != metadata.len() {
+            return refuse("JVM classpath artifact size changed while hashing");
+        }
+        classpath.push(obj(&[
+            ("path", Value::string(path)),
+            ("size_bytes", Value::number(data.len())),
+            ("sha256", Value::string(digest::sha256(&data))),
+        ]));
+    }
+    let document = obj(&[
+        ("schema", Value::string("excession.jvm-resolved-inputs.v1")),
+        ("provider_claim", Value::string(request.provider_claim)),
+        ("source_commit", Value::string(&commit)),
+        ("source_tree", Value::string(&tree)),
+        ("source_prefix", Value::string(request.source_prefix)),
+        ("sources", Value::array(sources.iter().map(Value::string))),
+        ("classpath", Value::array(classpath)),
+        ("release", request.release.map_or(Value::Null, Value::string)),
+    ]);
+    verify(&document, &commit, &tree, request.source_prefix, &sources)?;
+    Ok(document)
 }
 
 pub fn load(path: &Path) -> Result<Value> {

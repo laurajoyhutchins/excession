@@ -665,9 +665,15 @@ fn execute(args: &[String]) -> Result<Response> {
                     .map(|value| value.parse::<usize>())
                     .transpose()
                     .map_err(|_| "--group must be a nonnegative integer")?;
-                Ok(json(serde_json::from_value::<serde_json::Value>(
-                    history_rewrite::preview(opt.path("repo"), opt.path("output"), group, max)?,
-                ).map_err(|e| e.to_string())?))
+                Ok(Response::CanonicalJson(
+                    serde_json::to_string(&history_rewrite::preview(
+                        opt.path("repo"),
+                        opt.path("output"),
+                        group,
+                        max,
+                    )?)
+                    .map_err(|e| format!("serialize history DAG preview: {e}"))?,
+                ))
             }
             _ => refuse(format!("unknown history command {sub}")),
         },

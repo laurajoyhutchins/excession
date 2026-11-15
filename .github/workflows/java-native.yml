@@ -14,6 +14,11 @@ on:
       - 'core/src/observed_relations.rs'
       - 'core/src/adapter.rs'
       - 'core/tests/native_analysis_cli.rs'
+      - 'core/src/impact_query.rs'
+      - 'core/src/agent.rs'
+      - 'contracts/product/impact.v1.schema.json'
+      - 'contracts/agent/agent-verification.v1.schema.json'
+      - 'benchmarks/experiments/native_reference_ab.py'
       - 'docs/JAVA_NATIVE.md'
   workflow_dispatch:
 
@@ -45,6 +50,21 @@ jobs:
       - name: Compile Excession and run real native Java fixtures
         run: |
           cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --test native_analysis_cli native_java -- --nocapture
+      - name: Independent Java source-reference impact A/B
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/experiments/native_reference_ab.py \
+            --bin core/target/debug/excession \
+            --out-dir "$RUNNER_TEMP/native-reference-ab"
+      - name: Retain source oracle and measured paired result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-native-reference-ab
+          path: ${{ runner.temp }}/native-reference-ab/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run unit tests for Java Git path handling
         run: |
           cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --lib java_native::tests

@@ -70,3 +70,22 @@ compilation, generated code, non-JAR classpath entries, a JPMS module path,
 or compiler flags beyond a supported `--release` remains unsupported. Excession
 refuses this narrower source-only workflow rather than guessing those
 semantics. A trusted-local compiler invocation is **not sandboxed**.
+
+## Changed-source impact
+
+An imported Java native reference is not a generic `STATIC_IMPORT`,
+`SCIP_REFERENCE` or observed runtime call. `excession impact` now
+exposes `native_reference_impacts` separately: one bounded, reverse-reachable
+source candidate per distinct Java source within the selected compiler
+reference graph. Each witness includes the original native observation,
+Git sources and explicitly unattested producer receipt. The accompanying
+`native_reference_count` and `native_reference_enumeration_complete`
+do not assert completeness beyond the chosen Java source set.
+
+`excession agent verify` carries those candidates forward but does
+not turn them into merge approval or permission to skip tests. Go compiler
+input membership and Clang configured translation-unit/header observations
+are never interpreted as Java source-reference edges.
+
+The controlled source-first benchmark and its limitations are documented
+in [Java source-reference impact A/B](../benchmarks/experiments/README.md).

@@ -5,8 +5,8 @@ use crate::evidence::identity::{SourceRef, Subject};
 use crate::evidence_store::{self, Batch, Observation, Receipt};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
-use crate::{Result, digest, git, native_boundary, refuse};
-use std::collections::{BTreeMap, BTreeSet};
+use crate::{Result, git, native_boundary, refuse};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 const MAX_REPORT_BYTES: u64 = 4 * 1024 * 1024;

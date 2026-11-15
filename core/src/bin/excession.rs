@@ -1375,6 +1375,24 @@ fn execute(args: &[String]) -> Result<Response> {
                 limit,
             )?))
         }
+        [top, sub] if top == "evidence" && sub == "native-import" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::native_evidence::import(
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.path("report"),
+                &db,
+            )?))
+        }
+        [top, sub] if top == "evidence" && sub == "native-store-audit" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::native_evidence::audit_source(
+                opt.path("repo"),
+                opt.get("rev"),
+                &db,
+                opt.get("snapshot"),
+            )?))
+        }
         [top, sub] if top == "evidence" && sub == "ghidra-import" => {
             let db = Db::open(opt.path("db"))?;
             Ok(json(excession::evidence::ghidra::import(

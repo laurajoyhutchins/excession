@@ -288,7 +288,7 @@ pub fn verify(
         return refuse("agent verify requires two distinct Git commits");
     }
     let candidate_tree = changes.get("head_tree")?.str()?;
-    let impact = impact_query::run(repo, base_commit, candidate_commit, roots, database)?;
+    let impact = impact_query::run_auto(repo, base_commit, candidate_commit, roots, database)?;
     if impact.get("change_inventory_id")? != changes.get("report_id")? {
         return refuse("impact replay does not match exact Git change inventory");
     }
@@ -326,6 +326,17 @@ pub fn verify(
 
     let all_changes = changes.get("changes")?.array_ref()?;
     let effects = impact.get("effects")?.array_ref()?;
+    let configured = impact.get("configured_observations")?.array_ref()?;
+    let producer_coverage = impact.get("producer_coverage")?.array_ref()?;
+    if producer_coverage.iter().any(|item| {
+        item.get("producers").ok().and_then(|v| v.array_ref().ok())
+            .is_some_and(|items| items.iter().any(|e| {
+                e.get("producer").ok().and_then(|v| v.str().ok())
+                    .is_some_and(|p| p.starts_with("native:"))
+            }))
+    }) {
+        obligations.insert("NATIVE_PRODUCER_ATTESTATION_MISSING".into());
+    }
     let candidate_sources = impact.get("candidate_source_impacts")?.array_ref()?;
     let candidate_source_count = impact.get("candidate_source_count")?.integer()?;
     let candidate_source_complete = impact
@@ -337,6 +348,8 @@ pub fn verify(
     }
     let truncated = all_changes.len() > limit
         || effects.len() > limit
+        || configured.len() > limit
+        || producer_coverage.len() > limit
         || candidate_sources.len() > limit
         || !candidate_source_complete
         || unknown.len() > limit;
@@ -358,6 +371,18 @@ pub fn verify(
             Value::array(take_bounded(effects, limit)),
         ),
         ("candidate_impact_count", Value::number(effects.len())),
+        (
+            "configured_observations",
+            Value::array(take_bounded(configured, limit)),
+        ),
+        (
+            "configured_observation_count",
+            Value::number(configured.len()),
+        ),
+        (
+            "producer_coverage",
+            Value::array(take_bounded(producer_coverage, limit)),
+        ),
         (
             "candidate_source_impacts",
             Value::array(take_bounded(candidate_sources, limit)),

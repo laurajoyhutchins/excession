@@ -207,6 +207,10 @@ pub(super) fn command() -> Command {
     let evidence = group(
         "evidence",
         vec![
+            leaf("native-import", &["repo", "rev", "report", "db"], &[])
+                .about("Persist a Git-replayed Go/Clang producer report without executing it"),
+            leaf("native-store-audit", &["repo", "rev", "snapshot", "db"], &[])
+                .about("Replay stored native evidence against its pinned Git commit"),
             leaf(
                 "unknown-append",
                 &["db", "snapshot", "question", "expected", "action"],

@@ -122,18 +122,40 @@ def source_files(repo: Path, suffix: str) -> list[str]:
 
 
 def independent_go(repo: Path) -> tuple[set[str], set[str]]:
-    # Separate go list invocation on the actual checkout, not Excession's
-    # staged resolver or its producer observation.
+    # Independent compiler-selected production closure across all local
+    # dependencies, including package directories reached by "go list -deps".
+    # This intentionally excludes *_test.go and build-tag alternatives.
     env = dict(os.environ, GOPROXY="off", GOSUMDB="off", GOWORK="off",
                CGO_ENABLED="0", GOTOOLCHAIN="local")
-    report = json.loads(run("go", "list", "-json", ".", cwd=repo, env=env))
-    if report.get("Error") or not report.get("GoFiles"):
-        raise ValueError("independent go list lacked a complete source selection")
-    oracle = set(report["GoFiles"])
-    baseline = {Path(path).name for path in source_files(repo, ".go")
-                if "/" not in path and not path.endswith("_test.go")}
+    raw = run("go", "list", "-deps", "-json", ".", cwd=repo, env=env)
+    text = raw.decode()
+    decoder = json.JSONDecoder()
+    offset = 0
+    oracle: set[str] = set()
+    root = repo.resolve()
+    while offset < len(text):
+        while offset < len(text) and text[offset].isspace():
+            offset += 1
+        if offset == len(text):
+            break
+        package, offset = decoder.raw_decode(text, offset)
+        if package.get("Error") or package.get("DepsErrors"):
+            raise ValueError("independent go list has unresolved package inputs")
+        if package.get("Standard"):
+            continue
+        directory = Path(package.get("Dir", "")).resolve()
+        if not directory.is_relative_to(root):
+            raise ValueError("independent Go package dependency lies outside pinned checkout")
+        for filename in package.get("GoFiles", []) + package.get("SFiles", []):
+            candidate = (directory / filename).resolve()
+            if not candidate.is_relative_to(root):
+                raise ValueError("independent Go source escapes pinned checkout")
+            oracle.add(candidate.relative_to(root).as_posix())
+    if not oracle:
+        raise ValueError("independent go list returned no selected module inputs")
+    baseline = {path for path in source_files(repo, ".go")
+                if not path.endswith("_test.go")}
     return oracle, baseline
-
 
 def independent_clang(repo: Path, source: str) -> tuple[set[str], set[str]]:
     # Clang's independent -MM invocation evaluates transitive user headers.

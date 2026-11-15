@@ -33,7 +33,7 @@ review and pin the source repositories before execution.
 | Case | Native observation | Independently invoked oracle | Naive baseline |
 | --- | --- | --- | --- |
 | JSON-java | JDK AST-resolved source-to-source references to `JSONObject.java` | Independently compiled Java bytecode, then `javap -v` class-pool references to `JSONObject` | Other Java sources containing the token `JSONObject` |
-| golang-lru | Go compiler-selected source files | Direct `go list -json` on pinned checkout | All root `.go` files except `_test.go` |
+| golang-lru | Go compiler-selected source files | Direct `go list -deps -json` production files across the pinned local dependency closure | All repository `.go` files except `_test.go` |
 | zlib | Configured tracked Clang header observations | Independent `clang -MM` source dependencies | Literal direct `#include` matches in source |
 
 These have different denominators. Java bytecode class references are

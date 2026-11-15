@@ -78,6 +78,7 @@ for (const suffix of ['ts', 'js']) {
       fs.rmSync(f.root, {recursive: true, force: true});
     });
     const before = fs.readFileSync(path.join(f.repo, f.source), 'utf8');
+    assert.notEqual(propose(f, 'used').status, 0, 'a used import is not a native removal candidate');
     const result = propose(f);
     assert.equal(result.status, 0, result.stderr);
     const proposed = JSON.parse(result.stdout);
@@ -131,7 +132,6 @@ for (const suffix of ['ts', 'js']) {
       ], f.candidate);
       assert.equal(evaluated.status, 0);
     }
-    assert.notEqual(propose(f, 'used').status, 0, 'used import may not be removed');
   });
 }
 
@@ -152,7 +152,11 @@ test('native producer refuses to remove a sole named import and preserve unknown
 test('native producer rejects non-source paths, source files not in Git, and ambiguous names', t => {
   const f = fixture('ts');
   t.after(() => fs.rmSync(f.root, {recursive: true, force: true}));
-  assert.notEqual(propose(f, null, ['--source', '../private.ts']).status, 0);
+  const invalid = run(process.execPath, [
+    PRODUCER, '--repo', f.repo, '--rev', f.rev,
+    '--source', '../private.ts', '--plan-out', f.plan, '--edits-out', f.edits,
+  ], ROOT, true);
+  assert.notEqual(invalid.status, 0);
   assert.notEqual(propose(f, 'not_imported').status, 0);
   assert.ok(!fs.existsSync(f.plan));
 });

@@ -21,7 +21,10 @@ fn identity(repo: &Path, commit: &str, tree: &str, path: &str) -> Result<Value> 
 }
 
 fn input_receipts(
-    repo: &Path, commit: &str, tree: &str, declaration: &Value,
+    repo: &Path,
+    commit: &str,
+    tree: &str,
+    declaration: &Value,
 ) -> Result<(Value, usize, usize)> {
     native_boundary::declaration_preflight(declaration)?;
     let mut receipts = Vec::new();
@@ -56,13 +59,17 @@ pub fn scan(
         return refuse("native analysis requires explicit --trusted-local true");
     }
     if !matches!(language, "go" | "c" | "cpp") {
-        return refuse("native producer unavailable: supported languages are go, c, cpp; use analyze languages for syntax-only coverage");
+        return refuse(
+            "native producer unavailable: supported languages are go, c, cpp; use analyze languages for syntax-only coverage",
+        );
     }
     git::validate_path(source)?;
     let expected_ext = match language {
         "go" => source.ends_with(".go"),
         "c" => source.ends_with(".c"),
-        "cpp" => [".cc", ".cpp", ".cxx", ".C"].iter().any(|ext| source.ends_with(ext)),
+        "cpp" => [".cc", ".cpp", ".cxx", ".C"]
+            .iter()
+            .any(|ext| source.ends_with(ext)),
         _ => false,
     };
     if !expected_ext {
@@ -122,7 +129,8 @@ pub fn scan(
         )?;
         if result.get("source_commit")?.str()? != commit
             || result.get("source_tree")?.str()? != tree
-            || result.get("observation")?.get("source_blob")?.str()? != subject.get("blob")?.str()?
+            || result.get("observation")?.get("source_blob")?.str()?
+                != subject.get("blob")?.str()?
             || result.get("observation")?.get("language")?.str()?
                 != if language == "c" { "c" } else { "c++" }
         {
@@ -149,7 +157,9 @@ pub fn scan(
     } else {
         Value::array([
             Value::string("Only one Clang translation unit and compilation configuration"),
-            Value::string("External compilation database and headers are not fully Git-authenticated"),
+            Value::string(
+                "External compilation database and headers are not fully Git-authenticated",
+            ),
             Value::string("Clang reparsing is not a verified build or call graph closure"),
         ])
     };
@@ -168,7 +178,8 @@ pub fn scan(
         ("inputs", inputs),
         ("observation", observation),
         ("limitations", limitations),
-    ]).stamp_id("report_id")
+    ])
+    .stamp_id("report_id")
 }
 
 pub fn human(report: &Value) -> Result<String> {
@@ -191,15 +202,30 @@ mod tests {
     #[test]
     fn refuses_untrusted_and_unsupported_before_invoking_toolchains() {
         let repo = Path::new("/does-not-exist");
-        assert!(scan(repo, "HEAD", "a.go", "go", None, None, "false")
-            .unwrap_err().contains("--trusted-local"));
-        assert!(scan(repo, "HEAD", "a.java", "java", None, None, "true")
-            .unwrap_err().contains("native producer unavailable"));
-        assert!(scan(repo, "HEAD", "a.go", "go", None, Some("clang"), "true")
-            .unwrap_err().contains("does not use"));
-        assert!(scan(repo, "HEAD", "a.cpp", "cpp", None, None, "true")
-            .unwrap_err().contains("--compile-db"));
-        assert!(scan(repo, "HEAD", "a.c", "cpp", None, None, "true")
-            .unwrap_err().contains("source extension"));
+        assert!(
+            scan(repo, "HEAD", "a.go", "go", None, None, "false")
+                .unwrap_err()
+                .contains("--trusted-local")
+        );
+        assert!(
+            scan(repo, "HEAD", "a.java", "java", None, None, "true")
+                .unwrap_err()
+                .contains("native producer unavailable")
+        );
+        assert!(
+            scan(repo, "HEAD", "a.go", "go", None, Some("clang"), "true")
+                .unwrap_err()
+                .contains("does not use")
+        );
+        assert!(
+            scan(repo, "HEAD", "a.cpp", "cpp", None, None, "true")
+                .unwrap_err()
+                .contains("--compile-db")
+        );
+        assert!(
+            scan(repo, "HEAD", "a.c", "cpp", None, None, "true")
+                .unwrap_err()
+                .contains("source extension")
+        );
     }
 }

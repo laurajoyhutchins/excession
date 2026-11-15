@@ -70,7 +70,11 @@ impl Fixture {
         for i in 0..33 {
             let dir = repo.join(format!("third_party/mod{i}"));
             fs::create_dir_all(&dir).unwrap();
-            fs::write(dir.join("go.mod"), format!("module example.org/unrelated/{i}\n")).unwrap();
+            fs::write(
+                dir.join("go.mod"),
+                format!("module example.org/unrelated/{i}\n"),
+            )
+            .unwrap();
         }
         checked("git", &["add", "."], &repo);
         checked(
@@ -165,12 +169,26 @@ fn cross_language_command_preserves_scope_and_unsupported_coverage() {
     let location = syntax_file.to_str().unwrap();
     let preflight = checked(exe, &["syntax", "preflight", "--report", location], &f.repo);
     assert_eq!(
-        json::parse(&preflight).unwrap().get("status").unwrap().str().unwrap(),
+        json::parse(&preflight)
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
         "SHAPE_AND_DIGEST_ONLY"
     );
-    let audit = checked(exe, &["syntax", "audit", "--repo", f.path(), "--report", location], &f.repo);
+    let audit = checked(
+        exe,
+        &["syntax", "audit", "--repo", f.path(), "--report", location],
+        &f.repo,
+    );
     assert_eq!(
-        json::parse(&audit).unwrap().get("status").unwrap().str().unwrap(),
+        json::parse(&audit)
+            .unwrap()
+            .get("status")
+            .unwrap()
+            .str()
+            .unwrap(),
         "REPARSED_MATCH"
     );
 

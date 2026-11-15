@@ -138,13 +138,16 @@ node "$HELDOUT_TSC" --version > "$RECEIPTS/independent-compiler.txt"
   cd "$CANDIDATE"
   node "$HELDOUT_TSC" --noEmit --project packages/core/tsconfig.json
 ) > "$RECEIPTS/candidate-build.log" 2>&1
+# Upstream's vitest.config.ts defines test discovery relative to the
+# workspace root, not packages/core. Invoke it there with an explicit core
+# test filter; pnpm --filter @testmeman/core test would find zero tests.
 (
   cd "$BASE_REPO"
-  pnpm --filter @testmeman/core test
+  pnpm exec vitest run packages/core/test
 ) > "$RECEIPTS/baseline-test.log" 2>&1
 (
   cd "$CANDIDATE"
-  pnpm --filter @testmeman/core test
+  pnpm exec vitest run packages/core/test
 ) > "$RECEIPTS/candidate-test.log" 2>&1
 
 if [[ "$(git -C "$CANDIDATE" diff --name-only)" != "$SOURCE" ]]; then

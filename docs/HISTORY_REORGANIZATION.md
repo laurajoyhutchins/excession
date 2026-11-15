@@ -139,3 +139,28 @@ No result claims behavioral, signing, audit-chain or outside GitHub reference
 equivalence. Receipts whose commit identity changed require independent
 revalidation. This is an executable candidate reconstruction, **not**
 an authorized rewrite of `main` or publication of a replacement history.
+
+
+## Classifying GitHub PR and build/REA evidence against a candidate
+
+`excession history reconcile-external --mapping /tmp/excession-dag-preview/mapping.json --snapshot /tmp/external-snapshot.json`
+compares source-bound external references against **all** original-to-candidate
+commit IDs. The snapshot must match
+`contracts/history/external-snapshot.v1.schema.json` and pin the exact
+original HEAD used to build the candidate. GitHub PR head/base/merge refs are
+classified separately; build-provenance and REA claims are classified by
+their original source commit identity.
+
+For changed commit IDs, the result records `REVIEW_AND_COMMIT_REAPPROVAL_REQUIRED`
+or `INDEPENDENT_REBUILD_OR_REA_REBIND_REQUIRED`; for missing local objects it
+reports `NOT_IN_LOCAL_GIT_DAG`. Unchanged IDs remain *unverified receipts*
+rather than being promoted to independent attestations. Duplicate PR numbers,
+duplicate receipt IDs, forged rewrite authorization, malformed hashes and
+snapshots for a different source HEAD are refused.
+
+The output binds the source snapshot and mapping file SHA-256 digests to
+a deterministic report ID. This detects local file changes but is **not**
+a cryptographic attestation of GitHub API data or of signed build/REA receipts.
+Even when every supplied record is classified, outside inventory completeness,
+valid review approvals and build/REA reissuance remain unproven. The output
+always has `rewrite_authorized=false`.

@@ -79,7 +79,7 @@ jobs:
           cd "$SRC"
           "$TOOLS/node_modules/.bin/scip-python" index . --project-name h11
           test -s index.scip
-          "$TOOLS/scip" print --json --from index.scip > "$RUNNER_TEMP/h11-scip.json"
+          "$TOOLS/scip" print --json > "$RUNNER_TEMP/h11-scip.json"
           test -s "$RUNNER_TEMP/h11-scip.json"
           test "$(wc -c < "$RUNNER_TEMP/h11-scip.json")" -lt 4194304
           sha256sum index.scip "$RUNNER_TEMP/h11-scip.json" > "$RUNNER_TEMP/scip-index-digests.txt"

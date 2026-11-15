@@ -717,25 +717,30 @@ pub(super) fn command() -> Command {
         .subcommand(group(
             "improve",
             vec![
-                leaf("plan", &["repo", "rev", "index"], &["source-prefix"]),
+                leaf(
+                    "plan",
+                    &["rev"],
+                    &["producer", "repo", "index", "source-prefix", "db", "name"],
+                ),
                 leaf(
                     "trial",
                     &[
                         "repo", "rev", "index", "report", "plan",
                         "candidate", "trusted-local",
                     ],
-                    &["source-prefix", "ast-grep", "symbol", "output"],
+                    &["producer", "source-prefix", "ast-grep", "symbol", "output"],
                 ),
                 leaf(
                     "evaluate",
+                    &["base", "candidate", "plan"],
                     &[
-                        "base-repo", "candidate-repo", "base", "candidate",
-                        "base-index", "candidate-index", "plan",
+                        "producer", "base-repo", "candidate-repo",
+                        "base-index", "candidate-index", "source-prefix",
+                        "repo", "db", "name",
                     ],
-                    &["source-prefix"],
                 ),
             ],
-        ).about("Replay native refactor evidence and measure candidate structural changes"))
+        ).about("Compare Git-bound improvement hypotheses across supported language producers"))
         .subcommand(benchmark)
         .subcommand(configured_graph)
         .subcommand(analyze)

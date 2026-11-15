@@ -56,6 +56,7 @@ pub mod kbuild_graph;
 pub mod kernel;
 pub mod kernel_coverage;
 pub mod kernel_links;
+pub mod jvm_inputs;
 mod module_identity;
 pub mod native_analysis;
 pub mod native_boundary;

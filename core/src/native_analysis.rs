@@ -49,6 +49,7 @@ pub struct NativeOptions<'a> {
     pub compile_db: Option<&'a Path>,
     pub compiler: Option<&'a str>,
     pub source_prefix: Option<&'a str>,
+    pub classpath_manifest: Option<&'a Path>,
 }
 
 /// Build the same evidence envelope around supported native producer types.
@@ -65,6 +66,7 @@ pub fn scan(
         compile_db,
         compiler,
         source_prefix,
+        classpath_manifest,
     } = options;
     if trusted_local != "true" {
         return refuse("native analysis requires explicit --trusted-local true");
@@ -90,6 +92,9 @@ pub fn scan(
     if language == "java" && (compile_db.is_some() || compiler.is_some()) {
         return refuse("Java uses the installed JDK, not --compile-db or --compiler");
     }
+    if language != "java" && classpath_manifest.is_some() {
+        return refuse("--classpath-manifest is only supported by Java native analysis");
+    }
     if language != "java" && source_prefix.is_some() {
         return refuse("--source-prefix currently applies only to Java native analysis");
     }
@@ -112,7 +117,9 @@ pub fn scan(
     let tree = git::rev(&root, &format!("{commit}^{{tree}}"))?;
     let subject = identity(&root, &commit, &tree, source)?;
     if language == "java" {
-        return crate::java_native::scan(&root, &commit, source, source_prefix.unwrap_or("."));
+        return crate::java_native::scan(
+            &root, &commit, source, source_prefix.unwrap_or("."), classpath_manifest,
+        );
     }
     let (producer, scope, inputs, source_count, config_count, observation) = if language == "go" {
         let result = native_discovery::discover(&root, &commit, source, "go", None, true)?;

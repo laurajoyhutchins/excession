@@ -455,7 +455,7 @@ pub(super) fn command() -> Command {
             leaf(
                 "native",
                 &["language", "source"],
-                &["repo", "rev", "compile-db", "compiler", "source-prefix"],
+                &["repo", "rev", "compile-db", "compiler", "source-prefix", "classpath-manifest"],
             )
             .about("Run an explicitly trusted Go, Java or configured Clang producer")
             .arg(
@@ -472,7 +472,7 @@ pub(super) fn command() -> Command {
                     .help("Emit Git-bound native producer evidence")
                     .action(clap::ArgAction::SetTrue),
             )
-            .after_help("Go:    excession analyze native --language go --source cmd/main.go --trusted-local\nClang: excession analyze native --language c --source src/main.c --compile-db build/compile_commands.json --trusted-local\nJava:  excession analyze native --language java --source src/main/java/pkg/Service.java --source-prefix src/main/java --trusted-local\n\nInputs are pinned to Git; build and runtime completeness are not established. Java and other compilers remain unsupported here."),
+            .after_help("Go:    excession analyze native --language go --source cmd/main.go --trusted-local\nClang: excession analyze native --language c --source src/main.c --compile-db build/compile_commands.json --trusted-local\nJava:  excession analyze native --language java --source src/main/java/pkg/Service.java --source-prefix src/main/java --trusted-local\nConfigured Java: add --classpath-manifest /tmp/resolved-inputs.json\n\nInputs are pinned to Git; build and runtime completeness are not established. Java and other compilers remain unsupported here."),
         )
         .subcommand(
             leaf("languages", &[], &["repo", "rev", "roots"])

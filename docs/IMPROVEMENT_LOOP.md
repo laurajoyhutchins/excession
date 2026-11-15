@@ -103,6 +103,23 @@ public API checks, and fresh source analysis. Excession's existing
 improvement coordinator must never treat a plain JSON receipt as independent
 execution attestation.
 
+## Pinned historical acceptance: why the classifier is conservative
+
+The first real native run on historical Excession (pre-#161) used a
+rust-analyzer SCIP index and an existing two-function extraction. Independent
+Cargo compilation, the selected regression test, API differential and a fresh
+SCIP run are exercised by the historical replay harness. The evidence
+evaluation observed:
+
+- 61 reciprocal source pairs at the base and 60 at the candidate
+- one additional Rust source module
+- regressed index coverage
+- `INCONCLUSIVE_EVIDENCE_CHANGE`, with merge and automatic deletion refused
+
+[Native replay run and archived receipts](https://github.com/laurajoyhutchins/excession/actions/runs/43706274651)
+are pinned evidence for this negative case. A smaller reciprocal-reference
+count is not itself maintenance savings, even when the refactor compiles.
+
 ## Next implementation boundary
 
 The narrow native extraction trial is implemented, but independent

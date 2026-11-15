@@ -5,7 +5,7 @@ version = "0.2.0"
 edition = "2024"
 rust-version = "1.99.1"
 license = "MIT"
-description = "Excession: Git-backed relational views and auditable security evidence"
+description = "Excession: Git-grounded auditable code intelligence and evidence"
 
 [lib]
 name = "excession"
@@ -24,6 +24,8 @@ rusqlite = { version = "=0.40.2", features = ["bundled"] }
 libc = "=0.2.191"
 sha1 = "=0.11.0"
 sha2 = "=0.11.1"
+# URI encoding for native SCIP project roots; already present in the locked graph.
+percent-encoding = "=2.3.2"
 # Reuse the upstream Rust parser engine; grammars must be installed offline.
 tree-sitter-language-pack = { version = "=1.25.0", default-features = false, features = ["dynamic-loading"] }
 

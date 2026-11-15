@@ -1,0 +1,104 @@
+name: Full Git history self-replay
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_commits:
+        description: Maximum source commits (refuse truncation)
+        required: false
+        type: number
+        default: 100000
+  pull_request:
+    paths:
+      - 'core/examples/history_self_replay.rs'
+      - 'core/src/source/history.rs'
+      - 'core/src/source/history_rewrite.rs'
+      - 'core/tests/history_dag_preview.rs'
+      - '.github/workflows/history-self-replay.yml'
+      - 'docs/HISTORY_REORGANIZATION.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  full-replay:
+    name: Full DAG replay and disposable candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MISE_ENABLE_TOOLS: rust
+      MAX_COMMITS: ${{ inputs.max_commits || '100000' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: Verify pinned full checkout and Git object connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --is-shallow-repository)" = false
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git fsck --no-reflogs --connectivity-only
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Fetch locked Cargo dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Build Rust self-replay harness
+        run: cargo build --locked --offline --manifest-path core/Cargo.toml --example history_self_replay
+      - name: Compare complete Excession Git ancestry with independent plumbing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$MAX_COMMITS" -ge 1
+          test "$MAX_COMMITS" -le 100000
+          /usr/bin/time -v core/target/debug/examples/history_self_replay \
+            --repo "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/excession-history-self-replay" \
+            --max-commits "$MAX_COMMITS" \
+            2> "$RUNNER_TEMP/history-resource-usage.txt"
+          cat "$RUNNER_TEMP/excession-history-self-replay/summary.json"
+          cat "$RUNNER_TEMP/history-resource-usage.txt"
+          cp "$RUNNER_TEMP/history-resource-usage.txt" \
+            "$RUNNER_TEMP/excession-history-self-replay/resources.txt"
+      - name: Build canonical history CLI
+        run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Preview a dependency-safe all-ref Excession DAG rewrite
+        shell: bash
+        run: |
+          set -euo pipefail
+          core/target/debug/excession history preview-dag \
+            --repo "$GITHUB_WORKSPACE" \
+            --output "$RUNNER_TEMP/excession-history-dag-preview" \
+            --max-commits "$MAX_COMMITS" \
+            > "$RUNNER_TEMP/dag-preview-result.json"
+          cat "$RUNNER_TEMP/dag-preview-result.json"
+          python3 - "$RUNNER_TEMP/dag-preview-result.json" <<'PY'
+          import json, pathlib, sys
+          result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert result["status"] == "ISOLATED_DAG_REWRITE_TREE_VERIFIED"
+          assert result["source_commit_count"] == result["mapped_commit_count"]
+          assert result["synthetic_commit_count"] >= 1
+          assert result["exact_final_source_tree"] is True
+          assert result["original_refs_unchanged"] is True
+          assert result["rewrite_authorized"] is False
+          PY
+      - name: Upload immutable source-replay reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-history-self-replay-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/excession-history-self-replay/*.json
+            ${{ runner.temp }}/excession-history-self-replay/resources.txt
+            ${{ runner.temp }}/excession-history-dag-preview/*.json
+            ${{ runner.temp }}/dag-preview-result.json
+          if-no-files-found: warn

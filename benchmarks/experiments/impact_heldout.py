@@ -89,7 +89,29 @@ def reachable(edges: set[tuple[str, str]], changed: set[str]) -> set[str]:
     return affected
 
 
-def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict:
+def result_matches_oracle(
+    *,
+    invalid: list[str],
+    explanation_missing: dict[str, list[str]],
+    explanation_unexpected: dict[str, list[str]],
+    source_missing: dict[str, list[str]],
+    source_unexpected: dict[str, list[str]],
+    explanations_truncated: bool,
+) -> bool:
+    """Capped explanations may omit paths; authenticated source inventories may not."""
+    return (
+        not invalid
+        and not any(source_missing.values())
+        and not any(source_unexpected.values())
+        and not any(explanation_unexpected.values())
+        and (explanations_truncated or not any(explanation_missing.values()))
+    )
+
+
+def evaluate(
+    binary: Path, repo: Path, base: str, head: str, roots: str,
+    repository_name: str | None = None,
+) -> dict:
     root_set = set(roots.split(","))
     starts = time.perf_counter()
     before_tree, before = inventory(repo, base)
@@ -115,7 +137,9 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
             "--roots", roots, "--db", str(Path(work) / "index.sqlite"), "--json",
         ]
         start = time.perf_counter()
-        report = json.loads(call(*args))
+        raw_report = call(*args)
+        report = json.loads(raw_report)
+        report_bytes = len(raw_report)
         impact_wall_s = time.perf_counter() - start
 
     if report.get("schema") != "excession.impact.v1":
@@ -146,7 +170,11 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
         if effect.get("assessment") != "CANDIDATE_PATH" or not check_source(entity):
             invalid.append(f"unearned/invalid source claim {entity.get('path')}")
             continue
-        actual[commit].add(entity["path"])
+        # A changed seed can also appear as an importer of another changed
+        # seed. It is already in Git's change inventory, not a newly
+        # discovered dependent; its hops must still pass evidence checks.
+        if entity["path"] not in changed:
+            actual[commit].add(entity["path"])
         hops = effect["hops"]
         if not hops or hops[-1]["target"]["path"] not in changed:
             invalid.append(f"nonterminating path {entity['path']}")
@@ -219,13 +247,22 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
     }
     missing = {r: sorted(by_revision[r]["expected"] - actual[r]) for r in actual}
     unexpected = {r: sorted(actual[r] - by_revision[r]["expected"]) for r in actual}
-    passed = (not invalid and not any(missing.values()) and not any(unexpected.values())
-              and not any(compact_missing.values())
-              and not any(compact_unexpected.values()))
+    explanations_truncated = any(
+        gap.get("reason") == "TRUNCATED"
+        for gap in report["coverage"]["gaps"]
+    )
+    passed = result_matches_oracle(
+        invalid=invalid,
+        explanation_missing=missing,
+        explanation_unexpected=unexpected,
+        source_missing=compact_missing,
+        source_unexpected=compact_unexpected,
+        explanations_truncated=explanations_truncated,
+    )
     return {
         "schema": "excession.heldout-impact-evaluation.v1",
         "status": "MATCH" if passed else "MISMATCH",
-        "upstream_repository": "python-hyper/h11",
+        "upstream_repository": repository_name,
         "base_commit": base,
         "head_commit": head,
         "roots": sorted(root_set),
@@ -243,6 +280,7 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
         "actual": {r: sorted(actual[r]) for r in (base, head)},
         "missing": missing,
         "unexpected": unexpected,
+        "legacy_explanations_truncated": explanations_truncated,
         "invalid_hops": invalid[:50],
         "compact_source_impacts": {
             "reported_count": compact_count,
@@ -253,6 +291,9 @@ def evaluate(binary: Path, repo: Path, base: str, head: str, roots: str) -> dict
         },
         "impact_coverage": report["coverage"],
         "candidate_effect_count": len(report["effects"]),
+        "impact_report_bytes": report_bytes,
+        "candidate_source_count": compact_count,
+        "candidate_source_enumeration_complete": compact_complete,
         "measured_wall_seconds": {
             "oracle_git_and_ast": round(oracle_wall_s, 3),
             "excession_impact_with_indexing": round(impact_wall_s, 3),

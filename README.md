@@ -37,7 +37,7 @@ From a supported Python or JavaScript repository:
 cd /path/to/repository
 excession discover .
 excession analyze .
-excession impact . --base HEAD~1 --output /tmp/excession-impact.json
+excession impact . --output /tmp/excession-impact.json
 ```
 
 The default impact output lists candidate dependent paths and their full
@@ -62,6 +62,41 @@ These workflows operate on committed revisions. They can read pinned Git
 objects even when the working tree is dirty; they do not include uncommitted
 edits. Default SQLite caches live outside the repository. Exact-output workflows
 also support `--json` and explicit revisions/roots.
+
+## Daily commands
+
+```sh
+excession                    # focused help
+excession commands           # all specialist families
+excession analyze .          # static source candidates
+excession impact .           # compare HEAD~1..HEAD
+excession tests              # plan tests without running them
+excession analyze rust --trusted-local    # execute installed native Rust indexer
+excession analyze rust --trusted-local --json > /tmp/rust.json
+```
+
+Rust analysis selects the sole tracked Cargo project, including a nested
+project. For multiple projects, specify `--source-prefix`. It requires a
+clean checkout and explicitly executes trusted local tooling; this is not a
+sandbox. Specialist commands remain accessible through their own help screens.
+
+## Plan a Git history consolidation
+
+Excession can inventory a local Git SHA-1 history, audit the resulting read-only plan,
+enumerate local refs, and verify that a separately reconstructed history has the
+same exact source tree as a frozen architectural target:
+
+```sh
+excession history plan --repo . --rev HEAD --max-commits 10000 > /tmp/history-plan.json
+excession history audit --repo . --plan /tmp/history-plan.json
+excession history refs --repo . --max-refs 10000
+excession history verify-target --repo . --target main --replacement curated-branch
+```
+
+These commands do not rewrite Git history or authorize a ref update. Adjacent
+commit-message scopes are only proposals for review, not correctness proofs.
+See [target architecture](docs/TARGET_ARCHITECTURE.md) and
+[history safety contract](docs/HISTORY_REORGANIZATION.md).
 
 ## Test what changed
 
@@ -116,6 +151,22 @@ selection still narrows scope. See
 Build membership is never silently promoted to a source dependency.
 
 ## Coding-agent interface
+
+Find candidate code without knowing its paths first:
+
+```sh
+excession agent locate --repo . --task "Fix worker lease recovery" --limit 20 --json
+```
+
+The locator now uses an incrementally cached, **256-segment** FTS5/BM25
+index over authenticated Git sources and reuses `agent context` for
+relationships and test suggestions. The default refresh budget is eight
+segments per call; use `--index-segments 256` for an explicit full warmup.
+Partial coverage is reported instead of silently searching stale partitions.
+This is lexical discovery, **not semantic proof**, and does not include
+uncommitted edits. Related Git-bound SCIP and static-import neighbors, when
+available, appear separately with original producer evidence and uncertainty. See [agent commands](docs/AGENT_CLI.md).
+
 
 `excession agent context` returns bounded Git source identities, candidate
 relationships, coverage gaps and heuristic test suggestions for exact focus

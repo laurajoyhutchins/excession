@@ -70,7 +70,8 @@ pub(super) fn command() -> Command {
             replay,
         ],
     )
-    .about("Excession authenticated repository views");
+    .about("Excession authenticated repository views")
+    .hide(true);
     let syntax = group(
         "syntax",
         vec![
@@ -111,7 +112,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Language syntax observations and evidence audits");
+    .about("Language syntax observations and evidence audits")
+    .hide(true);
     let semantic = group(
         "semantic",
         vec![
@@ -125,7 +127,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Versioned semantic candidate observations and ODCS contracts");
+    .about("Versioned semantic candidate observations and ODCS contracts")
+    .hide(true);
     let security = group(
         "security",
         vec![
@@ -138,7 +141,8 @@ pub(super) fn command() -> Command {
             leaf("audit", &["repo", "report", "db", "engine"], &[]),
         ],
     )
-    .about("Trusted-local scanning and evidence ingestion");
+    .about("Trusted-local scanning and evidence ingestion")
+    .hide(true);
     let inspect = group(
         "inspect",
         vec![
@@ -198,7 +202,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Query indexed Git relationships");
+    .about("Query indexed Git relationships")
+    .hide(true);
     let evidence = group(
         "evidence",
         vec![
@@ -238,7 +243,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Persist native build and other source/artifact evidence");
+    .about("Persist native build and other source/artifact evidence")
+    .hide(true);
     let benchmark = group(
         "benchmark",
         vec![
@@ -262,7 +268,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Validate and generate benchmark reports");
+    .about("Validate and generate benchmark reports")
+    .hide(true);
     let refactor =
         group(
             "refactor",
@@ -336,7 +343,8 @@ pub(super) fn command() -> Command {
             ),
         ],
         )
-        .about("Source-bound refactoring hypotheses and guarded recipes");
+        .about("Source-bound refactoring hypotheses and guarded recipes")
+        .hide(true);
     let configured_graph = group(
         "graph",
         vec![
@@ -377,7 +385,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Configuration-bound build and source evidence");
+    .about("Configuration-bound build and source evidence")
+    .hide(true);
     let clang = || {
         leaf(
             "clang",
@@ -433,7 +442,30 @@ pub(super) fn command() -> Command {
                 .num_args(1)
                 .value_parser(NonEmptyStringValueParser::new()),
         )
-        .subcommand(clang());
+        .subcommand(clang())
+        .subcommand(
+            leaf(
+                "rust",
+                &[],
+                &["repo", "rev", "source-prefix", "rust-analyzer", "scip"],
+            )
+            .about("Run rust-analyzer SCIP on a clean Git checkout")
+            .arg(
+                Arg::new("trusted-local")
+                    .long("trusted-local")
+                    .help("Permit running local Rust tooling; this is not sandboxed")
+                    .num_args(0..=1)
+                    .default_missing_value("true")
+                    .value_parser(["true", "false"]),
+            )
+            .arg(
+                Arg::new("json")
+                    .long("json")
+                    .help("Emit full versioned native SCIP evidence")
+                    .action(clap::ArgAction::SetTrue),
+            )
+            .after_help("Examples:\n  excession analyze rust --trusted-local\n  excession analyze rust --repo . --trusted-local --json\n\nA sole tracked Cargo project is detected automatically. Use --source-prefix to choose among multiple projects."),
+        );
     let kernel = group(
         "kernel",
         vec![
@@ -444,7 +476,8 @@ pub(super) fn command() -> Command {
             clang(),
         ],
     )
-    .about("Bounded, Git-bound Linux source observations and coverage");
+    .about("Bounded, Git-bound Linux source observations and coverage")
+    .hide(true);
     let tests = leaf(
         "tests",
         &[],
@@ -496,6 +529,18 @@ pub(super) fn command() -> Command {
         "agent",
         vec![
             leaf(
+                "locate",
+                &["repo", "task"],
+                &["rev", "limit", "roots", "db", "index-segments"],
+            )
+            .about("Find ranked Git-pinned source candidates for a natural-language task")
+            .arg(
+                Arg::new("json")
+                    .long("json")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Emit canonical JSON (also the default for agent locate)"),
+            ),
+            leaf(
                 "context",
                 &["repo", "rev", "focus"],
                 &["task", "limit", "roots", "db"],
@@ -516,12 +561,11 @@ pub(super) fn command() -> Command {
     .about("Bounded, machine-readable context and verification for coding agents");
     Command::new("excession")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Excession | Git-authenticated repository exploration and security evidence")
-        .after_help(
-            "JSON is written to stdout, errors to stderr. Views are read-only; scanner\n\
-             findings are unverified candidates. See subcommand --help for exact options.",
-        )
+        .about("Excession: Git-grounded analysis with evidence and explicit unknowns")
+        .after_help("Start here:\n  excession analyze .\n  excession impact .             # HEAD~1..HEAD\n  excession tests                # plan only\n  excession doctor\n\nRun 'excession commands' for the full catalog.\nNative analysis and test execution are always opt-in.")
         .subcommand_required(true)
+        .subcommand(analyze)
+        .subcommand(Command::new("commands").about("List all commands, including specialist tools"))
         .subcommand(
             Command::new("discover")
                 .about("Read-only Git revision and supported source-root discovery")
@@ -593,7 +637,6 @@ pub(super) fn command() -> Command {
                 .arg(
                     Arg::new("base")
                         .long("base")
-                        .required(true)
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
                 )
@@ -646,7 +689,6 @@ pub(super) fn command() -> Command {
                 .arg(
                     Arg::new("base")
                         .long("base")
-                        .required(true)
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
                 )
@@ -668,7 +710,7 @@ pub(super) fn command() -> Command {
         )
         .subcommand(
             leaf("index", &["repo", "db", "name"], &["rev", "roots"])
-                .about("Index a Git revision and dependency roots"),
+                .about("Index a Git revision and dependency roots").hide(true),
         )
         .subcommand(syntax)
         .subcommand(semantic)
@@ -676,25 +718,38 @@ pub(super) fn command() -> Command {
         .subcommand(security)
         .subcommand(evidence)
         .subcommand(group(
+            "history",
+            vec![
+                leaf("plan", &["repo"], &["rev", "base", "max-commits"]),
+                leaf("audit", &["repo", "plan"], &[]),
+                leaf("refs", &["repo"], &["max-refs"]),
+                leaf("verify-target", &["repo", "target", "replacement"], &[]),
+                leaf("preview-dag", &["repo", "output"], &["group", "max-commits"]),
+            ],
+        ).about("Read-only Git history consolidation plans and exact source-DAG replay").hide(true))
+        .subcommand(group(
             "reconstruct",
             vec![
                 leaf("evaluate", &["db", "target", "candidate", "trusted-local"], &["compiler", "objcopy"]),
                 leaf("history", &["db", "target"], &["limit"]),
                 leaf("auto", &["db", "target", "out", "trusted-local"], &["compiler", "objcopy", "objdump", "nm", "max-candidates", "time-budget-seconds"]),
                 leaf("searches", &["db", "target"], &["limit"]),
+                leaf("git", &["repo", "plan"], &[]),
+                leaf("git-synthesize", &["repo", "seed", "output"], &["max-candidates", "feedback"]),
+                leaf("git-evidence", &["repo", "plan", "db", "evidence"], &[]),
+                leaf("git-oracles", &["repo", "plan", "db", "evidence", "checks", "trusted-local"], &[]),
             ],
-        ).about("Trusted-local compiler feedback for C object-code reconstruction"))
+        ).about("Read-only Git reconstruction and trusted-local C compiler feedback").hide(true))
         .subcommand(inspect)
         .subcommand(refactor)
         .subcommand(benchmark)
         .subcommand(configured_graph)
-        .subcommand(analyze)
         .subcommand(kernel)
         .subcommand(agent)
         .subcommand(tests)
         .subcommand(
             leaf("browse", &["repo", "manifest"], &["max-bytes"])
-                .about("Read-only virtual source browser"),
+                .about("Read-only virtual source browser").hide(true),
         )
 }
 
@@ -707,6 +762,34 @@ pub(super) enum ParseOutcome {
 pub(super) struct Parsed {
     pub(super) path: Vec<String>,
     pub(super) options: Options,
+}
+
+/// Render names and descriptions from the same clap grammar used for execution.
+pub(super) fn catalog() -> String {
+    const EVERYDAY: &[&str] = &[
+        "analyze", "impact", "explain", "changes", "discover", "tests", "agent", "doctor",
+    ];
+    let mut everyday = Vec::new();
+    let mut specialist = Vec::new();
+    let tree = command();
+    for sub in tree.get_subcommands() {
+        let name = sub.get_name();
+        if name == "commands" {
+            continue;
+        }
+        let description = sub.get_about().map(ToString::to_string).unwrap_or_default();
+        let entry = format!("  {name:<14} {description}");
+        if EVERYDAY.contains(&name) {
+            everyday.push(entry);
+        } else {
+            specialist.push(entry);
+        }
+    }
+    format!(
+        "Everyday\n{}\n\nSpecialist\n{}\n\nRun 'excession <command> --help' for arguments.",
+        everyday.join("\n"),
+        specialist.join("\n")
+    )
 }
 
 pub(super) fn parse(args: &[String]) -> Result<ParseOutcome> {
@@ -776,6 +859,63 @@ mod tests {
     }
 
     #[test]
+    fn everyday_help_is_focused_but_specialist_commands_are_discoverable() {
+        let ParseOutcome::Help(help) = parse(&strings(&[])).unwrap() else {
+            panic!("root help expected");
+        };
+        assert!(help.contains("excession impact ."));
+        assert!(help.contains("commands"));
+        assert!(!help.contains("reconstruct"), "{help}");
+        let catalog = catalog();
+        for family in [
+            "analyze",
+            "impact",
+            "tests",
+            "security",
+            "reconstruct",
+            "refactor",
+        ] {
+            assert!(catalog.contains(family), "{family} absent from catalog");
+        }
+        assert!(parse(&strings(&["refactor", "--help"])).is_ok());
+    }
+
+    #[test]
+    fn common_comparison_commands_have_optional_base() {
+        for command in ["impact", "changes"] {
+            let ParseOutcome::Command(parsed) = parse(&strings(&[command, "."])).unwrap() else {
+                panic!("command expected");
+            };
+            assert!(!parsed.options.0.contains_key("base"));
+        }
+    }
+
+    #[test]
+    fn rust_native_trust_flag_is_explicit_and_json_opt_in() {
+        let ParseOutcome::Command(parsed) =
+            parse(&strings(&["analyze", "rust", "--trusted-local"])).unwrap()
+        else {
+            panic!("Rust subcommand expected");
+        };
+        assert_eq!(parsed.path, ["analyze", "rust"]);
+        assert_eq!(parsed.options.get("trusted-local"), "true");
+        assert!(!parsed.options.0.contains_key("repo"));
+        assert!(!parsed.options.0.contains_key("json"));
+        let ParseOutcome::Command(legacy) = parse(&strings(&[
+            "analyze",
+            "rust",
+            "--trusted-local",
+            "true",
+            "--json",
+        ]))
+        .unwrap() else {
+            panic!("Rust explicit-true form expected");
+        };
+        assert_eq!(legacy.options.get("trusted-local"), "true");
+        assert_eq!(legacy.options.get("json"), "true");
+    }
+
+    #[test]
     fn nested_help_is_generated_from_the_actual_command_grammar() {
         let ParseOutcome::Help(text) =
             parse(&strings(&["view", "replay", "deps", "--help"])).unwrap()
@@ -789,6 +929,55 @@ mod tests {
             panic!("help expected");
         };
         assert!(syntax.contains("native-audit"));
+    }
+
+    #[test]
+    fn agent_locate_requires_task_and_supports_explicit_revision() {
+        assert!(parse(&strings(&["agent", "locate", "--repo", "x"])).is_err());
+        assert!(parse(&strings(&["agent", "locate", "--task", "worker lease"])).is_err());
+        let ParseOutcome::Command(parsed) = parse(&strings(&[
+            "agent",
+            "locate",
+            "--repo",
+            "x",
+            "--task",
+            "worker lease",
+            "--rev",
+            "HEAD",
+            "--limit",
+            "8",
+            "--json",
+        ]))
+        .unwrap() else {
+            panic!("expected a command");
+        };
+        assert_eq!(parsed.path, ["agent", "locate"]);
+        assert_eq!(parsed.options.get("task"), "worker lease");
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "worker lease",
+                "--index-segments",
+                "256",
+            ]))
+            .is_ok()
+        );
+        assert!(
+            parse(&strings(&[
+                "agent",
+                "locate",
+                "--repo",
+                "x",
+                "--task",
+                "lease",
+                "--unknown",
+            ]))
+            .is_err()
+        );
     }
 
     #[test]

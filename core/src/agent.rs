@@ -34,12 +34,8 @@ fn gap(code: &str) -> Value {
     obj(&[("reason", Value::string(code))])
 }
 
-fn report_id(mut value: Value) -> Result<Value> {
-    let id = value.sha256();
-    value
-        .entries_mut()?
-        .insert("report_id".to_owned(), Value::string(id));
-    Ok(value)
+fn report_id(value: Value) -> Result<Value> {
+    value.stamp_id("report_id")
 }
 
 fn is_test(path: &str) -> bool {
@@ -106,8 +102,12 @@ pub fn context(
     let mut relations = Vec::new();
     let mut total_relations = 0usize;
     let mut truncated = false;
-    match analyze::run_if_supported(&discovered.root, &discovered.commit, roots, database)? {
-        Some((analysis, _)) => {
+    // Include revision-authenticated SCIP and configured-graph observations
+    // already present in the evidence store, alongside static import candidates.
+    // The default plan only selects producer evidence compatible with the
+    // requested exact Git revision. No inferred edge becomes a verified fact.
+    match analyze::run_default(&discovered.root, &discovered.commit, roots, database) {
+        Ok((analysis, _)) => {
             for relationship in analysis.get("relationships")?.array_ref()? {
                 let from = relationship.get("source")?.get("path")?.str()?;
                 let to = relationship.get("target")?.get("path")?.str()?;
@@ -128,7 +128,7 @@ pub fn context(
                 }
             }
         }
-        None => gaps.push(gap("NO_SUPPORTED_STATIC_MODULE_INDEX")),
+        Err(error) => return Err(error),
     }
 
     let mut test_candidates = Vec::new();

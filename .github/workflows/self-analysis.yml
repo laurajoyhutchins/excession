@@ -3,6 +3,18 @@ name: Excession self-analysis (advisory)
 # Deep dogfooding is scheduled/on-demand, not a PR admission gate.
 on:
   workflow_dispatch:
+  # One advisory run at opening and an optional exact-head ready-for-review
+  # checkpoint. Avoid expensive runs on every intermediate commit.
+  pull_request:
+    types: [opened, ready_for_review]
+    paths:
+      - 'core/src/json.rs'
+      - 'core/src/scip_refactor.rs'
+      - 'core/src/evidence/reconstruction.rs'
+      - 'core/src/evidence/reconstruction/**'
+      - 'core/src/projection.rs'
+      - 'core/src/projection/**'
+      - '.github/workflows/self-analysis.yml'
   # Re-check when SCIP interpretation or the indexing boundaries selected
   # for real Excession-on-Excession refactors change on main.
   # This remains advisory and is not a per-commit or PR admission gate.
@@ -32,7 +44,10 @@ jobs:
   self-analysis:
     name: Audit pinned self-source and dependency candidates
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      TREE_SITTER_LANGUAGE_PACK_CACHE_DIR: /tmp/excession-grammars
+      MISE_ENABLE_TOOLS: rust,python,node,go
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,12 +72,55 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13.5'
-      - name: Install and prefetch optional Tree-sitter grammars
-        run: |
-          python3 -m pip install --disable-pip-version-check tree-sitter-language-pack==1.25.0
-          python3 -c 'from tree_sitter_language_pack import prefetch; prefetch(["rust", "python", "javascript", "typescript", "go", "c", "java"])'
+      # Excession uses the Rust language-pack registry, not Python's wheel cache.
+      # Reuse the same native setup as the successful syntax-parsers workflow.
+      - uses: jdx/mise-action@v5
+      - name: Prefetch native Tree-sitter grammars
+        run: mise run syntax-setup
+      - name: Check native Rust/Python/Go grammars are available offline
+        run: cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --lib native_syntax::tests::prefetched_multi_language_grammars_parse_natively -- --exact
       - name: Build actual Excession binary
         run: cargo +1.99.1 build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Smoke-test direct native Rust analysis with real SCIP tools
+        env:
+          RUSTUP_TOOLCHAIN: '1.99.1'
+        run: |
+          set -euo pipefail
+          FIXTURE="$RUNNER_TEMP/excession-native-rust-fixture"
+          OUT="$GITHUB_WORKSPACE/self-analysis-artifacts"
+          mkdir -p "$FIXTURE/src" "$OUT"
+          git -C "$FIXTURE" init -q -b main
+          cat > "$FIXTURE/Cargo.toml" <<'TOML'
+          [package]
+          name = "excession-native-smoke"
+          version = "0.1.0"
+          edition = "2024"
+          TOML
+          cat > "$FIXTURE/src/lib.rs" <<'RS'
+          mod helper;
+          pub fn answer() -> u32 { helper::value() }
+          RS
+          cat > "$FIXTURE/src/helper.rs" <<'RS'
+          pub fn value() -> u32 { 42 }
+          RS
+          cargo +1.99.1 generate-lockfile --offline --manifest-path "$FIXTURE/Cargo.toml"
+          git -C "$FIXTURE" add .
+          git -C "$FIXTURE" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm 'pin native Rust fixture'
+          "$GITHUB_WORKSPACE/core/target/debug/excession" analyze rust \
+            --repo "$FIXTURE" --rev HEAD --trusted-local true \
+            --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" \
+            --scip "$RUNNER_TEMP/scip-bin/scip" --json > "$OUT/native-rust-smoke.json"
+          python3 - "$OUT/native-rust-smoke.json" <<'PY'
+          import json
+          import sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert report["schema"] == "excession.scip-observations.v1", report
+          assert report["indexer"]["name"] == "rust-analyzer", report
+          assert report["coverage"]["matched_cross_file_references"] > 0, report["coverage"]
+          assert any(r["from"]["path"] == "src/lib.rs"
+                     and r["to"]["path"] == "src/helper.rs"
+                     for r in report["observations"]), report["observations"]
+          PY
       - name: Adversarial self-analysis reporting tests
         run: python3 -m unittest discover -s tests -p 'test_self_analysis.py' -v
       - name: Create clean source snapshot for self-analysis

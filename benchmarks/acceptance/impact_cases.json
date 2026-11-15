@@ -1,0 +1,40 @@
+{
+  "schema": "excession.impact-acceptance-cases.v1",
+  "cases": [
+    {
+      "id": "h11-headers-60782ad",
+      "repository": "python-hyper/h11",
+      "base": "31e626c64e1e28db3cd73a6aa0ac057f1b915c18",
+      "head": "60782ad107e538b9312aac7e1c119c8358bf797c",
+      "roots": [
+        "h11"
+      ],
+      "expected_changed_paths": [
+        "h11/_headers.py",
+        "h11/tests/test_headers.py"
+      ],
+      "must_include_head_paths": [
+        "h11/_connection.py"
+      ],
+      "minimum_head_affected_paths": 1
+    },
+    {
+      "id": "pytest-collecterror-dcd0e6",
+      "repository": "pytest-dev/pytest",
+      "base": "bc14038c406563b18a03e15453a10b9eee969e42",
+      "head": "dcd0e636b4ce69021a9f607b060ea0056c339fd2",
+      "roots": [
+        "src",
+        "testing"
+      ],
+      "expected_changed_paths": [
+        "src/_pytest/nodes.py",
+        "testing/test_nodes.py"
+      ],
+      "must_include_head_paths": [
+        "testing/test_config.py"
+      ],
+      "minimum_head_affected_paths": 1
+    }
+  ]
+}

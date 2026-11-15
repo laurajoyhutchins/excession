@@ -5,8 +5,10 @@ intelligence. It indexes relationships at a pinned revision, assembles source
 views, inspects evidence from other analysis tools, and audits recorded results
 against their stated inputs.
 
-One `clap` command tree defines strict named options and nested help. There is
-no second positional command interface.
+One `clap` command tree defines named options and nested help. The opening
+screen shows everyday commands; `excession commands` lists every specialist
+family. Specialist commands remain callable even when omitted from the
+opening help. There is no second positional dispatcher.
 
 The command families correspond to different evidence layers:
 
@@ -48,8 +50,8 @@ dirty for these read-only operations; uncommitted edits are **not included**.
 cd /path/to/repository
 excession discover .
 excession analyze .
-excession changes . --base HEAD~1
-excession impact . --base HEAD~1 --output /tmp/impact.json
+excession changes .
+excession impact . --output /tmp/impact.json
 ```
 
 The default human report shows up to ten candidate paths and their full
@@ -72,6 +74,16 @@ authentication and replay separately from semantic correctness, which remains
 `NOT_EVALUATED`. The CLI uses no ontology inference to manufacture
 dependency observations. The experimental concept stack may later provide
 separately typed annotations.
+
+Without `--base`, `impact` and `changes` compare `HEAD~1..HEAD`. For a
+root commit, explicitly choose a valid base after another commit exists.
+
+`excession analyze rust --trusted-local` runs the installed rust-analyzer
+and official SCIP decoder on a **clean** HEAD. It automatically selects a
+sole tracked Cargo project, including a nested project. Multiple projects
+require `--source-prefix`. Default output is a human summary; add `--json`
+for the full versioned SCIP observations. `--trusted-local true` remains
+accepted; the bare flag is preferred. The process is **not sandboxed**.
 
 `analyze` auto-discovers supported source roots and creates its SQLite cache
 outside the repository. Use `--roots` or `--db` when a project requires explicit
@@ -177,6 +189,15 @@ excession view replay security --db "$OUT/security.sqlite" --repo "$REPO" \
 The `tools/pipeline.py` scanner runner uses the dedicated CLI by default. CodeQL and Semgrep remain optional external programs. An imported report records **unverified static candidates**, not confirmed CVEs. Before trusting a security view, independently audit the underlying scanner ingestion as shown above.
 
 ## Agent-facing commands
+
+`excession agent locate --repo REPO --task TEXT [--rev HEAD] [--limit 20] [--json]`
+finds ranked lexical source candidates from pinned Git blobs using an
+segmented, incremental, external SQLite FTS5 index (up to eight
+segments refreshed by default, configurable via `--index-segments`), with exact
+source identities, bounded excerpts, and an embedded agent context report.
+Candidates are **unverified text matches** and uncommitted edits are excluded.
+No model or external index service is required. See [agent locate](AGENT_CLI.md).
+
 
 `excession agent context --repo REPO --rev COMMIT --focus PATH[,PATH...] [--task TEXT] [--limit 32]`
 returns versioned JSON with exact source identities, existing candidate

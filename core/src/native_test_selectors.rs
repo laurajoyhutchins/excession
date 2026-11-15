@@ -124,15 +124,26 @@ fn tracked_selection(root: &Path, commit: &str, output: &[u8]) -> Result<Vec<Str
         let relative = canonical
             .strip_prefix(&canonical_root)
             .map_err(|_| "Jest selected a test outside the candidate repository")?;
-        let relative = relative
-            .to_str()
-            .ok_or("Jest selected a non-UTF-8 Git path")?;
-        if !tracked.contains(relative) {
+        // Canonical filesystem paths use native separators, but Git tree
+        // paths always use '/'. Compare components rather than raw strings
+        // so Windows cannot turn a tracked file into an apparent outsider.
+        let mut parts = Vec::new();
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                return refuse("Jest selected a non-normalized relative test path");
+            };
+            parts.push(name.to_str().ok_or("Jest selected a non-UTF-8 Git path")?);
+        }
+        if parts.is_empty() {
+            return refuse("Jest selected the repository root instead of a test");
+        }
+        let relative = parts.join("/");
+        if !tracked.contains(&relative) {
             return refuse(format!(
                 "Jest selected a file not tracked by candidate Git: {relative}"
             ));
         }
-        selected.insert(relative.to_owned());
+        selected.insert(relative);
     }
     Ok(selected.into_iter().collect())
 }

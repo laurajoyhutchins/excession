@@ -2,12 +2,15 @@
 //! All commands use one clap grammar; the same parsed options reach the native handlers.
 
 use excession::agent;
+use excession::agent_locate;
 use excession::analyze;
 use excession::change_inventory;
 use excession::discovery;
 use excession::doctor;
 use excession::evidence_query;
 use excession::explain;
+use excession::history;
+use excession::history_rewrite;
 use excession::impact_query;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
@@ -550,7 +553,7 @@ fn execute(args: &[String]) -> Result<Response> {
             _ => refuse(format!("unknown syntax command {sub}")),
         },
         [top, sub] if top == "graph" => match sub.as_str() {
-            "import" | "ls" | "show" | "deps" | "path" => graph_cli::run(sub, opt),
+            "import" | "ls" | "show" | "deps" | "path" => Ok(json(graph_cli::run(sub, opt)?)),
             "kbuild" => {
                 let db = Db::open(opt.path("db"))?;
                 Ok(json(kbuild_graph::assemble(
@@ -655,6 +658,55 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get_or("json", "false") == "true",
             ))
         }
+        [top, sub] if top == "history" => match sub.as_str() {
+            "plan" => {
+                let max = opt
+                    .get_or("max-commits", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-commits must be an integer from 1 to 100000")?;
+                Ok(json(history::plan(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.0.get("base").map(String::as_str),
+                    max,
+                )?))
+            }
+            "audit" => Ok(json(history::audit(opt.path("repo"), opt.path("plan"))?)),
+            "refs" => {
+                let max = opt
+                    .get_or("max-refs", "10000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-refs must be an integer from 1 to 100000")?;
+                Ok(json(history::refs(opt.path("repo"), max)?))
+            }
+            "verify-target" => Ok(json(history::verify_target(
+                opt.path("repo"),
+                opt.get("target"),
+                opt.get("replacement"),
+            )?)),
+            "preview-dag" => {
+                let max = opt
+                    .get_or("max-commits", "100000")
+                    .parse::<usize>()
+                    .map_err(|_| "--max-commits must be 1..=100000")?;
+                let group = opt
+                    .0
+                    .get("group")
+                    .map(|value| value.parse::<usize>())
+                    .transpose()
+                    .map_err(|_| "--group must be a nonnegative integer")?;
+                Ok(Response::CanonicalJson(
+                    serde_json::to_string(&history_rewrite::preview(
+                        opt.path("repo"),
+                        opt.path("output"),
+                        group,
+                        max,
+                    )?)
+                    .map_err(|e| format!("serialize history DAG preview: {e}"))?,
+                ))
+            }
+            _ => refuse(format!("unknown history command {sub}")),
+        },
         [top, sub] if top == "agent" => {
             let limit = opt
                 .get_or("limit", "32")
@@ -663,6 +715,21 @@ fn execute(args: &[String]) -> Result<Response> {
             let roots = opt.0.get("roots").map(String::as_str);
             let db = opt.0.get("db").map(String::as_str);
             match sub.as_str() {
+                "locate" => {
+                    let budget = opt
+                        .get_or("index-segments", "8")
+                        .parse::<usize>()
+                        .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
+                    Ok(json(agent_locate::locate_with_budget(
+                        opt.path("repo"),
+                        opt.get_or("rev", "HEAD"),
+                        opt.get("task"),
+                        limit,
+                        roots,
+                        db,
+                        budget,
+                    )?))
+                }
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),
                     opt.get("rev"),
@@ -693,7 +760,23 @@ fn execute(args: &[String]) -> Result<Response> {
                 _ => refuse(format!("unknown agent command: {sub}")),
             }
         }
+        [top] if top == "commands" => Ok(Response::Message(cli::catalog())),
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
+        [top, sub] if top == "analyze" && sub == "rust" => {
+            let report = excession::rust_native::scan(
+                Path::new(opt.get_or("repo", ".")),
+                opt.get_or("rev", "HEAD"),
+                opt.0.get("source-prefix").map(String::as_str),
+                opt.get_or("rust-analyzer", "rust-analyzer"),
+                opt.get_or("scip", "scip"),
+                opt.get_or("trusted-local", "false"),
+            )?;
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(report))
+            } else {
+                Ok(Response::Message(excession::rust_native::human(&report)?))
+            }
+        }
         [top] if top == "analyze" => {
             let repo = Path::new(opt.get_or("path", "."));
             let rev = opt.get_or("rev", "HEAD");
@@ -785,7 +868,7 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top] if top == "impact" => {
             let repo = Path::new(opt.get_or("path", "."));
-            let base = opt.get("base");
+            let base = opt.get_or("base", "HEAD~1");
             let head = opt.get_or("head", "HEAD");
             let roots = opt.0.get("roots").map(String::as_str);
             let db_arg = opt.0.get("db").map(String::as_str);
@@ -879,7 +962,7 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top] if top == "changes" => Ok(json(change_inventory::inventory(
             Path::new(opt.get_or("path", ".")),
-            opt.get("base"),
+            opt.get_or("base", "HEAD~1"),
             opt.get_or("head", "HEAD"),
         )?)),
         [top] if top == "doctor" => {
@@ -1142,6 +1225,53 @@ fn execute(args: &[String]) -> Result<Response> {
             }
             _ => refuse(format!("unknown benchmark command {sub}")),
         },
+        [top, sub] if top == "reconstruct" && sub == "git-synthesize" => {
+            let count = opt
+                .get_or("max-candidates", "2")
+                .parse::<usize>()
+                .map_err(|_| "invalid reconstruction candidate count")?;
+            Ok(json(excession::git_reconstruction_synthesis::synthesize(
+                opt.path("repo"),
+                opt.path("seed"),
+                opt.path("output"),
+                count,
+                opt.0.get("feedback").map(Path::new),
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git-oracles" => {
+            if !opt.path("db").is_file() {
+                return refuse("Git reconstruction oracles need an existing SQLite database");
+            }
+            let trusted = match opt.get("trusted-local") {
+                "true" => true,
+                "false" => false,
+                _ => return refuse("--trusted-local requires true or false"),
+            };
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_oracles::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+                opt.path("checks"),
+                trusted,
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git-evidence" => {
+            if !opt.path("db").is_file() {
+                return refuse("Git reconstruction evidence needs an existing SQLite database");
+            }
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::git_reconstruction_evidence::replay(
+                &db,
+                opt.path("repo"),
+                opt.path("plan"),
+                opt.path("evidence"),
+            )?))
+        }
+        [top, sub] if top == "reconstruct" && sub == "git" => Ok(json(
+            excession::git_reconstruction::verify(opt.path("repo"), opt.path("plan"))?,
+        )),
         [top, sub] if top == "reconstruct" && sub == "evaluate" => {
             let db = Db::open(opt.path("db"))?;
             let trusted = match opt.get("trusted-local") {
@@ -1449,6 +1579,41 @@ mod tests {
     fn strings(x: &[&str]) -> Vec<String> {
         x.iter().map(|s| (*s).to_owned()).collect()
     }
+    #[test]
+    fn graph_route_serializes_domain_json_at_cli_boundary() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "excession-self-graph-route-{}-{unique}.sqlite",
+            std::process::id()
+        ));
+        {
+            let db = Db::open(&path).unwrap();
+            db.init_schema().unwrap();
+            // The configured-graph tables are provisioned by the graph
+            // importer, not by the general Excession evidence schema.
+            db.exec(
+                "CREATE TABLE configured_graph (graph_id TEXT PRIMARY KEY, target TEXT, document TEXT)",
+            )
+            .unwrap();
+        }
+        let response = execute(&strings(&["graph", "ls", "--db", path.to_str().unwrap()])).unwrap();
+        match response {
+            Response::Json(value) => {
+                assert_eq!(
+                    value.get("schema").unwrap().str().unwrap(),
+                    "excession.graph-list.v1"
+                );
+                assert_eq!(value.get("count").unwrap().integer().unwrap(), 0);
+                assert!(value.get("graphs").unwrap().array_ref().unwrap().is_empty());
+            }
+            _ => panic!("graph ls must remain a canonical JSON response"),
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn options_are_validated_once_by_clap() {
         assert!(

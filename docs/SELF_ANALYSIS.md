@@ -6,6 +6,33 @@ depfiles. The existing Rust SCIP consumer validates the indexed documents
 against Git and checks every emitted reference span. The optional Tree-sitter
 scan remains a *syntax-only* observation path for all supported languages.
 
+## Direct native Rust analysis
+
+For a **trusted, clean checkout at the selected commit**, run the existing
+rust-analyzer and official SCIP CLI directly through Excession:
+
+```sh
+excession analyze rust --repo "$PWD" --rev HEAD --trusted-local --json > /tmp/rust-observations.json
+# If the Cargo project is nested inside the Git root:
+excession analyze rust --repo "$PWD" --source-prefix core --trusted-local --json > /tmp/rust-observations.json
+```
+
+This runs `rust-analyzer scip`, decodes the index with the official `scip
+print --json` command, then uses the **existing** Git-bound SCIP consumer.
+The output is `excession.scip-observations.v1`: original cross-file symbol
+references, with partial coverage and unresolved sites. It does not label them
+as imports, calls, behavioral effects, or complete dependencies.
+
+It refuses dirty checkouts, a requested revision other than HEAD, missing
+tracked Cargo manifests, mismatched SCIP project roots and mutated source.
+Native subprocesses run only with `--trusted-local true`; offline Cargo
+resolution and an external temporary target directory are requested, but
+rust-analyzer is **not sandboxed**. Use an isolated worktree for historical
+commits, and never run this command over untrusted projects without isolation.
+The binary and decoded index are capped at 32 MiB each, with 240-second
+deadlines. The normal zero-side-effect `excession analyze .` does not
+implicitly execute rust-analyzer.
+
 ## Advisory CI
 
 [Self-analysis workflow](../.github/workflows/self-analysis.yml) executes on a

@@ -465,20 +465,16 @@ pub fn discover(
     ]);
     let mut result = obj(&[("declaration", declaration), ("stats", stats)]);
     if let Some(observations) = observations {
-        let mut resolution = obj(&[
+        let resolution = obj(&[
             ("schema", Value::string("excession.python-resolution.v1")),
             ("source_commit", Value::string(&commit)),
             ("subject", Value::string(entry)),
             ("import_roots", Value::string(roots)),
             ("observations", observations),
         ]);
-        let report_id = resolution.sha256();
-        resolution
-            .entries_mut()?
-            .insert("report_id".into(), Value::string(report_id));
         result
             .entries_mut()?
-            .insert("resolution".into(), resolution);
+            .insert("resolution".into(), resolution.stamp_id("report_id")?);
     }
     Ok(result)
 }

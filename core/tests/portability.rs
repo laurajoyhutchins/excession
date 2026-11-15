@@ -38,7 +38,11 @@ fn installed_binary_works_outside_build_tree_with_unicode_paths() {
     let version = run(binary, &["--version"], &working);
     assert!(String::from_utf8_lossy(&version.stdout).contains("excession "));
     let help = run(binary, &["--help"], &working);
-    assert!(String::from_utf8_lossy(&help.stdout).contains("index"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("analyze"));
+    let catalog = run(binary, &["commands"], &working);
+    let catalog_text = String::from_utf8_lossy(&catalog.stdout);
+    assert!(catalog_text.contains("Specialist"), "{catalog_text}");
+    assert!(catalog_text.contains("index"), "{catalog_text}");
     let index_help = run(binary, &["index", "--help"], &working);
     let index_usage = String::from_utf8_lossy(&index_help.stdout);
     assert!(

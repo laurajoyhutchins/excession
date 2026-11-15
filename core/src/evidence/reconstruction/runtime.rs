@@ -136,3 +136,59 @@ pub(super) fn sample(left: &[u8], right: &[u8]) -> (usize, Vec<Value>) {
     (mismatches, examples)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_byte_comparison_keeps_offsets_and_bounded_examples() {
+        assert_eq!(sample(b"same", b"same").0, 0);
+        let (mismatches, examples) = sample(&[1, 2, 3], &[1, 7]);
+        assert_eq!(mismatches, 2);
+        assert_eq!(examples.len(), 2);
+        assert_eq!(examples[0].get("offset").unwrap().integer().unwrap(), 1);
+        assert_eq!(examples[0].get("target").unwrap().integer().unwrap(), 2);
+        assert_eq!(examples[0].get("candidate").unwrap().integer().unwrap(), 7);
+        assert_eq!(examples[1].get("offset").unwrap().integer().unwrap(), 2);
+        assert_eq!(examples[1].get("candidate").unwrap(), &Value::Null);
+
+        let (total, kept) = sample(&[0; 32], &[1; 32]);
+        assert_eq!(total, 32);
+        assert_eq!(kept.len(), 16);
+    }
+
+    #[test]
+    fn artifact_subject_is_bound_to_exact_bytes_and_length() {
+        let a = subject(b"abc").unwrap();
+        assert_eq!(a, subject(b"abc").unwrap());
+        assert_ne!(a, subject(b"abcd").unwrap());
+        assert_ne!(a, subject(b"abd").unwrap());
+        assert_eq!(
+            a,
+            Subject::Artifact {
+                sha256: digest::sha256(b"abc"),
+                size_bytes: 3,
+            }
+            .id()
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn scratch_cleanup_and_bounded_file_refuse_unsafe_inputs() {
+        let path;
+        {
+            let scratch = Scratch::new().unwrap();
+            path = scratch.path("input.bin");
+            assert!(bounded_file(&path, 2).is_err());
+            fs::write(&path, [4_u8, 5]).unwrap();
+            assert_eq!(bounded_file(&path, 2).unwrap(), [4, 5]);
+            assert!(bounded_file(&path, 1).is_err());
+            fs::write(&path, []).unwrap();
+            assert!(bounded_file(&path, 2).is_err());
+            assert!(bounded_file(&scratch.0, 1024).is_err());
+        }
+        assert!(!path.exists(), "the trusted-local scratch directory must be removed");
+    }
+}

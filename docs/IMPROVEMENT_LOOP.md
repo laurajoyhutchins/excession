@@ -125,6 +125,27 @@ binding and module initialization survive, compile TypeScript independently,
 run the resulting code, and reject stale source identities and unsafe cases.
 The native tool never commits the edited worktree or sets `ready_to_merge`.
 
+### Held-out real repository acceptance
+
+The independent [clod-pet acceptance run](https://github.com/laurajoyhutchins/excession/actions/runs/43740990391)
+uses commit `ba9b87d7434d70ce2569fbdb7420ec2b73a73729` in a separate public
+repository. The native TypeScript producer identified the existing unused
+`PetWindowOptions` binding in `app/src/main/pet-manager.ts` without injecting
+a synthetic mistake.
+
+The source changed from **26,991 to 26,968 bytes** (23 bytes removed);
+exactly one tracked source file changed and no new file was created. The
+application's own TypeScript build and targeted PetManager Jest tests passed
+on **both** the original and isolated candidate. The native edit artifact,
+byte-exact diff, independent build/test logs, and measurement JSON are archived
+by the workflow.
+
+This is observed, tested source reduction in an unfamiliar application. It
+is **not** evidence that every application configuration, public contract or
+runtime behavior has been checked. The separate original repository was not
+mutated or updated. Native producer attestations, REA records and unattended
+merge authorization remain open.
+
 ## SCIP producer
 
 SCIP reports and exact source identities are supplied by their existing

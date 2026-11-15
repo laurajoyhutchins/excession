@@ -1,99 +1,18 @@
 //! A bounded compiler-in-the-loop comparison for a single C object-code region.
 //! Code-byte equality is not source recovery, behavioral equivalence or build attestation.
 mod automatic;
-use crate::evidence::{artifact, identity::Subject};
+mod runtime;
+use crate::evidence::artifact;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, refuse};
+use runtime::{FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject};
 pub use automatic::{SearchOptions, search, searches};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::path::Path;
 
 const MAX_SOURCE: usize = 1024 * 1024;
-const MAX_TEXT: usize = 1024 * 1024;
 const MAX_HISTORY: usize = 32;
-const FLAGS: &[&str] = &[
-    "-O2",
-    "-fno-stack-protector",
-    "-fno-asynchronous-unwind-tables",
-    "-fno-ident",
-    "-c",
-];
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
-struct Scratch(PathBuf);
-impl Scratch {
-    fn new() -> Result<Self> {
-        let dir = std::env::temp_dir().join(format!(
-            "excession-reconstruct-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&dir).map_err(|e| format!("reconstruction scratch: {e}"))?;
-        Ok(Self(dir))
-    }
-    fn path(&self, name: &str) -> PathBuf {
-        self.0.join(name)
-    }
-}
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-fn run(program: &str, args: &[&str]) -> Result<()> {
-    let mut child = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("spawn trusted-local tool {program:?}: {e}"))?;
-    let started = Instant::now();
-    loop {
-        match child.try_wait().map_err(|e| e.to_string())? {
-            Some(status) if status.success() => return Ok(()),
-            Some(status) => {
-                return refuse(format!("trusted-local tool {program:?} failed: {status}"));
-            }
-            None if started.elapsed() >= Duration::from_secs(15) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return refuse(format!("trusted-local tool {program:?} timed out"));
-            }
-            None => std::thread::sleep(Duration::from_millis(20)),
-        }
-    }
-}
-
-fn bounded_file(path: &Path, max: usize) -> Result<Vec<u8>> {
-    let meta = fs::metadata(path).map_err(|e| format!("input metadata: {e}"))?;
-    if !meta.is_file() || meta.len() > max as u64 {
-        return refuse("reconstruction input is not a bounded regular file");
-    }
-    let bytes = fs::read(path).map_err(|e| format!("input read: {e}"))?;
-    if bytes.is_empty() || bytes.len() > max {
-        return refuse("reconstruction input must be nonempty and bounded");
-    }
-    Ok(bytes)
-}
-
-fn code_region(objcopy: &str, source: &Path, destination: &Path) -> Result<Vec<u8>> {
-    let arg = format!(".text={}", destination.display());
-    run(
-        objcopy,
-        &[
-            "--dump-section",
-            &arg,
-            source.to_str().ok_or("non-UTF-8 object path")?,
-        ],
-    )?;
-    bounded_file(destination, MAX_TEXT)
-}
 
 fn schema(db: &Db) -> Result<()> {
     db.exec(
@@ -113,34 +32,6 @@ fn schema(db: &Db) -> Result<()> {
            BEFORE DELETE ON evidence_reconstruction_attempt_v1
            BEGIN SELECT RAISE(ABORT,'immutable reconstruction evidence'); END;",
     )
-}
-
-fn subject(bytes: &[u8]) -> Result<String> {
-    Subject::Artifact {
-        sha256: digest::sha256(bytes),
-        size_bytes: bytes.len() as u64,
-    }
-    .id()
-}
-
-fn sample(left: &[u8], right: &[u8]) -> (usize, Vec<Value>) {
-    let mut mismatches = 0usize;
-    let mut examples = Vec::new();
-    for offset in 0..left.len().max(right.len()) {
-        let l = left.get(offset);
-        let r = right.get(offset);
-        if l != r {
-            mismatches += 1;
-            if examples.len() < 16 {
-                examples.push(obj(&[
-                    ("offset", Value::number(offset)),
-                    ("target", l.map_or(Value::Null, |b| Value::number(*b))),
-                    ("candidate", r.map_or(Value::Null, |b| Value::number(*b))),
-                ]));
-            }
-        }
-    }
-    (mismatches, examples)
 }
 
 /// Evaluate a candidate by compiling a copied source with a fixed C recipe,

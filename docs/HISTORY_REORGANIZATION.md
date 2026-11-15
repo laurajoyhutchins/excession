@@ -66,3 +66,43 @@ The current Rust history planner checks Git source-DAG identity and proposed con
 Use streaming Git revision traversal and batched object reads for future DAG/patch-ID indexes. Cache derived graph observations under immutable source identities in SQLite. Keep a bounded working set and emit paginated plans, with explicit coverage and continuation IDs. Cost is expected to be near O(V+E) for ancestry traversal; substantive semantic verification depends on the independent producers and cannot be assumed cheap.
 
 Git remains the immutable source authority. SQLite can record proposals and their proof obligations, but no SQLite entry changes Git history on its own.
+
+## Self-replay on the complete Excession Git graph
+
+The `Full Git history self-replay` workflow runs on changes to its harness
+or on manual dispatch. It uses `fetch-depth: 0`, verifies Git object
+connectivity, and refuses shallow or truncated results. It invokes the Rust
+`core/examples/history_self_replay.rs` harness to compare every reachable
+HEAD commit, parent edge, and tree ID with independent Git plumbing. It
+then plans each distinct commit tip referenced by local branches and tags,
+compares the union against `git rev-list --parents --all HEAD` and independently
+retrieved tree identities, and refuses missing source objects. Per-tip plan IDs
+are retained in `ref-plans.json`.
+
+The full-depth run records the original tip, plan digest, merge count,
+candidate-group count, elapsed time, peak RSS, local-ref reachability,
+and explicit unknown external refs. It runs the normal history plan/audit,
+refs inventory, and exact target-tree comparison. Original HEAD, refs,
+and worktree are checked for changes before and after.
+
+Where an adjacent same-scope group exists, the harness creates one
+**synthetic review-only squash commit** using `git commit-tree` in a
+disposable shared clone outside the source checkout. Its recorded
+old-to-new candidate mapping demonstrates exact **terminal-tree** and
+parent preservation for that group, not intermediate-state, review,
+branch-dependency, runtime, or receipt equivalence. It neither moves
+source refs nor authorizes a rewrite. The candidate object is ephemeral.
+
+Run against a full local clone, with output outside the checkout:
+
+```sh
+cargo run --locked --manifest-path core/Cargo.toml --example history_self_replay -- \
+  --repo . --output /tmp/excession-self-history --max-commits 100000
+```
+
+Artifacts contain plan.json, audit.json, refs.json, ref-plans.json, target.json,
+preview.json, summary.json, and resources.txt. The run is an actual
+reproducible self-replay. It is not a scalable production history
+reorganizer: multi-ref dependent rewriting, immutable old-to-new
+mapping across the full DAG, external PR/REA receipts, and independent
+semantic validation remain outstanding.

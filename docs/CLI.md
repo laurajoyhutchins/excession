@@ -104,6 +104,32 @@ excession analyze native --language cpp --source src/main.cpp \\
   --compile-db build/compile_commands.json --trusted-local
 ```
 
+The original producer reports can also be retained and composed without
+re-executing their compiler:
+
+```sh
+excession analyze native --language go --source cmd/server/main.go \\
+  --trusted-local --json > /tmp/go-native.json
+excession evidence native-import --repo . --rev HEAD \\
+  --report /tmp/go-native.json --db /tmp/excession.sqlite
+excession analyze . --db /tmp/excession.sqlite --json
+excession impact . --db /tmp/excession.sqlite --json
+excession agent context --repo . --rev HEAD --focus cmd/server/main.go \\
+  --db /tmp/excession.sqlite
+```
+
+Native import retains the **original report bytes** through the existing
+immutable evidence store, rechecks all claimed source/configuration blobs
+against pinned Git objects, and requires exact report identities. Automatic
+analysis, impact, agent context, and agent verify reuse the same selected,
+source-replayed receipts. They expose native Go input membership and configured
+Clang AST observations as **configured observations**, not generic dependency
+edges or verified runtime effects. Reports for different commits remain
+separate; saved impact plans replay only the originally selected identities.
+`evidence native-store-audit` rechecks an imported snapshot without executing
+the compiler. Imported producer claims remain **unattested**, even when their
+Git inputs are authentic.
+
 Go reuses the existing pinned-Git, offline `go list` producer with its
 declared source/configuration inputs. Clang reuses the existing compilation
 database AST adapter for one translation unit, with symbols, calls and
@@ -111,8 +137,11 @@ content-hashed headers. Both produce `excession.native-analysis.v1`,
 including the selected Git commit/tree and source blob, producer evidence,
 input inventory, an explicit partial-coverage status, and a consistent
 human summary. Go's declared input membership is **not a symbol call graph**.
-Clang's external compilation database, system/generated headers and
-compiler configuration are **not independently Git-authenticated**.
+Clang's **tracked** header observations are admitted only when the
+reported SHA-256 matches the historical Git blob. They appear as
+configuration-scoped observations for impact and agent context, never as
+invented direct-call edges. External/generated headers and the compilation
+database remain **not independently Git-authenticated**.
 Results are trusted-local observations rather than independently attested
 build receipts. No source code or build process is executed without
 `--trusted-local`; this is not a sandbox.

@@ -14,7 +14,7 @@ use excession::history_rewrite;
 use excession::impact_query;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
-use excession::observed_relations::{self, Plan, Selection};
+use excession::observed_relations::{self, Selection};
 use excession::semantic_contract;
 use excession::sqlite::{Db, Param};
 use excession::working_tree_tests;
@@ -936,24 +936,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     },
                 )?
             } else {
-                let discovered = discovery::inspect(repo, head)?;
-                let destination = analyze::checked_external_destination(
-                    &discovered.root,
-                    db_arg.map(Path::new).unwrap_or(&discovered.index_path),
-                    "SQLite",
-                )?;
-                let (base_plan, head_plan) = if destination.is_file() {
-                    let store = Db::open(&destination)?;
-                    (
-                        observed_relations::default_plan(&store, &discovered.root, base)?,
-                        observed_relations::default_plan(&store, &discovered.root, head)?,
-                    )
-                } else {
-                    (Plan::default(), Plan::default())
-                };
-                impact_query::run_with_plans(
-                    repo, base, head, roots, db_arg, &base_plan, &head_plan,
-                )?
+                impact_query::run_auto(repo, base, head, roots, db_arg)?
             };
             if let Some(path) = opt.0.get("output") {
                 let checkout = discovery::inspect(
@@ -1373,6 +1356,31 @@ fn execute(args: &[String]) -> Result<Response> {
                 &db,
                 opt.path("target"),
                 limit,
+            )?))
+        }
+        [top, sub] if top == "evidence" && sub == "native-import" => {
+            let destination =
+                analyze::checked_external_destination(opt.path("repo"), opt.path("db"), "SQLite")?;
+            let db = Db::open(&destination)?;
+            Ok(json(excession::native_evidence::import(
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.path("report"),
+                &db,
+            )?))
+        }
+        [top, sub] if top == "evidence" && sub == "native-store-audit" => {
+            let destination =
+                analyze::checked_external_destination(opt.path("repo"), opt.path("db"), "SQLite")?;
+            if !destination.is_file() {
+                return refuse("native audit requires an existing evidence database");
+            }
+            let db = Db::open(&destination)?;
+            Ok(json(excession::native_evidence::audit_source(
+                opt.path("repo"),
+                opt.get("rev"),
+                &db,
+                opt.get("snapshot"),
             )?))
         }
         [top, sub] if top == "evidence" && sub == "ghidra-import" => {

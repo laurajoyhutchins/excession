@@ -302,3 +302,368 @@ fn native_refuses_unsupported_languages_dirty_worktrees_and_wrong_revision() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("dirty checkout"));
 }
+
+#[test]
+fn native_go_receipts_replay_into_analysis_impact_and_agent_without_fabricated_edges() {
+    if !available("go", "version") || !available("python3", "--version") {
+        return;
+    }
+    let f = Fixture::new();
+    let database = f.parent.join("evidence.sqlite");
+    let db = database.to_str().unwrap();
+    let native = parsed(f.invoke(&[
+        "analyze",
+        "native",
+        "--language",
+        "go",
+        "--source",
+        "cmd/server/main.go",
+        "--trusted-local",
+        "--json",
+    ]));
+    let report = f.parent.join("native-go.json");
+    fs::write(&report, native.canonical()).unwrap();
+    let report_path = report.to_str().unwrap();
+    let import_args = [
+        "evidence",
+        "native-import",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--report",
+        report_path,
+        "--db",
+        db,
+    ];
+    let ingested = parsed(f.invoke(&import_args));
+    assert_eq!(
+        field(&ingested, "schema"),
+        "excession.native-evidence-import.v1"
+    );
+    assert_eq!(
+        field(&ingested, "semantics"),
+        "PRODUCER_SUPPLIED_UNATTESTED"
+    );
+    let snapshot = field(&ingested, "snapshot_id");
+    let repeated = parsed(f.invoke(&import_args));
+    assert_eq!(
+        snapshot,
+        field(&repeated, "snapshot_id"),
+        "import must be idempotent"
+    );
+    let replay = parsed(f.invoke(&[
+        "evidence",
+        "native-store-audit",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--db",
+        db,
+        "--snapshot",
+        snapshot,
+    ]));
+    assert_eq!(
+        field(&replay, "status"),
+        "REPLAYED_GIT_BOUND_NATIVE_OBSERVATIONS"
+    );
+    assert_eq!(field(&replay, "producer_attestation"), "NOT_ESTABLISHED");
+
+    let analyzed = parsed(f.invoke(&["analyze", ".", "--db", db, "--json"]));
+    assert_eq!(field(&analyzed, "source_commit"), f.commit);
+    let selection = analyzed
+        .get("producer_selection_plan")
+        .unwrap()
+        .get("native")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert_eq!(selection.len(), 1);
+    assert_eq!(selection[0].str().unwrap(), snapshot);
+    let configured = analyzed
+        .get("configured_observations")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(
+        configured.iter().any(
+            |item| field(item.get("source").unwrap(), "path") == "dep/dep.go"
+                && field(item, "native_kind") == "NATIVE_SELECTED_INPUT"
+        )
+    );
+    assert!(
+        analyzed
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .all(|item| field(item, "kind") != "GO_DEPENDENCY")
+    );
+    let context = parsed(f.invoke(&[
+        "agent",
+        "context",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--focus",
+        "dep/dep.go",
+        "--db",
+        db,
+    ]));
+    assert!(
+        context
+            .get("configured_observation_count")
+            .unwrap()
+            .integer()
+            .unwrap()
+            > 0
+    );
+
+    fs::write(f.repo.join("dep/dep.go"), "package dep\nconst Value = 43\n").unwrap();
+    ok("git", &["add", "dep/dep.go"], &f.repo);
+    ok(
+        "git",
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "change Go dependency",
+        ],
+        &f.repo,
+    );
+    let head = String::from_utf8(ok("git", &["rev-parse", "HEAD"], &f.repo))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let new_report = parsed(f.invoke(&["analyze", ".", "--db", db, "--json"]));
+    assert!(
+        new_report
+            .get("producer_selection_plan")
+            .unwrap()
+            .entries()
+            .unwrap()
+            .get("native")
+            .is_none(),
+        "old native receipts must not apply to a different commit"
+    );
+    let impact = parsed(f.invoke(&[
+        "impact", ".", "--db", db, "--base", &f.commit, "--head", &head, "--json",
+    ]));
+    assert!(
+        impact
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|item| field(item.get("source").unwrap(), "path") == "dep/dep.go")
+    );
+    let verified = parsed(f.invoke(&[
+        "agent",
+        "verify",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--base",
+        &f.commit,
+        "--candidate",
+        &head,
+        "--db",
+        db,
+    ]));
+    assert!(!verified.get("ready_to_merge").unwrap().bool().unwrap());
+    assert!(
+        verified
+            .get("configured_observation_count")
+            .unwrap()
+            .integer()
+            .unwrap()
+            > 0
+    );
+    assert!(
+        verified
+            .get("obligations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|item| item.str().unwrap() == "NATIVE_PRODUCER_ATTESTATION_MISSING")
+    );
+    let stale = f.invoke(&[
+        "evidence",
+        "native-store-audit",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &head,
+        "--snapshot",
+        snapshot,
+        "--db",
+        db,
+    ]);
+    assert!(!stale.status.success(), "cross-revision replay must fail");
+
+    // Recalculate the outer report ID after forging a Git blob. A valid
+    // content hash must not bypass independent Git source authentication.
+    let mut forged = native.clone();
+    let first = match forged.entries_mut().unwrap().get_mut("inputs").unwrap() {
+        Value::Array(items) => items.first_mut().unwrap(),
+        _ => panic!("inputs must be an array"),
+    };
+    first
+        .entries_mut()
+        .unwrap()
+        .get_mut("source")
+        .unwrap()
+        .entries_mut()
+        .unwrap()
+        .insert(
+            "blob".to_owned(),
+            Value::string("0000000000000000000000000000000000000000"),
+        );
+    forged.entries_mut().unwrap().remove("report_id");
+    let forged = forged.stamp_id("report_id").unwrap();
+    let forged_path = f.parent.join("forged-native.json");
+    fs::write(&forged_path, forged.canonical()).unwrap();
+    let forged_input = f.invoke(&[
+        "evidence",
+        "native-import",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--report",
+        forged_path.to_str().unwrap(),
+        "--db",
+        db,
+    ]);
+    assert!(!forged_input.status.success());
+    assert!(String::from_utf8_lossy(&forged_input.stderr).contains("Git"));
+}
+
+#[test]
+fn native_clang_tu_retains_compiler_counts_but_never_manufactures_calls_as_edges() {
+    if !available("clang", "--version") {
+        return;
+    }
+    let f = Fixture::new();
+    let db_path = f.parent.join("clang-evidence.sqlite");
+    let db = db_path.to_str().unwrap();
+    let report = parsed(f.invoke(&[
+        "analyze",
+        "native",
+        "--language",
+        "c",
+        "--source",
+        "src/main.c",
+        "--compile-db",
+        f.db(),
+        "--trusted-local",
+        "--json",
+    ]));
+    let path = f.parent.join("native-clang.json");
+    fs::write(&path, report.canonical()).unwrap();
+    let imported = parsed(f.invoke(&[
+        "evidence",
+        "native-import",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--db",
+        db,
+        "--report",
+        path.to_str().unwrap(),
+    ]));
+    let snapshot = field(&imported, "snapshot_id");
+    let analyzed = parsed(f.invoke(&["analyze", ".", "--db", db, "--json"]));
+    let configured = analyzed
+        .get("configured_observations")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(
+        configured.iter().any(
+            |item| field(item, "native_kind") == "NATIVE_CONFIGURED_HEADER"
+                && field(item.get("source").unwrap(), "path") == "src/main.h"
+        ),
+        "tracked header should be independently Git-bound"
+    );
+    assert!(configured.iter().any(|item| {
+        if field(item, "native_kind") != "NATIVE_CONFIGURED_TU" {
+            return false;
+        }
+        let payload = item.get("native_payload").unwrap();
+        payload.get("symbol_count").unwrap().integer().unwrap() > 0
+            && payload.get("call_count").unwrap().integer().unwrap() > 0
+    }));
+    assert!(
+        !analyzed
+            .get("relationships")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|item| field(item, "kind") == "CLANG_CALL")
+    );
+    let replay = parsed(f.invoke(&[
+        "evidence",
+        "native-store-audit",
+        "--repo",
+        f.repo.to_str().unwrap(),
+        "--rev",
+        &f.commit,
+        "--snapshot",
+        snapshot,
+        "--db",
+        db,
+    ]));
+    assert_eq!(
+        field(&replay, "status"),
+        "REPLAYED_GIT_BOUND_NATIVE_OBSERVATIONS"
+    );
+    fs::write(
+        f.repo.join("src/main.h"),
+        "static inline int helper(int n) { return n + 2; }\n",
+    )
+    .unwrap();
+    ok("git", &["add", "src/main.h"], &f.repo);
+    ok(
+        "git",
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "modify tracked Clang header",
+        ],
+        &f.repo,
+    );
+    let new_head = String::from_utf8(ok("git", &["rev-parse", "HEAD"], &f.repo))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let impact = parsed(f.invoke(&[
+        "impact", ".", "--db", db, "--base", &f.commit, "--head", &new_head, "--json",
+    ]));
+    assert!(
+        impact
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(
+                |item| field(item, "native_kind") == "NATIVE_CONFIGURED_HEADER"
+                    && field(item.get("source").unwrap(), "path") == "src/main.h"
+            ),
+        "changed tracked header must surface as configured native evidence"
+    );
+}

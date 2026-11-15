@@ -100,6 +100,8 @@ pub fn context(
 
     let mut gaps = Vec::new();
     let mut relations = Vec::new();
+    let mut configured_observations = Vec::new();
+    let mut total_configured = 0usize;
     let mut total_relations = 0usize;
     let mut truncated = false;
     // Include revision-authenticated SCIP and configured-graph observations
@@ -115,6 +117,24 @@ pub fn context(
                     total_relations += 1;
                     if relations.len() < limit {
                         relations.push(relationship.clone());
+                    } else {
+                        truncated = true;
+                    }
+                }
+            }
+            for item in analysis.get("configured_observations")?.array_ref()? {
+                let source_path = item.get("source")?.get("path")?.str()?;
+                let selected_path = item
+                    .entries()?
+                    .get("subject")
+                    .and_then(|subject| subject.get("path").ok())
+                    .and_then(|path| path.str().ok());
+                if focus.contains(source_path)
+                    || selected_path.is_some_and(|path| focus.contains(path))
+                {
+                    total_configured += 1;
+                    if configured_observations.len() < limit {
+                        configured_observations.push(item.clone());
                     } else {
                         truncated = true;
                     }
@@ -168,6 +188,14 @@ pub fn context(
         ("sources", Value::array(sources)),
         ("relationships", Value::array(relations)),
         ("relationship_count", Value::number(total_relations)),
+        (
+            "configured_observations",
+            Value::array(configured_observations),
+        ),
+        (
+            "configured_observation_count",
+            Value::number(total_configured),
+        ),
         ("test_candidates", Value::array(test_candidates)),
         ("test_candidate_count", Value::number(total_tests)),
         (
@@ -288,7 +316,7 @@ pub fn verify(
         return refuse("agent verify requires two distinct Git commits");
     }
     let candidate_tree = changes.get("head_tree")?.str()?;
-    let impact = impact_query::run(repo, base_commit, candidate_commit, roots, database)?;
+    let impact = impact_query::run_auto(repo, base_commit, candidate_commit, roots, database)?;
     if impact.get("change_inventory_id")? != changes.get("report_id")? {
         return refuse("impact replay does not match exact Git change inventory");
     }
@@ -326,6 +354,23 @@ pub fn verify(
 
     let all_changes = changes.get("changes")?.array_ref()?;
     let effects = impact.get("effects")?.array_ref()?;
+    let configured = impact.get("configured_observations")?.array_ref()?;
+    let producer_coverage = impact.get("producer_coverage")?.array_ref()?;
+    if producer_coverage.iter().any(|item| {
+        item.get("producers")
+            .ok()
+            .and_then(|v| v.array_ref().ok())
+            .is_some_and(|items| {
+                items.iter().any(|e| {
+                    e.get("producer")
+                        .ok()
+                        .and_then(|v| v.str().ok())
+                        .is_some_and(|p| p.starts_with("native:"))
+                })
+            })
+    }) {
+        obligations.insert("NATIVE_PRODUCER_ATTESTATION_MISSING".into());
+    }
     let candidate_sources = impact.get("candidate_source_impacts")?.array_ref()?;
     let candidate_source_count = impact.get("candidate_source_count")?.integer()?;
     let candidate_source_complete = impact
@@ -337,6 +382,8 @@ pub fn verify(
     }
     let truncated = all_changes.len() > limit
         || effects.len() > limit
+        || configured.len() > limit
+        || producer_coverage.len() > limit
         || candidate_sources.len() > limit
         || !candidate_source_complete
         || unknown.len() > limit;
@@ -358,6 +405,18 @@ pub fn verify(
             Value::array(take_bounded(effects, limit)),
         ),
         ("candidate_impact_count", Value::number(effects.len())),
+        (
+            "configured_observations",
+            Value::array(take_bounded(configured, limit)),
+        ),
+        (
+            "configured_observation_count",
+            Value::number(configured.len()),
+        ),
+        (
+            "producer_coverage",
+            Value::array(take_bounded(producer_coverage, limit)),
+        ),
         (
             "candidate_source_impacts",
             Value::array(take_bounded(candidate_sources, limit)),

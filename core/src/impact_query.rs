@@ -3,8 +3,9 @@
 use crate::analyze;
 use crate::change_inventory;
 use crate::json::{Value, obj};
-use crate::observed_relations::{Plan, Selection};
-use crate::{Result, refuse};
+use crate::observed_relations::{self, Plan, Selection};
+use crate::sqlite::Db;
+use crate::{Result, discovery, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
@@ -169,6 +170,33 @@ fn observe(
 pub struct EvidenceByRevision<'a> {
     pub base: Selection<'a>,
     pub head: Selection<'a>,
+}
+
+/// Use the same revision-pinned producer selection as the CLI and agent
+/// verification. Nothing executes native compilers during impact queries.
+pub fn run_auto(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+) -> Result<Value> {
+    let checkout = discovery::inspect(path, head)?;
+    let destination = analyze::checked_external_destination(
+        &checkout.root,
+        database.map(Path::new).unwrap_or(&checkout.index_path),
+        "SQLite",
+    )?;
+    let (base_plan, head_plan) = if destination.is_file() {
+        let store = Db::open(&destination)?;
+        (
+            observed_relations::default_plan(&store, &checkout.root, base)?,
+            observed_relations::default_plan(&store, &checkout.root, head)?,
+        )
+    } else {
+        (Plan::default(), Plan::default())
+    };
+    run_with_plans(path, base, head, roots, database, &base_plan, &head_plan)
 }
 
 pub fn run(

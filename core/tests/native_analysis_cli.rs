@@ -1198,11 +1198,18 @@ fn native_java_uses_resolved_maven_or_gradle_artifacts_without_running_build_scr
                 .iter()
                 .any(|item| field(item, "native_kind") == "NATIVE_JAVA_SYMBOL_REFERENCE")
         );
-        assert!(analyzed.get("configured_observations").unwrap().array_ref().unwrap()
-            .iter().any(|item|
-                field(item, "native_kind") == "NATIVE_JVM_CLASSPATH_CONFIGURATION"
-                    && field(item.get("native_payload").unwrap(), "provider_claim") == provider
-            ));
+        assert!(
+            analyzed
+                .get("configured_observations")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .iter()
+                .any(
+                    |item| field(item, "native_kind") == "NATIVE_JVM_CLASSPATH_CONFIGURATION"
+                        && field(item.get("native_payload").unwrap(), "provider_claim") == provider
+                )
+        );
         assert!(
             analyzed
                 .get("relationships")

@@ -339,7 +339,10 @@ mod tests {
     fn temporary_compiler_inputs_are_private() {
         use std::os::unix::fs::PermissionsExt;
         let scratch = Scratch::new().unwrap();
-        assert_eq!(fs::metadata(&scratch.0).unwrap().permissions().mode() & 0o077, 0);
+        assert_eq!(
+            fs::metadata(&scratch.0).unwrap().permissions().mode() & 0o077,
+            0
+        );
     }
 
     #[test]

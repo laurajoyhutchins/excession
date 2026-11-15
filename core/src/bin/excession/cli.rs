@@ -618,7 +618,22 @@ pub(super) fn command() -> Command {
         .after_help("Start here:\n  excession analyze .\n  excession impact .             # HEAD~1..HEAD\n  excession tests                # plan only\n  excession doctor\n\nRun 'excession commands' for the full catalog.\nNative analysis and test execution are always opt-in.")
         .subcommand_required(true)
         .subcommand(analyze)
-        .subcommand(Command::new("commands").about("List all commands, including specialist tools"))
+        .subcommand(group(
+            "check",
+            vec![
+                leaf(
+                    "run",
+                    &["repo", "language", "config", "db", "trusted-local"],
+                    &["rev", "source-prefix", "tool"],
+                ).about("Run a bounded local Cargo, TypeScript or mypy check and store its Git-bound receipt"),
+                leaf(
+                    "audit",
+                    &["repo", "rev", "db", "snapshot"],
+                    &[],
+                ).about("Replay a stored compiler-check receipt against its original Git configuration"),
+            ],
+        ).about("Explicit local compiler/typechecker receipts; not artifact build attestation"))
+         .subcommand(Command::new("commands").about("List all commands, including specialist tools"))
         .subcommand(
             Command::new("discover")
                 .about("Read-only Git revision and supported source-root discovery")

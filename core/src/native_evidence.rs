@@ -1,4 +1,4 @@
-//! Retain configured native Go/Clang observations in the existing immutable
+//! Retain configured native Go/Clang/Java/Rust observations in the existing immutable
 //! evidence store. All claimed Git inputs are replayed; producer semantics and
 //! execution provenance remain explicitly unverified.
 use crate::evidence::identity::{SourceRef, Subject};
@@ -55,6 +55,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     let scope = report.get("scope")?.str()?;
     let valid = match language {
         "go" => producer == "go-list" && scope == "COMPILER_SELECTED_INPUTS_ONLY",
+        "rust" => producer == "rust-analyzer-scip" && scope == "SCIP_WORKSPACE_REFERENCES_NOT_BUILD_VERIFIED",
         "java" => {
             (producer == "javac-symbols" && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL")
                 || (producer == "javac-configured"
@@ -113,6 +114,17 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
         {
             return refuse("Java native observation lacks compiler and Git identity contract");
         }
+    } else if language == "rust" {
+        if nested.get("schema")?.str()? != "excession.scip-observations.v1"
+            || !nested.content_id_matches("report_id")?
+            || nested.get("source_commit")?.str()? != commit
+            || nested.get("source_tree")?.str()? != tree
+            || nested.get("indexer")?.get("name")?.str()? != "rust-analyzer"
+            || nested.get("indexer")?.get("version")?.str()?.is_empty()
+            || !nested.get("coverage")?.get("languages")?.array_ref()?.iter().any(|value| value.str().ok() == Some("rust"))
+        {
+            return refuse("Rust native index lacks a pinned rust-analyzer SCIP identity");
+        }
     } else if nested.get("schema")?.str()? != "excession.clang-tu.v1"
         || !nested.content_id_matches("report_id")?
         || nested.get("source_commit")?.str()? != commit
@@ -165,6 +177,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
         || report.get("input_configurations")?.integer()? != configuration_count as i64
         || (language == "go" && expected_roles.len() != validated.len())
         || (language == "java" && configuration_count != 0)
+        || (language == "rust" && (source_count != 1 || configuration_count != 0 || validated.len() != 1))
         || (matches!(language, "c" | "cpp") && (source_count != 1 || configuration_count != 0))
     {
         return refuse("native evidence input counts or selected source differ");
@@ -280,6 +293,72 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
                 ]),
             });
         }
+    }
+    // SCIP occurrences retain SCIP semantics. Authenticate every observed
+    // source against Git before admitting any edge; the requested Rust file
+    // alone is not evidence of coverage for the whole indexed workspace.
+    if language == "rust" {
+        let references = nested.get("observations")?.array_ref()?;
+        if references.len() > 4096 {
+            return refuse("Rust SCIP observations exceed the native import relation budget");
+        }
+        let mut sources = BTreeMap::<String, SourceRef>::new();
+        let mut seen = BTreeSet::new();
+        for reference in references {
+            if reference.get("relation")?.str()? != "SCIP_SYMBOL_REFERENCE" {
+                return refuse("Rust native observation has a non-SCIP predicate");
+            }
+            let mut endpoints = Vec::with_capacity(2);
+            for direction in ["from", "to"] {
+                let item = reference.get(direction)?;
+                let path = item.get("path")?.str()?;
+                git::validate_path(path)?;
+                if item.get("language")?.str()? != "rust" {
+                    return refuse("Rust SCIP observation crosses an unsupported language boundary");
+                }
+                if !sources.contains_key(path) {
+                    sources.insert(path.to_owned(), SourceRef::from_git(repo, &commit, path)?);
+                }
+                let source = &sources[path];
+                if source.tree != tree || source.blob != item.get("blob")?.str()? {
+                    return refuse("Rust SCIP endpoint differs from the pinned Git blob");
+                }
+                endpoints.push(source);
+            }
+            let symbol = reference.get("symbol")?.str()?;
+            let line = reference.get("line")?.integer()?;
+            if symbol.is_empty() || line < 1 || endpoints[0].path == endpoints[1].path {
+                return refuse("Rust SCIP relation has invalid symbol, location or source pair");
+            }
+            if !seen.insert((
+                endpoints[0].path.clone(),
+                endpoints[1].path.clone(),
+                symbol.to_owned(),
+                line,
+            )) {
+                return refuse("duplicate Rust SCIP source reference");
+            }
+            observations.push(Observation {
+                receipt_id: receipt_id.clone(),
+                subject_id: Subject::Source(endpoints[0].clone()).id()?,
+                native_kind: "SCIP_SYMBOL_REFERENCE".to_owned(),
+                payload: reference.clone(),
+            });
+        }
+        observations.push(Observation {
+            receipt_id: receipt_id.clone(),
+            subject_id: Subject::Source(subject_ref.clone()).id()?,
+            native_kind: "NATIVE_RUST_WORKSPACE_INDEX".to_owned(),
+            payload: obj(&[
+                ("source", subject.clone()),
+                ("subject", subject.clone()),
+                ("scope", Value::string(scope)),
+                ("producer", Value::string(producer)),
+                ("role", Value::string("requested-source-not-index-coverage-proof")),
+                ("indexed_documents", nested.get("coverage")?.get("indexed_documents")?.clone()),
+                ("unresolved_references", nested.get("coverage")?.get("unresolved_references")?.clone()),
+            ]),
+        });
     }
     // Keep compiler AST symbols, calls, external headers and exact flags in the
     // original native receipt, not an invented universal source-level graph.

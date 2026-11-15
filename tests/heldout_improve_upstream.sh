@@ -121,15 +121,22 @@ pnpm --dir "$BASE_REPO" install --frozen-lockfile --ignore-scripts \
 pnpm --dir "$CANDIDATE" install --frozen-lockfile --ignore-scripts \
   > "$RECEIPTS/candidate-dependencies.log" 2>&1
 
-# Use the third-party project's own TypeScript contract and core test suite.
-# The baseline and candidate have identical dependency graphs and scripts.
+# Use the upstream project's tsconfig and tests. The historical
+# pnpm lock resolves TypeScript 5.9.3 despite its declared ^5.6.0 range;
+# TS5.9 rejects the pre-existing baseUrl option in BOTH trees. A separately
+# installed 5.6.3 compiler, inside that published range and independent of
+# Excession's 5.8.3 edit producer, checks both revisions without modifying
+# either source tree or the upstream package-lock contract.
+: "${HELDOUT_TSC:?require independently pinned TS compiler path}"
+test -f "$HELDOUT_TSC"
+node "$HELDOUT_TSC" --version > "$RECEIPTS/independent-compiler.txt"
 (
   cd "$BASE_REPO"
-  pnpm --filter @testmeman/core typecheck
+  node "$HELDOUT_TSC" --noEmit --project packages/core/tsconfig.json
 ) > "$RECEIPTS/baseline-build.log" 2>&1
 (
   cd "$CANDIDATE"
-  pnpm --filter @testmeman/core typecheck
+  node "$HELDOUT_TSC" --noEmit --project packages/core/tsconfig.json
 ) > "$RECEIPTS/candidate-build.log" 2>&1
 (
   cd "$BASE_REPO"

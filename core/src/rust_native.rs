@@ -117,7 +117,10 @@ pub fn scan(
         }
         None if tracked.iter().any(|entry| {
             entry.path == "Cargo.toml" && entry.kind == "blob" && entry.mode == "100644"
-        }) => None,
+        }) =>
+        {
+            None
+        }
         None => {
             let mut candidates = tracked
                 .iter()
@@ -128,8 +131,16 @@ pub fn scan(
             candidates.dedup();
             match candidates.as_slice() {
                 [only] => Some((*only).to_owned()),
-                [] => return refuse("No tracked Cargo.toml. Run 'excession discover .' to inspect source roots."),
-                _ => return refuse("Multiple Cargo projects found; choose one with --source-prefix."),
+                [] => {
+                    return refuse(
+                        "No tracked Cargo.toml. Run 'excession discover .' to inspect source roots.",
+                    );
+                }
+                _ => {
+                    return refuse(
+                        "Multiple Cargo projects found; choose one with --source-prefix.",
+                    );
+                }
             }
         }
     };
@@ -143,7 +154,9 @@ pub fn scan(
     {
         return refuse("selected Rust workspace requires a tracked Cargo.toml");
     }
-    let workspace = prefix.as_deref().map_or_else(|| root.clone(), |prefix| root.join(prefix));
+    let workspace = prefix
+        .as_deref()
+        .map_or_else(|| root.clone(), |prefix| root.join(prefix));
     let workspace = workspace.canonicalize().map_err(|e| e.to_string())?;
     if !workspace.starts_with(&root) || !workspace.is_dir() {
         return refuse("Rust workspace resolves outside the Git checkout");

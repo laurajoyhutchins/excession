@@ -70,7 +70,8 @@ pub(super) fn command() -> Command {
             replay,
         ],
     )
-    .about("Excession authenticated repository views").hide(true);
+    .about("Excession authenticated repository views")
+    .hide(true);
     let syntax = group(
         "syntax",
         vec![
@@ -111,7 +112,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Language syntax observations and evidence audits").hide(true);
+    .about("Language syntax observations and evidence audits")
+    .hide(true);
     let semantic = group(
         "semantic",
         vec![
@@ -125,7 +127,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Versioned semantic candidate observations and ODCS contracts").hide(true);
+    .about("Versioned semantic candidate observations and ODCS contracts")
+    .hide(true);
     let security = group(
         "security",
         vec![
@@ -138,7 +141,8 @@ pub(super) fn command() -> Command {
             leaf("audit", &["repo", "report", "db", "engine"], &[]),
         ],
     )
-    .about("Trusted-local scanning and evidence ingestion").hide(true);
+    .about("Trusted-local scanning and evidence ingestion")
+    .hide(true);
     let inspect = group(
         "inspect",
         vec![
@@ -198,7 +202,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Query indexed Git relationships").hide(true);
+    .about("Query indexed Git relationships")
+    .hide(true);
     let evidence = group(
         "evidence",
         vec![
@@ -238,7 +243,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Persist native build and other source/artifact evidence").hide(true);
+    .about("Persist native build and other source/artifact evidence")
+    .hide(true);
     let benchmark = group(
         "benchmark",
         vec![
@@ -262,7 +268,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Validate and generate benchmark reports").hide(true);
+    .about("Validate and generate benchmark reports")
+    .hide(true);
     let refactor =
         group(
             "refactor",
@@ -336,7 +343,8 @@ pub(super) fn command() -> Command {
             ),
         ],
         )
-        .about("Source-bound refactoring hypotheses and guarded recipes").hide(true);
+        .about("Source-bound refactoring hypotheses and guarded recipes")
+        .hide(true);
     let configured_graph = group(
         "graph",
         vec![
@@ -377,7 +385,8 @@ pub(super) fn command() -> Command {
             ),
         ],
     )
-    .about("Configuration-bound build and source evidence").hide(true);
+    .about("Configuration-bound build and source evidence")
+    .hide(true);
     let clang = || {
         leaf(
             "clang",
@@ -467,7 +476,8 @@ pub(super) fn command() -> Command {
             clang(),
         ],
     )
-    .about("Bounded, Git-bound Linux source observations and coverage").hide(true);
+    .about("Bounded, Git-bound Linux source observations and coverage")
+    .hide(true);
     let tests = leaf(
         "tests",
         &[],
@@ -842,7 +852,6 @@ mod tests {
         values.iter().map(|s| (*s).to_owned()).collect()
     }
 
-
     #[test]
     fn everyday_help_is_focused_but_specialist_commands_are_discoverable() {
         let ParseOutcome::Help(help) = parse(&strings(&[])).unwrap() else {
@@ -852,7 +861,14 @@ mod tests {
         assert!(help.contains("commands"));
         assert!(!help.contains("reconstruct"), "{help}");
         let catalog = catalog();
-        for family in ["analyze", "impact", "tests", "security", "reconstruct", "refactor"] {
+        for family in [
+            "analyze",
+            "impact",
+            "tests",
+            "security",
+            "reconstruct",
+            "refactor",
+        ] {
             assert!(catalog.contains(family), "{family} absent from catalog");
         }
         assert!(parse(&strings(&["refactor", "--help"])).is_ok());
@@ -879,9 +895,14 @@ mod tests {
         assert_eq!(parsed.options.get("trusted-local"), "true");
         assert!(!parsed.options.0.contains_key("repo"));
         assert!(!parsed.options.0.contains_key("json"));
-        let ParseOutcome::Command(legacy) =
-            parse(&strings(&["analyze", "rust", "--trusted-local", "true", "--json"])).unwrap()
-        else {
+        let ParseOutcome::Command(legacy) = parse(&strings(&[
+            "analyze",
+            "rust",
+            "--trusted-local",
+            "true",
+            "--json",
+        ]))
+        .unwrap() else {
             panic!("Rust explicit-true form expected");
         };
         assert_eq!(legacy.options.get("trusted-local"), "true");

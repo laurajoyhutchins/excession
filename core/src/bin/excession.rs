@@ -746,7 +746,7 @@ fn execute(args: &[String]) -> Result<Response> {
             } else {
                 Ok(Response::Message(excession::rust_native::human(&report)?))
             }
-        },
+        }
         [top] if top == "analyze" => {
             let repo = Path::new(opt.get_or("path", "."));
             let rev = opt.get_or("rev", "HEAD");

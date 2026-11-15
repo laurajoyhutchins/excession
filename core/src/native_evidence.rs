@@ -323,7 +323,7 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
                 if source.tree != tree || source.blob != item.get("blob")?.str()? {
                     return refuse("Rust SCIP endpoint differs from the pinned Git blob");
                 }
-                endpoints.push(source);
+                endpoints.push(source.clone());
             }
             let symbol = reference.get("symbol")?.str()?;
             let line = reference.get("line")?.integer()?;

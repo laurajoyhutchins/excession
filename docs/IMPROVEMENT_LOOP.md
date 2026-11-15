@@ -125,37 +125,41 @@ binding and module initialization survive, compile TypeScript independently,
 run the resulting code, and reject stale source identities and unsafe cases.
 The native tool never commits the edited worktree or sets `ready_to_merge`.
 
-### Held-out independently authored repository acceptance
+### Held-out Vue core acceptance
 
-The [third-party held-out acceptance](https://github.com/laurajoyhutchins/excession/actions/runs/43755236879)
-uses **[piyushrav1/ai-interview-v.01](https://github.com/piyushrav1/ai-interview-v.01)**,
-pinned at `78c6a78b8a367c2c19398b05d39274ea3bcacadb`.
-This repository is not owned by the Excession author. The selected revision
-predates upstream's own [unused-import cleanup](https://github.com/piyushrav1/ai-interview-v.01/commit/dea7976fcf620fc19c9731edef06a3d294f0451c);
-no synthetic unused source is inserted.
+The held-out source is **[vuejs/core](https://github.com/vuejs/core)**,
+a widely used open-source framework maintained independently from Excession.
+The workflow pins commit `d16a2138a33b106b9e1499bbb9e1c67790370c97`,
+immediately before Vue's own
+[unused-import cleanup](https://github.com/vuejs/core/commit/492a720fd00750d6d4eef6db1cda5d3c911dafe0).
+No synthetic unused import is introduced.
 
-The native TypeScript 5.8.3 producer identifies the pre-existing unused
-**type-only** `Turn` import in `packages/core/src/machine/types.ts`
-using diagnostic `TS6196` and TypeScript's own `unusedIdentifier` fix.
-The generated exact-blob edit deletes **6 source bytes (840 → 834)** from
-one existing file, with **zero new modules**. Its diff matches the upstream
-author's later change to that import.
+The existing `ReactiveEffect` named import in
+`packages/reactivity/__tests__/computed.spec.ts` is identified by the
+pinned TypeScript 5.8.3 language-service diagnostic `TS6133`.
+Excession's native code-fix replay removes precisely **18 source bytes**
+(`13,280 → 13,262`) in one existing tracked source file, no new modules.
+The recorded Git diff matches Vue's subsequent upstream cleanup.
 
-The independently executed before/after checks passed for both source trees:
-a full core TypeScript typecheck using the upstream tsconfig and compatible
-**TypeScript 5.6.3** (separately pinned from the producer), followed by
-the upstream's **Vitest core test suite** from the workspace root. The
-historical upstream lock resolves TS5.9.3, which rejects the original
-`baseUrl` setting before any edits; the acceptance therefore installs a
-compatible compiler from upstream's declared `^5.6.0` range without
-modifying the lockfile or either source tree. Separate pnpm installations
-are used for each tree to prevent workspace-link cross-contamination.
+The baseline's own `noUnusedLocals: true` compiler check **fails**
+precisely on this original unused import. This is part of the evidence,
+not a failure to suppress or silently waive. The workflow requires the
+baseline to pass all other TypeScript checks with only that diagnostic
+disabled; its original strict compiler output must contain exactly the
+expected `TS6133` error. The candidate must pass Vue's **unchanged strict
+TypeScript configuration**, and both baseline and candidate must pass the
+actual **computed-reactivity unit test** from the Vue workspace root.
 
-The workflow archives native edit plans, the exact Git diff, compilation
-and test logs, and the measurement report. Neither upstream repository nor
-its default branch is modified. The result demonstrates real source reduction,
-**not** universal behavioral equivalence, completeness of all configurations,
-independent native-producer attestation, REA provenance, or merge authorization.
+The workflow uses Vue 3.4.14's frozen pnpm 8.14.1 lockfile separately
+for each isolated Git tree, runs dependency installs without lifecycle
+scripts, and retains the native edit proposal, exact diff, compiler
+diagnostics, test results and measurement report.
+
+This demonstrates a source-bound improvement candidate independently
+present in a mainstream open-source repository. Compilation and behavioral
+acceptance are recorded in the workflow run; source removal alone is
+**not** an API-equivalence proof, comprehensive configuration coverage,
+independent producer attestation, REA provenance, or merge authorization.
 
 ## SCIP producer
 

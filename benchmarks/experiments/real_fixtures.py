@@ -302,6 +302,24 @@ def dependency_mutation_checks(
 
 
 
+def choose_distinct_impact_edge(
+    expected: set[tuple[str, str, int, str]],
+    path_by_module: dict[str, str],
+) -> tuple[tuple[str, str, int, str], int]:
+    """Choose a deterministic observable dependent, not a package self-relation.
+
+    The source inventory may contain a package-to-itself candidate (for
+    `from . import sibling`), but changing that package does not make it
+    a *distinct* impacted source. Do not silently exclude those self edges
+    from the source inventory denominator: report their count separately.
+    """
+    distinct = [edge for edge in sorted(expected)
+                if path_by_module[edge[0]] != path_by_module[edge[1]]]
+    if not distinct:
+        raise ValueError("fixture has no independently observed distinct-source import")
+    return distinct[0], len(expected) - len(distinct)
+
+
 def verify_product_workflow(
     binary: Path, repo: Path, work: Path, fixture: dict, commit: str,
     tree: str, objects: dict[str, tuple[str, str]],
@@ -375,7 +393,9 @@ def verify_product_workflow(
         )
 
     # Choose an independently observed edge, not an Excession-selected impact.
-    source_module, target_module, _line, _kind = sorted(expected)[0]
+    (source_module, target_module, _line, _kind), self_edges = (
+        choose_distinct_impact_edge(expected, path_by_module)
+    )
     source_path = path_by_module[source_module]
     target_path = path_by_module[target_module]
     comment = "# Excession pinned fixture change\n" if target_path.endswith(".py") \
@@ -427,6 +447,7 @@ def verify_product_workflow(
             "import_line": _line,
             "import_kind": _kind,
             "independent_expected_paths": len(expected_paths),
+            "package_self_edges_excluded_only_from_impact_witness": self_edges,
             "analyze_observed_paths": len(observed_paths),
             "impact_report_schema": impact.get("schema"),
             "impact_coverage": impact.get("coverage"),
@@ -494,6 +515,7 @@ def verify_product_workflow(
         raise ValueError("mutated source impact report was accepted")
     return {
         "upstream_commit": commit, "local_mutation_commit": head,
+        "package_self_edges_excluded_only_from_impact_witness": self_edges,
         "source_count": len(paths),
         "expected_pair_count": len(expected_paths),
         "observed_pair_count": len(observed_paths),

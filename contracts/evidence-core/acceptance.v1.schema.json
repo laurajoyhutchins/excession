@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/laurajoyhutchins/excession/main/contracts/evidence-core/acceptance.v1.schema.json",
+  "title": "test/contracts: preregister evidence-core end-to-end validity and cost evaluation",
+  "description": "Contract scaffold; shape validity alone does not establish evidence or semantic truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "evaluation_id",
+    "source_commit",
+    "corpus",
+    "tool_versions",
+    "cases",
+    "measured",
+    "scope"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.evidence-acceptance.v1"
+    },
+    "evaluation_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "corpus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "pinned_revision",
+        "oracle_digest"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "h11",
+            "rust-artifact-fixture",
+            "linux-kernel"
+          ]
+        },
+        "pinned_revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "oracle_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "tool_versions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tool",
+          "version"
+        ],
+        "properties": {
+          "tool": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "expected",
+          "observed"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "POSITIVE",
+              "NEGATIVE",
+              "ADVERSARIAL",
+              "UNSUPPORTED"
+            ]
+          },
+          "expected": {
+            "type": "string",
+            "enum": [
+              "ACCEPT",
+              "REFUSE",
+              "PARTIAL",
+              "UNKNOWN"
+            ]
+          },
+          "observed": {
+            "type": "string",
+            "enum": [
+              "NOT_RUN",
+              "ACCEPT",
+              "REFUSE",
+              "PARTIAL",
+              "UNKNOWN"
+            ]
+          }
+        }
+      }
+    },
+    "measured": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "wall_ms",
+        "peak_rss_bytes",
+        "artifact_bytes"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "NOT_RUN",
+            "MEASURED"
+          ]
+        },
+        "wall_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "peak_rss_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "artifact_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "scope": {
+      "const": "REPLAY_IS_NOT_SEMANTIC_VALIDITY"
+    }
+  }
+}

@@ -384,6 +384,125 @@ pub fn human(explanation: &Value) -> Result<String> {
 mod tests {
     use super::*;
 
+    fn source(path: &str, commit: &str) -> Value {
+        obj(&[
+            ("path", Value::string(path)),
+            ("source_commit", Value::string(commit)),
+            ("source_tree", Value::string("git-tree")),
+            ("blob", Value::string("git-blob")),
+            ("mode", Value::string("100644")),
+        ])
+    }
+
+    fn witness(from: &str, to: &str, commit: &str, rank: i64) -> Value {
+        let from_identity = source(from, commit);
+        let to_identity = source(to, commit);
+        obj(&[
+            ("entity", from_identity.clone()),
+            ("assessment", Value::string("CANDIDATE_PATH")),
+            ("distance_to_change", Value::number(rank)),
+            ("next_hop", obj(&[
+                ("source", from_identity),
+                ("target", to_identity),
+                ("relation", Value::string("STATIC_IMPORT")),
+                ("evidence", Value::array([obj(&[
+                    ("assessment", Value::string("CANDIDATE")),
+                    ("receipt_id", Value::string("independent-receipt")),
+                ])])),
+            ])),
+        ])
+    }
+
+    fn source_report(witnesses: Vec<Value>) -> Value {
+        obj(&[
+            ("candidate_source_impacts", Value::array(witnesses)),
+            ("coverage", obj(&[("status", Value::string("PARTIAL"))])),
+        ])
+    }
+
+    #[test]
+    fn reconstructs_ranked_source_witness_without_enumerating_all_paths() {
+        let commit = "git-commit";
+        let report = source_report(vec![
+            witness("pkg/a.py", "pkg/b.py", commit, 2),
+            witness("pkg/b.py", "pkg/changed.py", commit, 1),
+        ]);
+        let by_source = source_witnesses(&report).unwrap();
+        let a = by_source.get(&(commit.to_owned(), "pkg/a.py".to_owned())).unwrap();
+        let explanation = explain_witness(&report, &by_source, a).unwrap();
+        let hops = explanation.get("steps").unwrap().array_ref().unwrap();
+        assert_eq!(hops.len(), 2);
+        assert_eq!(
+            hops.last().unwrap().get("target").unwrap().get("path").unwrap().str().unwrap(),
+            "pkg/changed.py"
+        );
+        assert!(explanation.content_id_matches("report_id").unwrap());
+        assert_eq!(
+            explanation.get("selection_kind").unwrap().str().unwrap(),
+            "DISTINCT_SOURCE_WITNESS"
+        );
+    }
+
+    #[test]
+    fn every_distinct_source_has_explanation_even_when_legacy_paths_saturate() {
+        // Three fully-connected vertices at each of seven ranks produce
+        // thousands of simple import paths but only 21 source certificates.
+        let mut rows = Vec::new();
+        for rank in 1..=7 {
+            for index in 0..3 {
+                let target = if rank == 1 {
+                    "pkg/changed.py".to_owned()
+                } else {
+                    format!("pkg/l{}_0.py", rank - 1)
+                };
+                rows.push(witness(
+                    &format!("pkg/l{rank}_{index}.py"),
+                    &target,
+                    "git-commit",
+                    rank,
+                ));
+            }
+        }
+        let report = source_report(rows);
+        let by_source = source_witnesses(&report).unwrap();
+        assert_eq!(by_source.len(), 21);
+        for witness in by_source.values() {
+            let explanation = explain_witness(&report, &by_source, witness).unwrap();
+            assert_eq!(
+                explanation.get("steps").unwrap().array_ref().unwrap().len(),
+                witness.get("distance_to_change").unwrap().integer().unwrap() as usize
+            );
+        }
+    }
+
+    #[test]
+    fn witness_replay_refuses_invalid_source_identity_rank_and_missing_hops() {
+        let commit = "git-commit";
+        let invalid = source_report(vec![witness("a.py", "b.py", commit, 2)]);
+        let mapped = source_witnesses(&invalid).unwrap();
+        let w = mapped.get(&(commit.to_owned(), "a.py".to_owned())).unwrap();
+        assert!(explain_witness(&invalid, &mapped, w).is_err(), "missing rank-one witness");
+
+        let invalid_rank = source_report(vec![
+            witness("a.py", "b.py", commit, 2),
+            witness("b.py", "changed.py", commit, 2),
+        ]);
+        let mapped = source_witnesses(&invalid_rank).unwrap();
+        let w = mapped.get(&(commit.to_owned(), "a.py".to_owned())).unwrap();
+        assert!(explain_witness(&invalid_rank, &mapped, w).is_err(), "rank must decrease");
+
+        let duplicate = source_report(vec![
+            witness("a.py", "changed.py", commit, 1),
+            witness("a.py", "other.py", commit, 1),
+        ]);
+        assert!(source_witnesses(&duplicate).is_err());
+
+        let forged = source_report(vec![
+            witness("a.py", "a.py", commit, 1),
+        ]);
+        assert!(source_witnesses(&forged).is_err(), "self edges cannot be source dependents");
+    }
+
     #[test]
     fn refuses_claim_hash_tampering_and_ambiguous_ids() {
         let effect = obj(&[

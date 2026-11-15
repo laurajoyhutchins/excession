@@ -116,6 +116,7 @@ impl Fixture {
             .arg(&self.analyzer)
             .arg("--scip")
             .arg(&self.decoder)
+            .arg("--json")
             .args(extra);
         cmd.output().unwrap()
     }

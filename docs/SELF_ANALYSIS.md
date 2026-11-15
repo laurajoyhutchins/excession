@@ -12,9 +12,9 @@ For a **trusted, clean checkout at the selected commit**, run the existing
 rust-analyzer and official SCIP CLI directly through Excession:
 
 ```sh
-excession analyze rust --repo "$PWD" --rev HEAD --trusted-local true > /tmp/rust-observations.json
+excession analyze rust --repo "$PWD" --rev HEAD --trusted-local --json > /tmp/rust-observations.json
 # If the Cargo project is nested inside the Git root:
-excession analyze rust --repo "$PWD" --source-prefix core --trusted-local true > /tmp/rust-observations.json
+excession analyze rust --repo "$PWD" --source-prefix core --trusted-local --json > /tmp/rust-observations.json
 ```
 
 This runs `rust-analyzer scip`, decodes the index with the official `scip

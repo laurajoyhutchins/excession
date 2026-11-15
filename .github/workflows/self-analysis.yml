@@ -109,7 +109,7 @@ jobs:
           "$GITHUB_WORKSPACE/core/target/debug/excession" analyze rust \
             --repo "$FIXTURE" --rev HEAD --trusted-local true \
             --rust-analyzer "$(rustup which --toolchain 1.99.1 rust-analyzer)" \
-            --scip "$RUNNER_TEMP/scip-bin/scip" > "$OUT/native-rust-smoke.json"
+            --scip "$RUNNER_TEMP/scip-bin/scip" --json > "$OUT/native-rust-smoke.json"
           python3 - "$OUT/native-rust-smoke.json" <<'PY'
           import json
           import sys

@@ -730,15 +730,23 @@ fn execute(args: &[String]) -> Result<Response> {
                 _ => refuse(format!("unknown agent command: {sub}")),
             }
         }
+        [top] if top == "commands" => Ok(Response::Message(cli::catalog())),
         [top, sub] if top == "analyze" && sub == "clang" => clang_command(opt),
-        [top, sub] if top == "analyze" && sub == "rust" => Ok(json(excession::rust_native::scan(
-            opt.path("repo"),
-            opt.get_or("rev", "HEAD"),
-            opt.0.get("source-prefix").map(String::as_str),
-            opt.get_or("rust-analyzer", "rust-analyzer"),
-            opt.get_or("scip", "scip"),
-            opt.get("trusted-local"),
-        )?)),
+        [top, sub] if top == "analyze" && sub == "rust" => {
+            let report = excession::rust_native::scan(
+                Path::new(opt.get_or("repo", ".")),
+                opt.get_or("rev", "HEAD"),
+                opt.0.get("source-prefix").map(String::as_str),
+                opt.get_or("rust-analyzer", "rust-analyzer"),
+                opt.get_or("scip", "scip"),
+                opt.get_or("trusted-local", "false"),
+            )?;
+            if opt.get_or("json", "false") == "true" {
+                Ok(json(report))
+            } else {
+                Ok(Response::Message(excession::rust_native::human(&report)?))
+            }
+        },
         [top] if top == "analyze" => {
             let repo = Path::new(opt.get_or("path", "."));
             let rev = opt.get_or("rev", "HEAD");
@@ -830,7 +838,7 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top] if top == "impact" => {
             let repo = Path::new(opt.get_or("path", "."));
-            let base = opt.get("base");
+            let base = opt.get_or("base", "HEAD~1");
             let head = opt.get_or("head", "HEAD");
             let roots = opt.0.get("roots").map(String::as_str);
             let db_arg = opt.0.get("db").map(String::as_str);
@@ -924,7 +932,7 @@ fn execute(args: &[String]) -> Result<Response> {
         }
         [top] if top == "changes" => Ok(json(change_inventory::inventory(
             Path::new(opt.get_or("path", ".")),
-            opt.get("base"),
+            opt.get_or("base", "HEAD~1"),
             opt.get_or("head", "HEAD"),
         )?)),
         [top] if top == "doctor" => {

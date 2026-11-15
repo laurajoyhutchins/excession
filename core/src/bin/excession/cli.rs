@@ -209,7 +209,13 @@ pub(super) fn command() -> Command {
         vec![
             leaf(
                 "jvm-inputs-capture",
-                &["repo", "rev", "source-prefix", "classpath-file", "provider-claim"],
+                &[
+                    "repo",
+                    "rev",
+                    "source-prefix",
+                    "classpath-file",
+                    "provider-claim",
+                ],
                 &["release"],
             )
             .about("Hash an existing Maven/Gradle classpath export without executing a build"),

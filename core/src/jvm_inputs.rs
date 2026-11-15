@@ -58,7 +58,6 @@ fn jar(path: &str, expected: &str, size: u64) -> Result<PathBuf> {
     Ok(real)
 }
 
-
 pub struct Capture<'a> {
     pub repo: &'a Path,
     pub revision: &'a str,
@@ -77,7 +76,9 @@ pub fn capture(request: &Capture<'_>) -> Result<Value> {
     if !matches!(request.provider_claim, "maven" | "gradle") {
         return refuse("JVM classpath provider claim must be maven or gradle");
     }
-    let repo = request.repo.canonicalize()
+    let repo = request
+        .repo
+        .canonicalize()
         .map_err(|e| format!("resolved JVM checkout: {e}"))?;
     git::verify_repo(&repo)?;
     git::clean(&repo)?;
@@ -88,11 +89,15 @@ pub fn capture(request: &Capture<'_>) -> Result<Value> {
     let tree = git::rev(&repo, &format!("{commit}^{{tree}}"))?;
     let mut sources = git::entries(&repo, &commit)?
         .into_iter()
-        .filter(|entry| entry.kind == "blob"
-            && matches!(entry.mode.as_str(), "100644" | "100755")
-            && entry.path.ends_with(".java")
-            && (request.source_prefix == "."
-                || entry.path.starts_with(&format!("{}/", request.source_prefix))))
+        .filter(|entry| {
+            entry.kind == "blob"
+                && matches!(entry.mode.as_str(), "100644" | "100755")
+                && entry.path.ends_with(".java")
+                && (request.source_prefix == "."
+                    || entry
+                        .path
+                        .starts_with(&format!("{}/", request.source_prefix)))
+        })
         .map(|entry| entry.path)
         .collect::<Vec<_>>();
     sources.sort();
@@ -100,12 +105,13 @@ pub fn capture(request: &Capture<'_>) -> Result<Value> {
         return refuse("resolved JVM source set requires 1..=128 tracked Java files");
     }
     let size = fs::metadata(request.classpath_file)
-        .map_err(|e| format!("JVM classpath export metadata: {e}"))?.len();
+        .map_err(|e| format!("JVM classpath export metadata: {e}"))?
+        .len();
     if size > MAX_MANIFEST_BYTES {
         return refuse("JVM classpath export exceeds 128 KiB");
     }
-    let bytes = fs::read(request.classpath_file)
-        .map_err(|e| format!("JVM classpath export read: {e}"))?;
+    let bytes =
+        fs::read(request.classpath_file).map_err(|e| format!("JVM classpath export read: {e}"))?;
     if bytes.len() as u64 > MAX_MANIFEST_BYTES {
         return refuse("JVM classpath export grew beyond 128 KiB");
     }
@@ -120,10 +126,13 @@ pub fn capture(request: &Capture<'_>) -> Result<Value> {
     }
     let mut classpath = Vec::new();
     for path in paths {
-        let path = path.to_str().ok_or("JVM classpath export contains non-UTF8 path")?;
+        let path = path
+            .to_str()
+            .ok_or("JVM classpath export contains non-UTF8 path")?;
         let metadata = fs::symlink_metadata(path)
             .map_err(|e| format!("JVM classpath artifact metadata: {e}"))?;
-        if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_JAR_BYTES {
+        if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_JAR_BYTES
+        {
             return refuse("JVM classpath artifact is not a bounded regular JAR file");
         }
         let data = fs::read(path).map_err(|e| format!("JVM classpath artifact read: {e}"))?;
@@ -144,7 +153,10 @@ pub fn capture(request: &Capture<'_>) -> Result<Value> {
         ("source_prefix", Value::string(request.source_prefix)),
         ("sources", Value::array(sources.iter().map(Value::string))),
         ("classpath", Value::array(classpath)),
-        ("release", request.release.map_or(Value::Null, Value::string)),
+        (
+            "release",
+            request.release.map_or(Value::Null, Value::string),
+        ),
     ]);
     verify(&document, &commit, &tree, request.source_prefix, &sources)?;
     Ok(document)

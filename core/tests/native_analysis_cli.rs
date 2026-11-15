@@ -1090,16 +1090,31 @@ fn native_java_uses_resolved_maven_or_gradle_artifacts_without_running_build_scr
         let f = Fixture::new();
         let (manifest, artifact, commit) = configured_java_fixture(&f, provider);
         let exported = f.parent.join("trusted-build-classpath.txt");
-        fs::write(&exported, format!("{}{}", artifact.display(), char::from(10))).unwrap();
+        fs::write(
+            &exported,
+            format!("{}{}", artifact.display(), char::from(10)),
+        )
+        .unwrap();
         let captured = parsed(f.invoke(&[
-            "evidence", "jvm-inputs-capture",
-            "--repo", f.repo.to_str().unwrap(), "--rev", &commit,
-            "--source-prefix", "src/main/java",
-            "--provider-claim", provider,
-            "--classpath-file", exported.to_str().unwrap(),
-            "--release", "17",
+            "evidence",
+            "jvm-inputs-capture",
+            "--repo",
+            f.repo.to_str().unwrap(),
+            "--rev",
+            &commit,
+            "--source-prefix",
+            "src/main/java",
+            "--provider-claim",
+            provider,
+            "--classpath-file",
+            exported.to_str().unwrap(),
+            "--release",
+            "17",
         ]));
-        assert_eq!(captured, manifest, "captured JVM manifest must match independent fixture");
+        assert_eq!(
+            captured, manifest,
+            "captured JVM manifest must match independent fixture"
+        );
         let path = f.parent.join("resolved-jvm-inputs.json");
         fs::write(&path, manifest.canonical()).unwrap();
         let manifest_file = path.to_str().unwrap();

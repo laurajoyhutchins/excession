@@ -222,28 +222,47 @@ fn generic_native_edit_replay_is_bounded_and_unverified_for_python_and_javascrip
     for language in ["python", "javascript"] {
         let f = Fixture::new(language);
         let plan = data(&[
-            "improve", "plan", "--producer", "indexed",
-            "--db", f.db.to_str().unwrap(), "--name", "fixture",
-            "--rev", &f.commit,
+            "improve",
+            "plan",
+            "--producer",
+            "indexed",
+            "--db",
+            f.db.to_str().unwrap(),
+            "--name",
+            "fixture",
+            "--rev",
+            &f.commit,
         ]);
-        let candidate = items(&plan, "candidates").iter()
+        let candidate = items(&plan, "candidates")
+            .iter()
             .find(|item| {
-                items(&item.get("finding").unwrap(), "locations").iter().any(|loc| {
-                    let path = str_at(loc, "path");
-                    fs::read_to_string(f.repo.join(path)).unwrap().contains("shared")
-                })
-            }).unwrap();
+                items(&item.get("finding").unwrap(), "locations")
+                    .iter()
+                    .any(|loc| {
+                        let path = str_at(loc, "path");
+                        fs::read_to_string(f.repo.join(path))
+                            .unwrap()
+                            .contains("shared")
+                    })
+            })
+            .unwrap();
         let candidate_id = str_at(candidate, "candidate_id");
         let path = items(candidate.get("finding").unwrap(), "locations")
-            .iter().map(|loc| str_at(loc, "path"))
-            .find(|path| fs::read_to_string(f.repo.join(path)).unwrap().contains("shared"))
+            .iter()
+            .map(|loc| str_at(loc, "path"))
+            .find(|path| {
+                fs::read_to_string(f.repo.join(path))
+                    .unwrap()
+                    .contains("shared")
+            })
             .unwrap();
         let original = fs::read_to_string(f.repo.join(path)).unwrap();
         let start = original.find("shared").unwrap();
         let blob_name = format!("{}:{path}", f.commit);
-        let blob = String::from_utf8(ok(run("git", &[
-            "-C", f.repo(), "rev-parse", &blob_name,
-        ]))).unwrap().trim().to_owned();
+        let blob = String::from_utf8(ok(run("git", &["-C", f.repo(), "rev-parse", &blob_name])))
+            .unwrap()
+            .trim()
+            .to_owned();
         let edit = obj(&[
             ("path", Value::string(path)),
             ("original_blob", Value::string(&blob)),
@@ -252,23 +271,38 @@ fn generic_native_edit_replay_is_bounded_and_unverified_for_python_and_javascrip
             ("replacement", Value::string("shared_v2")),
         ]);
         let native = obj(&[
-            ("schema", Value::string("excession.improvement-native-edits.v1")),
-            ("native_producer", Value::string("untrusted-controlled-fixture")),
+            (
+                "schema",
+                Value::string("excession.improvement-native-edits.v1"),
+            ),
+            (
+                "native_producer",
+                Value::string("untrusted-controlled-fixture"),
+            ),
             ("source_commit", plan.get("source_commit").unwrap().clone()),
             ("source_tree", plan.get("source_tree").unwrap().clone()),
             ("improvement_plan_id", plan.get("plan_id").unwrap().clone()),
             ("candidate_id", Value::string(candidate_id)),
             ("edits", Value::array([edit])),
-        ]).stamp_id("edit_plan_id").unwrap();
+        ])
+        .stamp_id("edit_plan_id")
+        .unwrap();
         let plan_path = f.tmp.join("improve-plan.json");
         let edit_path = f.tmp.join("native-edits.json");
         fs::write(&plan_path, plan.canonical()).unwrap();
         fs::write(&edit_path, native.canonical()).unwrap();
         let output = f.tmp.join("candidate");
         let arguments = [
-            "improve", "replay", "--repo", f.repo(), "--rev", &f.commit,
-            "--plan", plan_path.to_str().unwrap(),
-            "--edits", edit_path.to_str().unwrap(),
+            "improve",
+            "replay",
+            "--repo",
+            f.repo(),
+            "--rev",
+            &f.commit,
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--edits",
+            edit_path.to_str().unwrap(),
         ];
         let preview = data(&arguments);
         assert_eq!(str_at(&preview, "status"), "UNVERIFIED_EDIT_PREVIEW");
@@ -276,39 +310,79 @@ fn generic_native_edit_replay_is_bounded_and_unverified_for_python_and_javascrip
         assert!(!preview.get("ready_to_merge").unwrap().bool().unwrap());
         assert!(!output.exists());
         let applied = data(&[
-            "improve", "replay", "--repo", f.repo(), "--rev", &f.commit,
-            "--plan", plan_path.to_str().unwrap(),
-            "--edits", edit_path.to_str().unwrap(),
-            "--output", output.to_str().unwrap(),
+            "improve",
+            "replay",
+            "--repo",
+            f.repo(),
+            "--rev",
+            &f.commit,
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--edits",
+            edit_path.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
         ]);
         assert_eq!(str_at(&applied, "status"), "APPLIED_UNVERIFIED");
-        assert_eq!(applied.get("edit_plan_id").unwrap(), preview.get("edit_plan_id").unwrap());
+        assert_eq!(
+            applied.get("edit_plan_id").unwrap(),
+            preview.get("edit_plan_id").unwrap()
+        );
         assert_eq!(fs::read_to_string(f.repo.join(path)).unwrap(), original);
-        assert!(fs::read_to_string(output.join(path)).unwrap().contains("shared_v2"));
-        assert_eq!(String::from_utf8(ok(run("git", &[
-            "-C", f.repo(), "rev-parse", "HEAD",
-        ]))).unwrap().trim(), f.commit);
-        assert!(!applied.get("automatic_deletion_authorized").unwrap().bool().unwrap());
+        assert!(
+            fs::read_to_string(output.join(path))
+                .unwrap()
+                .contains("shared_v2")
+        );
+        assert_eq!(
+            String::from_utf8(ok(run("git", &["-C", f.repo(), "rev-parse", "HEAD",])))
+                .unwrap()
+                .trim(),
+            f.commit
+        );
+        assert!(
+            !applied
+                .get("automatic_deletion_authorized")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
         assert!(items(&applied, "obligations").iter().any(|obligation| {
             obligation.str().unwrap() == "NATIVE_PRODUCER_AUTHENTICITY_UNVERIFIED"
         }));
         // Applying twice must not reuse an existing destination.
         denied(cli(&[
-            "improve", "replay", "--repo", f.repo(), "--rev", &f.commit,
-            "--plan", plan_path.to_str().unwrap(),
-            "--edits", edit_path.to_str().unwrap(),
-            "--output", output.to_str().unwrap(),
+            "improve",
+            "replay",
+            "--repo",
+            f.repo(),
+            "--rev",
+            &f.commit,
+            "--plan",
+            plan_path.to_str().unwrap(),
+            "--edits",
+            edit_path.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
         ]));
         // An altered blob hash remains forbidden even with a valid new
         // unsigned content digest.
         let mut tampered = native.clone();
         let mut forged = tampered.get("edits").unwrap().array_ref().unwrap()[0].clone();
         forged.entries_mut().unwrap().insert(
-            "original_blob".into(), Value::string("0000000000000000000000000000000000000000"),
+            "original_blob".into(),
+            Value::string("0000000000000000000000000000000000000000"),
         );
-        tampered.entries_mut().unwrap().insert("edits".into(), Value::array([forged]));
+        tampered
+            .entries_mut()
+            .unwrap()
+            .insert("edits".into(), Value::array([forged]));
         tampered.entries_mut().unwrap().remove("edit_plan_id");
-        fs::write(&edit_path, tampered.stamp_id("edit_plan_id").unwrap().canonical()).unwrap();
+        fs::write(
+            &edit_path,
+            tampered.stamp_id("edit_plan_id").unwrap().canonical(),
+        )
+        .unwrap();
         denied(cli(&arguments));
     }
 }

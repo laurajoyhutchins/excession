@@ -217,4 +217,3 @@ pub fn trial(request: &Trial<'_>) -> Result<Value> {
     ])
     .stamp_id("trial_id")
 }
-

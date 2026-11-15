@@ -587,10 +587,13 @@ fn native_clang_tu_retains_compiler_counts_but_never_manufactures_calls_as_edges
         .unwrap()
         .array_ref()
         .unwrap();
-    assert!(configured.iter().any(|item|
-        field(item, "native_kind") == "NATIVE_CONFIGURED_HEADER" &&
-        field(item.get("source").unwrap(), "path") == "src/main.h"
-    ), "tracked header should be independently Git-bound");
+    assert!(
+        configured.iter().any(
+            |item| field(item, "native_kind") == "NATIVE_CONFIGURED_HEADER"
+                && field(item.get("source").unwrap(), "path") == "src/main.h"
+        ),
+        "tracked header should be independently Git-bound"
+    );
     assert!(configured.iter().any(|item| {
         if field(item, "native_kind") != "NATIVE_CONFIGURED_TU" {
             return false;
@@ -627,21 +630,40 @@ fn native_clang_tu_retains_compiler_counts_but_never_manufactures_calls_as_edges
     fs::write(
         f.repo.join("src/main.h"),
         "static inline int helper(int n) { return n + 2; }\n",
-    ).unwrap();
+    )
+    .unwrap();
     ok("git", &["add", "src/main.h"], &f.repo);
-    ok("git", &[
-        "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-        "commit", "-qm", "modify tracked Clang header",
-    ], &f.repo);
+    ok(
+        "git",
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "modify tracked Clang header",
+        ],
+        &f.repo,
+    );
     let new_head = String::from_utf8(ok("git", &["rev-parse", "HEAD"], &f.repo))
-        .unwrap().trim().to_owned();
+        .unwrap()
+        .trim()
+        .to_owned();
     let impact = parsed(f.invoke(&[
-        "impact", ".", "--db", db, "--base", &f.commit,
-        "--head", &new_head, "--json",
+        "impact", ".", "--db", db, "--base", &f.commit, "--head", &new_head, "--json",
     ]));
-    assert!(impact.get("configured_observations").unwrap().array_ref().unwrap()
-        .iter().any(|item|
-            field(item, "native_kind") == "NATIVE_CONFIGURED_HEADER" &&
-            field(item.get("source").unwrap(), "path") == "src/main.h"
-        ), "changed tracked header must surface as configured native evidence");
+    assert!(
+        impact
+            .get("configured_observations")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(
+                |item| field(item, "native_kind") == "NATIVE_CONFIGURED_HEADER"
+                    && field(item.get("source").unwrap(), "path") == "src/main.h"
+            ),
+        "changed tracked header must surface as configured native evidence"
+    );
 }

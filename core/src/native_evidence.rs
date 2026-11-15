@@ -195,8 +195,10 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
                 continue;
             }
             let sha = header.get("sha256")?.str()?;
-            if sha.len() != 64 || !sha.bytes().all(|ch|
-                ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
+            if sha.len() != 64
+                || !sha
+                    .bytes()
+                    .all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase())
             {
                 return refuse("native Clang header has invalid content digest");
             }

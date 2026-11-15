@@ -28,14 +28,14 @@ use std::env;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
-#[path = "excession/cli.rs"]
-mod cli;
 #[path = "excession/agent_init.rs"]
 mod agent_init;
-#[path = "excession/mcp.rs"]
-mod mcp;
+#[path = "excession/cli.rs"]
+mod cli;
 #[path = "excession/graph.rs"]
 mod graph_cli;
+#[path = "excession/mcp.rs"]
+mod mcp;
 #[path = "excession/scan.rs"]
 mod scan;
 use cli::{Options, ParseOutcome};
@@ -732,7 +732,8 @@ fn execute(args: &[String]) -> Result<Response> {
                         Path::new(opt.get_or("repo", ".")),
                         opt.get_or("client", "both"),
                         opt.get_or("write", "false") == "true",
-                    )?).map_err(|err| format!("serialize agent onboarding: {err}"))?,
+                    )?)
+                    .map_err(|err| format!("serialize agent onboarding: {err}"))?,
                 )),
                 "locate" => {
                     let budget = opt

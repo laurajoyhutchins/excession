@@ -7,7 +7,7 @@ use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, refuse};
 pub use automatic::{SearchOptions, search, searches};
-use runtime::{FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject};
+use runtime::{FLAGS, Scratch, bounded_file, code_region, run, sample, subject};
 use std::fs;
 use std::path::Path;
 

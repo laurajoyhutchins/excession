@@ -343,7 +343,6 @@ fn select_native(
             | "native:clang-ast"
             | "native:javac-symbols"
             | "native:javac-configured"
-            | "native:javac-configured"
     ) {
         return refuse("selected receipt is not a supported native producer");
     }
@@ -526,7 +525,7 @@ pub fn discover(db: &Db, repo: &Path, revision: &str) -> Result<Value> {
                         ("source_prefix", prefix.as_deref().map_or(Value::Null, Value::string)),
                         ("source_authentication", Value::string("REPLAY_REQUIRED_ON_SELECTION")),
                     ]));
-                } else if matches!(producer, "native:go-list" | "native:clang-ast" | "native:javac-symbols") {
+                } else if matches!(producer, "native:go-list" | "native:clang-ast" | "native:javac-symbols" | "native:javac-configured") {
                     crate::evidence_store::audit(db, snapshot)?;
                     let report = json::parse(receipt.get("raw_json")?.str()?.as_bytes())?;
                     native.push(obj(&[

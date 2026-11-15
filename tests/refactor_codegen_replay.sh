@@ -123,11 +123,11 @@ jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" '
   .reciprocal_pairs_before > .reciprocal_pairs_after and
   .coverage_regressed == true and
   .ready_to_merge == false and .automatic_deletion_authorized == false and
-  (.introduced_rust_source_paths | index("core/src/generated_module_name.rs") != null) and
+  (.introduced_source_paths | index("core/src/generated_module_name.rs") != null) and
   .source_changes == 3 and
   (.obligations | index("PUBLIC_API_AND_SEMANTIC_COMPATIBILITY_UNVERIFIED") != null)
 ' "$TMP/improve-evaluation.json"
-jq -c '{status, reciprocal_pairs_before, reciprocal_pairs_after, coverage_regressed, introduced_rust_source_paths}' \
+jq -c '{status, reciprocal_pairs_before, reciprocal_pairs_after, coverage_regressed, introduced_source_paths}' \
   "$TMP/improve-evaluation.json"
 
 jq -e --arg base "$OLD_REV" --arg head "$CANDIDATE" --arg tree "$TREE" \

@@ -116,7 +116,12 @@ output paths. It selects one safe contiguous same-scope group, or accepts
 `--group N` to select a specific group from the original history plan.
 
 A group is only eligible if none of its intermediate commits has a
-side-branch child or local ref. The command creates a separate bare mirror
+side-branch child or local ref. Without `--group`, the algorithm estimates
+the complete downstream rewrite closure for every eligible group and selects
+the smallest. This reduces invalidated commit identities and verification
+obligations rather than blindly choosing the earliest possible squash.
+
+The command creates a separate bare mirror
 clone, collapses that group to one **synthetic commit** with its terminal
 tree, then reconstructs all affected descendants in topological order.
 It verifies every reconstructed parent and tree, including at merge

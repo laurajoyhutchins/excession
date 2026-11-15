@@ -215,3 +215,44 @@ fn refuses_truncated_and_unexpected_output_locations() {
     assert!(!inside.exists());
     fs::remove_dir_all(repo.parent().unwrap()).unwrap();
 }
+
+#[test]
+fn auto_selects_smallest_descendant_rewrite_radius() {
+    let (repo, output) = fixture(false);
+    for (file, message) in [
+        ("near-one.txt", "feat(near): first"),
+        ("near-two.txt", "feat(near): second"),
+    ] {
+        fs::write(repo.join(file), message).unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-qm", message]);
+    }
+    let result = cli(&repo, &output, &[]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let summary: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(summary["folded_commits"], 2);
+    assert_eq!(summary["synthetic_commit_count"], 1);
+    assert_eq!(summary["estimated_synthetic_commits"], 1);
+    assert_eq!(summary["changed_commit_ids"], 2);
+    assert!(summary["selected_group_index"].as_u64().unwrap() > 0);
+    fs::remove_dir_all(repo.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn reserved_preview_ref_is_never_overwritten() {
+    let (repo, output) = fixture(false);
+    git(&repo, &["branch", "excession-dag-preview", "HEAD"]);
+    let before = git(&repo, &["rev-parse", "refs/heads/excession-dag-preview"]);
+    let result = cli(&repo, &output, &[]);
+    assert!(!result.status.success());
+    assert!(!output.exists());
+    assert_eq!(
+        git(&repo, &["rev-parse", "refs/heads/excession-dag-preview"]),
+        before
+    );
+    fs::remove_dir_all(repo.parent().unwrap()).unwrap();
+}

@@ -73,7 +73,11 @@ The `Full Git history self-replay` workflow runs on changes to its harness
 or on manual dispatch. It uses `fetch-depth: 0`, verifies Git object
 connectivity, and refuses shallow or truncated results. It invokes the Rust
 `core/examples/history_self_replay.rs` harness to compare every reachable
-HEAD commit, parent edge, and tree ID with independent Git plumbing.
+HEAD commit, parent edge, and tree ID with independent Git plumbing. It
+then plans each distinct commit tip referenced by local branches and tags,
+compares the union against `git rev-list --parents --all HEAD` and independently
+retrieved tree identities, and refuses missing source objects. Per-tip plan IDs
+are retained in `ref-plans.json`.
 
 The full-depth run records the original tip, plan digest, merge count,
 candidate-group count, elapsed time, peak RSS, local-ref reachability,
@@ -96,7 +100,7 @@ cargo run --locked --manifest-path core/Cargo.toml --example history_self_replay
   --repo . --output /tmp/excession-self-history --max-commits 100000
 ```
 
-Artifacts contain plan.json, audit.json, refs.json, target.json,
+Artifacts contain plan.json, audit.json, refs.json, ref-plans.json, target.json,
 preview.json, summary.json, and resources.txt. The run is an actual
 reproducible self-replay. It is not a scalable production history
 reorganizer: multi-ref dependent rewriting, immutable old-to-new

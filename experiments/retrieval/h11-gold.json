@@ -231,5 +231,6 @@
       "query": "Locate database sharding coordinator consensus replication",
       "gold": []
     }
-  ]
+  ],
+  "static_roots": "h11"
 }

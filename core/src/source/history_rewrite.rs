@@ -18,6 +18,14 @@ struct Node {
     subject: String,
 }
 
+struct SourceGraph {
+    commits: BTreeMap<String, Node>,
+    order: Vec<String>,
+    head_plan: Value,
+    refs: Value,
+    non_commit_refs: Vec<Value>,
+}
+
 fn git_run(repo: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
         .arg("-C")
@@ -76,13 +84,7 @@ fn full_graph(
     repo: &Path,
     head: &str,
     limit: usize,
-) -> Result<(
-    BTreeMap<String, Node>,
-    Vec<String>,
-    Value,
-    Value,
-    Vec<Value>,
-)> {
+) -> Result<SourceGraph> {
     let ref_report = history::refs(repo, MAX_REFS)?;
     let refs = json_report(&ref_report)?;
     if refs["truncated"] != false {
@@ -140,13 +142,12 @@ fn full_graph(
                     .ok_or("missing subject")?
                     .to_owned(),
             };
-            if let Some(previous) = graph.insert(oid.to_owned(), row.clone()) {
-                if previous.tree != row.tree
+            if let Some(previous) = graph.insert(oid.to_owned(), row.clone())
+                && (previous.tree != row.tree
                     || previous.parents != row.parents
-                    || previous.subject != row.subject
-                {
-                    return refuse("conflicting Git identities across ref ancestry");
-                }
+                    || previous.subject != row.subject)
+            {
+                return refuse("conflicting Git identities across ref ancestry");
             }
         }
         manifests.push(json!({
@@ -187,7 +188,13 @@ fn full_graph(
     if order.len() != graph.len() || order.len() > limit {
         return refuse("complete local ref DAG exceeds limit or source plans");
     }
-    Ok((graph, order, head_plan, refs, non_commit_refs))
+    Ok(SourceGraph {
+        commits: graph,
+        order,
+        head_plan,
+        refs,
+        non_commit_refs,
+    })
 }
 
 fn select_group(
@@ -196,7 +203,7 @@ fn select_group(
     refs: &Value,
     head: &str,
     requested: Option<usize>,
-) -> Result<(usize, Vec<String>, Vec<Value>)> {
+) -> Result<(usize, Vec<String>, Vec<Value>, usize)> {
     let candidates = plan["candidate_groups"]
         .as_array()
         .ok_or("missing candidates")?;
@@ -205,13 +212,20 @@ fn select_group(
     for row in refs["refs"].as_array().ok_or("missing refs")? {
         if let Some(oid) = row["peeled_object"].as_str() {
             referenced.insert(oid.to_owned());
-        } else if row["object_type"] == "commit" {
-            if let Some(oid) = row["object"].as_str() {
-                referenced.insert(oid.to_owned());
-            }
+        } else if row["object_type"] == "commit"
+            && let Some(oid) = row["object"].as_str()
+        {
+            referenced.insert(oid.to_owned());
         }
     }
-    let mut reasons = Vec::new();
+    let mut children = BTreeMap::<String, Vec<String>>::new();
+    for (oid, node) in graph {
+        for parent in &node.parents {
+            children.entry(parent.clone()).or_default().push(oid.clone());
+        }
+    }
+    let mut examined = Vec::new();
+    let mut best: Option<(usize, Vec<String>, usize)> = None;
     for (index, candidate) in candidates.iter().enumerate() {
         if requested.is_some_and(|r| r != index) {
             continue;
@@ -224,37 +238,63 @@ fn select_group(
             && graph
                 .get(&commits[0])
                 .is_some_and(|n| n.parents.len() == 1 && n.parents[0] == parent);
-        let group_set = commits.iter().cloned().collect::<BTreeSet<_>>();
         for (i, oid) in commits.iter().enumerate() {
-            let node = graph
-                .get(oid)
-                .ok_or("candidate references non-reachable commit")?;
+            let node = graph.get(oid).ok_or("candidate references unknown commit")?;
             if i > 0 && (node.parents.len() != 1 || node.parents[0] != commits[i - 1]) {
                 safe = false;
             }
-            if i + 1 < commits.len() {
-                if referenced.contains(oid) {
-                    safe = false;
-                }
-                for (child, child_node) in graph {
-                    if child_node.parents.iter().any(|p| p == oid) && !group_set.contains(child) {
-                        safe = false;
-                    }
-                }
+            if i + 1 < commits.len()
+                && (referenced.contains(oid)
+                    || children.get(oid).is_none_or(|links| {
+                        links.len() != 1 || links[0] != commits[i + 1]
+                    }))
+            {
+                safe = false;
             }
         }
-        if safe {
-            return Ok((index, commits, reasons));
+        if !safe {
+            examined.push(json!({"group_index":index,"status":"REF_OR_SIDE_BRANCH_DEPENDENCY"}));
+            continue;
         }
-        reasons.push(json!({"group_index":index,"status":"REF_OR_SIDE_BRANCH_DEPENDENCY"}));
+        // Condense only one group. Its last commit is replaced, and all
+        // transitively dependent descendants have to receive new parent OIDs.
+        // Count this closure before constructing *any* Git objects, avoiding
+        // expensive early-history folds for negligible compression.
+        let mut affected = BTreeSet::new();
+        let mut pending = vec![commits.last().ok_or("missing group terminal")?.clone()];
+        while let Some(oid) = pending.pop() {
+            if affected.insert(oid.clone())
+                && let Some(next) = children.get(&oid)
+            {
+                pending.extend(next.iter().cloned());
+            }
+        }
+        let cost = affected.len();
+        examined.push(json!({
+            "group_index":index,
+            "status":"DEPENDENCY_SAFE",
+            "estimated_synthetic_commits":cost,
+            "removed_intermediate_commits":commits.len() - 1
+        }));
+        if requested.is_some() {
+            return Ok((index, commits, examined, cost));
+        }
+        let better = best.as_ref().is_none_or(|(_, old, old_cost)| {
+            cost < *old_cost || (cost == *old_cost && commits.len() > old.len())
+        });
+        if better {
+            best = Some((index, commits, cost));
+        }
+    }
+    if let Some((index, commits, cost)) = best {
+        return Ok((index, commits, examined, cost));
     }
     if requested.is_some() {
         return refuse("selected group has a side-branch or ref dependency; refusing squash");
     }
-    // Auto selection must not silently choose an unsafe group.
     refuse(format!(
         "no dependency-safe group exists across all local refs ({} candidates inspected)",
-        reasons.len()
+        examined.len()
     ))
 }
 
@@ -359,8 +399,19 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
     )?;
     let head = git_run(&repo, &["rev-parse", "HEAD"])?;
     git::oid(&head)?;
-    let (graph, order, head_plan, refs, non_commit_refs) = full_graph(&repo, &head, max)?;
-    let (selected_index, group, rejected_groups) =
+    let SourceGraph {
+        commits: graph,
+        order,
+        head_plan,
+        refs,
+        non_commit_refs,
+    } = full_graph(&repo, &head, max)?;
+    if refs["refs"].as_array().ok_or("missing refs")?
+        .iter().any(|r| r["ref"] == PREVIEW_REF)
+    {
+        return refuse("original checkout already owns the reserved preview ref");
+    }
+    let (selected_index, group, examined_groups, estimated_synthetic_commits) =
         select_group(&head_plan, &graph, &refs, &head, requested)?;
     let start = group.first().ok_or("empty candidate group")?;
     let terminal = group.last().ok_or("empty candidate group")?;
@@ -437,6 +488,9 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
     if !collapsed || mapped.len() != graph.len() {
         return refuse("candidate DAG rewrite omitted source commits");
     }
+    if generated.len() != estimated_synthetic_commits {
+        return refuse("dependency closure estimate disagrees with constructed commit graph");
+    }
     let rewritten_head = mapped.get(&head).ok_or("missing remapped HEAD")?.clone();
     if git_run(
         &clone,
@@ -506,7 +560,20 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
     if refs_before(&clone)? != cloned_refs {
         return refuse("isolated original refs changed during synthesis");
     }
-    git_run(&clone, &["update-ref", PREVIEW_REF, &rewritten_head])?;
+    git_run(&clone, &[
+        "update-ref",
+        PREVIEW_REF,
+        &rewritten_head,
+        "0000000000000000000000000000000000000000",
+    ])?;
+    let clone_refs_after = refs_before(&clone)?;
+    let clone_original_refs_after = clone_refs_after.lines()
+        .filter(|line| !line.starts_with(&format!("{PREVIEW_REF} ")))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if clone_original_refs_after != cloned_refs {
+        return refuse("isolated mirror modified original ref identities");
+    }
     if refs_before(&repo)? != before_refs
         || git_run(
             &repo,
@@ -542,7 +609,8 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
             "source_commit_count":graph.len(),
             "synthetic_commit_count":generated.len(),
             "mapping":mappings,
-            "rejected_earlier_groups":rejected_groups,
+            "examined_groups":examined_groups,
+        "estimated_synthetic_commits":estimated_synthetic_commits,
             "rewrite_authorized":false
         }),
     )?;
@@ -568,6 +636,7 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
         "source_commit_count":graph.len(),
         "mapped_commit_count":mapped.len(),
         "synthetic_commit_count":generated.len(),
+        "estimated_synthetic_commits":estimated_synthetic_commits,
         "changed_commit_ids":impacted.len(),
         "folded_commits":group.len(),
         "selected_group_index":selected_index,

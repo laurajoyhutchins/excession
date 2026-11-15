@@ -723,6 +723,11 @@ pub(super) fn command() -> Command {
                     &["producer", "repo", "index", "source-prefix", "db", "name"],
                 ),
                 leaf(
+                    "replay",
+                    &["repo", "rev", "plan", "edits"],
+                    &["output"],
+                ).about("Preview or replay pinned language-native edits in a detached worktree"),
+                leaf(
                     "trial",
                     &[
                         "repo", "rev", "index", "report", "plan",

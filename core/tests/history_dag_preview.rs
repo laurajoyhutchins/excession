@@ -52,10 +52,17 @@ fn fixture(side_dependency: bool) -> (PathBuf, PathBuf) {
     git(&repo, &["checkout", "-q", "-b", "feature", &terminal]);
     commit("feature.txt", "feature", "feat(other): branch change");
     git(&repo, &["checkout", "-q", "main"]);
-    git(&repo, &["merge", "--no-ff", "-qm", "merge feature", "feature"]);
+    git(
+        &repo,
+        &["merge", "--no-ff", "-qm", "merge feature", "feature"],
+    );
     if side_dependency {
         git(&repo, &["checkout", "-q", "side"]);
-        commit("side.txt", "side", "fix(other): another child of first change");
+        commit(
+            "side.txt",
+            "side",
+            "fix(other): another child of first change",
+        );
         git(&repo, &["checkout", "-q", "main"]);
     }
     (repo, output)
@@ -76,10 +83,21 @@ fn cli(repo: &Path, output: &Path, extras: &[&str]) -> std::process::Output {
 #[test]
 fn branch_merge_and_tag_are_tree_identical_and_original_refs_stay_untouched() {
     let (repo, output) = fixture(false);
-    let before = git(&repo, &["for-each-ref", "--sort=refname", "--format=%(refname) %(objectname)"]);
+    let before = git(
+        &repo,
+        &[
+            "for-each-ref",
+            "--sort=refname",
+            "--format=%(refname) %(objectname)",
+        ],
+    );
     let head = git(&repo, &["rev-parse", "HEAD"]);
     // A dirty checkout is allowed because the algorithm reads Git objects only.
-    fs::write(repo.join("untracked-local-file"), "keep uncommitted changes").unwrap();
+    fs::write(
+        repo.join("untracked-local-file"),
+        "keep uncommitted changes",
+    )
+    .unwrap();
     let result = cli(&repo, &output, &["--group", "0", "--max-commits", "100"]);
     assert!(
         result.status.success(),
@@ -95,42 +113,74 @@ fn branch_merge_and_tag_are_tree_identical_and_original_refs_stay_untouched() {
     assert_eq!(summary["rewrite_authorized"], false);
     assert!(summary["synthetic_commit_count"].as_u64().unwrap() >= 3);
 
-    let mapping: Value = serde_json::from_slice(&fs::read(output.join("mapping.json")).unwrap()).unwrap();
+    let mapping: Value =
+        serde_json::from_slice(&fs::read(output.join("mapping.json")).unwrap()).unwrap();
     let rows = mapping["mapping"].as_array().unwrap();
-    assert_eq!(rows.len() as u64, summary["mapped_commit_count"].as_u64().unwrap());
-    let collapsed = rows.iter().filter(|row| row["intermediate_state_dropped"] == true).count();
+    assert_eq!(
+        rows.len() as u64,
+        summary["mapped_commit_count"].as_u64().unwrap()
+    );
+    let collapsed = rows
+        .iter()
+        .filter(|row| row["intermediate_state_dropped"] == true)
+        .count();
     assert_eq!(collapsed, 1);
     let candidate_head = summary["candidate_head"].as_str().unwrap();
     let source_tree = git(&repo, &["rev-parse", "HEAD^{tree}"]);
     let clone = output.join("candidate.git");
     assert_eq!(
-        git(&clone, &["rev-parse", &format!("{candidate_head}^{{tree}}")]),
+        git(
+            &clone,
+            &["rev-parse", &format!("{candidate_head}^{{tree}}")]
+        ),
         source_tree
     );
     assert_eq!(
         git(&clone, &["rev-parse", "refs/heads/excession-dag-preview"]),
         candidate_head
     );
-    let proposals: Value = serde_json::from_slice(&fs::read(output.join("refs.json")).unwrap()).unwrap();
+    let proposals: Value =
+        serde_json::from_slice(&fs::read(output.join("refs.json")).unwrap()).unwrap();
     assert_eq!(proposals["original_refs_preserved"], true);
     assert_eq!(proposals["external_refs_complete"], false);
-    let obligations: Value = serde_json::from_slice(&fs::read(output.join("obligations.json")).unwrap()).unwrap();
+    let obligations: Value =
+        serde_json::from_slice(&fs::read(output.join("obligations.json")).unwrap()).unwrap();
     assert_eq!(obligations["rewrite_authorized"], false);
-    assert_eq!(obligations["rea_evidence"], "REQUIRES_INDEPENDENT_REBINDING");
+    assert_eq!(
+        obligations["rea_evidence"],
+        "REQUIRES_INDEPENDENT_REBINDING"
+    );
 
     assert_eq!(git(&repo, &["rev-parse", "HEAD"]), head);
     assert_eq!(
-        git(&repo, &["for-each-ref", "--sort=refname", "--format=%(refname) %(objectname)"]),
+        git(
+            &repo,
+            &[
+                "for-each-ref",
+                "--sort=refname",
+                "--format=%(refname) %(objectname)"
+            ]
+        ),
         before
     );
-    assert_eq!(fs::read(repo.join("untracked-local-file")).unwrap(), b"keep uncommitted changes");
+    assert_eq!(
+        fs::read(repo.join("untracked-local-file")).unwrap(),
+        b"keep uncommitted changes"
+    );
     fs::remove_dir_all(repo.parent().unwrap()).unwrap();
 }
 
 #[test]
 fn cannot_collapse_a_commit_referenced_by_another_branch() {
     let (repo, output) = fixture(true);
-    let before = git(&repo, &["for-each-ref", "--sort=refname", "--format=%(refname) %(objectname)"]);
+    let before = git(
+        &repo,
+        &[
+            "for-each-ref",
+            "--sort=refname",
+            "--format=%(refname) %(objectname)",
+        ],
+    );
     let result = cli(&repo, &output, &["--group", "0"]);
     assert!(!result.status.success());
     assert!(
@@ -140,7 +190,14 @@ fn cannot_collapse_a_commit_referenced_by_another_branch() {
     );
     assert!(!output.exists());
     assert_eq!(
-        git(&repo, &["for-each-ref", "--sort=refname", "--format=%(refname) %(objectname)"]),
+        git(
+            &repo,
+            &[
+                "for-each-ref",
+                "--sort=refname",
+                "--format=%(refname) %(objectname)"
+            ]
+        ),
         before
     );
     fs::remove_dir_all(repo.parent().unwrap()).unwrap();

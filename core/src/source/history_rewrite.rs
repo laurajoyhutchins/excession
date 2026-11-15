@@ -20,7 +20,9 @@ struct Node {
 
 fn git_run(repo: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
-        .arg("-C").arg(repo).args(args)
+        .arg("-C")
+        .arg(repo)
+        .args(args)
         .env("GIT_NO_REPLACE_OBJECTS", "1")
         .output()
         .map_err(|e| format!("Git command failed to start: {e}"))?;
@@ -37,8 +39,15 @@ fn git_run(repo: &Path, args: &[&str]) -> Result<String> {
 }
 
 fn strings(value: &Value) -> Result<Vec<String>> {
-    value.as_array().ok_or("expected JSON array")?.iter()
-        .map(|v| v.as_str().map(str::to_owned).ok_or("expected JSON string".into()))
+    value
+        .as_array()
+        .ok_or("expected JSON array")?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or("expected JSON string".into())
+        })
         .collect()
 }
 
@@ -53,19 +62,37 @@ fn save(output: &Path, name: &str, report: &Value) -> Result<()> {
 }
 
 fn refs_before(repo: &Path) -> Result<String> {
-    git_run(repo, &["for-each-ref", "--sort=refname", "--format=%(refname) %(objectname)"])
+    git_run(
+        repo,
+        &[
+            "for-each-ref",
+            "--sort=refname",
+            "--format=%(refname) %(objectname)",
+        ],
+    )
 }
 
-fn full_graph(repo: &Path, head: &str, limit: usize)
-    -> Result<(BTreeMap<String, Node>, Vec<String>, Value, Value, Vec<Value>)>
-{
+fn full_graph(
+    repo: &Path,
+    head: &str,
+    limit: usize,
+) -> Result<(
+    BTreeMap<String, Node>,
+    Vec<String>,
+    Value,
+    Value,
+    Vec<Value>,
+)> {
     let ref_report = history::refs(repo, MAX_REFS)?;
     let refs = json_report(&ref_report)?;
     if refs["truncated"] != false {
         return refuse("local ref inventory truncated");
     }
-    if refs["refs"].as_array().ok_or("missing refs")?
-        .iter().any(|r| r["ref"].as_str().unwrap_or("").starts_with("refs/replace/"))
+    if refs["refs"]
+        .as_array()
+        .ok_or("missing refs")?
+        .iter()
+        .any(|r| r["ref"].as_str().unwrap_or("").starts_with("refs/replace/"))
     {
         return refuse("Git replacement refs cannot be used to reconstruct true ancestry");
     }
@@ -74,7 +101,10 @@ fn full_graph(repo: &Path, head: &str, limit: usize)
     let mut non_commit_refs = Vec::new();
     for row in refs["refs"].as_array().ok_or("missing refs")? {
         let name = row["ref"].as_str().ok_or("invalid local ref name")?;
-        match git_run(repo, &["rev-parse", "-q", "--verify", &format!("{name}^{{commit}}")]) {
+        match git_run(
+            repo,
+            &["rev-parse", "-q", "--verify", &format!("{name}^{{commit}}")],
+        ) {
             Ok(tip) => {
                 git::oid(&tip)?;
                 tips.insert(tip);
@@ -100,12 +130,19 @@ fn full_graph(repo: &Path, head: &str, limit: usize)
         for record in plan["commits"].as_array().ok_or("missing commits")? {
             let oid = record["commit"].as_str().ok_or("missing commit oid")?;
             let row = Node {
-                tree: record["tree"].as_str().ok_or("missing Git tree")?.to_owned(),
+                tree: record["tree"]
+                    .as_str()
+                    .ok_or("missing Git tree")?
+                    .to_owned(),
                 parents: strings(&record["parents"])?,
-                subject: record["subject"].as_str().ok_or("missing subject")?.to_owned(),
+                subject: record["subject"]
+                    .as_str()
+                    .ok_or("missing subject")?
+                    .to_owned(),
             };
             if let Some(previous) = graph.insert(oid.to_owned(), row.clone()) {
-                if previous.tree != row.tree || previous.parents != row.parents
+                if previous.tree != row.tree
+                    || previous.parents != row.parents
                     || previous.subject != row.subject
                 {
                     return refuse("conflicting Git identities across ref ancestry");
@@ -119,15 +156,28 @@ fn full_graph(repo: &Path, head: &str, limit: usize)
             "status":"EXACT_GIT_ANCESTRY_REPLAYED"
         }));
     }
-    let lines = git_run(repo, &["rev-list", "--topo-order", "--reverse", "--parents", "--all", "HEAD"])?;
+    let lines = git_run(
+        repo,
+        &[
+            "rev-list",
+            "--topo-order",
+            "--reverse",
+            "--parents",
+            "--all",
+            "HEAD",
+        ],
+    )?;
     let mut order = Vec::new();
     let mut seen = BTreeSet::new();
     for line in lines.lines() {
         let mut fields = line.split_whitespace();
         let oid = fields.next().ok_or("empty Git ancestry row")?;
         let parents = fields.map(str::to_owned).collect::<Vec<_>>();
-        let node = graph.get(oid).ok_or("Git commit missing from full source plan")?;
-        if node.parents != parents || !seen.insert(oid.to_owned())
+        let node = graph
+            .get(oid)
+            .ok_or("Git commit missing from full source plan")?;
+        if node.parents != parents
+            || !seen.insert(oid.to_owned())
             || parents.iter().any(|p| !seen.contains(p))
         {
             return refuse("Git parent mismatch, duplicate or non-topological ancestry");
@@ -141,10 +191,15 @@ fn full_graph(repo: &Path, head: &str, limit: usize)
 }
 
 fn select_group(
-    plan: &Value, graph: &BTreeMap<String, Node>, refs: &Value,
-    head: &str, requested: Option<usize>
+    plan: &Value,
+    graph: &BTreeMap<String, Node>,
+    refs: &Value,
+    head: &str,
+    requested: Option<usize>,
 ) -> Result<(usize, Vec<String>, Vec<Value>)> {
-    let candidates = plan["candidate_groups"].as_array().ok_or("missing candidates")?;
+    let candidates = plan["candidate_groups"]
+        .as_array()
+        .ok_or("missing candidates")?;
     let mut referenced = BTreeSet::new();
     referenced.insert(head.to_owned());
     for row in refs["refs"].as_array().ok_or("missing refs")? {
@@ -162,14 +217,18 @@ fn select_group(
             continue;
         }
         let commits = strings(&candidate["commits"])?;
-        let parent = candidate["original_parent"].as_str().ok_or("missing group parent")?;
+        let parent = candidate["original_parent"]
+            .as_str()
+            .ok_or("missing group parent")?;
         let mut safe = commits.len() > 1
-            && graph.get(&commits[0]).is_some_and(|n| {
-                n.parents.len() == 1 && n.parents[0] == parent
-            });
+            && graph
+                .get(&commits[0])
+                .is_some_and(|n| n.parents.len() == 1 && n.parents[0] == parent);
         let group_set = commits.iter().cloned().collect::<BTreeSet<_>>();
         for (i, oid) in commits.iter().enumerate() {
-            let node = graph.get(oid).ok_or("candidate references non-reachable commit")?;
+            let node = graph
+                .get(oid)
+                .ok_or("candidate references non-reachable commit")?;
             if i > 0 && (node.parents.len() != 1 || node.parents[0] != commits[i - 1]) {
                 safe = false;
             }
@@ -178,9 +237,7 @@ fn select_group(
                     safe = false;
                 }
                 for (child, child_node) in graph {
-                    if child_node.parents.iter().any(|p| p == oid)
-                        && !group_set.contains(child)
-                    {
+                    if child_node.parents.iter().any(|p| p == oid) && !group_set.contains(child) {
                         safe = false;
                     }
                 }
@@ -202,32 +259,47 @@ fn select_group(
 }
 
 fn synthetic_commit(
-    clone: &Path, tree: &str, parents: &[String], original: &str, label: &str
+    clone: &Path,
+    tree: &str,
+    parents: &[String],
+    original: &str,
+    label: &str,
 ) -> Result<String> {
     git::oid(tree)?;
     git::oid(original)?;
     let mut command = Command::new("git");
-    command.arg("-C").arg(clone)
+    command
+        .arg("-C")
+        .arg(clone)
         .args(["-c", "commit.gpgSign=false", "commit-tree", tree]);
     for parent in parents {
         git::oid(parent)?;
         command.args(["-p", parent]);
     }
-    command.args(["-m", &format!(
-        "Excession isolated {label}\n\nOriginal commit: {original}\n\
+    command.args([
+        "-m",
+        &format!(
+            "Excession isolated {label}\n\nOriginal commit: {original}\n\
          Synthetic provenance; original signer and committer not transferred.\n\
          External build, PR and REA receipts require reconciliation."
-    )]);
-    command.env("GIT_AUTHOR_NAME", "Excession synthetic history")
+        ),
+    ]);
+    command
+        .env("GIT_AUTHOR_NAME", "Excession synthetic history")
         .env("GIT_AUTHOR_EMAIL", "preview@example.invalid")
         .env("GIT_COMMITTER_NAME", "Excession synthetic history")
         .env("GIT_COMMITTER_EMAIL", "preview@example.invalid")
         .env("GIT_AUTHOR_DATE", "2000-01-01T00:00:00 +0000")
         .env("GIT_COMMITTER_DATE", "2000-01-01T00:00:00 +0000")
         .env("GIT_NO_REPLACE_OBJECTS", "1");
-    let output = command.output().map_err(|e| format!("create synthetic commit: {e}"))?;
+    let output = command
+        .output()
+        .map_err(|e| format!("create synthetic commit: {e}"))?;
     if !output.status.success() {
-        return refuse(format!("synthetic commit-tree: {}", String::from_utf8_lossy(&output.stderr)));
+        return refuse(format!(
+            "synthetic commit-tree: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
     let oid = String::from_utf8(output.stdout).map_err(|_| "invalid synthetic Git OID")?;
     let oid = git::oid(oid.trim())?;
@@ -248,8 +320,10 @@ fn isolated_clone(repo: &Path, output: &Path) -> Result<PathBuf> {
     let clone = output.join("candidate.git");
     let status = Command::new("git")
         .args(["clone", "--mirror", "--no-hardlinks", "--"])
-        .arg(repo).arg(&clone)
-        .status().map_err(|e| format!("start isolated clone: {e}"))?;
+        .arg(repo)
+        .arg(&clone)
+        .status()
+        .map_err(|e| format!("start isolated clone: {e}"))?;
     if !status.success() {
         return refuse("create independent preview clone failed");
     }
@@ -261,20 +335,28 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
         return refuse("max-commits must be 1..=100000");
     }
     git::verify_repo(repo)?;
-    let repo = repo.canonicalize().map_err(|e| format!("source checkout: {e}"))?;
+    let repo = repo
+        .canonicalize()
+        .map_err(|e| format!("source checkout: {e}"))?;
     if git_run(&repo, &["rev-parse", "--is-shallow-repository"])? != "false" {
         return refuse("complete Git history is mandatory for DAG rewriting");
     }
     if output.exists() {
         return refuse("isolated output destination already exists");
     }
-    let parent = output.parent().ok_or("output needs parent directory")?
-        .canonicalize().map_err(|e| format!("output parent: {e}"))?;
+    let parent = output
+        .parent()
+        .ok_or("output needs parent directory")?
+        .canonicalize()
+        .map_err(|e| format!("output parent: {e}"))?;
     if parent.starts_with(&repo) {
         return refuse("output must not be within source checkout");
     }
     let before_refs = refs_before(&repo)?;
-    let before_status = git_run(&repo, &["status", "--porcelain=v1", "--untracked-files=all"])?;
+    let before_status = git_run(
+        &repo,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    )?;
     let head = git_run(&repo, &["rev-parse", "HEAD"])?;
     git::oid(&head)?;
     let (graph, order, head_plan, refs, non_commit_refs) = full_graph(&repo, &head, max)?;
@@ -282,8 +364,13 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
         select_group(&head_plan, &graph, &refs, &head, requested)?;
     let start = group.first().ok_or("empty candidate group")?;
     let terminal = group.last().ok_or("empty candidate group")?;
-    let old_parent = graph.get(start).ok_or("unknown group start")?
-        .parents.first().ok_or("cannot collapse a root commit")?.clone();
+    let old_parent = graph
+        .get(start)
+        .ok_or("unknown group start")?
+        .parents
+        .first()
+        .ok_or("cannot collapse a root commit")?
+        .clone();
     let folded = group.iter().cloned().collect::<BTreeSet<_>>();
     let mut children = BTreeMap::<String, usize>::new();
     for node in graph.values() {
@@ -310,7 +397,10 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
             continue;
         }
         if oid == terminal {
-            let replacement_parent = mapped.get(&old_parent).ok_or("group parent absent")?.clone();
+            let replacement_parent = mapped
+                .get(&old_parent)
+                .ok_or("group parent absent")?
+                .clone();
             let tree = &graph.get(terminal).ok_or("terminal missing")?.tree;
             let synthesized = synthetic_commit(&clone, tree, &[replacement_parent], oid, "squash")?;
             generated.insert(synthesized.clone());
@@ -321,9 +411,16 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
             continue;
         }
         let node = graph.get(oid).ok_or("source graph object missing")?;
-        let parents = node.parents.iter().map(|p| {
-            mapped.get(p).cloned().ok_or_else(|| format!("unmapped original parent {p}"))
-        }).collect::<Result<Vec<_>>>()?;
+        let parents = node
+            .parents
+            .iter()
+            .map(|p| {
+                mapped
+                    .get(p)
+                    .cloned()
+                    .ok_or_else(|| format!("unmapped original parent {p}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
         let distinct = parents.iter().collect::<BTreeSet<_>>();
         if distinct.len() != parents.len() {
             return refuse("mapped merge parents collapsed to one commit");
@@ -341,8 +438,10 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
         return refuse("candidate DAG rewrite omitted source commits");
     }
     let rewritten_head = mapped.get(&head).ok_or("missing remapped HEAD")?.clone();
-    if git_run(&clone, &["rev-parse", &format!("{rewritten_head}^{{tree}}")])?
-        != git_run(&repo, &["rev-parse", "HEAD^{tree}"])?
+    if git_run(
+        &clone,
+        &["rev-parse", &format!("{rewritten_head}^{{tree}}")],
+    )? != git_run(&repo, &["rev-parse", "HEAD^{tree}"])?
     {
         return refuse("candidate HEAD changed exact final source tree");
     }
@@ -377,7 +476,10 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
         let peeled = if let Some(p) = entry["peeled_object"].as_str() {
             p.to_owned()
         } else if kind == "commit" {
-            entry["object"].as_str().ok_or("invalid ref object")?.to_owned()
+            entry["object"]
+                .as_str()
+                .ok_or("invalid ref object")?
+                .to_owned()
         } else {
             String::new()
         };
@@ -406,7 +508,10 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
     }
     git_run(&clone, &["update-ref", PREVIEW_REF, &rewritten_head])?;
     if refs_before(&repo)? != before_refs
-        || git_run(&repo, &["status", "--porcelain=v1", "--untracked-files=all"])? != before_status
+        || git_run(
+            &repo,
+            &["status", "--porcelain=v1", "--untracked-files=all"],
+        )? != before_status
         || git_run(&repo, &["rev-parse", "HEAD"])? != head
     {
         return refuse("original source refs or worktree mutated during isolated rewrite");
@@ -424,28 +529,36 @@ pub fn preview(repo: &Path, output: &Path, requested: Option<usize>, max: usize)
         "semantic_equivalence":"NOT_ASSESSED",
         "rewrite_authorized":false
     });
-    save(&output, "mapping.json", &json!({
-        "schema":"excession.history-dag-mapping.v1",
-        "original_head":head,
-        "candidate_head":rewritten_head,
-        "original_head_tree":head_tree,
-        "selected_group_index":selected_index,
-        "selected_group":group,
-        "source_commit_count":graph.len(),
-        "synthetic_commit_count":generated.len(),
-        "mapping":mappings,
-        "rejected_earlier_groups":rejected_groups,
-        "rewrite_authorized":false
-    }))?;
-    save(&output, "refs.json", &json!({
-        "schema":"excession.history-dag-ref-proposals.v1",
-        "proposed_refs":proposals,
-        "non_commit_refs":non_commit_refs,
-        "external_refs_complete":false,
-        "original_refs_preserved":true,
-        "candidate_ref_in_isolated_clone":PREVIEW_REF,
-        "published":false
-    }))?;
+    save(
+        &output,
+        "mapping.json",
+        &json!({
+            "schema":"excession.history-dag-mapping.v1",
+            "original_head":head,
+            "candidate_head":rewritten_head,
+            "original_head_tree":head_tree,
+            "selected_group_index":selected_index,
+            "selected_group":group,
+            "source_commit_count":graph.len(),
+            "synthetic_commit_count":generated.len(),
+            "mapping":mappings,
+            "rejected_earlier_groups":rejected_groups,
+            "rewrite_authorized":false
+        }),
+    )?;
+    save(
+        &output,
+        "refs.json",
+        &json!({
+            "schema":"excession.history-dag-ref-proposals.v1",
+            "proposed_refs":proposals,
+            "non_commit_refs":non_commit_refs,
+            "external_refs_complete":false,
+            "original_refs_preserved":true,
+            "candidate_ref_in_isolated_clone":PREVIEW_REF,
+            "published":false
+        }),
+    )?;
     save(&output, "obligations.json", &receipts)?;
     let report = json!({
         "schema":"excession.history-dag-preview.v1",

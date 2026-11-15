@@ -121,12 +121,7 @@ fn verify_labels(
     Ok(validated)
 }
 
-fn evaluate(
-    root: &Path,
-    revision: &str,
-    db: &str,
-    labels_file: &Path,
-) -> Result<Value, String> {
+fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result<Value, String> {
     let commit = git::rev(root, revision)?;
     let labels = json::parse(&fs::read(labels_file).map_err(|e| e.to_string())?)?;
     let expected = verify_labels(root, &commit, &labels)?;
@@ -148,9 +143,8 @@ fn evaluate(
         let id = row.get("id")?.str()?;
         let task = row.get("query")?.str()?;
         let tick = Instant::now();
-        let report = agent_locate::locate_with_budget(
-            root, &commit, task, LIMIT, None, Some(db), 256,
-        )?;
+        let report =
+            agent_locate::locate_with_budget(root, &commit, task, LIMIT, None, Some(db), 256)?;
         let elapsed_ms = tick.elapsed().as_millis();
         worst_case_ms = worst_case_ms.max(elapsed_ms);
         if report.get("source_commit")?.str()? != commit {
@@ -169,9 +163,7 @@ fn evaluate(
             let relation = item.get("relation")?;
             let assessment = item.get("assessment")?.str()?;
             if relation.get("kind")?.str()? == "SCIP_REFERENCE" {
-                if assessment != "OBSERVED"
-                    || relation.get("evidence")?.array_ref()?.is_empty()
-                {
+                if assessment != "OBSERVED" || relation.get("evidence")?.array_ref()?.is_empty() {
                     return Err("invalid native SCIP evidence at retrieval boundary".into());
                 }
                 eligible_native_edges += 1;
@@ -182,7 +174,8 @@ fn evaluate(
             x.get("relation")
                 .and_then(|r| r.get("kind"))
                 .and_then(Value::str)
-                .ok() == Some("SCIP_REFERENCE")
+                .ok()
+                == Some("SCIP_REFERENCE")
         }) {
             cases_with_native_neighbors += 1;
         }
@@ -206,9 +199,15 @@ fn evaluate(
             ("id", Value::string(id)),
             ("task", Value::string(task)),
             ("gold", Value::array(gold.iter().map(Value::string))),
-            ("lexical", Value::array(base.iter().take(K).map(Value::string))),
+            (
+                "lexical",
+                Value::array(base.iter().take(K).map(Value::string)),
+            ),
             ("hybrid", Value::array(alt.iter().map(Value::string))),
-            ("native_neighbor_count", Value::number(neighbor_records.len())),
+            (
+                "native_neighbor_count",
+                Value::number(neighbor_records.len()),
+            ),
             ("lexical_hits", Value::number(base_hits)),
             ("hybrid_hits", Value::number(alt_hits)),
             ("runtime_ms", Value::number(elapsed_ms)),
@@ -226,23 +225,50 @@ fn evaluate(
     let result = json::obj(&[
         ("schema", Value::string("excession.retrieval-benchmark.v1")),
         ("source_commit", Value::string(&commit)),
-        ("source_tree", Value::string(git::rev(root, &format!("{commit}^{{tree}}"))?)),
+        (
+            "source_tree",
+            Value::string(git::rev(root, &format!("{commit}^{{tree}}"))?),
+        ),
         ("review_status", labels.get("review_status")?.clone()),
-        ("interpretation", Value::string("DESCRIPTIVE_AUTHOR_SEEDED_NOT_INDEPENDENTLY_VALIDATED")),
-        ("ranking_policy", Value::string("LEXICAL_TOP_1_THEN_UP_TO_2_GRAPH_NEIGHBORS_THEN_LEXICAL")),
+        (
+            "interpretation",
+            Value::string("DESCRIPTIVE_AUTHOR_SEEDED_NOT_INDEPENDENTLY_VALIDATED"),
+        ),
+        (
+            "ranking_policy",
+            Value::string("LEXICAL_TOP_1_THEN_UP_TO_2_GRAPH_NEIGHBORS_THEN_LEXICAL"),
+        ),
         ("k", Value::number(K)),
         ("cases", Value::array(rows)),
         ("positive_cases", Value::number(positive)),
         ("negative_cases", Value::number(negative)),
         ("gold_path_count", Value::number(total_expected)),
-        ("lexical_recall_at_k", float(lexical_hits as f64 / total_expected as f64)),
-        ("hybrid_recall_at_k", float(hybrid_hits as f64 / total_expected as f64)),
+        (
+            "lexical_recall_at_k",
+            float(lexical_hits as f64 / total_expected as f64),
+        ),
+        (
+            "hybrid_recall_at_k",
+            float(hybrid_hits as f64 / total_expected as f64),
+        ),
         ("lexical_mrr_at_k", float(lexical_mrr / positive as f64)),
         ("hybrid_mrr_at_k", float(hybrid_mrr / positive as f64)),
-        ("negative_lexical_any_match", Value::number(negative_lexical_matches)),
-        ("negative_hybrid_any_match", Value::number(negative_hybrid_matches)),
-        ("cases_with_native_scip_neighbors", Value::number(cases_with_native_neighbors)),
-        ("observed_native_edges", Value::number(eligible_native_edges)),
+        (
+            "negative_lexical_any_match",
+            Value::number(negative_lexical_matches),
+        ),
+        (
+            "negative_hybrid_any_match",
+            Value::number(negative_hybrid_matches),
+        ),
+        (
+            "cases_with_native_scip_neighbors",
+            Value::number(cases_with_native_neighbors),
+        ),
+        (
+            "observed_native_edges",
+            Value::number(eligible_native_edges),
+        ),
         ("max_query_ms", Value::number(worst_case_ms)),
         ("index", index_state.unwrap_or(Value::Null)),
     ]);

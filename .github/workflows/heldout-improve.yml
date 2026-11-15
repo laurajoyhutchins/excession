@@ -1,15 +1,14 @@
 name: Held-out TypeScript improvement acceptance
 
-# Full native toolchain and independent application build, not commit-fast CI.
-# Use a separate public Git source at a fixed commit; no GitHub tokens exposed
-# to npm, the project build or tests.
+# Full native toolchain and independent application tests, not commit-fast CI.
+# Use a pinned public third-party Git source, authored by someone else.
 on:
   pull_request:
     paths:
       - 'core/adapters/improve_typescript.cjs'
       - 'core/src/improve_edits.rs'
       - 'tests/improve_typescript.test.cjs'
-      - 'tests/heldout_improve_clod_pet.sh'
+      - 'tests/heldout_improve_upstream.sh'
       - '.github/workflows/heldout-improve.yml'
   workflow_dispatch:
 
@@ -25,9 +24,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      HELDOUT_SHA: ba9b87d7434d70ce2569fbdb7420ec2b73a73729
-      HELDOUT_REPOSITORY: laurajoyhutchins/clod-pet
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      HELDOUT_SHA: 78c6a78b8a367c2c19398b05d39274ea3bcacadb
+      HELDOUT_REPOSITORY: piyushrav1/ai-interview-v.01
+      npm_config_ignore_scripts: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,25 +37,27 @@ jobs:
           node-version-file: .node-version
       - name: Install pinned Excession producer dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install upstream's pinned pnpm 9.0.0 in CI worker
+        run: npm install --global --ignore-scripts --no-audit --no-fund pnpm@9.0.0
       - name: Build Excession language-neutral replay CLI
         run: |
           rustup toolchain install 1.99.1 --profile minimal
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
-      - name: Checkout a pinned separate public application
+      - name: Checkout independently authored public upstream repository
         uses: actions/checkout@v4
         with:
-          repository: laurajoyhutchins/clod-pet
-          ref: ba9b87d7434d70ce2569fbdb7420ec2b73a73729
-          path: heldout/clod-pet
+          repository: piyushrav1/ai-interview-v.01
+          ref: 78c6a78b8a367c2c19398b05d39274ea3bcacadb
+          path: heldout/upstream
           persist-credentials: false
           fetch-depth: 1
       - name: Run held-out native edit and independent build/test acceptance
         shell: bash
         run: |
-          bash tests/heldout_improve_clod_pet.sh \
+          bash tests/heldout_improve_upstream.sh \
             "$GITHUB_WORKSPACE" \
-            "$GITHUB_WORKSPACE/heldout/clod-pet" \
+            "$GITHUB_WORKSPACE/heldout/upstream" \
             "$RUNNER_TEMP/excession-heldout-candidate" \
             "$RUNNER_TEMP/excession-heldout-evidence"
       - name: Retain real held-out acceptance receipts

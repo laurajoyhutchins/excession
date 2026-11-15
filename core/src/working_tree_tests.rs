@@ -1345,7 +1345,9 @@ mod tests {
     fn unsupported_host_refuses_snapshot_creation_and_sandbox_execution() {
         assert!(Temporary::new().is_err());
         let image = format!("docker.io/library/debian@sha256:{}", "a".repeat(64));
-        assert!(sandbox_preflight(Some(&image)).contains(&"ROOTLESS_PODMAN_LINUX_REQUIRED".to_owned()));
+        assert!(
+            sandbox_preflight(Some(&image)).contains(&"ROOTLESS_PODMAN_LINUX_REQUIRED".to_owned())
+        );
     }
 
     #[test]

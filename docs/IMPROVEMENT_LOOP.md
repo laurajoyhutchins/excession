@@ -41,6 +41,48 @@ It can *propose* a consolidation but has no automatic edit producer in this
 workflow. `improve trial --producer indexed` refuses: never silently substitute
 a Rust-specific AST tool or a regex rewrite for another language.
 
+## Language-independent native edit replay
+
+The core has a bounded, **language-independent** byte-edit replay path.
+Language-native tooling can propose exact source edits, which Excession then
+replays against authenticated Git blobs without interpreting the syntax itself.
+
+The producer supplies an `excession.improvement-native-edits.v1` object:
+`schema`, `native_producer`, `source_commit`, `source_tree`,
+`improvement_plan_id`, `candidate_id`, `edits`, and an `edit_plan_id`
+computed from the canonical unsigned JSON object. Each edit includes `path`,
+`original_blob`, `start_byte`, `end_byte`, and `replacement`.
+All offsets refer to **original Git source bytes**, not previous edits.
+
+```sh
+excession improve replay --repo /work/repo --rev BASE_SHA \
+  --plan /tmp/improve-plan.json --edits /tmp/native-edits.json
+# Explicit application in a NEW detached worktree, never the original:
+excession improve replay --repo /work/repo --rev BASE_SHA \
+  --plan /tmp/improve-plan.json --edits /tmp/native-edits.json \
+  --output /work/new-candidate
+```
+
+An unsigned native edit plan **does not authenticate its named producer**.
+Source authenticity means exact Git blobs and source-bound candidate paths are
+checked, not that Excession independently observed the compiler deciding the
+edit is safe. The preview and applied report retain
+`NATIVE_PRODUCER_AUTHENTICITY_UNVERIFIED`, independent build/test/API and
+provenance/REA obligations, and `ready_to_merge=false`.
+
+The initial narrow contract allows only existing, regular Git-tracked UTF-8
+source files already present in the chosen candidate. It refuses traversal,
+symlinked source blobs, stale Git hashes, out-of-candidate edits, oversized
+plans or sources, ambiguous byte ranges, ineffective edits, and reused or
+in-checkout worktree destinations. New files or non-UTF-8 source require
+explicitly designed extensions, not silent coercion.
+
+This replay API works for a native Python or JavaScript edit just as for Rust.
+**It does not generate that edit.** The language-specific producer must supply
+its own legitimate syntax/semantic action, including configuration-dependent
+usage and public API checks. Tests demonstrate the shared replay mechanism
+using deliberately *untrusted* edit plans, not automatic safe deletion.
+
 ## SCIP producer
 
 SCIP reports and exact source identities are supplied by their existing

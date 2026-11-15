@@ -6,6 +6,8 @@ on:
       - '.github/workflows/clang-compile-db.yml'
       - 'core/adapters/clang_ast.py'
       - 'core/src/kernel_clang.rs'
+      - 'core/src/native_analysis.rs'
+      - 'core/tests/native_analysis_cli.rs'
       - 'core/src/adapter.rs'
       - 'tests/test_clang_ast.py'
       - 'tests/clang_linux_probe.py'
@@ -34,6 +36,8 @@ jobs:
           rustup toolchain install 1.99.1 --profile minimal
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Native Go and Clang integration tests
+        run: cargo +1.99.1 test --offline --locked --manifest-path core/Cargo.toml --test native_analysis_cli
       - name: Fetch pinned Linux feature-test source
         shell: bash
         run: |

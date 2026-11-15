@@ -93,6 +93,36 @@ Git-bound candidates and explicit skipped sources. Without `--json`, the
 default is a concise per-language summary. These candidates are **not**
 proven build dependencies or validated program effects.
 
+### Configured native Go and Clang evidence
+
+```sh
+excession analyze native --language go --source cmd/server/main.go --trusted-local
+excession analyze native --language go --source cmd/server/main.go --trusted-local --json
+excession analyze native --language c --source src/main.c \\
+  --compile-db build/compile_commands.json --trusted-local --json
+excession analyze native --language cpp --source src/main.cpp \\
+  --compile-db build/compile_commands.json --trusted-local
+```
+
+Go reuses the existing pinned-Git, offline `go list` producer with its
+declared source/configuration inputs. Clang reuses the existing compilation
+database AST adapter for one translation unit, with symbols, calls and
+content-hashed headers. Both produce `excession.native-analysis.v1`,
+including the selected Git commit/tree and source blob, producer evidence,
+input inventory, an explicit partial-coverage status, and a consistent
+human summary. Go's declared input membership is **not a symbol call graph**.
+Clang's external compilation database, system/generated headers and
+compiler configuration are **not independently Git-authenticated**.
+Results are trusted-local observations rather than independently attested
+build receipts. No source code or build process is executed without
+`--trusted-local`; this is not a sandbox.
+
+Go currently requires a tracked root `go.mod` without a `go.work`, uses
+offline module resolution and disables CGO. Clang requires an existing
+compilation database and selected HEAD in a clean checkout. A source
+without a supported native producer, including Java, is refused explicitly.
+Use `analyze languages` for syntax-level coverage across those languages.
+
 `excession analyze rust --trusted-local` runs the installed rust-analyzer
 and official SCIP decoder on a **clean** HEAD. It automatically selects a
 sole tracked Cargo project, including a nested project. Multiple projects

@@ -444,6 +444,29 @@ pub(super) fn command() -> Command {
         )
         .subcommand(clang())
         .subcommand(
+            leaf(
+                "native",
+                &["language", "source"],
+                &["repo", "rev", "compile-db", "compiler"],
+            )
+            .about("Run an explicitly trusted Go or configured Clang producer")
+            .arg(
+                Arg::new("trusted-local")
+                    .long("trusted-local")
+                    .help("Execute local compiler tooling without a sandbox")
+                    .num_args(0..=1)
+                    .default_missing_value("true")
+                    .value_parser(["true", "false"]),
+            )
+            .arg(
+                Arg::new("json")
+                    .long("json")
+                    .help("Emit Git-bound native producer evidence")
+                    .action(clap::ArgAction::SetTrue),
+            )
+            .after_help("Go:    excession analyze native --language go --source cmd/main.go --trusted-local\nClang: excession analyze native --language c --source src/main.c --compile-db build/compile_commands.json --trusted-local\n\nInputs are pinned to Git; build and runtime completeness are not established. Java and other compilers remain unsupported here."),
+        )
+        .subcommand(
             leaf("languages", &[], &["repo", "rev", "roots"])
                 .about("Parse tracked source across languages, resolve conservative imports, report gaps")
                 .arg(

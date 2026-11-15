@@ -68,7 +68,23 @@ explanation:
 ```sh
 excession explain . --report /tmp/impact.json --id CLAIM_ID
 excession explain . --report /tmp/impact.json --id CLAIM_ID --audit
+
+# Source reachability is independently represented even when legacy effects
+# fill their 512-path display budget.
+excession explain . --report /tmp/impact.json --source src/pkg/handler.py --json
+excession explain . --report /tmp/impact.json --source src/pkg/handler.py \
+  --source-commit PINNED_COMMIT --audit
+excession explain . --report /tmp/impact.json --all-sources --json
 ```
+
+Source witness explanations use one decreasing-rank path per distinct dependent
+source, not the potentially exponential collection of alternative routes. The
+batched form authenticates the saved report **once** and returns a bounded set
+of source explanations; it refuses batches exceeding 128 sources and reports
+whether the source inventory itself was truncated. A source present at both
+revisions requires `--source-commit` to disambiguate. The single-source form
+still replays the original report and must not be described as cheaper than
+the old one-claim replay without independent measurement.
 
 The explanation command re-runs its source-bound impact query against pinned Git
 objects and refuses mutated or stale reports. The audit reports Git

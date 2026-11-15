@@ -323,6 +323,7 @@ def choose_distinct_impact_edge(
 def verify_product_workflow(
     binary: Path, repo: Path, work: Path, fixture: dict, commit: str,
     tree: str, objects: dict[str, tuple[str, str]],
+    source_replay: bool = False,
 ) -> dict:
     """Held-out Git-source oracle for the public CLI on a pinned upstream repo.
 
@@ -502,6 +503,88 @@ def verify_product_workflow(
             or audit["replay"] != "PASS"
             or audit["semantic_correctness"] != "NOT_EVALUATED"):
         raise ValueError("replay audit promoted evidence to semantic correctness")
+    # Optional, manually invoked release-vs-head benchmark. All source paths
+    # are reconstructed from the fully replayed saved report with one process.
+    # This does not change the legacy claim-ID oracle or the frozen cohort.
+    source_replay_results = None
+    if source_replay:
+        batch_out, batch_ms = call([
+            str(binary), "explain", str(repo), "--report", str(saved),
+            "--all-sources", "--db", str(product_db),
+            "--roots", fixture["roots"], "--json",
+        ], timeout=240)
+        batch = json.loads(batch_out.stdout)
+        witnesses = impact["candidate_source_impacts"]
+        expected_witnesses = {
+            (w["entity"]["source_commit"], w["entity"]["path"])
+            for w in witnesses
+        }
+        actual_witnesses = {
+            (e["source_commit"], e["steps"][0]["source"]["path"])
+            for e in batch["explanations"]
+        }
+        if (batch["schema"] != "excession.source-explanations.v1"
+                or batch["replayed_impact_report_id"] != impact["report_id"]
+                or batch["source_inventory_complete"]
+                   != impact["candidate_source_enumeration_complete"]
+                or batch["semantic_correctness"] != "NOT_EVALUATED"
+                or batch["count"] != len(witnesses)
+                or expected_witnesses != actual_witnesses):
+            raise ValueError("batched distinct-source explanations lost Git-bound inventory")
+        expected_ranks = {
+            (w["entity"]["source_commit"], w["entity"]["path"]):
+            w["distance_to_change"] for w in witnesses
+        }
+        for item in batch["explanations"]:
+            edges = item["steps"]
+            key = (item["source_commit"], edges[0]["source"]["path"])
+            if len(edges) != expected_ranks[key]:
+                raise ValueError("batched source path failed rank certificate")
+            if any(
+                hop["source"]["source_commit"] != item["source_commit"]
+                or hop["target"]["source_commit"] != item["source_commit"]
+                or not hop["evidence"]
+                or (i and edges[i-1]["target"] != hop["source"])
+                for i, hop in enumerate(edges)
+            ):
+                raise ValueError("batched source path has discontinuous or missing Git evidence")
+
+        selected_commit = candidate["entity"]["source_commit"]
+        selected, selected_ms = call([
+            str(binary), "explain", str(repo), "--report", str(saved),
+            "--source", source_path, "--source-commit", selected_commit,
+            "--db", str(product_db), "--roots", fixture["roots"], "--json",
+        ], timeout=240)
+        selected_report = json.loads(selected.stdout)
+        if (selected_report["selection_kind"] != "DISTINCT_SOURCE_WITNESS"
+                or selected_report["source_commit"] != selected_commit
+                or selected_report["steps"][0]["source"]["path"] != source_path
+                or not any(
+                    e["claim_id"] == selected_report["claim_id"]
+                    for e in batch["explanations"]
+                )):
+            raise ValueError("selected source explanation disagrees with batched replay")
+
+        source_audit, source_audit_ms = call([
+            str(binary), "explain", str(repo), "--report", str(saved),
+            "--source", source_path, "--source-commit", selected_commit,
+            "--db", str(product_db), "--roots", fixture["roots"], "--audit",
+        ], timeout=240)
+        audited = json.loads(source_audit.stdout)
+        if (audited["git_authentication"] != "PASS"
+                or audited["replay"] != "PASS"
+                or audited["semantic_correctness"] != "NOT_EVALUATED"):
+            raise ValueError("source witness audit promoted static reachability into proof")
+        source_replay_results = {
+            "batch_source_count": batch["count"],
+            "batch_source_complete": batch["source_inventory_complete"],
+            "legacy_path_count": len(impact["effects"]),
+            "batched_source_explanation_wall_ms": batch_ms,
+            "one_selected_source_wall_ms": selected_ms,
+            "one_selected_source_audit_wall_ms": source_audit_ms,
+            "selected_source": source_path,
+            "selected_commit": selected_commit,
+        }
     # Re-serialized JSON with a forged relation must fail the *native* replay.
     mutated = json.loads(json.dumps(impact))
     mutated["effects"][0]["assessment"] = "OBSERVED_RELATIONSHIP_PATH"
@@ -527,6 +610,7 @@ def verify_product_workflow(
         "reported_coverage": impact["coverage"]["status"],
         "semantic_correctness": audit["semantic_correctness"],
         "forged_report_refused": True,
+        "source_replay_acceptance": source_replay_results,
         "analyze_wall_ms": analyze_ms,
         "impact_wall_ms": impact_ms,
         "explain_wall_ms": explain_ms,
@@ -536,7 +620,8 @@ def verify_product_workflow(
 
 
 def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int,
-                    product_fixtures: frozenset[str] = frozenset(("h11", "axios"))) -> dict:
+                    product_fixtures: frozenset[str] = frozenset(("h11", "axios")),
+                    source_replay: bool = False) -> dict:
     name = fixture["name"]
     repo = work / name
     commit, tree = checkout(fixture, repo)
@@ -566,7 +651,10 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int,
     # Explicitly selected product fixtures run the same independent source oracle.
     # Keep additional expensive end-to-end cases out of ordinary commit gates.
     product = (
-        verify_product_workflow(binary, repo, work, fixture, commit, tree, source)
+        verify_product_workflow(
+            binary, repo, work, fixture, commit, tree, source,
+            source_replay=source_replay,
+        )
         if name in product_fixtures else None
     )
     for result in results:
@@ -606,6 +694,8 @@ def main() -> None:
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--fixture", action="append", default=[], help="Select a named pinned source fixture; repeatable")
     parser.add_argument("--product-fixture", action="append", default=[], help="Run full independent product workflow for this selected fixture")
+    parser.add_argument("--source-replay", action="store_true",
+                        help="Manually check and time source-witness batch vs existing replay")
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("repetitions must be positive")
@@ -620,6 +710,7 @@ def main() -> None:
         "fixture_spec_sha256": hashlib.sha256(fixtures_file.read_bytes()).hexdigest(),
         "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         "repetitions": args.repetitions,
+        "source_replay_enabled": args.source_replay,
         "selected_fixtures": [f["name"] for f in selected],
         "product_fixtures": sorted(products),
         "fixtures": [],
@@ -641,7 +732,10 @@ def main() -> None:
         work = Path(tmp)
         for fixture in selected:
             try:
-                result = inspect_fixture(binary, fixture, work, args.repetitions, products)
+                result = inspect_fixture(
+                    binary, fixture, work, args.repetitions, products,
+                    source_replay=args.source_replay,
+                )
                 report["fixtures"].append(result)
                 audit = result["dependency_audit"]["counts"]
                 print(f"{result['status'].upper()} {result['name']}: "

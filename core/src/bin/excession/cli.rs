@@ -1,6 +1,6 @@
 //! Declarative command grammar. Keep CLI parsing separate from Git/SQLite execution.
 //! Command discovery and execution consume the same parsed ArgMatches.
-use clap::{Arg, Command, builder::NonEmptyStringValueParser, error::ErrorKind};
+use clap::{Arg, ArgGroup, Command, builder::NonEmptyStringValueParser, error::ErrorKind};
 use excession::Result;
 use std::collections::BTreeMap;
 use std::iter;
@@ -656,7 +656,11 @@ pub(super) fn command() -> Command {
         )
         .subcommand(
             Command::new("explain")
-                .about("Recompute and explain a pinned source-bound impact claim")
+                .about("Replay and explain a claim, distinct source, or batch of source witnesses")
+                .group(ArgGroup::new("explanation-target")
+                    .args(["id", "source", "all-sources"])
+                    .required(true)
+                    .multiple(false))
                 .arg(
                     Arg::new("path")
                         .index(1)
@@ -672,9 +676,31 @@ pub(super) fn command() -> Command {
                 .arg(
                     Arg::new("id")
                         .long("id")
-                        .required(true)
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("source")
+                        .long("source")
+                        .help("Git-relative path of a distinct impacted source")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("source-commit")
+                        .long("source-commit")
+                        .help("Disambiguate a dependent source present in both revisions")
+                        .requires("source")
+                        .conflicts_with("id")
+                        .conflicts_with("all-sources")
+                        .num_args(1)
+                        .value_parser(NonEmptyStringValueParser::new()),
+                )
+                .arg(
+                    Arg::new("all-sources")
+                        .long("all-sources")
+                        .help("Batch reconstruct distinct-source witnesses with one pinned replay")
+                        .action(clap::ArgAction::SetTrue),
                 )
                 .arg(
                     Arg::new("db")
@@ -963,6 +989,76 @@ mod tests {
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn explain_selection_is_exactly_one_claim_source_or_bounded_batch() {
+        let selected = parse(&strings(&[
+            "explain",
+            "--report",
+            "/tmp/report.json",
+            "--source",
+            "pkg/affected.py",
+            "--source-commit",
+            "commit",
+        ]))
+        .unwrap();
+        let ParseOutcome::Command(parsed) = selected else {
+            panic!("source witness CLI must parse as a command");
+        };
+        assert_eq!(parsed.options.get("source"), "pkg/affected.py");
+        assert_eq!(parsed.options.get("source-commit"), "commit");
+        assert!(
+            parse(&strings(&[
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--all-sources",
+                "--json"
+            ]))
+            .is_ok()
+        );
+        assert!(
+            parse(&strings(&[
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--id",
+                "claim-id"
+            ]))
+            .is_ok()
+        );
+        for args in [
+            vec!["explain", "--report", "/tmp/report.json"],
+            vec![
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--id",
+                "claim-id",
+                "--source",
+                "pkg/affected.py",
+            ],
+            vec![
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--all-sources",
+                "--source",
+                "pkg/affected.py",
+            ],
+            vec![
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--source-commit",
+                "commit",
+                "--id",
+                "claim-id",
+            ],
+        ] {
+            assert!(parse(&strings(&args)).is_err(), "{args:?}");
+        }
     }
 
     #[test]

@@ -966,17 +966,52 @@ fn execute(args: &[String]) -> Result<Response> {
         [top] if top == "explain" => {
             let repo = Path::new(opt.get_or("path", "."));
             let report = Path::new(opt.get("report"));
-            let claim = opt.get("id");
             let roots = opt.0.get("roots").map(String::as_str);
             let db = opt.0.get("db").map(String::as_str);
-            if opt.get_or("audit", "false") == "true" {
-                Ok(json(explain::audit(repo, report, claim, roots, db)?))
-            } else {
-                let result = explain::explain(repo, report, claim, roots, db)?;
-                if opt.get_or("json", "false") == "true" {
+            let auditing = opt.get_or("audit", "false") == "true";
+            let as_json = opt.get_or("json", "false") == "true";
+            if let Some(source) = opt.0.get("source") {
+                let commit = opt.0.get("source-commit").map(String::as_str);
+                if auditing {
+                    Ok(json(explain::audit_source(
+                        repo, report, source, commit, roots, db,
+                    )?))
+                } else {
+                    let result = explain::explain_source(repo, report, source, commit, roots, db)?;
+                    if as_json {
+                        Ok(json(result))
+                    } else {
+                        Ok(Response::Message(explain::human(&result)?))
+                    }
+                }
+            } else if opt.get_or("all-sources", "false") == "true" {
+                if auditing {
+                    return refuse(
+                        "batch source explanations are replayed already; use --json, not --audit",
+                    );
+                }
+                let result = explain::explain_all_sources(repo, report, roots, db)?;
+                if as_json {
                     Ok(json(result))
                 } else {
-                    Ok(Response::Message(explain::human(&result)?))
+                    let count = result.get("count")?.integer()?;
+                    let complete = result.get("source_inventory_complete")?.bool()?;
+                    Ok(Response::Message(format!(
+                        "Authenticated {count} distinct-source witnesses with one replay. Source inventory {}. Use --json for all paths; static candidates do not prove runtime behavior.",
+                        if complete { "complete" } else { "truncated" }
+                    )))
+                }
+            } else {
+                let claim = opt.get("id");
+                if auditing {
+                    Ok(json(explain::audit(repo, report, claim, roots, db)?))
+                } else {
+                    let result = explain::explain(repo, report, claim, roots, db)?;
+                    if as_json {
+                        Ok(json(result))
+                    } else {
+                        Ok(Response::Message(explain::human(&result)?))
+                    }
                 }
             }
         }

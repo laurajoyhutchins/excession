@@ -76,7 +76,16 @@ excession analyze rust --trusted-local    # execute installed native Rust indexe
 excession analyze rust --trusted-local --json > /tmp/rust.json
 ```
 
-\xFF For multiple projects, specify `--source-prefix`. It requires a
+The `analyze languages` command parses tracked sources using preinstalled
+Tree-sitter grammars and reports each language's parsed, unavailable and
+unresolved counts. Python, JavaScript/TypeScript and Go receive conservative
+import candidates where supported. Rust and other languages retain syntax
+observations without fabricated dependency edges. It requires a clean Git
+checkout and accepts `--roots` to narrow the scan. Add `--json` for
+Git-bound evidence. Missing grammars are reported rather than downloaded.
+
+Rust analysis selects the sole tracked Cargo project, including a nested
+project. For multiple projects, specify `--source-prefix`. It requires a
 clean checkout and explicitly executes trusted local tooling; this is not a
 sandbox. Specialist commands remain accessible through their own help screens.
 

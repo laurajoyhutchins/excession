@@ -21,6 +21,26 @@ the executable next to `lib/typescript.js`. See the
 [install, upgrade, and uninstall instructions](docs/RELEASE.md).
 An unpublished crate version is not itself a release.
 
+For Linux x86-64, after v0.2.0 is published:
+
+```sh
+VERSION=v0.2.0
+TARGET=x86_64-unknown-linux-gnu
+ARCHIVE="excession-${VERSION}-${TARGET}.tar.gz"
+URL="https://github.com/laurajoyhutchins/excession/releases/download/${VERSION}"
+curl -fLO "${URL}/${ARCHIVE}"
+curl -fLO "${URL}/${ARCHIVE}.sha256"
+sha256sum -c "${ARCHIVE}.sha256"
+mkdir -p "$HOME/.local/opt"
+tar -xzf "$ARCHIVE" -C "$HOME/.local/opt"
+"$HOME/.local/opt/excession/excession" doctor
+```
+
+The checksum detects corruption, not publisher authenticity. Keep the
+executable and bundled `lib/typescript.js` together. For other platforms,
+select the matching archive from the release page and follow
+[the platform instructions](docs/RELEASE.md).
+
 Excession is a local Rust CLI. It reads pinned Git source objects, indexes
 observed relationships, and explains *candidate* change impact with source
 evidence. Git is required; Python and Node are needed for their respective

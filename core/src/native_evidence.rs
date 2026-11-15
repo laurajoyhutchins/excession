@@ -5,7 +5,7 @@ use crate::evidence::identity::{SourceRef, Subject};
 use crate::evidence_store::{self, Batch, Observation, Receipt};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
-use crate::{Result, digest, git, native_boundary, refuse};
+use crate::{Result, digest, git, jvm_inputs, native_boundary, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -56,7 +56,9 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
     let valid = match language {
         "go" => producer == "go-list" && scope == "COMPILER_SELECTED_INPUTS_ONLY",
         "java" => {
-            producer == "javac-symbols" && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL"
+            (producer == "javac-symbols" && scope == "JAVAC_RESOLVED_SOURCE_REFERENCES_PARTIAL")
+                || (producer == "javac-configured"
+                    && scope == "JAVAC_CONFIGURED_SOURCE_REFERENCES_PARTIAL")
         }
         "c" | "cpp" => producer == "clang-ast" && scope == "CONFIGURED_TU_NOT_BUILD_VERIFIED",
         _ => false,
@@ -100,7 +102,12 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             || nested.get("source_commit")?.str()? != commit
             || nested.get("source_tree")?.str()? != tree
             || nested.get("subject")?.str()? != subject_path
-            || nested.get("configuration")?.str()? != "EMPTY_CLASSPATH_AND_SOURCEPATH_NO_PROCESSORS"
+            || nested.get("configuration")?.str()?
+                != if producer == "javac-configured" {
+                    "EXTERNAL_RESOLVED_CLASSPATH_NO_PROCESSORS"
+                } else {
+                    "EMPTY_CLASSPATH_AND_SOURCEPATH_NO_PROCESSORS"
+                }
             || nested.get("java_version")?.str()?.is_empty()
             || nested.get("java_version")?.str()?.len() > 100
         {
@@ -200,6 +207,18 @@ fn batch_from_bytes(repo: &Path, revision: &str, raw: &[u8]) -> Result<(Batch, V
             || source_paths.iter().any(|p| !validated.contains_key(p))
         {
             return refuse("Java declaration differs from the authenticated source inventory");
+        }
+        if producer == "javac-configured" {
+            let paths = source_paths.iter().cloned().collect::<Vec<_>>();
+            jvm_inputs::verify(
+                nested.get("resolved_inputs")?,
+                &commit,
+                &tree,
+                nested.get("source_prefix")?.str()?,
+                &paths,
+            )?;
+        } else if nested.entries()?.get("resolved_inputs").is_some_and(|v| v != &Value::Null) {
+            return refuse("unconfigured Java source report may not claim an external classpath");
         }
         let references = nested.get("references")?.array_ref()?;
         if references.len() > 4096 {

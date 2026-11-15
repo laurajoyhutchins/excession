@@ -121,13 +121,29 @@ pnpm --dir "$BASE_REPO" install --frozen-lockfile --ignore-scripts \
 pnpm --dir "$CANDIDATE" install --frozen-lockfile --ignore-scripts \
   > "$RECEIPTS/candidate-dependencies.log" 2>&1
 
-# Use Vue 3.4.14's own pinned TypeScript toolchain and real computed
-# reactivity unit suite. Both Git trees independently install the exact
-# upstream pnpm lockfile. These commands must run in the repository root.
+# Vue 3.4.14's original strict TypeScript config intentionally fails
+# on precisely the existing TS6133 unused import we are deleting. Record
+# and compare this diagnostic rather than hiding or calling it a passing
+# baseline. With only noUnusedLocals suppressed, baseline must typecheck;
+# the edited candidate must pass the ORIGINAL strict project config.
 (
   cd "$BASE_REPO"
-  pnpm exec tsc --noEmit --project tsconfig.json
+  pnpm exec tsc --noEmit --project tsconfig.json --noUnusedLocals false
 ) > "$RECEIPTS/baseline-build.log" 2>&1
+(
+  cd "$BASE_REPO"
+  if pnpm exec tsc --noEmit --project tsconfig.json > "$RECEIPTS/baseline-strict-diagnostic.log" 2>&1; then
+    echo "Expected original Vue unused-import TS6133 diagnostic was missing" >&2
+    exit 1
+  fi
+)
+EXPECTED="packages/reactivity/__tests__/computed.spec.ts(5,3): error TS6133: 'ReactiveEffect' is declared but its value is never read."
+if [[ "$(wc -l < "$RECEIPTS/baseline-strict-diagnostic.log")" -ne 1 ]] ||
+    ! grep -Fxq "$EXPECTED" "$RECEIPTS/baseline-strict-diagnostic.log"; then
+  echo "Baseline had unexpected TypeScript diagnostics; refusing to claim isolated fix" >&2
+  cat "$RECEIPTS/baseline-strict-diagnostic.log" >&2
+  exit 1
+fi
 (
   cd "$CANDIDATE"
   pnpm exec tsc --noEmit --project tsconfig.json
@@ -155,7 +171,7 @@ node - "$RECEIPTS/measurement.json" <<'NODE'
 const fs = require('node:fs');
 const path = process.argv[2];
 const result = JSON.parse(fs.readFileSync(path, 'utf8'));
-result.code_compiles_and_tests = 'BOTH_BASELINE_AND_CANDIDATE_PASSED_VUE_TYPES_AND_COMPUTED_TESTS';
+result.code_compiles_and_tests = 'BASELINE_ONLY_TS6133_CANDIDATE_STRICT_TYPECHECK_PASSED_BOTH_COMPUTED_TESTS';
 fs.writeFileSync(path, JSON.stringify(result, null, 2) + '\n');
 console.log(JSON.stringify(result));
 NODE

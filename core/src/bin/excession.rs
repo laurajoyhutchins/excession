@@ -1359,9 +1359,8 @@ fn execute(args: &[String]) -> Result<Response> {
             )?))
         }
         [top, sub] if top == "evidence" && sub == "native-import" => {
-            let destination = analyze::checked_external_destination(
-                opt.path("repo"), opt.path("db"), "SQLite",
-            )?;
+            let destination =
+                analyze::checked_external_destination(opt.path("repo"), opt.path("db"), "SQLite")?;
             let db = Db::open(&destination)?;
             Ok(json(excession::native_evidence::import(
                 opt.path("repo"),
@@ -1371,9 +1370,8 @@ fn execute(args: &[String]) -> Result<Response> {
             )?))
         }
         [top, sub] if top == "evidence" && sub == "native-store-audit" => {
-            let destination = analyze::checked_external_destination(
-                opt.path("repo"), opt.path("db"), "SQLite",
-            )?;
+            let destination =
+                analyze::checked_external_destination(opt.path("repo"), opt.path("db"), "SQLite")?;
             if !destination.is_file() {
                 return refuse("native audit requires an existing evidence database");
             }

@@ -1,0 +1,116 @@
+name: Agent locate full Linux source acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'core/src/agent_locate.rs'
+      - 'core/src/agent.rs'
+      - 'core/src/agent_locate_cache.rs'
+      - '.github/workflows/agent-locate-linux.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: locate-linux-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  full-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+      LINUX_SHA: 97d73c8251226cf27cc6656b4c542869bb8c69fa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Compile pinned Excession CLI
+        run: |
+          cargo fetch --locked --manifest-path core/Cargo.toml
+          cargo build --offline --locked --release --manifest-path core/Cargo.toml --bin excession
+      - name: Fetch exact Linux commit without creating a source checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/linux-source"
+          git init -q "$SRC"
+          git -C "$SRC" remote add origin https://github.com/torvalds/linux.git
+          git -C "$SRC" -c protocol.version=2 fetch -q --depth 1 origin "$LINUX_SHA"
+          git -C "$SRC" update-ref refs/heads/bench "$LINUX_SHA"
+          git -C "$SRC" symbolic-ref HEAD refs/heads/bench
+          test "$(git -C "$SRC" rev-parse HEAD)" = "$LINUX_SHA"
+          test "$(git -C "$SRC" rev-parse HEAD:fs/open.c)" = bb484b07390ac33de6c25847e76bb14d1cf07522
+          git -C "$SRC" ls-tree -r --name-only HEAD | wc -l | tee "$RUNNER_TEMP/linux-tree-file-count.txt"
+      - name: Build full 256-partition index and replay warm query
+        shell: bash
+        run: |
+          set -euo pipefail
+          CLI="$GITHUB_WORKSPACE/core/target/release/excession"
+          SRC="$RUNNER_TEMP/linux-source"
+          QUERY="do_sys_openat2 file descriptor"
+          /usr/bin/time -v -o "$RUNNER_TEMP/linux-locate-cold.time" \
+            "$CLI" agent locate --repo "$SRC" --rev "$LINUX_SHA" \
+            --task "$QUERY" --roots fs --index-segments 256 --limit 16 --json \
+            > "$RUNNER_TEMP/linux-locate-cold.json"
+          /usr/bin/time -v -o "$RUNNER_TEMP/linux-locate-warm.time" \
+            "$CLI" agent locate --repo "$SRC" --rev "$LINUX_SHA" \
+            --task "$QUERY" --roots fs --index-segments 8 --limit 16 --json \
+            > "$RUNNER_TEMP/linux-locate-warm.json"
+          python3 - "$RUNNER_TEMP" "$LINUX_SHA" <<'PY'
+          import json, pathlib, subprocess, sys
+          folder, commit = pathlib.Path(sys.argv[1]), sys.argv[2]
+          root = folder / "linux-source"
+          cold = json.loads((folder / "linux-locate-cold.json").read_text())
+          warm = json.loads((folder / "linux-locate-warm.json").read_text())
+          assert cold["source_commit"] == warm["source_commit"] == commit
+          assert cold["source_tree"] == warm["source_tree"]
+          assert cold["index"]["total_source_files"] > 6000
+          assert cold["index"]["pending_segments"] == 0
+          assert warm["index"]["pending_segments"] == 0
+          assert warm["cache"]["read_blobs"] == 0, warm["cache"]
+          assert cold["report_id"] == warm["report_id"]
+          assert cold["candidate_count"] > 0, "no matching Linux source candidates"
+          assert cold["safe_to_skip_unlisted_tests"] is False
+          for candidate in cold["candidates"]:
+              source = candidate["source"]
+              assert source["source_commit"] == commit
+              assert source["source_tree"] == cold["source_tree"]
+              blob = subprocess.check_output(
+                  ["git", "-C", str(root), "rev-parse", f"{commit}:{source['path']}"],
+                  text=True,
+              ).strip()
+              assert blob == source["blob"], source["path"]
+          print(json.dumps({
+              "linux_commit": commit,
+              "total_source_files": cold["index"]["total_source_files"],
+              "indexed_source_count": cold["indexed_source_count"],
+              "skipped_source_count": cold["skipped_source_count"],
+              "populated_segments": cold["index"]["populated_segments"],
+              "ready_segments": cold["index"]["ready_segments"],
+              "pending_segments": cold["index"]["pending_segments"],
+              "index_complete": cold["index"]["complete"],
+              "cold_git_blobs": cold["cache"]["read_blobs"],
+              "warm_git_blobs": warm["cache"]["read_blobs"],
+              "candidate_count": cold["candidate_count"],
+              "relationship_candidate_count": len(cold.get("relationship_candidates", [])),
+              "report_id": cold["report_id"]
+          }, sort_keys=True))
+          PY
+      - name: Save Linux source and resource evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-locate-pinned-linux-receipt
+          path: |
+            ${{ runner.temp }}/linux-locate-cold.json
+            ${{ runner.temp }}/linux-locate-warm.json
+            ${{ runner.temp }}/linux-locate-cold.time
+            ${{ runner.temp }}/linux-locate-warm.time
+            ${{ runner.temp }}/linux-tree-file-count.txt
+          retention-days: 7
+          if-no-files-found: warn

@@ -134,8 +134,12 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
     let mut total_expected = 0usize;
     let mut lexical_hits = 0usize;
     let mut hybrid_hits = 0usize;
+    let mut scip_only_hits = 0usize;
+    let mut static_only_hits = 0usize;
     let mut lexical_mrr = 0.0;
     let mut hybrid_mrr = 0.0;
+    let mut scip_only_mrr = 0.0;
+    let mut static_only_mrr = 0.0;
     let mut positive = 0usize;
     let mut negative = 0usize;
     let mut negative_lexical_matches = 0usize;
@@ -171,16 +175,29 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
         let base = source_paths(report.get("candidates")?.array_ref()?)?;
         let neighbor_records = report.get("relationship_candidates")?.array_ref()?;
         let mut neighbor_paths = Vec::new();
+        let mut scip_neighbors = Vec::new();
+        let mut static_neighbors = Vec::new();
         for item in neighbor_records {
             let relation = item.get("relation")?;
             let assessment = item.get("assessment")?.str()?;
-            if relation.get("kind")?.str()? == "SCIP_REFERENCE" {
-                if assessment != "OBSERVED" || relation.get("evidence")?.array_ref()?.is_empty() {
-                    return Err("invalid native SCIP evidence at retrieval boundary".into());
+            let path = item.get("source")?.get("path")?.str()?.to_owned();
+            match relation.get("kind")?.str()? {
+                "SCIP_REFERENCE" => {
+                    if assessment != "OBSERVED" || relation.get("evidence")?.array_ref()?.is_empty() {
+                        return Err("invalid native SCIP evidence at retrieval boundary".into());
+                    }
+                    eligible_native_edges += 1;
+                    scip_neighbors.push(path.clone());
                 }
-                eligible_native_edges += 1;
+                "STATIC_IMPORT" => {
+                    if assessment != "CANDIDATE" {
+                        return Err("static import candidate was promoted to observation".into());
+                    }
+                    static_neighbors.push(path.clone());
+                }
+                other => return Err(format!("unsupported neighbor kind: {other}")),
             }
-            neighbor_paths.push(item.get("source")?.get("path")?.str()?.to_owned());
+            neighbor_paths.push(path);
         }
         if neighbor_records.iter().any(|x| {
             x.get("relation")
@@ -192,9 +209,13 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
             cases_with_native_neighbors += 1;
         }
         let alt = hybrid(&base, &neighbor_paths);
+        let scip_alt = hybrid(&base, &scip_neighbors);
+        let static_alt = hybrid(&base, &static_neighbors);
         let gold = expected.get(id).ok_or("unknown label case")?;
         let (base_hits, _, base_rr) = score(&base, gold);
         let (alt_hits, _, alt_rr) = score(&alt, gold);
+        let (scip_hits, _, scip_rr) = score(&scip_alt, gold);
+        let (static_hits, _, static_rr) = score(&static_alt, gold);
         if gold.is_empty() {
             negative += 1;
             negative_lexical_matches += usize::from(!base.is_empty());
@@ -204,8 +225,12 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
             total_expected += gold.len();
             lexical_hits += base_hits;
             hybrid_hits += alt_hits;
+            scip_only_hits += scip_hits;
+            static_only_hits += static_hits;
             lexical_mrr += base_rr;
             hybrid_mrr += alt_rr;
+            scip_only_mrr += scip_rr;
+            static_only_mrr += static_rr;
         }
         rows.push(json::obj(&[
             ("id", Value::string(id)),
@@ -216,12 +241,15 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
                 Value::array(base.iter().take(K).map(Value::string)),
             ),
             ("hybrid", Value::array(alt.iter().map(Value::string))),
-            (
-                "native_neighbor_count",
-                Value::number(neighbor_records.len()),
-            ),
+            ("scip_only", Value::array(scip_alt.iter().map(Value::string))),
+            ("static_only", Value::array(static_alt.iter().map(Value::string))),
+            ("relation_neighbor_count", Value::number(neighbor_records.len())),
+            ("scip_neighbor_count", Value::number(scip_neighbors.len())),
+            ("static_neighbor_count", Value::number(static_neighbors.len())),
             ("lexical_hits", Value::number(base_hits)),
             ("hybrid_hits", Value::number(alt_hits)),
+            ("scip_only_hits", Value::number(scip_hits)),
+            ("static_only_hits", Value::number(static_hits)),
             ("runtime_ms", Value::number(elapsed_ms)),
         ]));
     }
@@ -235,7 +263,7 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
         return Err("retrieval benchmark has no positive labels".into());
     }
     let result = json::obj(&[
-        ("schema", Value::string("excession.retrieval-benchmark.v1")),
+        ("schema", Value::string("excession.retrieval-benchmark.v2")),
         ("source_commit", Value::string(&commit)),
         (
             "source_tree",
@@ -263,8 +291,12 @@ fn evaluate(root: &Path, revision: &str, db: &str, labels_file: &Path) -> Result
             "hybrid_recall_at_k",
             float(hybrid_hits as f64 / total_expected as f64),
         ),
+        ("scip_only_recall_at_k", float(scip_only_hits as f64 / total_expected as f64)),
+        ("static_only_recall_at_k", float(static_only_hits as f64 / total_expected as f64)),
         ("lexical_mrr_at_k", float(lexical_mrr / positive as f64)),
         ("hybrid_mrr_at_k", float(hybrid_mrr / positive as f64)),
+        ("scip_only_mrr_at_k", float(scip_only_mrr / positive as f64)),
+        ("static_only_mrr_at_k", float(static_only_mrr / positive as f64)),
         (
             "negative_lexical_any_match",
             Value::number(negative_lexical_matches),

@@ -124,8 +124,10 @@ pub fn context(
             }
             for item in analysis.get("configured_observations")?.array_ref()? {
                 let source_path = item.get("source")?.get("path")?.str()?;
-                let selected_path = item.get("subject")?.get("path")?.str()?;
-                if focus.contains(source_path) || focus.contains(selected_path) {
+                let selected_path = item.entries()?.get("subject")
+                    .and_then(|subject| subject.get("path").ok())
+                    .and_then(|path| path.str().ok());
+                if focus.contains(source_path) || selected_path.is_some_and(|path| focus.contains(path)) {
                     total_configured += 1;
                     if configured_observations.len() < limit {
                         configured_observations.push(item.clone());

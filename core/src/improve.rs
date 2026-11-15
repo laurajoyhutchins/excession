@@ -552,36 +552,57 @@ mod tests {
         );
         let references = Value::array([
             obj(&[
-                ("symbol", Value::string("scip rust-analyzer pkg/selected().")),
-                ("to", obj(&[
-                    ("path", Value::string("core/src/a.rs")),
-                    ("language", Value::string("rust")),
-                ])),
+                (
+                    "symbol",
+                    Value::string("scip rust-analyzer pkg/selected()."),
+                ),
+                (
+                    "to",
+                    obj(&[
+                        ("path", Value::string("core/src/a.rs")),
+                        ("language", Value::string("rust")),
+                    ]),
+                ),
             ]),
             obj(&[
                 ("symbol", Value::string("scip rust-analyzer pkg/ignored().")),
-                ("to", obj(&[
-                    ("path", Value::string("core/src/lib.rs")),
-                    ("language", Value::string("rust")),
-                ])),
+                (
+                    "to",
+                    obj(&[
+                        ("path", Value::string("core/src/lib.rs")),
+                        ("language", Value::string("rust")),
+                    ]),
+                ),
             ]),
             obj(&[
                 ("symbol", Value::string("scip rust-analyzer pkg/helper().")),
-                ("to", obj(&[
-                    ("path", Value::string("core/src/a.rs")),
-                    ("language", Value::string("python")),
-                ])),
+                (
+                    "to",
+                    obj(&[
+                        ("path", Value::string("core/src/a.rs")),
+                        ("language", Value::string("python")),
+                    ]),
+                ),
             ]),
         ]);
         let mut candidate = native.get("candidates").unwrap().array_ref().unwrap()[0].clone();
-        candidate.entries_mut().unwrap().insert("references".into(), references);
-        native.entries_mut().unwrap().insert("candidates".into(), Value::array([candidate]));
+        candidate
+            .entries_mut()
+            .unwrap()
+            .insert("references".into(), references);
+        native
+            .entries_mut()
+            .unwrap()
+            .insert("candidates".into(), Value::array([candidate]));
         let targets = extraction_targets(&native, "candidate-a", None).unwrap();
-        assert_eq!(targets, vec![(
-            "core/src/a.rs".to_owned(),
-            "core/src/a_selected_extracted.rs".to_owned(),
-            "selected".to_owned(),
-        )]);
+        assert_eq!(
+            targets,
+            vec![(
+                "core/src/a.rs".to_owned(),
+                "core/src/a_selected_extracted.rs".to_owned(),
+                "selected".to_owned(),
+            )]
+        );
         assert_eq!(
             extraction_targets(&native, "candidate-a", Some("selected")).unwrap(),
             targets

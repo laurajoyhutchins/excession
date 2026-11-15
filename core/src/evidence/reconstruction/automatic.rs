@@ -1,6 +1,8 @@
 //! Bounded compiler-in-the-loop synthesis for a single C integer function.
 //! Reuse system binutils; never run the target. No semantic or source-recovery claim.
-use super::runtime::{FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject, wait_for_exit};
+use super::runtime::{
+    FLAGS, MAX_TEXT, Scratch, bounded_file, code_region, run, sample, subject, wait_for_exit,
+};
 use crate::evidence::artifact;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};

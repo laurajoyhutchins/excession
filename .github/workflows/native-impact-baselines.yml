@@ -1,0 +1,69 @@
+name: Native compiler impact vs independent baselines
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/native-impact-baselines.yml'
+      - 'benchmarks/acceptance/native-impact-cases.json'
+      - 'benchmarks/experiments/native_impact_baselines.py'
+      - 'tests/test_native_impact_baselines.py'
+      - 'core/src/java_native.rs'
+      - 'core/src/jvm_inputs.rs'
+      - 'core/src/native_analysis.rs'
+      - 'core/src/native_evidence.rs'
+      - 'core/src/observed_relations.rs'
+      - 'core/src/impact_query.rs'
+      - 'core/src/agent.rs'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  independent-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - name: Check independently installed language toolchains
+        run: |
+          set -euo pipefail
+          java -version
+          javac -version
+          javap -version
+          go version
+          clang --version | head -1
+          python3 -m unittest discover -s tests -p 'test_native_impact_baselines.py' -v
+      - name: Build exact source tree Excession
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --locked --offline --manifest-path core/Cargo.toml --bin excession
+      - name: Compare three upstream Git snapshots and controlled changes
+        run: |
+          set -euo pipefail
+          python3 benchmarks/experiments/native_impact_baselines.py \
+            --manifest benchmarks/acceptance/native-impact-cases.json \
+            --bin core/target/debug/excession \
+            --out-dir "$RUNNER_TEMP/native-impact-results"
+          cat "$RUNNER_TEMP/native-impact-results/summary.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve successful and failed experiments
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-impact-independent-evidence
+          path: ${{ runner.temp }}/native-impact-results/
+          if-no-files-found: warn
+          retention-days: 14

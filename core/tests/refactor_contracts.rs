@@ -236,7 +236,7 @@ fn generic_native_edit_replay_is_bounded_and_unverified_for_python_and_javascrip
         let candidate = items(&plan, "candidates")
             .iter()
             .find(|item| {
-                items(&item.get("finding").unwrap(), "locations")
+                items(item.get("finding").unwrap(), "locations")
                     .iter()
                     .any(|loc| {
                         let path = str_at(loc, "path");

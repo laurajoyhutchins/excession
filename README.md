@@ -204,6 +204,15 @@ by an existing SCIP indexer instead of implementing another language parser.
 See [refactoring](docs/REFACTORING.md) and
 [self-analysis](docs/SELF_ANALYSIS.md).
 
+### Measure a refactor before trusting it
+
+`excession improve plan` ranks source-bound native SCIP hypotheses without
+declaring code unused. `excession improve evaluate` compares fresh pinned
+native indexes before and after an isolated candidate commit. It checks the
+original plan, Git change inventory, apparent reciprocal-reference reductions,
+and coverage regressions. It never certifies behavioral equivalence or permits
+automatic deletion or merge. See [the improvement loop](docs/IMPROVEMENT_LOOP.md).
+
 ### Inspect scanner evidence
 
 Given an existing CodeQL SARIF report:

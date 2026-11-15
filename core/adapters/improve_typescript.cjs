@@ -129,14 +129,17 @@ function nativeFix(source, filename, selectedSymbol) {
       const name = item.name.text;
       if (!/^[a-zA-Z_$][a-zA-Z0-9_$]{0,63}$/.test(name)) continue;
       if (selectedSymbol && name !== selectedSymbol) continue;
-      imports.set(item.name.getStart(syntax), {node, name, length: item.name.getWidth(syntax)});
+      imports.set(item.name.getStart(syntax), {node, name, length: item.name.getWidth(syntax), typeOnly: !!(node.importClause?.isTypeOnly || item.isTypeOnly)});
     }
   }
   const matches = [];
   for (const diag of service.getSemanticDiagnostics(file)) {
-    if (diag.code !== 6133) continue;
     const found = imports.get(diag.start);
-    if (!found || diag.length !== found.length) continue;
+    // TS6133 covers ordinary unused bindings. TS6196 covers unused
+    // type-only declarations. Neither authorizes anything but a native
+    // pure deletion inside a preserved multi-binding import.
+    if (!found || !(diag.code === 6133 || (diag.code === 6196 && found.typeOnly))
+        || diag.length !== found.length) continue;
     const fixes = service.getCodeFixesAtPosition(
       file, diag.start, diag.start + diag.length, [diag.code], {}, {},
     ).filter(fix => fix.fixName === 'unusedIdentifier');

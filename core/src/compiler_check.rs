@@ -27,8 +27,10 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Result<Self> {
         for _ in 0..16 {
-            let stamp = SystemTime::now().duration_since(UNIX_EPOCH)
-                .map_err(|e| e.to_string())?.as_nanos();
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| e.to_string())?
+                .as_nanos();
             let path = env::temp_dir().join(format!(
                 "excession-compiler-check-{}-{stamp}-{}",
                 std::process::id(),
@@ -103,10 +105,14 @@ fn tool_path(name: &str, specified: Option<&str>) -> Result<PathBuf> {
     };
     // Preserve argv[0] for dispatching launchers such as rustup's "cargo"
     // symlink. Hash the symlink target, but execute the named entrypoint.
-    let parent = candidate.parent().ok_or("compiler has no parent")?
-        .canonicalize().map_err(|e| format!("resolve compiler directory: {e}"))?;
+    let parent = candidate
+        .parent()
+        .ok_or("compiler has no parent")?
+        .canonicalize()
+        .map_err(|e| format!("resolve compiler directory: {e}"))?;
     let launch = parent.join(candidate.file_name().ok_or("compiler has no name")?);
-    let resolved = launch.canonicalize()
+    let resolved = launch
+        .canonicalize()
         .map_err(|e| format!("resolve compiler executable: {e}"))?;
     let metadata = fs::metadata(&resolved).map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_BINARY_BYTES {
@@ -137,14 +143,19 @@ fn toolchain(tool: &Path, name: &str) -> Result<Value> {
         ("executable", Value::string(tool.to_string_lossy())),
         ("launcher_sha256", Value::string(digest::sha256(&data))),
         ("version", Value::string(version)),
-        ("identity_scope", Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN")),
+        (
+            "identity_scope",
+            Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN"),
+        ),
     ]))
 }
 
 fn validate_configuration(root: &Path, commit: &str, path: &str) -> Result<(SourceRef, PathBuf)> {
     git::validate_path(path)?;
     let source = SourceRef::from_git(root, commit, path)?;
-    let physical = root.join(path).canonicalize()
+    let physical = root
+        .join(path)
+        .canonicalize()
         .map_err(|e| format!("compiler config missing in checkout: {e}"))?;
     if !physical.starts_with(root) || !physical.is_file() {
         return refuse("compiler config resolves outside the selected Git checkout");
@@ -164,8 +175,14 @@ fn scope(root: &Path, language: &str, selected: Option<&str>) -> Result<(String,
     if prefix != "." {
         git::validate_path(prefix)?;
     }
-    let path = if prefix == "." {root.to_owned()} else {root.join(prefix)};
-    let canonical = path.canonicalize().map_err(|e| format!("source scope missing: {e}"))?;
+    let path = if prefix == "." {
+        root.to_owned()
+    } else {
+        root.join(prefix)
+    };
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("source scope missing: {e}"))?;
     if !canonical.starts_with(root) {
         return refuse("source scope resolves outside the Git checkout");
     }
@@ -189,7 +206,11 @@ fn report_from_execution(
     tool: Value,
     output: &adapter::ToolOutput,
 ) -> Result<Value> {
-    let status = if output.exit_code == 0 { "PASS" } else { "FAIL" };
+    let status = if output.exit_code == 0 {
+        "PASS"
+    } else {
+        "FAIL"
+    };
     obj(&[
         ("schema", Value::string(SCHEMA)),
         ("status", Value::string(status)),
@@ -200,28 +221,57 @@ fn report_from_execution(
         ("configuration", source_doc(source)),
         ("source_scope", Value::string(prefix)),
         ("toolchain", tool),
-        ("execution", obj(&[
-            ("exit_code", Value::number(output.exit_code)),
-            ("stdout_sha256", Value::string(digest::sha256(&output.stdout))),
-            ("stderr_sha256", Value::string(digest::sha256(&output.stderr))),
-            ("stdout_bytes", Value::number(output.stdout.len())),
-            ("stderr_bytes", Value::number(output.stderr.len())),
-            ("stdout_preview", preview(&output.stdout)),
-            ("stderr_preview", preview(&output.stderr)),
-            ("output_preview_truncated", Value::Bool(
-                output.stdout.len() > MAX_PREVIEW_CHARS || output.stderr.len() > MAX_PREVIEW_CHARS
-            )),
-        ])),
-        ("coverage", obj(&[
-            ("configuration", Value::string("ONE_SELECTED_GIT_CONFIGURATION")),
-            ("source_membership", Value::string("COMPILER_SELECTED_UNAUTHENTICATED")),
-            ("dependency_closure", Value::string("NOT_ESTABLISHED")),
-            ("other_configurations", Value::string("NOT_CHECKED")),
-        ])),
-        ("execution_authority", Value::string("TRUSTED_LOCAL_NOT_ATTESTED")),
-        ("artifact_build_provenance", Value::string("NOT_ESTABLISHED")),
+        (
+            "execution",
+            obj(&[
+                ("exit_code", Value::number(output.exit_code)),
+                (
+                    "stdout_sha256",
+                    Value::string(digest::sha256(&output.stdout)),
+                ),
+                (
+                    "stderr_sha256",
+                    Value::string(digest::sha256(&output.stderr)),
+                ),
+                ("stdout_bytes", Value::number(output.stdout.len())),
+                ("stderr_bytes", Value::number(output.stderr.len())),
+                ("stdout_preview", preview(&output.stdout)),
+                ("stderr_preview", preview(&output.stderr)),
+                (
+                    "output_preview_truncated",
+                    Value::Bool(
+                        output.stdout.len() > MAX_PREVIEW_CHARS
+                            || output.stderr.len() > MAX_PREVIEW_CHARS,
+                    ),
+                ),
+            ]),
+        ),
+        (
+            "coverage",
+            obj(&[
+                (
+                    "configuration",
+                    Value::string("ONE_SELECTED_GIT_CONFIGURATION"),
+                ),
+                (
+                    "source_membership",
+                    Value::string("COMPILER_SELECTED_UNAUTHENTICATED"),
+                ),
+                ("dependency_closure", Value::string("NOT_ESTABLISHED")),
+                ("other_configurations", Value::string("NOT_CHECKED")),
+            ]),
+        ),
+        (
+            "execution_authority",
+            Value::string("TRUSTED_LOCAL_NOT_ATTESTED"),
+        ),
+        (
+            "artifact_build_provenance",
+            Value::string("NOT_ESTABLISHED"),
+        ),
         ("rea", Value::string("NOT_ESTABLISHED")),
-    ]).stamp_id("report_id")
+    ])
+    .stamp_id("report_id")
 }
 
 fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<SourceRef> {
@@ -244,7 +294,11 @@ fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<Source
         return refuse("compiler check status and process exit code disagree");
     }
     let commit = git::rev(repo, revision)?;
-    let source = SourceRef::from_git(repo, &commit, report.get("configuration")?.get("path")?.str()?)?;
+    let source = SourceRef::from_git(
+        repo,
+        &commit,
+        report.get("configuration")?.get("path")?.str()?,
+    )?;
     if report.get("source_commit")?.str()? != commit
         || report.get("source_tree")?.str()? != source.tree
         || report.get("configuration")? != &source_doc(&source)
@@ -302,8 +356,14 @@ fn batch(repo: &Path, revision: &str, report: &Value) -> Result<Batch> {
                 ("toolchain", report.get("toolchain")?.clone()),
                 ("execution", report.get("execution")?.clone()),
                 ("coverage", report.get("coverage")?.clone()),
-                ("execution_authority", report.get("execution_authority")?.clone()),
-                ("artifact_build_provenance", report.get("artifact_build_provenance")?.clone()),
+                (
+                    "execution_authority",
+                    report.get("execution_authority")?.clone(),
+                ),
+                (
+                    "artifact_build_provenance",
+                    report.get("artifact_build_provenance")?.clone(),
+                ),
                 ("rea", report.get("rea")?.clone()),
             ]),
         }],
@@ -311,7 +371,9 @@ fn batch(repo: &Path, revision: &str, report: &Value) -> Result<Batch> {
 }
 
 fn with_snapshot(mut report: Value, snapshot: &str) -> Result<Value> {
-    report.entries_mut()?.insert("snapshot_id".into(), Value::string(snapshot));
+    report
+        .entries_mut()?
+        .insert("snapshot_id".into(), Value::string(snapshot));
     Ok(report)
 }
 
@@ -323,9 +385,14 @@ pub fn run(db: &Db, request: Request<'_>) -> Result<Value> {
     }
     let (default_tool, expected_name, profile) = spec(request.language)?;
     if !request.configuration.ends_with(expected_name) {
-        return refuse(format!("{} requires a {expected_name} configuration", request.language));
+        return refuse(format!(
+            "{} requires a {expected_name} configuration",
+            request.language
+        ));
     }
-    let root = request.repo.canonicalize()
+    let root = request
+        .repo
+        .canonicalize()
         .map_err(|e| format!("resolve compiler checkout: {e}"))?;
     git::verify_repo(&root)?;
     git::clean(&root)?;
@@ -342,23 +409,34 @@ pub fn run(db: &Db, request: Request<'_>) -> Result<Value> {
     command.current_dir(&root);
     match request.language {
         "rust" => {
-            command.arg("check")
-                .arg("--manifest-path").arg(&physical)
-                .arg("--all-targets").arg("--frozen")
+            command
+                .arg("check")
+                .arg("--manifest-path")
+                .arg(&physical)
+                .arg("--all-targets")
+                .arg("--frozen")
                 .env("CARGO_TARGET_DIR", scratch.0.join("cargo-target"))
                 .env("CARGO_NET_OFFLINE", "true")
                 .env("CARGO_INCREMENTAL", "0");
         }
         "typescript" => {
-            command.arg("--project").arg(&physical)
-                .arg("--noEmit").arg("--pretty").arg("false")
-                .arg("--incremental").arg("--tsBuildInfoFile")
+            command
+                .arg("--project")
+                .arg(&physical)
+                .arg("--noEmit")
+                .arg("--pretty")
+                .arg("false")
+                .arg("--incremental")
+                .arg("--tsBuildInfoFile")
                 .arg(scratch.0.join("tsbuildinfo"));
         }
         "python" => {
-            command.arg("--config-file").arg(&physical)
+            command
+                .arg("--config-file")
+                .arg(&physical)
                 .arg("--no-incremental")
-                .arg("--cache-dir").arg(scratch.0.join("mypy-cache"))
+                .arg("--cache-dir")
+                .arg(scratch.0.join("mypy-cache"))
                 .arg(&physical_scope);
         }
         _ => unreachable!("validated language"),
@@ -373,7 +451,12 @@ pub fn run(db: &Db, request: Request<'_>) -> Result<Value> {
         return refuse("compiler check configuration changed during execution");
     }
     let report = report_from_execution(
-        &configuration, request.language, profile, &prefix, metadata, &result,
+        &configuration,
+        request.language,
+        profile,
+        &prefix,
+        metadata,
+        &result,
     )?;
     let batch = batch(&root, &commit, &report)?;
     let snapshot = evidence_store::persist(db, &batch)?;
@@ -392,13 +475,17 @@ pub fn audit(db: &Db, repo: &Path, revision: &str, snapshot: &str) -> Result<Val
         return refuse("compiler check snapshot requires one original receipt");
     }
     let receipt = json::parse(
-        receipts[0][0].as_deref().ok_or("missing compiler check receipt")?.as_bytes()
+        receipts[0][0]
+            .as_deref()
+            .ok_or("missing compiler check receipt")?
+            .as_bytes(),
     )?;
     if receipt.get("version")?.str()? != "1" {
         return refuse("unsupported compiler check receipt version");
     }
     let report = json::parse(receipt.get("raw_json")?.str()?.as_bytes())?;
-    if receipt.get("producer")?.str()? != format!("compiler-check:{}", report.get("language")?.str()?)
+    if receipt.get("producer")?.str()?
+        != format!("compiler-check:{}", report.get("language")?.str()?)
         || receipt.get("native_id")?.str()? != report.get("report_id")?.str()?
         || report.canonical() != receipt.get("raw_json")?.str()?
     {
@@ -431,13 +518,29 @@ mod tests {
             blob: "c".repeat(40),
             mode: "100644".to_owned(),
         };
-        let sample = adapter::ToolOutput { stdout: vec![], stderr: b"compile error".to_vec(), exit_code: 1 };
+        let sample = adapter::ToolOutput {
+            stdout: vec![],
+            stderr: b"compile error".to_vec(),
+            exit_code: 1,
+        };
         let report = report_from_execution(
-            &config, "rust", "CARGO_CHECK_FROZEN_ALL_TARGETS", ".",
-            obj(&[("name", Value::string("cargo"))]), &sample,
-        ).unwrap();
+            &config,
+            "rust",
+            "CARGO_CHECK_FROZEN_ALL_TARGETS",
+            ".",
+            obj(&[("name", Value::string("cargo"))]),
+            &sample,
+        )
+        .unwrap();
         assert_eq!(report.get("status").unwrap().str().unwrap(), "FAIL");
-        assert_eq!(report.get("artifact_build_provenance").unwrap().str().unwrap(), "NOT_ESTABLISHED");
+        assert_eq!(
+            report
+                .get("artifact_build_provenance")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "NOT_ESTABLISHED"
+        );
         assert!(report.content_id_matches("report_id").unwrap());
     }
 }

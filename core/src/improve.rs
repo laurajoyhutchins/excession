@@ -286,9 +286,7 @@ fn simple_rust_identifier(name: &str) -> bool {
             .bytes()
             .next()
             .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
-        && name
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        && name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
 }
 
 /// Use SCIP-reported function references solely to propose candidates. The
@@ -304,7 +302,10 @@ fn extraction_targets(
     if !ids(report, "review_candidate_ids")?.contains(candidate_id) {
         return refuse("automatic extraction requires an advisory review candidate");
     }
-    let candidate = report.get("candidates")?.array_ref()?.iter()
+    let candidate = report
+        .get("candidates")?
+        .array_ref()?
+        .iter()
         .find(|item| item.get("candidate_id").and_then(Value::str).ok() == Some(candidate_id))
         .ok_or("unknown native refactor candidate")?;
     if candidate.get("kind")?.str()? != "reciprocal_symbol_references" {
@@ -318,7 +319,11 @@ fn extraction_targets(
     let mut found = BTreeSet::new();
     for reference in candidate.get("references")?.array_ref()? {
         let symbol = reference.get("symbol")?.str()?;
-        let Some(name) = symbol.rsplit('/').next().and_then(|s| s.strip_suffix("().")) else {
+        let Some(name) = symbol
+            .rsplit('/')
+            .next()
+            .and_then(|s| s.strip_suffix("()."))
+        else {
             continue;
         };
         if !simple_rust_identifier(name) || selected_symbol.is_some_and(|s| s != name) {
@@ -413,22 +418,26 @@ pub fn trial(request: &Trial<'_>) -> Result<Value> {
     if possible.len() != 1 {
         return obj(&[
             ("schema", Value::string("excession.improvement-trial.v1")),
-            ("status", Value::string(if possible.is_empty() {
-                "NO_SUPPORTED_NATIVE_TRANSFORMATION"
-            } else {
-                "AMBIGUOUS_NATIVE_TRANSFORMATIONS"
-            })),
+            (
+                "status",
+                Value::string(if possible.is_empty() {
+                    "NO_SUPPORTED_NATIVE_TRANSFORMATION"
+                } else {
+                    "AMBIGUOUS_NATIVE_TRANSFORMATIONS"
+                }),
+            ),
             ("candidate_id", Value::string(request.candidate_id)),
             ("plan_id", original_plan.get("plan_id")?.clone()),
             ("supported_preview_count", Value::number(possible.len())),
             ("refusals", Value::array(rejected)),
             ("ready_to_merge", Value::Bool(false)),
-        ]).stamp_id("trial_id");
+        ])
+        .stamp_id("trial_id");
     }
     let (source, destination, symbol, preview) = possible.remove(0);
     let outcome = if let Some(output) = request.output {
-        let applied = crate::refactor_codegen::extract_shared_module(
-            &crate::refactor_codegen::Request {
+        let applied =
+            crate::refactor_codegen::extract_shared_module(&crate::refactor_codegen::Request {
                 repo: request.repo,
                 revision: request.revision,
                 index: request.index,
@@ -440,8 +449,7 @@ pub fn trial(request: &Trial<'_>) -> Result<Value> {
                 ast_grep: request.ast_grep,
                 source_prefix: request.source_prefix,
                 output: Some(output),
-            },
-        )?;
+            })?;
         if applied.get("plan_id")? != preview.get("plan_id")? {
             return refuse("native extraction preview and application plan IDs differ");
         }
@@ -461,7 +469,8 @@ pub fn trial(request: &Trial<'_>) -> Result<Value> {
         ("refusals", Value::array(rejected)),
         ("ready_to_merge", Value::Bool(false)),
         ("automatic_deletion_authorized", Value::Bool(false)),
-    ]).stamp_id("trial_id")
+    ])
+    .stamp_id("trial_id")
 }
 
 #[cfg(test)]

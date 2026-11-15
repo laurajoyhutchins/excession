@@ -841,25 +841,62 @@ fn native_java_compiler_resolves_real_source_declarations_and_replays_impact() {
     // Ground truth is independently specified by this fixture's source:
     // Service.compute invokes Helper.answer; no other file invokes Helper.
     // A file-import-only baseline misses the same-package Java reference.
-    let candidates = impact.get("native_reference_impacts").unwrap().array_ref().unwrap();
+    let candidates = impact
+        .get("native_reference_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert_eq!(
-        impact.get("native_reference_count").unwrap().integer().unwrap(), 1,
+        impact
+            .get("native_reference_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1,
         "one source is known to depend on the changed Helper declaration"
     );
-    assert!(impact.get("native_reference_enumeration_complete").unwrap().bool().unwrap());
-    assert_eq!(candidates.len(), 1, "precision and recall both 1/1 on this controlled fixture");
+    assert!(
+        impact
+            .get("native_reference_enumeration_complete")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
+    assert_eq!(
+        candidates.len(),
+        1,
+        "precision and recall both 1/1 on this controlled fixture"
+    );
     let candidate = &candidates[0];
     assert_eq!(field(candidate.get("entity").unwrap(), "path"), java_source);
     let witness = candidate.get("next_hop").unwrap();
-    assert_eq!(field(witness, "relation"), "JAVAC_RESOLVED_SOURCE_REFERENCE");
+    assert_eq!(
+        field(witness, "relation"),
+        "JAVAC_RESOLVED_SOURCE_REFERENCE"
+    );
     assert_eq!(field(witness.get("source").unwrap(), "path"), java_source);
     assert_eq!(field(witness.get("target").unwrap(), "path"), helper_source);
-    assert_eq!(witness.get("evidence").unwrap().array_ref().unwrap().len(), 1);
-    assert_eq!(field(&witness.get("evidence").unwrap().array_ref().unwrap()[0], "status"),
-        "PRODUCER_SUPPLIED_UNATTESTED");
-    assert!(!impact.get("candidate_source_impacts").unwrap().array_ref().unwrap()
-        .iter().any(|item| field(item.get("entity").unwrap(), "path") == java_source),
-        "static import/SCIP baseline does not discover this same-package reference");
+    assert_eq!(
+        witness.get("evidence").unwrap().array_ref().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        field(
+            &witness.get("evidence").unwrap().array_ref().unwrap()[0],
+            "status"
+        ),
+        "PRODUCER_SUPPLIED_UNATTESTED"
+    );
+    assert!(
+        !impact
+            .get("candidate_source_impacts")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .any(|item| field(item.get("entity").unwrap(), "path") == java_source),
+        "static import/SCIP baseline does not discover this same-package reference"
+    );
 
     let verify = parsed(f.invoke(&[
         "agent",
@@ -873,9 +910,30 @@ fn native_java_compiler_resolves_real_source_declarations_and_replays_impact() {
         "--db",
         db,
     ]));
-    assert_eq!(verify.get("native_reference_count").unwrap().integer().unwrap(), 1);
-    assert_eq!(verify.get("native_reference_impacts").unwrap().array_ref().unwrap().len(), 1);
-    assert!(verify.get("native_reference_enumeration_complete").unwrap().bool().unwrap());
+    assert_eq!(
+        verify
+            .get("native_reference_count")
+            .unwrap()
+            .integer()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        verify
+            .get("native_reference_impacts")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        verify
+            .get("native_reference_enumeration_complete")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
     assert!(!verify.get("ready_to_merge").unwrap().bool().unwrap());
     assert!(
         verify

@@ -474,9 +474,18 @@ fn run_core(
             ]),
         ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
-        ("native_reference_impacts", Value::array(native_reference_impacts)),
-        ("native_reference_count", Value::number(native_reference_count)),
-        ("native_reference_enumeration_complete", Value::Bool(!native_reference_truncated)),
+        (
+            "native_reference_impacts",
+            Value::array(native_reference_impacts),
+        ),
+        (
+            "native_reference_count",
+            Value::number(native_reference_count),
+        ),
+        (
+            "native_reference_enumeration_complete",
+            Value::Bool(!native_reference_truncated),
+        ),
     ]);
     match selected {
         Mode::Pinned(before, after) => {
@@ -784,32 +793,65 @@ mod tests {
             ("receipt_id", Value::string("receipt")),
             ("observation_id", Value::string("observation")),
         ]);
-        let report = obj(&[("configured_observations", Value::array([observation.clone()]))]);
+        let report = obj(&[(
+            "configured_observations",
+            Value::array([observation.clone()]),
+        )]);
         let candidates = source_witnesses(
             &native_java_incoming(&report).unwrap(),
             &BTreeSet::from(["src/Helper.java".to_owned()]),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].get("entity").unwrap().get("path").unwrap().str().unwrap(),
-            "src/Service.java");
-        let evidence = &candidates[0].get("next_hop").unwrap()
-            .get("evidence").unwrap().array_ref().unwrap()[0];
-        assert_eq!(evidence.get("receipt_id").unwrap().str().unwrap(), "receipt");
+        assert_eq!(
+            candidates[0]
+                .get("entity")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/Service.java"
+        );
+        let evidence = &candidates[0]
+            .get("next_hop")
+            .unwrap()
+            .get("evidence")
+            .unwrap()
+            .array_ref()
+            .unwrap()[0];
+        assert_eq!(
+            evidence.get("receipt_id").unwrap().str().unwrap(),
+            "receipt"
+        );
 
         let mut forged = observation;
-        forged.entries_mut().unwrap()
-            .insert("subject".to_owned(), obj(&[("path", Value::string("src/Fake.java"))]));
-        assert!(native_java_incoming(&obj(&[
-            ("configured_observations", Value::array([forged])),
-        ])).is_err());
+        forged.entries_mut().unwrap().insert(
+            "subject".to_owned(),
+            obj(&[("path", Value::string("src/Fake.java"))]),
+        );
+        assert!(
+            native_java_incoming(&obj(
+                &[("configured_observations", Value::array([forged])),]
+            ))
+            .is_err()
+        );
 
-        let other = obj(&[("configured_observations", Value::array([
-            obj(&[("native_kind", Value::string("NATIVE_CONFIGURED_HEADER"))]),
-            obj(&[("native_kind", Value::string("NATIVE_SELECTED_INPUT"))]),
-            obj(&[("native_kind", Value::string("NATIVE_JVM_CLASSPATH_CONFIGURATION"))]),
-        ]))]);
-        assert!(native_java_incoming(&other).unwrap().is_empty(),
-            "Clang headers, Go membership and JAR inventory are not Java references");
+        let other = obj(&[(
+            "configured_observations",
+            Value::array([
+                obj(&[("native_kind", Value::string("NATIVE_CONFIGURED_HEADER"))]),
+                obj(&[("native_kind", Value::string("NATIVE_SELECTED_INPUT"))]),
+                obj(&[(
+                    "native_kind",
+                    Value::string("NATIVE_JVM_CLASSPATH_CONFIGURATION"),
+                )]),
+            ]),
+        )]);
+        assert!(
+            native_java_incoming(&other).unwrap().is_empty(),
+            "Clang headers, Go membership and JAR inventory are not Java references"
+        );
     }
 
     #[test]

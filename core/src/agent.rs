@@ -374,7 +374,9 @@ pub fn verify(
     let candidate_sources = impact.get("candidate_source_impacts")?.array_ref()?;
     let native_refs = impact.get("native_reference_impacts")?.array_ref()?;
     let native_ref_count = impact.get("native_reference_count")?.integer()?;
-    let native_ref_complete = impact.get("native_reference_enumeration_complete")?.bool()?;
+    let native_ref_complete = impact
+        .get("native_reference_enumeration_complete")?
+        .bool()?;
     let candidate_source_count = impact.get("candidate_source_count")?.integer()?;
     let candidate_source_complete = impact
         .get("candidate_source_enumeration_complete")?
@@ -434,9 +436,15 @@ pub fn verify(
             "candidate_source_enumeration_complete",
             Value::Bool(candidate_source_complete && candidate_sources.len() <= limit),
         ),
-        ("native_reference_impacts", Value::array(take_bounded(native_refs, limit))),
+        (
+            "native_reference_impacts",
+            Value::array(take_bounded(native_refs, limit)),
+        ),
         ("native_reference_count", Value::number(native_ref_count)),
-        ("native_reference_enumeration_complete", Value::Bool(native_ref_complete && native_refs.len() <= limit)),
+        (
+            "native_reference_enumeration_complete",
+            Value::Bool(native_ref_complete && native_refs.len() <= limit),
+        ),
         ("unknown", Value::array(take_bounded(unknown, limit))),
         ("receipts", Value::array(imported)),
         (

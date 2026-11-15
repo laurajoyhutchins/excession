@@ -112,7 +112,7 @@ pub(crate) fn findings(report: &Value) -> Result<BTreeSet<Finding>> {
     Ok(items)
 }
 
-fn report_ids(report: &Value, key: &str) -> Result<BTreeSet<String>> {
+pub(crate) fn report_ids(report: &Value, key: &str) -> Result<BTreeSet<String>> {
     let mut result = BTreeSet::new();
     for id in report.get("triage")?.get(key)?.array_ref()? {
         if !result.insert(id.str()?.to_owned()) {

@@ -117,9 +117,14 @@ jobs:
           assert result["negative_cases"] == 2, result
           assert result["cases_with_native_scip_neighbors"] > 0, result
           print("BM25 recall@5:",result["lexical_recall_at_k"])
-          print("SCIP-expanded recall@5:",result["hybrid_recall_at_k"])
+          assert result["schema"] == "excession.retrieval-benchmark.v2", result
+          print("Mixed-graph recall@5:",result["hybrid_recall_at_k"])
+          print("SCIP-only recall@5:",result["scip_only_recall_at_k"])
+          print("Static-only recall@5:",result["static_only_recall_at_k"])
           print("BM25 MRR@5:",result["lexical_mrr_at_k"])
-          print("SCIP-expanded MRR@5:",result["hybrid_mrr_at_k"])
+          print("Mixed-graph MRR@5:",result["hybrid_mrr_at_k"])
+          print("SCIP-only MRR@5:",result["scip_only_mrr_at_k"])
+          print("Static-only MRR@5:",result["static_only_mrr_at_k"])
           print("Review status:",result["review_status"])
           PY
 

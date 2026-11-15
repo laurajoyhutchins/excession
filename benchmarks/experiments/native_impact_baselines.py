@@ -250,7 +250,8 @@ def classify(case: dict, repo: Path, report: dict, work: Path) -> dict:
         oracle_s = time.perf_counter() - start
         headers = report["observation"]["observation"]["dependencies"]
         observed = {item["repo_path"] for item in headers
-                    if item.get("repo_path") is not None}
+                    if item.get("repo_path") is not None
+                    and item["repo_path"] != case["source"]}
         return {"predicate": "CLANG_TRACKED_TRANSITIVE_HEADER",
                 "native_vs_oracle": precision_recall(observed, oracle),
                 "naive_vs_oracle": precision_recall(baseline, oracle),

@@ -61,7 +61,11 @@ pub fn scan(
     options: NativeOptions<'_>,
     trusted_local: &str,
 ) -> Result<Value> {
-    let NativeOptions { compile_db, compiler, source_prefix } = options;
+    let NativeOptions {
+        compile_db,
+        compiler,
+        source_prefix,
+    } = options;
     if trusted_local != "true" {
         return refuse("native analysis requires explicit --trusted-local true");
     }
@@ -219,19 +223,64 @@ mod tests {
     #[test]
     fn refuses_untrusted_and_unsupported_before_invoking_toolchains() {
         let repo = Path::new("/does-not-exist");
-        assert!(scan(repo, "HEAD", "a.go", "go", NativeOptions::default(), "false")
-            .unwrap_err().contains("--trusted-local"));
-        assert!(scan(repo, "HEAD", "a.java", "java", NativeOptions {
-            compile_db: Some(Path::new("compile.json")),
-            ..NativeOptions::default()
-        }, "true").unwrap_err().contains("Java uses the installed JDK"));
-        assert!(scan(repo, "HEAD", "a.go", "go", NativeOptions {
-            compiler: Some("clang"),
-            ..NativeOptions::default()
-        }, "true").unwrap_err().contains("does not use"));
-        assert!(scan(repo, "HEAD", "a.cpp", "cpp", NativeOptions::default(), "true")
-            .unwrap_err().contains("--compile-db"));
-        assert!(scan(repo, "HEAD", "a.c", "cpp", NativeOptions::default(), "true")
-            .unwrap_err().contains("source extension"));
+        assert!(
+            scan(
+                repo,
+                "HEAD",
+                "a.go",
+                "go",
+                NativeOptions::default(),
+                "false"
+            )
+            .unwrap_err()
+            .contains("--trusted-local")
+        );
+        assert!(
+            scan(
+                repo,
+                "HEAD",
+                "a.java",
+                "java",
+                NativeOptions {
+                    compile_db: Some(Path::new("compile.json")),
+                    ..NativeOptions::default()
+                },
+                "true"
+            )
+            .unwrap_err()
+            .contains("Java uses the installed JDK")
+        );
+        assert!(
+            scan(
+                repo,
+                "HEAD",
+                "a.go",
+                "go",
+                NativeOptions {
+                    compiler: Some("clang"),
+                    ..NativeOptions::default()
+                },
+                "true"
+            )
+            .unwrap_err()
+            .contains("does not use")
+        );
+        assert!(
+            scan(
+                repo,
+                "HEAD",
+                "a.cpp",
+                "cpp",
+                NativeOptions::default(),
+                "true"
+            )
+            .unwrap_err()
+            .contains("--compile-db")
+        );
+        assert!(
+            scan(repo, "HEAD", "a.c", "cpp", NativeOptions::default(), "true")
+                .unwrap_err()
+                .contains("source extension")
+        );
     }
 }

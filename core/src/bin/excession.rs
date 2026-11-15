@@ -1090,37 +1090,97 @@ fn execute(args: &[String]) -> Result<Response> {
                 refactor::suggest(&db, opt.get("name"), opt.get("rev"))?
             }))
         }
-        [top, sub] if top == "improve" => match sub.as_str() {
-            "trial" => Ok(json(improve::trial(&improve::Trial {
-                repo: opt.path("repo"),
-                revision: opt.get("rev"),
-                index: opt.path("index"),
-                report: opt.path("report"),
-                plan: opt.path("plan"),
-                candidate_id: opt.get("candidate"),
-                symbol: opt.0.get("symbol").map(String::as_str),
-                ast_grep: Path::new(opt.get_or("ast-grep", "ast-grep")),
-                source_prefix: opt.0.get("source-prefix").map(String::as_str),
-                output: opt.0.get("output").map(Path::new),
-                trusted_local: opt.get("trusted-local"),
-            })?)),
-            "plan" => Ok(json(improve::plan(
-                opt.path("repo"),
-                opt.get("rev"),
-                opt.path("index"),
-                opt.0.get("source-prefix").map(String::as_str),
-            )?)),
-            "evaluate" => Ok(json(improve::evaluate(&improve::Evaluation {
-                base_repo: opt.path("base-repo"),
-                candidate_repo: opt.path("candidate-repo"),
-                base: opt.get("base"),
-                candidate: opt.get("candidate"),
-                base_index: opt.path("base-index"),
-                candidate_index: opt.path("candidate-index"),
-                plan: opt.path("plan"),
-                source_prefix: opt.0.get("source-prefix").map(String::as_str),
-            })?)),
-            _ => refuse(format!("unknown improvement command {sub}")),
+        [top, sub] if top == "improve" => {
+            let required = |key: &str| -> Result<&str> {
+                opt.0.get(key).map(String::as_str).ok_or_else(|| {
+                    format!("improve command requires --{key}")
+                })
+            };
+            let producer = opt.get_or("producer", "scip");
+            match sub.as_str() {
+                "plan" => Ok(json(match producer {
+                    "scip" => {
+                        if opt.0.contains_key("db") || opt.0.contains_key("name") {
+                            return refuse("SCIP planning does not accept indexed database options");
+                        }
+                        improve::plan(
+                            Path::new(required("repo")?),
+                            opt.get("rev"),
+                            Path::new(required("index")?),
+                            opt.0.get("source-prefix").map(String::as_str),
+                        )?
+                    }
+                    "indexed" => {
+                        if opt.0.contains_key("index")
+                            || opt.0.contains_key("source-prefix")
+                            || opt.0.contains_key("repo")
+                        {
+                            return refuse("indexed planning requires only --db, --name and --rev");
+                        }
+                        let db = Db::open(Path::new(required("db")?))?;
+                        improve::plan_indexed(&db, required("name")?, opt.get("rev"))?
+                    }
+                    _ => return refuse("improve producer must be scip or indexed"),
+                })),
+                "trial" => {
+                    if producer != "scip" {
+                        return refuse(
+                            "indexed observations have no supported automatic edit producer; use native language tools and evaluate a separately committed candidate",
+                        );
+                    }
+                    Ok(json(improve::trial(&improve::Trial {
+                        repo: opt.path("repo"),
+                        revision: opt.get("rev"),
+                        index: opt.path("index"),
+                        report: opt.path("report"),
+                        plan: opt.path("plan"),
+                        candidate_id: opt.get("candidate"),
+                        symbol: opt.0.get("symbol").map(String::as_str),
+                        ast_grep: Path::new(opt.get_or("ast-grep", "ast-grep")),
+                        source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                        output: opt.0.get("output").map(Path::new),
+                        trusted_local: opt.get("trusted-local"),
+                    })?))
+                }
+                "evaluate" => Ok(json(match producer {
+                    "scip" => {
+                        if opt.0.contains_key("db")
+                            || opt.0.contains_key("name")
+                            || opt.0.contains_key("repo")
+                        {
+                            return refuse("SCIP evaluation does not accept indexed database options");
+                        }
+                        improve::evaluate(&improve::Evaluation {
+                            base_repo: Path::new(required("base-repo")?),
+                            candidate_repo: Path::new(required("candidate-repo")?),
+                            base: opt.get("base"),
+                            candidate: opt.get("candidate"),
+                            base_index: Path::new(required("base-index")?),
+                            candidate_index: Path::new(required("candidate-index")?),
+                            plan: opt.path("plan"),
+                            source_prefix: opt.0.get("source-prefix").map(String::as_str),
+                        })?
+                    }
+                    "indexed" => {
+                        if ["base-repo", "candidate-repo", "base-index",
+                            "candidate-index", "source-prefix"].iter().any(|key| opt.0.contains_key(*key))
+                        {
+                            return refuse("indexed evaluation does not accept SCIP source options");
+                        }
+                        let db = Db::open(Path::new(required("db")?))?;
+                        improve::evaluate_indexed(
+                            Path::new(required("repo")?),
+                            &db,
+                            required("name")?,
+                            opt.get("base"),
+                            opt.get("candidate"),
+                            opt.path("plan"),
+                        )?
+                    }
+                    _ => return refuse("improve producer must be scip or indexed"),
+                })),
+                _ => refuse(format!("unknown improvement command {sub}")),
+            }
         },
         [top, sub] if top == "benchmark" => match sub.as_str() {
             "review-prepare" => {

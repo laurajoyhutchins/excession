@@ -50,6 +50,28 @@ fn source(repo: &Path, commit: &str, tree: &str, path: &str, blob: &str) -> Resu
     ]))
 }
 
+/// Cache only *successfully authenticated* Git identities for one native
+/// source-evidence replay. This is never persisted or shared across commits.
+/// A repeated path with a conflicting claimed blob must fail closed.
+fn source_once(
+    cache: &mut BTreeMap<String, (String, Value)>,
+    repo: &Path,
+    commit: &str,
+    tree: &str,
+    path: &str,
+    blob: &str,
+) -> Result<Value> {
+    if let Some((prior_blob, authenticated)) = cache.get(path) {
+        if prior_blob != blob {
+            return refuse("conflicting SCIP source blob for a single Git path");
+        }
+        return Ok(authenticated.clone());
+    }
+    let authenticated = source(repo, commit, tree, path, blob)?;
+    cache.insert(path.to_owned(), (blob.to_owned(), authenticated.clone()));
+    Ok(authenticated)
+}
+
 fn digest_id(id: &str) -> Result<()> {
     if id.len() != 64
         || !id
@@ -102,6 +124,7 @@ fn select_scip(
         return refuse("selected SCIP observations exceed integrated-query budget");
     }
     let mut coverage = None;
+    let mut sources = BTreeMap::<String, (String, Value)>::new();
     for row in rows {
         let record = json::parse(
             row[0]
@@ -124,8 +147,12 @@ fn select_scip(
         let to = payload.get("to")?;
         let from_path = from.get("path")?.str()?;
         let to_path = to.get("path")?.str()?;
-        let from_source = source(repo, commit, tree, from_path, from.get("blob")?.str()?)?;
-        let to_source = source(repo, commit, tree, to_path, to.get("blob")?.str()?)?;
+        let from_source = source_once(
+            &mut sources, repo, commit, tree, from_path, from.get("blob")?.str()?,
+        )?;
+        let to_source = source_once(
+            &mut sources, repo, commit, tree, to_path, to.get("blob")?.str()?,
+        )?;
         out.source_paths.insert(from_path.to_owned());
         out.source_paths.insert(to_path.to_owned());
         let receipt_id = record.get("receipt_id")?.str()?;

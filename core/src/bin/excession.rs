@@ -13,6 +13,7 @@ use excession::history;
 use excession::history_rewrite;
 use excession::impact_query;
 use excession::improve;
+use excession::improve_edits;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
 use excession::observed_relations::{self, Plan, Selection};

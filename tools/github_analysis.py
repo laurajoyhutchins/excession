@@ -145,9 +145,13 @@ def prepare_source(request, directory):
         if sha is None:
             continue
         git("-c", "protocol.version=2", "fetch", "--quiet", "--no-tags",
-            "--filter=blob:none", "--depth=1", "origin", sha, cwd=source, timeout=180)
+            "--depth=1", "origin", sha, cwd=source, timeout=180)
         if git("rev-parse", "--verify", sha + "^{commit}", cwd=source) != sha:
             raise Refusal("fetched commit identity mismatch")
+    # Excession's Git discovery expects a resolvable HEAD. Point it at the
+    # exact requested source without checking out or executing source files.
+    git("update-ref", "refs/heads/excession-analysis", request["revision"], cwd=source)
+    git("symbolic-ref", "HEAD", "refs/heads/excession-analysis", cwd=source)
     tree = git("rev-parse", request["revision"] + "^{tree}", cwd=source)
     return source, tree
 
@@ -204,6 +208,9 @@ def execute(request, binary, output):
         if report_file.stat().st_size > 8 * 1024 * 1024:
             raise Refusal("report exceeded 8 MiB")
         if run.returncode:
+            receipt["producer_exit_code"] = run.returncode
+            # Public-source diagnostics only; no environment dump or tokens.
+            receipt["producer_stderr_excerpt"] = run.stderr.decode("utf-8", "replace")[:1536]
             raise Refusal("native Excession CLI refused execution")
         raw = report_file.read_bytes()
         report = json.loads(raw.decode("utf-8"))

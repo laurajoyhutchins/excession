@@ -1,0 +1,7 @@
+{
+  "schema": "excession.github-analysis-targets.v1",
+  "repositories": [
+    "laurajoyhutchins/excession",
+    "python-hyper/h11"
+  ]
+}

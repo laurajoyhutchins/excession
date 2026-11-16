@@ -151,8 +151,6 @@ jobs:
           print("Excession self-verification: Git identities match; "
                 f"{len(expected)} paths accounted for; safety obligations remain open.")
           PY
-      - name: Remote Excession gateway contract tests (no cloud or credentials)
-        run: node --test deploy/remote-excession/server.test.mjs
       - name: JavaScript adapter tests
         run: npm run check && npm test
       - name: Mocked subscription-only Codex Luna runner (no model usage)

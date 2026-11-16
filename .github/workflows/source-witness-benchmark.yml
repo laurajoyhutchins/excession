@@ -2,6 +2,12 @@ name: Published baseline vs demand-driven source witnesses
 
 on:
   workflow_dispatch:
+    inputs:
+      compare_ref:
+        description: "Optional exact 40-hex preoptimization commit for same-run A/B/A replay"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -136,6 +142,110 @@ jobs:
           (root / "comparison.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
           print(json.dumps(report, indent=2, sort_keys=True))
           PY
+      - name: Controlled preoptimization comparison on same runner
+        if: ${{ inputs.compare_ref != '' }}
+        shell: bash
+        env:
+          BEFORE_COMMIT: ${{ inputs.compare_ref }}
+        run: |
+          set -euo pipefail
+          [[ "$BEFORE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "before_ref must be an exact SHA-1 commit" >&2
+            exit 2
+          }
+          git fetch --no-tags --depth=1 origin "$BEFORE_COMMIT"
+          git worktree add --detach "$RUNNER_TEMP/excession-immediate-baseline" "$BEFORE_COMMIT"
+          test "$(git -C "$RUNNER_TEMP/excession-immediate-baseline" rev-parse HEAD)" = "$BEFORE_COMMIT"
+          # Isolation criterion: this measures discovery reuse, not a
+          # simultaneous compiler, parser, CLI, or toolchain change.
+          diff="$(git diff --name-only "$BEFORE_COMMIT" HEAD -- core/src | grep -v '^core/src/analyze.rs
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-witness-benchmark
+          path: /tmp/source-witness-benchmark/
+          if-no-files-found: warn
+          retention-days: 30
+ || true)"
+          test -z "$diff" || {
+            printf 'Additional production files changed:\n%s\n' "$diff" >&2
+            exit 1
+          }
+          cp core/target/release/excession "$RUNNER_TEMP/excession-candidate-binary"
+          cargo +1.99.1 build --locked --offline --release \
+            --manifest-path "$RUNNER_TEMP/excession-immediate-baseline/core/Cargo.toml" \
+            --target-dir "$GITHUB_WORKSPACE/core/target" --bin excession
+          python3 benchmarks/experiments/real_fixtures.py \
+            --bin core/target/release/excession \
+            --manifest benchmarks/fixtures/real-repositories.json \
+            --out /tmp/source-witness-benchmark/immediate-before.json \
+            --repetitions 1 --fixture requests --product-fixture requests \
+            --source-replay --compact-impact
+          cp "$RUNNER_TEMP/excession-candidate-binary" core/target/release/excession
+          python3 benchmarks/experiments/real_fixtures.py \
+            --bin core/target/release/excession \
+            --manifest benchmarks/fixtures/real-repositories.json \
+            --out /tmp/source-witness-benchmark/immediate-after-repeat.json \
+            --repetitions 1 --fixture requests --product-fixture requests \
+            --source-replay --compact-impact
+          BEFORE_COMMIT="$BEFORE_COMMIT" python3 - <<'PY'
+          import json, os, statistics
+          from pathlib import Path
+
+          root = Path("/tmp/source-witness-benchmark")
+          reports = {
+              "after_first": json.loads((root / "head.json").read_text()),
+              "before": json.loads((root / "immediate-before.json").read_text()),
+              "after_second": json.loads((root / "immediate-after-repeat.json").read_text()),
+          }
+          for label, report in reports.items():
+              if (report["passed"], report["failed"]) != (1, 0):
+                  raise SystemExit(f"{label} failed independent acceptance")
+          fixtures = {name: data["fixtures"][0] for name, data in reports.items()}
+          counts = [x["dependency_audit"]["counts"] for x in fixtures.values()]
+          if not all(x == counts[0] for x in counts[1:]):
+              raise SystemExit("Source oracle denominations differ across revisions")
+          product = {name: x["product_workflow"] for name, x in fixtures.items()}
+          for name, x in product.items():
+              c = x["compact_impact_acceptance"]
+              if (not c or not c["exact_source_inventory_match"]
+                      or not c["forged_compact_report_refused"]
+                      or c["compact_source_count"] != 24):
+                  raise SystemExit(f"{name}: compact source report lost evidence")
+          def metric(field):
+              return {
+                  name: p["compact_impact_acceptance"][field]
+                  for name, p in product.items()
+              }
+          impact = metric("compact_impact_wall_ms")
+          replay = metric("compact_selected_source_wall_ms")
+          single = metric("compact_batch_wall_ms")
+          before = impact["before"]
+          after = statistics.mean((impact["after_first"], impact["after_second"]))
+          outcome = {
+              "schema": "excession.same-host-pinned-discovery-ab-a.v1",
+              "before_commit": os.environ["BEFORE_COMMIT"],
+              "after_commit": os.environ["GITHUB_SHA"],
+              "fixture": "psf/requests@3c7baaa05ab4aa49cc819ce3a819d260de19c157",
+              "oracle_counts_identical": True,
+              "all_forged_reports_refused": True,
+              "compact_impact_wall_ms": impact,
+              "compact_selected_explain_wall_ms": replay,
+              "compact_batch_explain_wall_ms": single,
+              "impact_improvement_percent_vs_mean_of_two_after": round(
+                  (before - after) / max(1, before) * 100, 2
+              ),
+              "interpretation": (
+                  "One same-run A/B/A comparison. Source fixture is independently checked, "
+                  "but results are exploratory, not statistically significant; command "
+                  "wall time includes Git and analyzer startup. No cache trust was added."
+              ),
+          }
+          (root / "discovery-ab-a.json").write_text(
+              json.dumps(outcome, sort_keys=True, indent=2) + "\n"
+          )
+          print(json.dumps(outcome, sort_keys=True, indent=2))
+          PY
+
       - name: Retain results on success and failure
         if: always()
         uses: actions/upload-artifact@v4

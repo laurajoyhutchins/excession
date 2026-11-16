@@ -46,7 +46,7 @@ Use a checkout containing a supported Python or JavaScript/TypeScript source
 layout. Git reads are pinned to committed objects. The source checkout can be
 dirty for these read-only operations; uncommitted edits are **not included**.
 
-\`\`\`sh
+```sh
 cd /path/to/repository
 excession discover .
 excession analyze .
@@ -60,7 +60,7 @@ excession explain . --report /tmp/impact.json --source src/pkg/handler.py --json
 excession explain . --report /tmp/impact.json --source src/pkg/handler.py \
   --source-commit PINNED_COMMIT --audit
 excession explain . --report /tmp/impact.json --all-sources --json
-\`\`\`
+```
 
 `impact` produces one `excession.impact.v3` report with a
 `candidate_source_impacts` inventory. Each observed dependent source has

@@ -31,6 +31,10 @@ jobs:
         run: cargo fmt --manifest-path core/Cargo.toml -- --check
       - name: Check CI topology before dependency setup
         run: python3 -m unittest discover -s tests -p 'test_ci_topology.py' -v
+      - name: Check documentation paths before dependency setup
+        run: |
+          python3 tools/check_docs.py
+          python3 -m unittest discover -s tests -p 'test_docs.py' -v
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: core -> target

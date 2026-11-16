@@ -341,7 +341,11 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
             .bool()
             .unwrap()
     );
-    let effects = impacted.get("candidate_source_impacts").unwrap().array_ref().unwrap();
+    let effects = impacted
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert!(effects.iter().any(|item| {
         item.get("entity")
             .unwrap()
@@ -352,11 +356,25 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
             == "src/a.rs"
             && item.get("assessment").unwrap().str().unwrap() == "CANDIDATE_PATH"
     }));
-    let selected = effects.iter()
-        .find(|item| item.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs")
+    let selected = effects
+        .iter()
+        .find(|item| {
+            item.get("entity")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap()
+                == "src/a.rs"
+        })
         .unwrap();
-    let source_commit = selected.get("entity").unwrap()
-        .get("source_commit").unwrap().str().unwrap();
+    let source_commit = selected
+        .get("entity")
+        .unwrap()
+        .get("source_commit")
+        .unwrap()
+        .str()
+        .unwrap();
     let explained = json::parse(
         success(f.cli(&[
             "explain",
@@ -374,10 +392,18 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
         .as_bytes(),
     )
     .unwrap();
-    assert_eq!(explained.get("source_commit").unwrap().str().unwrap(), source_commit);
+    assert_eq!(
+        explained.get("source_commit").unwrap().str().unwrap(),
+        source_commit
+    );
     assert_eq!(
         explained.get("steps").unwrap().array_ref().unwrap()[0]
-            .get("source").unwrap().get("path").unwrap().str().unwrap(),
+            .get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap(),
         "src/a.rs"
     );
 }
@@ -685,8 +711,13 @@ fn default_discovers_unique_revision_evidence_and_pins_replay() {
         .iter()
         .find(|x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs")
         .unwrap();
-    let source_commit = effect.get("entity").unwrap()
-        .get("source_commit").unwrap().str().unwrap();
+    let source_commit = effect
+        .get("entity")
+        .unwrap()
+        .get("source_commit")
+        .unwrap()
+        .str()
+        .unwrap();
     // Import a new competing SCIP snapshot after the report was generated.
     // Explanation must replay only the original chosen identities.
     let db = Db::open(&f.db).unwrap();
@@ -713,10 +744,18 @@ fn default_discovers_unique_revision_evidence_and_pins_replay() {
         .as_bytes(),
     )
     .unwrap();
-    assert_eq!(explained.get("source_commit").unwrap().str().unwrap(), source_commit);
+    assert_eq!(
+        explained.get("source_commit").unwrap().str().unwrap(),
+        source_commit
+    );
     assert_eq!(
         explained.get("steps").unwrap().array_ref().unwrap()[0]
-            .get("source").unwrap().get("path").unwrap().str().unwrap(),
+            .get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap(),
         "src/a.rs"
     );
     assert!(
@@ -809,13 +848,38 @@ fn competing_scip_indexes_quarantine_only_overlapping_paths() {
     .unwrap();
     // The head-revision indexes conflict, but the base-revision index is
     // still uniquely sourced and must remain usable for historical impact.
-    let witnesses = impact.get("candidate_source_impacts").unwrap().array_ref().unwrap();
+    let witnesses = impact
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert!(!witnesses.is_empty());
     assert!(witnesses.iter().all(|witness| {
         let hop = witness.get("next_hop").unwrap();
-        witness.get("entity").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
-            && hop.get("source").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
-            && hop.get("target").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
+        witness
+            .get("entity")
+            .unwrap()
+            .get("source_commit")
+            .unwrap()
+            .str()
+            .unwrap()
+            == f.base
+            && hop
+                .get("source")
+                .unwrap()
+                .get("source_commit")
+                .unwrap()
+                .str()
+                .unwrap()
+                == f.base
+            && hop
+                .get("target")
+                .unwrap()
+                .get("source_commit")
+                .unwrap()
+                .str()
+                .unwrap()
+                == f.base
             && !hop.get("evidence").unwrap().array_ref().unwrap().is_empty()
     }));
     assert_eq!(

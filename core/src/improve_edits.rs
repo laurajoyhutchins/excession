@@ -2,8 +2,11 @@
 //! An edit plan is an unauthenticated proposal, never evidence of safe deletion.
 use crate::improve_generic::read_artifact;
 use crate::json::{Value, obj};
-use crate::{Result, analyze, digest, git, refuse};
+use crate::{Result, digest, git, refuse};
+#[cfg(unix)]
+use crate::analyze;
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(unix)]
 use std::fs;
 #[cfg(unix)]
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -215,13 +218,12 @@ fn write_pinned_regular_file(target: &Path, original: &[u8], rewritten: &[u8]) -
     Ok(())
 }
 
-/// Until no-follow, file-identity verification is supported on this
-/// platform, preview remains available but mutation must fail closed.
 #[cfg(not(unix))]
-fn write_pinned_regular_file(_target: &Path, _original: &[u8], _rewritten: &[u8]) -> Result<()> {
+fn apply(_repo: &Path, _commit: &str, _output: &Path, _changed: &[Changed]) -> Result<()> {
     refuse("native edit application is unsupported on this platform")
 }
 
+#[cfg(unix)]
 fn apply(repo: &Path, commit: &str, output: &Path, changed: &[Changed]) -> Result<()> {
     let checked = analyze::checked_external_destination(repo, output, "improvement worktree")?;
     if checked.exists() {

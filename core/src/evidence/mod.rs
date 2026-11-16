@@ -1,5 +1,6 @@
 //! Canonical evidence identities shared by specialized producers.
 pub mod artifact;
+pub mod attestation;
 pub mod build;
 pub mod claims;
 pub mod comparison;

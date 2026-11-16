@@ -60,18 +60,20 @@ excession analyze .
 excession impact . --output /tmp/excession-impact.json
 ```
 
-The default impact output lists candidate dependent paths and their full
-`claim_id` values. `--output` saves the exact replayable JSON without
-overwriting an existing file or writing into the source repository. Use an
-absolute path in an existing external directory. If a candidate is listed,
-copy its claim ID to inspect its evidence:
+The current `excession.impact.v3` report ranks **Git-bound source
+witnesses**, not claim IDs or asserted path effects. `--output` saves the
+exact replayable JSON outside the source checkout without overwriting an
+existing file. Select a reported source path for evidence replay:
 
 ```sh
 excession explain . --report /tmp/excession-impact.json \
-  --id YOUR_CLAIM_ID
+  --source src/pkg/handler.py --json
 excession explain . --report /tmp/excession-impact.json \
-  --id YOUR_CLAIM_ID --audit
+  --source src/pkg/handler.py --audit
 ```
+
+Replace the example path with an actual `candidate_source_impacts` entry.
+Explanations preserve partial coverage and do not prove behavioral impact.
 
 The `--audit` result distinguishes source replay from independent semantic
 validation. Source replay does **not** establish that an affected module is
@@ -179,14 +181,29 @@ selection still narrows scope. See
 [observed relationship analysis](docs/OBSERVED_RELATIONSHIP_ANALYSIS.md).
 Build membership is never silently promoted to a source dependency.
 
-## GitHub Actions evidence (no service)
+## Use Excession through GitHub
 
-The [GitHub evidence workflow](docs/GITHUB_EVIDENCE.md) can run Excession at
-an immutable commit in CI and upload a versioned, machine-readable report. It
-preserves base/head Git identities, source witnesses, candidate impacts,
-coverage, suggested checks, provenance and unresolved obligations. An agent
-with only GitHub access can retrieve the workflow artifact without using a
-live MCP server. A produced report is not a merge approval or a test receipt.
+**ChatGPT or an agent with the GitHub connector:** request `locate`,
+`context`, or `verify` against a full commit SHA by creating an owner-authored
+[Excession analysis request](.github/ISSUE_TEMPLATE/excession-analysis.md).
+GitHub Actions runs the actual Rust CLI and uploads its original JSON result,
+checksum-bearing receipt, and coverage obligations. Retrieve the workflow
+artifact through GitHub; no hosted server, Cloud Run instance, or custom MCP
+connection is needed. See [request format and artifact validation](docs/GITHUB_NATIVE_ANALYSIS.md).
+
+**Pull requests and other repositories:** use the separate
+[reusable GitHub evidence workflow](docs/GITHUB_EVIDENCE.md). It produces an
+auditable base/head evidence envelope at pinned source and producer revisions
+without executing the target repository's tests or granting merge approval.
+
+Both paths run on GitHub-hosted workers, use read-only contents permissions,
+and treat caches as disposable. A green workflow means evidence was produced,
+not that semantic correctness, test selection, or merge readiness was proved.
+[CI execution policy](docs/CI.md) defines the narrow PR checks and deep gates.
+
+For a *local* coding agent, Excession also has a separate, repository-scoped
+[stdio MCP integration](docs/MCP.md). It does not need to be deployed to
+ChatGPT to use the GitHub workflows.
 
 ## Coding-agent interface
 

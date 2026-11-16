@@ -1,0 +1,95 @@
+name: Excession agent analysis (GitHub-native)
+
+# A GitHub issue is the in-chat request transport. No external service, token,
+# GCP, or MCP installation is needed; the connected GitHub app can create issues.
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      request:
+        description: 'Exact bounded JSON request (see docs/GITHUB_NATIVE_ANALYSIS.md)'
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - '.github/workflows/github-native-analysis.yml'
+      - 'config/github-analysis-targets.json'
+      - 'tools/github_analysis.py'
+      - 'tests/test_github_analysis.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-analysis-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  request-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Reject unauthorized requests and unverifiable source identities
+        run: python3 -m unittest discover -s tests -p 'test_github_analysis.py' -v
+
+  analyze:
+    if: >-
+      (github.event_name == 'issues' &&
+       github.event.issue.title == 'Excession analysis request' &&
+       github.event.issue.user.id == 219002713 &&
+       !github.event.issue.pull_request) ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.actor_id == '219002713')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Validate owner-originated request before building Rust
+        env:
+          REQUEST_ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          python3 tools/github_analysis.py validate \
+            --event "$GITHUB_EVENT_PATH" \
+            --actor-id "$REQUEST_ACTOR_ID" \
+            --out "$RUNNER_TEMP/excession-request.json"
+      - name: Select pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Build actual Excession source with locked dependencies
+        run: |
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --offline --locked --release --manifest-path core/Cargo.toml --bin excession
+      - name: Run pinned, read-only source analysis
+        run: |
+          python3 tools/github_analysis.py execute \
+            --request "$RUNNER_TEMP/excession-request.json" \
+            --binary "$GITHUB_WORKSPACE/core/target/release/excession" \
+            --out "$RUNNER_TEMP/excession-evidence"
+      - name: Report status and explicit unknowns
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/excession-evidence/summary.md" ]; then
+            cat "$RUNNER_TEMP/excession-evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain source-bound report and receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-analysis-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/excession-evidence/report.json
+            ${{ runner.temp }}/excession-evidence/receipt.json
+            ${{ runner.temp }}/excession-evidence/summary.md
+          if-no-files-found: warn
+          retention-days: 30

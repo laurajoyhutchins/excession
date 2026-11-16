@@ -13,7 +13,10 @@ on:
       - 'core/examples/history_self_replay.rs'
       - 'core/src/source/history.rs'
       - 'core/src/source/history_rewrite.rs'
+      - 'core/src/source/history_external.rs'
       - 'core/tests/history_dag_preview.rs'
+      - 'core/tests/history_external_cli.rs'
+      - 'contracts/history/external-snapshot.v1.schema.json'
       - '.github/workflows/history-self-replay.yml'
       - 'docs/HISTORY_REORGANIZATION.md'
 
@@ -23,6 +26,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   full-replay:
@@ -91,6 +95,76 @@ jobs:
           assert result["original_refs_unchanged"] is True
           assert result["rewrite_authorized"] is False
           PY
+      - name: Fetch GitHub PR heads and classify external evidence gaps
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/pulls?state=all&per_page=100" \
+            > "$RUNNER_TEMP/pr-pages.json"
+          python3 - "$RUNNER_TEMP/pr-pages.json" "$RUNNER_TEMP/external-snapshot.json" <<'PY'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import sys
+
+          pages = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert isinstance(pages, list)
+          records = []
+          numbers = set()
+          for page in pages:
+              assert isinstance(page, list)
+              for pr in page:
+                  number = pr["number"]
+                  assert number not in numbers
+                  numbers.add(number)
+                  records.append({
+                      "number": number,
+                      "state": pr["state"],
+                      "head_commit": pr["head"]["sha"],
+                      "base_commit": pr["base"]["sha"],
+                      "merge_commit": pr.get("merge_commit_sha"),
+                  })
+          pinned = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          snapshot = {
+              "schema": "excession.history-external-snapshot.v1",
+              "repository": os.environ["GITHUB_REPOSITORY"],
+              "pinned_original_head": pinned,
+              "captured_at": datetime.datetime.now(datetime.timezone.utc)
+                  .isoformat().replace("+00:00", "Z"),
+              "pull_requests": records,
+              "receipts": [],
+          }
+          pathlib.Path(sys.argv[2]).write_text(
+              json.dumps(snapshot, sort_keys=True, indent=2) + "\n"
+          )
+          print("GitHub PR identity observations:", len(records))
+          print("Build and REA receipts were not provided; their validity remains unknown")
+          PY
+          core/target/debug/excession history reconcile-external \
+            --mapping "$RUNNER_TEMP/excession-history-dag-preview/mapping.json" \
+            --snapshot "$RUNNER_TEMP/external-snapshot.json" \
+            > "$RUNNER_TEMP/external-reconciliation.json"
+          python3 - "$RUNNER_TEMP/external-reconciliation.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          report = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          assert report["classification"] == "SOURCE_IDENTITIES_CLASSIFIED_NOT_ATTESTED"
+          assert report["rewrite_authorized"] is False
+          assert report["build_provenance_verified"] is False
+          assert report["rea_evidence_verified"] is False
+          print("Classified PRs:", report["pull_request_count"])
+          print("Changed PR identities:", report["changed_pull_request_count"])
+          print("Missing local PR sources:", report["unfetched_pull_request_count"])
+          PY
       - name: Upload immutable source-replay reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,4 +175,6 @@ jobs:
             ${{ runner.temp }}/excession-history-self-replay/resources.txt
             ${{ runner.temp }}/excession-history-dag-preview/*.json
             ${{ runner.temp }}/dag-preview-result.json
+            ${{ runner.temp }}/external-snapshot.json
+            ${{ runner.temp }}/external-reconciliation.json
           if-no-files-found: warn

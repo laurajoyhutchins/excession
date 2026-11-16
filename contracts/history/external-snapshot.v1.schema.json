@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/history/external-snapshot.v1.schema.json",
+  "title": "Unattested external PR and build/REA inventory pinned to original Git source",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repository",
+    "pinned_original_head",
+    "captured_at",
+    "pull_requests",
+    "receipts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.history-external-snapshot.v1"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "pinned_original_head": {
+      "$ref": "#/$defs/gitOid"
+    },
+    "captured_at": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "pull_requests": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "number",
+          "state",
+          "head_commit",
+          "base_commit",
+          "merge_commit"
+        ],
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "enum": [
+              "open",
+              "closed"
+            ]
+          },
+          "head_commit": {
+            "$ref": "#/$defs/gitOid"
+          },
+          "base_commit": {
+            "$ref": "#/$defs/gitOid"
+          },
+          "merge_commit": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/gitOid"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "receipts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "source_commit",
+          "receipt_sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "kind": {
+            "enum": [
+              "BUILD_PROVENANCE",
+              "REA_EVIDENCE"
+            ]
+          },
+          "source_commit": {
+            "$ref": "#/$defs/gitOid"
+          },
+          "receipt_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    }
+  }
+}

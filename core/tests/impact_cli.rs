@@ -534,12 +534,22 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
         String::from_utf8_lossy(&compact_out.stderr)
     );
     let compact = json::parse(&compact_out.stdout).unwrap();
-    assert_eq!(compact.get("schema").unwrap().str().unwrap(), "excession.impact.v2");
+    assert_eq!(
+        compact.get("schema").unwrap().str().unwrap(),
+        "excession.impact.v2"
+    );
     assert_eq!(
         compact.get("path_effects_status").unwrap().str().unwrap(),
         "OMITTED_COMPACT"
     );
-    assert!(compact.get("effects").unwrap().array_ref().unwrap().is_empty());
+    assert!(
+        compact
+            .get("effects")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         compact.get("candidate_source_impacts").unwrap(),
         result.get("candidate_source_impacts").unwrap(),
@@ -550,17 +560,31 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
         result.get("candidate_source_count").unwrap()
     );
     assert_eq!(
-        compact.get("candidate_source_enumeration_complete").unwrap(),
+        compact
+            .get("candidate_source_enumeration_complete")
+            .unwrap(),
         result.get("candidate_source_enumeration_complete").unwrap()
     );
     assert_eq!(
         compact.get("change_inventory_id").unwrap(),
         result.get("change_inventory_id").unwrap()
     );
-    assert!(compact.get("unknown").unwrap().array_ref().unwrap().iter().all(
-        |gap| gap.get("reason").unwrap().str().unwrap() != "TRUNCATED"
-    ));
-    assert!(!compact.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+    assert!(
+        compact
+            .get("unknown")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .all(|gap| gap.get("reason").unwrap().str().unwrap() != "TRUNCATED")
+    );
+    assert!(
+        !compact
+            .get("safe_to_skip_unlisted_tests")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
     assert!(
         compact_out.stdout.len() < output.stdout.len(),
         "compact output should not serialize hundreds of alternative path proofs"
@@ -625,7 +649,13 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
     );
     let batch = json::parse(&batched.stdout).unwrap();
     assert_eq!(batch.get("count").unwrap().integer().unwrap(), 42);
-    assert!(batch.get("source_inventory_complete").unwrap().bool().unwrap());
+    assert!(
+        batch
+            .get("source_inventory_complete")
+            .unwrap()
+            .bool()
+            .unwrap()
+    );
     assert_eq!(
         batch.get("replayed_impact_report_id").unwrap(),
         compact.get("report_id").unwrap()
@@ -639,7 +669,10 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
             compact_path.to_str().unwrap(),
             "--id",
             result.get("effects").unwrap().array_ref().unwrap()[0]
-                .get("claim_id").unwrap().str().unwrap(),
+                .get("claim_id")
+                .unwrap()
+                .str()
+                .unwrap(),
             "--db",
             database.to_str().unwrap(),
             "--roots",
@@ -657,18 +690,28 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
     // A forged source witness may be self-consistent JSON, but is not an
     // authenticated replay of the Git-indexed relationship inventory.
     let mut poisoned = compact.clone();
-    let first = poisoned.get("candidate_source_impacts").unwrap().array_ref().unwrap()[0].clone();
+    let first = poisoned
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap()[0]
+        .clone();
     let mut broken = first;
-    broken.entries_mut().unwrap().insert(
-        "assessment".into(),
-        json::Value::string("OBSERVED"),
-    );
-    let mut rows = poisoned.get("candidate_source_impacts").unwrap().array_ref().unwrap().to_vec();
+    broken
+        .entries_mut()
+        .unwrap()
+        .insert("assessment".into(), json::Value::string("OBSERVED"));
+    let mut rows = poisoned
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap()
+        .to_vec();
     rows[0] = broken;
-    poisoned.entries_mut().unwrap().insert(
-        "candidate_source_impacts".into(),
-        json::Value::array(rows),
-    );
+    poisoned
+        .entries_mut()
+        .unwrap()
+        .insert("candidate_source_impacts".into(), json::Value::array(rows));
     fs::write(&compact_path, poisoned.canonical()).unwrap();
     let forged = Command::new(env!("CARGO_BIN_EXE_excession"))
         .args([

@@ -335,7 +335,13 @@ pub fn run_with_evidence(
     selected: EvidenceByRevision<'_>,
 ) -> Result<Value> {
     run_core(
-        path, base, head, roots, database, Mode::Explicit(selected), PathDetail::Legacy,
+        path,
+        base,
+        head,
+        roots,
+        database,
+        Mode::Explicit(selected),
+        PathDetail::Legacy,
     )
 }
 
@@ -348,7 +354,13 @@ pub fn run_with_evidence_compact(
     selected: EvidenceByRevision<'_>,
 ) -> Result<Value> {
     run_core(
-        path, base, head, roots, database, Mode::Explicit(selected), PathDetail::Compact,
+        path,
+        base,
+        head,
+        roots,
+        database,
+        Mode::Explicit(selected),
+        PathDetail::Compact,
     )
 }
 
@@ -384,8 +396,13 @@ pub fn run_with_plans_compact(
     head_plan: &Plan,
 ) -> Result<Value> {
     run_core(
-        path, base, head, roots, database,
-        Mode::Pinned(base_plan, head_plan), PathDetail::Compact,
+        path,
+        base,
+        head,
+        roots,
+        database,
+        Mode::Pinned(base_plan, head_plan),
+        PathDetail::Compact,
     )
 }
 
@@ -535,11 +552,14 @@ fn run_core(
         gaps.push(obj(&[("reason", Value::string("TRUNCATED"))]));
     }
     let mut result = obj(&[
-        ("schema", Value::string(if detail == PathDetail::Legacy {
-            "excession.impact.v1"
-        } else {
-            "excession.impact.v2"
-        })),
+        (
+            "schema",
+            Value::string(if detail == PathDetail::Legacy {
+                "excession.impact.v1"
+            } else {
+                "excession.impact.v2"
+            }),
+        ),
         ("base_commit", Value::string(base_commit)),
         ("head_commit", Value::string(head_commit)),
         ("change_inventory_id", changes.get("report_id")?.clone()),
@@ -694,7 +714,10 @@ pub fn human(report: &Value) -> Result<String> {
         lines[0] = format!(
             "Excession change impact: {source_count} distinct-source candidates; alternative paths not enumerated."
         );
-        lines.push("Compact v2: source witnesses preserve original Git identities and producer evidence.".to_owned());
+        lines.push(
+            "Compact v2: source witnesses preserve original Git identities and producer evidence."
+                .to_owned(),
+        );
         for witness in report
             .get("candidate_source_impacts")?
             .array_ref()?

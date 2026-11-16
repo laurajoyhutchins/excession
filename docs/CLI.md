@@ -54,10 +54,14 @@ excession analyze languages
 excession analyze languages --roots src,tests --json
 excession changes .
 excession impact . --output /tmp/impact.json
+# To avoid enumerating the legacy 512 alternative paths:
+excession impact . --compact --output /tmp/impact-v2.json
 ```
 
-The default human report shows up to ten candidate paths and their full
-`claim_id` values. `--output` saves the complete versioned JSON at a new,
+The default v1 human report shows up to ten alternative paths and their full
+`claim_id` values. V2 `--compact` instead shows distinct-source candidates
+without building alternative path records; it marks `path_effects_status`
+as `OMITTED_COMPACT` and retains independently bounded source coverage. `--output` saves the complete versioned JSON at a new,
 absolute path outside the source checkout, refusing to overwrite an existing
 file. It does not create parent directories. `--json` can also print the full
 machine-readable report to stdout, and may be combined with `--output`.
@@ -75,6 +79,11 @@ excession explain . --report /tmp/impact.json --source src/pkg/handler.py --json
 excession explain . --report /tmp/impact.json --source src/pkg/handler.py \
   --source-commit PINNED_COMMIT --audit
 excession explain . --report /tmp/impact.json --all-sources --json
+
+# A versioned compact impact report has no legacy effect claim IDs:
+excession explain . --report /tmp/impact-v2.json \
+  --source src/pkg/handler.py --json
+excession explain . --report /tmp/impact-v2.json --all-sources --json
 ```
 
 Source witness explanations use one decreasing-rank path per distinct dependent

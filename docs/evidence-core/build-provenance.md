@@ -33,3 +33,8 @@ observations and build results. It does not replace native REA IDs or meanings.
 This is the live JSON report format, validated against real Rust CLI output:
 [build-provenance.v1.schema.json](../../contracts/evidence-core/build-provenance.v1.schema.json).
 No redundant ODCS catalog or Python production implementation is introduced.
+
+For a separate cryptographically signed workflow and artifact claim, see
+[verified GitHub artifact attestations](attestation.md). Such a signature
+verifies the workflow's asserted provenance, but does not establish complete
+source-to-binary causality or transitive input completeness.

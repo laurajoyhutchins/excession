@@ -1,0 +1,94 @@
+name: Signed artifact verification smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - core/src/evidence/attestation.rs
+      - core/src/evidence/mod.rs
+      - core/src/compiler_check.rs
+      - core/src/bin/excession.rs
+      - core/src/bin/excession/cli.rs
+      - core/tests/fixtures/attestation/main.rs
+      - docs/evidence-core/attestation.md
+      - .github/workflows/artifact-attestation-smoke.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  signed:
+    name: Real GitHub-signed Rust binary and independent CLI verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      MISE_ENABLE_TOOLS: rust
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+      - name: Build one committed Rust fixture with no third-party packages
+        run: |
+          rustc --edition 2024 -O core/tests/fixtures/attestation/main.rs \
+            -o "$RUNNER_TEMP/excession-signed-fixture"
+      - name: Issue a real GitHub OIDC and Sigstore artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/excession-signed-fixture
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Resolve Excession's pinned Rust dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Compile the Excession verifier
+        run: cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Verify the original signature, signer, artifact and source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/excession-signed-fixture"
+          evidence="$RUNNER_TEMP/excession-signed-evidence.sqlite"
+          core/target/debug/excession evidence signed-artifact \
+            --db "$evidence" --repo . --rev "$GITHUB_SHA" \
+            --artifact "$binary" \
+            --signed-repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "github.com/$GITHUB_REPOSITORY/.github/workflows/artifact-attestation-smoke.yml" \
+            --source-ref refs/heads/main \
+            --trusted-local true > "$RUNNER_TEMP/signed.json"
+          snapshot="$(jq -r .snapshot_id "$RUNNER_TEMP/signed.json")"
+          test "${#snapshot}" -eq 64
+          core/target/debug/excession inspect signed-artifact \
+            --db "$evidence" --repo . --rev "$GITHUB_SHA" \
+            --artifact "$binary" --snapshot "$snapshot" > "$RUNNER_TEMP/audited.json"
+          cmp "$RUNNER_TEMP/signed.json" "$RUNNER_TEMP/audited.json"
+          jq -e '.source_artifact_relation == "NOT_ESTABLISHED" and
+                  .dependency_closure == "NOT_ESTABLISHED" and
+                  .workflow_execution == "SIGNED_WORKFLOW_CLAIM_NOT_REPRODUCED_BUILD"' \
+            "$RUNNER_TEMP/audited.json"
+      - name: Reject changed artifact bytes on independent audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          binary="$RUNNER_TEMP/excession-signed-fixture"
+          evidence="$RUNNER_TEMP/excession-signed-evidence.sqlite"
+          snapshot="$(jq -r .snapshot_id "$RUNNER_TEMP/signed.json")"
+          printf x >> "$binary"
+          if core/target/debug/excession inspect signed-artifact \
+            --db "$evidence" --repo . --rev "$GITHUB_SHA" \
+            --artifact "$binary" --snapshot "$snapshot" 2>/dev/null; then
+            echo "Mutated artifact unexpectedly passed signature audit" >&2
+            exit 1
+          fi

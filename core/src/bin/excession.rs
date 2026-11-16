@@ -1683,6 +1683,39 @@ fn execute(args: &[String]) -> Result<Response> {
                 },
             )?))
         }
+        [top, sub] if top == "evidence" && sub == "signed-artifact" => {
+            if opt.get("trusted-local") != "true" {
+                return refuse("signed artifact verification requires --trusted-local true");
+            }
+            let db_path = analyze::checked_external_destination(
+                opt.path("repo"),
+                opt.path("db"),
+                "signed artifact evidence",
+            )?;
+            let db = Db::open(&db_path)?;
+            Ok(json(excession::evidence::attestation::verify(
+                &db,
+                &excession::evidence::attestation::VerifySpec {
+                    repo: opt.path("repo"),
+                    revision: opt.get("rev"),
+                    artifact: opt.path("artifact"),
+                    signed_repository: opt.get("signed-repo"),
+                    signer_workflow: opt.get("signer-workflow"),
+                    source_ref: opt.get("source-ref"),
+                    trusted_local: true,
+                },
+            )?))
+        }
+        [top, sub] if top == "inspect" && sub == "signed-artifact" => {
+            let db = Db::open(opt.path("db"))?;
+            Ok(json(excession::evidence::attestation::audit(
+                &db,
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.path("artifact"),
+                opt.get("snapshot"),
+            )?))
+        }
         [top, sub] if top == "inspect" && sub == "artifact-evidence" => {
             let db = Db::open(opt.path("db"))?;
             let link = rea_build_link(opt)?;

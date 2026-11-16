@@ -173,6 +173,12 @@ pub(super) fn command() -> Command {
                 &[],
             ),
             leaf(
+                "signed-artifact",
+                &["db", "repo", "rev", "artifact", "snapshot"],
+                &[],
+            )
+            .about("Reverify the original signed artifact bundle and Git source using GitHub CLI"),
+            leaf(
                 "artifact-evidence",
                 &["db", "artifact"],
                 &["repo", "rev", "build-snapshot", "limit"],
@@ -246,6 +252,12 @@ pub(super) fn command() -> Command {
                 ],
                 &[],
             ),
+            leaf(
+                "signed-artifact",
+                &["db", "repo", "rev", "artifact", "signed-repo",
+                    "signer-workflow", "source-ref", "trusted-local"],
+                &[],
+            ).about("Cryptographically verify a GitHub-signed artifact claim and persist original signed evidence"),
             leaf(
                 "ghidra-import",
                 &["db", "artifact", "report", "native"],

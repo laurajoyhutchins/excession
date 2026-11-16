@@ -467,112 +467,61 @@ fn run_core(
 
 pub fn human(report: &Value) -> Result<String> {
     const PREVIEW_LIMIT: usize = 10;
-    let effects = report.get("effects")?.array_ref()?;
-    let compact = report.get("schema")?.str()? == "excession.impact.v2";
     let source_count = report.get("candidate_source_count")?.integer()?;
+    let source_complete = report
+        .get("candidate_source_enumeration_complete")?
+        .bool()?;
     let native_count = report.get("native_reference_count")?.integer()?;
     let native_complete = report
         .get("native_reference_enumeration_complete")?
         .bool()?;
-    let native_candidates = report.get("native_reference_impacts")?.array_ref()?;
-    let source_complete = report
-        .get("candidate_source_enumeration_complete")?
-        .bool()?;
-    let gaps = report.get("unknown")?.array_ref()?.len();
     let mut lines = vec![
+        format!("Excession change impact: {source_count} distinct-source candidates."),
         format!(
-            "Excession change impact: {} candidate dependent paths.",
-            effects.len()
+            "Observed-graph source inventory: {}.",
+            if source_complete { "complete" } else { "truncated" }
         ),
         format!(
-            "Distinct dependent sources: {source_count} (observed-graph inventory {}).",
-            if source_complete {
-                "complete"
-            } else {
-                "truncated"
-            }
-        ),
-        format!(
-            "Java compiler-observed sources: {native_count} (unattested, observed graph {}).",
-            if native_complete {
-                "complete"
-            } else {
-                "truncated"
-            }
+            "Java compiler-observed sources: {native_count} (unattested, {}).",
+            if native_complete { "complete" } else { "truncated" }
         ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
     ];
-    if compact {
-        lines[0] = format!(
-            "Excession change impact: {source_count} distinct-source candidates; alternative paths not enumerated."
-        );
-        lines.push(
-            "Compact v2: source witnesses preserve original Git identities and producer evidence."
-                .to_owned(),
-        );
-        for witness in report
-            .get("candidate_source_impacts")?
-            .array_ref()?
-            .iter()
-            .take(PREVIEW_LIMIT)
-        {
-            lines.push(format!(
-                "  {:?} -> {:?} ({} hops to changed source)",
-                witness.get("entity")?.get("path")?.str()?,
-                witness.get("next_hop")?.get("target")?.get("path")?.str()?,
-                witness.get("distance_to_change")?.integer()?,
-            ));
-        }
-        lines.push("Use excession explain --source PATH or --all-sources to reconstruct authenticated paths.".to_owned());
-    } else if effects.is_empty() {
-        lines.push("No static-import or SCIP candidates found in the analyzed scope.".to_owned());
-    } else {
-        lines.push("Candidate paths (source -> changed dependency):".to_owned());
-        for effect in effects.iter().take(PREVIEW_LIMIT) {
-            let hops = effect.get("hops")?.array_ref()?;
-            let last = hops.last().ok_or("impact candidate has no evidence path")?;
-            lines.push(format!(
-                "  {:?} -> {:?} ({} hop{})",
-                effect.get("entity")?.get("path")?.str()?,
-                last.get("target")?.get("path")?.str()?,
-                hops.len(),
-                if hops.len() == 1 { "" } else { "s" }
-            ));
-            lines.push(format!("    claim {}", effect.get("claim_id")?.str()?));
-        }
-        if effects.len() > PREVIEW_LIMIT {
-            lines.push(format!(
-                "  ... {} additional candidate paths (use --json to inspect all)",
-                effects.len() - PREVIEW_LIMIT
-            ));
-        }
+    let sources = report.get("candidate_source_impacts")?.array_ref()?;
+    for witness in sources.iter().take(PREVIEW_LIMIT) {
+        lines.push(format!(
+            "  {:?} -> {:?} ({} hops to changed source)",
+            witness.get("entity")?.get("path")?.str()?,
+            witness.get("next_hop")?.get("target")?.get("path")?.str()?,
+            witness.get("distance_to_change")?.integer()?,
+        ));
     }
-    if !native_candidates.is_empty() {
-        lines.push(
-            "Java compiler-observed source candidates (not runtime dependencies):".to_owned(),
-        );
-        for witness in native_candidates.iter().take(PREVIEW_LIMIT) {
-            lines.push(format!(
-                "  {:?} -> {:?} ({} hops; producer unattested)",
-                witness.get("entity")?.get("path")?.str()?,
-                witness.get("next_hop")?.get("target")?.get("path")?.str()?,
-                witness.get("distance_to_change")?.integer()?,
-            ));
-        }
-        if native_candidates.len() > PREVIEW_LIMIT {
-            lines.push(format!(
-                "  ... {} more Java candidates (use --json)",
-                native_candidates.len() - PREVIEW_LIMIT
-            ));
-        }
+    if sources.len() > PREVIEW_LIMIT {
+        lines.push(format!(
+            "  ... {} further source witnesses (use --json)",
+            sources.len() - PREVIEW_LIMIT
+        ));
     }
-    lines.push(format!("Unknown/unsupported: {gaps} observations."));
+    for witness in report
+        .get("native_reference_impacts")?
+        .array_ref()?
+        .iter()
+        .take(PREVIEW_LIMIT)
+    {
+        lines.push(format!(
+            "  Java {:?} -> {:?} ({} hops; producer unattested)",
+            witness.get("entity")?.get("path")?.str()?,
+            witness.get("next_hop")?.get("target")?.get("path")?.str()?,
+            witness.get("distance_to_change")?.integer()?,
+        ));
+    }
+    lines.push(format!(
+        "Unknown/unsupported: {} observations.",
+        report.get("unknown")?.array_ref()?.len(),
+    ));
     lines.push("Coverage: PARTIAL. Unlisted tests cannot be assumed safe to skip.".to_owned());
-    lines.push(
-        "Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence."
-            .to_owned(),
-    );
+    lines.push("Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence.".to_owned());
     Ok(lines.join("\n"))
 }
 

@@ -75,7 +75,17 @@ class GithubEvidence(unittest.TestCase):
             ],
             "coverage": {"status": "PARTIAL", "gaps": [{"reason": "TEST_SELECTION_NOT_PROVEN"}], "truncated": False},
             "test_candidates": [
-                {"source": {"path": "tests/test_module.py"}, "reason": "PATH_NAME_HEURISTIC", "selection_verified": False}
+                {
+                    "source": {
+                        "source_commit": self.head,
+                        "source_tree": self.head_tree,
+                        "path": "tests/test_module.py",
+                        "blob": run(self.repo, "rev-parse", self.head + ":tests/test_module.py"),
+                        "mode": "100644",
+                    },
+                    "reason": "PATH_NAME_HEURISTIC",
+                    "selection_verified": False,
+                }
             ],
             "safe_to_skip_unlisted_tests": False,
         }

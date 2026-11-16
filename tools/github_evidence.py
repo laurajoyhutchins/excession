@@ -231,13 +231,13 @@ def summary(report: dict) -> str:
     lines = [
         "### Excession source evidence",
         "",
-        f"- Base: \`{report['base']['commit']}\`",
-        f"- Head: \`{report['head']['commit']}\`",
+        f"- Base: `{report['base']['commit']}`",
+        f"- Head: `{report['head']['commit']}`",
         f"- Changed paths: {report['coverage']['changed_paths']}",
         f"- Source witnesses: {len(report['source_witnesses'])} (maximum {MAX_FOCUS})",
         f"- Suggested checks: {len(report['suggested_checks'])} (unverified)",
         f"- Unresolved obligations: {len(report['unresolved_obligations'])}",
-        f"- Artifact: \`{artifact}\`, file \`github-evidence.v1.json\`",
+        f"- Artifact: `{artifact}`, file `github-evidence.v1.json`",
     ]
     if url:
         lines.append(f"- [Workflow run and artifacts]({url})")
@@ -282,7 +282,7 @@ def main() -> int:
         (args.out / "summary.md").write_text(
             "### Excession source evidence\n\n"
             "Evidence generation failed. No success-shaped evidence report was produced. "
-            "See the retained \`failure.json\` diagnostic.\n",
+            "See the retained `failure.json` diagnostic.\n",
             encoding="utf-8",
         )
         print(f"Evidence generation failed: {exc}", file=sys.stderr)

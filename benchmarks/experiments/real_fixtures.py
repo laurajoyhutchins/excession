@@ -324,7 +324,6 @@ def verify_product_workflow(
     binary: Path, repo: Path, work: Path, fixture: dict, commit: str,
     tree: str, objects: dict[str, tuple[str, str]],
     source_replay: bool = False,
-    compact_impact: bool = False,
 ) -> dict:
     """Held-out Git-source oracle for the public CLI on a pinned upstream repo.
 
@@ -616,7 +615,7 @@ def verify_product_workflow(
 
 def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int,
                     product_fixtures: frozenset[str] = frozenset(("h11", "axios")),
-                    source_replay: bool = False, compact_impact: bool = False) -> dict:
+                    source_replay: bool = False) -> dict:
     name = fixture["name"]
     repo = work / name
     commit, tree = checkout(fixture, repo)
@@ -649,7 +648,6 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int,
         verify_product_workflow(
             binary, repo, work, fixture, commit, tree, source,
             source_replay=source_replay,
-            compact_impact=compact_impact,
         )
         if name in product_fixtures else None
     )
@@ -692,8 +690,6 @@ def main() -> None:
     parser.add_argument("--product-fixture", action="append", default=[], help="Run full independent product workflow for this selected fixture")
     parser.add_argument("--source-replay", action="store_true",
                         help="Manually check and time source-witness batch vs existing replay")
-    parser.add_argument("--compact-impact", action="store_true",
-                        help="Manually compare compact v2 impact and source replay against legacy v1")
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("repetitions must be positive")
@@ -704,17 +700,16 @@ def main() -> None:
         raise ValueError("unknown fixture declaration schema")
     selected, products = select_fixtures(fixtures["fixtures"], args.fixture, args.product_fixture)
     report = {
-        "schema": "excession.real-projection-fixture-results.v1",
+        "schema": "excession.real-projection-fixture-results.v2",
         "fixture_spec_sha256": hashlib.sha256(fixtures_file.read_bytes()).hexdigest(),
         "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         "repetitions": args.repetitions,
         "source_replay_enabled": args.source_replay,
-        "compact_impact_enabled": args.compact_impact,
         "selected_fixtures": [f["name"] for f in selected],
         "product_fixtures": sorted(products),
         "fixtures": [],
         "limitations": (
-            "Source OIDs, compact/full parity, and tamper refusal are checked. "
+            "Source OIDs, source witness replay, and tamper refusal are checked. "
             "Pinned h11 and Axios also exercise exact-revision public analyze-impact-"
             "explain replay against an independent source-import oracle. "
             "Graph retrieval and view selection both consume the same semantic SQLite index; "
@@ -734,7 +729,6 @@ def main() -> None:
                 result = inspect_fixture(
                     binary, fixture, work, args.repetitions, products,
                     source_replay=args.source_replay,
-                    compact_impact=args.compact_impact,
                 )
                 report["fixtures"].append(result)
                 audit = result["dependency_audit"]["counts"]

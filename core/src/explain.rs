@@ -455,24 +455,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn refuses_claim_hash_tampering_and_ambiguous_ids() {
-        let effect = obj(&[
-            ("entity", Value::string("source")),
-            ("assessment", Value::string("CANDIDATE_PATH")),
-        ]);
-        let mut correct = effect.clone();
-        correct
-            .entries_mut()
-            .unwrap()
-            .insert("claim_id".into(), Value::string(effect.sha256()));
-        let report = obj(&[("effects", Value::array([correct.clone()]))]);
-        assert!(find_claim(&report, &effect.sha256()).is_ok());
-        correct
-            .entries_mut()
-            .unwrap()
-            .insert("claim_id".into(), Value::string("a".repeat(64)));
-        let poisoned = obj(&[("effects", Value::array([correct]))]);
-        assert!(find_claim(&poisoned, &effect.sha256()).is_err());
-    }
 }

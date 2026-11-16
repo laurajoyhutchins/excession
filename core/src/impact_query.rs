@@ -14,6 +14,14 @@ const MAX_EFFECTS: usize = 512;
 const MAX_SOURCE_IMPACTS: usize = 10_000;
 const MAX_GAPS: usize = 9999;
 
+/// Leave the legacy path-heavy report available for stable claim IDs, while
+/// making finite distinct-source reachability a separate versioned result.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PathDetail {
+    Legacy,
+    Compact,
+}
+
 /// Return each producer's native relationship and its evidence unchanged.
 /// Current aggregate analysis only emits static import *candidates*.
 fn incoming(analysis: &Value) -> Result<BTreeMap<String, Vec<Value>>> {
@@ -229,6 +237,29 @@ pub fn run_auto(
     roots: Option<&str>,
     database: Option<&str>,
 ) -> Result<Value> {
+    run_auto_with_detail(path, base, head, roots, database, PathDetail::Legacy)
+}
+
+/// Source-reachability report without enumerating alternative simple paths.
+/// Produces v2; the legacy entrypoints continue to produce exactly v1.
+pub fn run_auto_compact(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+) -> Result<Value> {
+    run_auto_with_detail(path, base, head, roots, database, PathDetail::Compact)
+}
+
+fn run_auto_with_detail(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+    detail: PathDetail,
+) -> Result<Value> {
     let checkout = discovery::inspect(path, head)?;
     let destination = analyze::checked_external_destination(
         &checkout.root,
@@ -244,7 +275,15 @@ pub fn run_auto(
     } else {
         (Plan::default(), Plan::default())
     };
-    run_with_plans(path, base, head, roots, database, &base_plan, &head_plan)
+    run_core(
+        path,
+        base,
+        head,
+        roots,
+        database,
+        Mode::Pinned(&base_plan, &head_plan),
+        detail,
+    )
 }
 
 pub fn run(
@@ -255,6 +294,23 @@ pub fn run(
     database: Option<&str>,
 ) -> Result<Value> {
     run_with_evidence(
+        path,
+        base,
+        head,
+        roots,
+        database,
+        EvidenceByRevision::default(),
+    )
+}
+
+pub fn run_compact(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+) -> Result<Value> {
+    run_with_evidence_compact(
         path,
         base,
         head,
@@ -278,7 +334,22 @@ pub fn run_with_evidence(
     database: Option<&str>,
     selected: EvidenceByRevision<'_>,
 ) -> Result<Value> {
-    run_core(path, base, head, roots, database, Mode::Explicit(selected))
+    run_core(
+        path, base, head, roots, database, Mode::Explicit(selected), PathDetail::Legacy,
+    )
+}
+
+pub fn run_with_evidence_compact(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+    selected: EvidenceByRevision<'_>,
+) -> Result<Value> {
+    run_core(
+        path, base, head, roots, database, Mode::Explicit(selected), PathDetail::Compact,
+    )
 }
 
 /// Replay the selected identities, not a fresh discovery of future imports.
@@ -299,6 +370,22 @@ pub fn run_with_plans(
         roots,
         database,
         Mode::Pinned(base_plan, head_plan),
+        PathDetail::Legacy,
+    )
+}
+
+pub fn run_with_plans_compact(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+    base_plan: &Plan,
+    head_plan: &Plan,
+) -> Result<Value> {
+    run_core(
+        path, base, head, roots, database,
+        Mode::Pinned(base_plan, head_plan), PathDetail::Compact,
     )
 }
 
@@ -309,6 +396,7 @@ fn run_core(
     roots: Option<&str>,
     database: Option<&str>,
     selected: Mode<'_>,
+    detail: PathDetail,
 ) -> Result<Value> {
     if let Mode::Explicit(scope) = selected
         && ((scope.base.source_prefix.is_some() && scope.base.scip_snapshot.is_none())
@@ -434,7 +522,7 @@ fn run_core(
         // The legacy explanations enumerate distinct paths and may hit their
         // output bound. Never let that bound suppress the next revision or
         // the distinct-source impact inventory.
-        if !effect_truncated {
+        if detail == PathDetail::Legacy && !effect_truncated {
             effect_truncated = walk(&graph, &changed, &mut effects)?;
         }
     }
@@ -447,7 +535,11 @@ fn run_core(
         gaps.push(obj(&[("reason", Value::string("TRUNCATED"))]));
     }
     let mut result = obj(&[
-        ("schema", Value::string("excession.impact.v1")),
+        ("schema", Value::string(if detail == PathDetail::Legacy {
+            "excession.impact.v1"
+        } else {
+            "excession.impact.v2"
+        })),
         ("base_commit", Value::string(base_commit)),
         ("head_commit", Value::string(head_commit)),
         ("change_inventory_id", changes.get("report_id")?.clone()),
@@ -487,6 +579,14 @@ fn run_core(
             Value::Bool(!native_reference_truncated),
         ),
     ]);
+    if detail == PathDetail::Compact {
+        // An empty effects array alone is ambiguous: omitted path enumeration
+        // must not be confused with complete proof of zero alternatives.
+        result.entries_mut()?.insert(
+            "path_effects_status".into(),
+            Value::string("OMITTED_COMPACT"),
+        );
+    }
     match selected {
         Mode::Pinned(before, after) => {
             let body = result.entries_mut()?;

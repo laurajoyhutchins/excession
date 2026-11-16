@@ -62,22 +62,16 @@ jobs:
             --event "$GITHUB_EVENT_PATH" \
             --actor-id "$REQUEST_ACTOR_ID" \
             --out "$RUNNER_TEMP/excession-request.json"
-      - name: Select pinned Rust toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core -> target
-      - name: Build actual Excession source with locked dependencies
-        run: |
-          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
-          cargo +1.99.1 build --offline --locked --release --manifest-path core/Cargo.toml --bin excession
-      - name: Install locked JavaScript analyzer
+      - name: Set up pinned Node for the native parser
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Install native Excession TypeScript adapter dependency
-        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Prepare the actual Rust CLI and locked TypeScript parser
+        run: bash tools/ci/prepare-excession.sh . release
       - name: Run pinned, read-only source analysis
         run: |
           python3 tools/github_analysis.py execute \
@@ -112,22 +106,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core -> target
-      - name: Build real Excession, no emulated CLI
-        run: |
-          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
-          cargo +1.99.1 build --offline --locked --release --manifest-path core/Cargo.toml --bin excession
-      - name: Install locked JavaScript analyzer for the real CLI
+      - name: Set up pinned Node for the native parser
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Resolve the pinned TypeScript analyzer
-        run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Prepare the actual Rust CLI and locked TypeScript parser
+        run: bash tools/ci/prepare-excession.sh . release
       - name: Pin an independently accessible GitHub commit for live retrieval
         env:
           SOURCE_SHA: ${{ github.event.pull_request.base.sha }}

@@ -995,15 +995,10 @@ mod tests {
     }
 
     #[test]
-    fn explain_selection_is_exactly_one_claim_source_or_bounded_batch() {
+    fn explain_accepts_one_source_or_bounded_batch_not_legacy_claim_ids() {
         let selected = parse(&strings(&[
-            "explain",
-            "--report",
-            "/tmp/report.json",
-            "--source",
-            "pkg/affected.py",
-            "--source-commit",
-            "commit",
+            "explain", "--report", "/tmp/report.json",
+            "--source", "pkg/affected.py", "--source-commit", "commit",
         ]))
         .unwrap();
         let ParseOutcome::Command(parsed) = selected else {
@@ -1011,54 +1006,14 @@ mod tests {
         };
         assert_eq!(parsed.options.get("source"), "pkg/affected.py");
         assert_eq!(parsed.options.get("source-commit"), "commit");
-        assert!(
-            parse(&strings(&[
-                "explain",
-                "--report",
-                "/tmp/report.json",
-                "--all-sources",
-                "--json"
-            ]))
-            .is_ok()
-        );
-        assert!(
-            parse(&strings(&[
-                "explain",
-                "--report",
-                "/tmp/report.json",
-                "--id",
-                "claim-id"
-            ]))
-            .is_ok()
-        );
+        assert!(parse(&strings(&[
+            "explain", "--report", "/tmp/report.json", "--all-sources", "--json",
+        ])).is_ok());
         for args in [
             vec!["explain", "--report", "/tmp/report.json"],
-            vec![
-                "explain",
-                "--report",
-                "/tmp/report.json",
-                "--id",
-                "claim-id",
-                "--source",
-                "pkg/affected.py",
-            ],
-            vec![
-                "explain",
-                "--report",
-                "/tmp/report.json",
-                "--all-sources",
-                "--source",
-                "pkg/affected.py",
-            ],
-            vec![
-                "explain",
-                "--report",
-                "/tmp/report.json",
-                "--source-commit",
-                "commit",
-                "--id",
-                "claim-id",
-            ],
+            vec!["explain", "--report", "/tmp/report.json", "--id", "claim-id"],
+            vec!["explain", "--report", "/tmp/report.json", "--all-sources", "--source", "pkg/a.py"],
+            vec!["explain", "--report", "/tmp/report.json", "--source-commit", "commit", "--all-sources"],
         ] {
             assert!(parse(&strings(&args)).is_err(), "{args:?}");
         }
@@ -1097,18 +1052,14 @@ mod tests {
     }
 
     #[test]
-    fn compact_impact_is_opt_in_and_does_not_change_other_commands() {
-        let ParseOutcome::Command(compact) =
-            parse(&strings(&["impact", ".", "--compact", "--json"])).unwrap()
+    fn source_witness_impact_is_the_only_command_shape() {
+        let ParseOutcome::Command(impact) =
+            parse(&strings(&["impact", ".", "--json"])).unwrap()
         else {
-            panic!("compact impact CLI expected");
+            panic!("impact CLI expected");
         };
-        assert_eq!(compact.options.get("compact"), "true");
-        assert_eq!(compact.options.get("json"), "true");
-        let ParseOutcome::Command(legacy) = parse(&strings(&["impact", "."])).unwrap() else {
-            panic!("legacy impact CLI expected");
-        };
-        assert!(!legacy.options.0.contains_key("compact"));
+        assert_eq!(impact.options.get("json"), "true");
+        assert!(parse(&strings(&["impact", ".", "--compact"])).is_err());
         assert!(parse(&strings(&["changes", ".", "--compact"])).is_err());
     }
 

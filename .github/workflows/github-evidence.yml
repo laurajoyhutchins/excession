@@ -93,6 +93,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: tool/.node-version
+      - name: Install pinned Python for source observers
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: tool/.python-version
       - name: Resolve locked TypeScript parser
         run: npm ci --prefix tool --ignore-scripts --no-audit --no-fund
       - name: Generate Git-pinned verification, context, and evidence envelope

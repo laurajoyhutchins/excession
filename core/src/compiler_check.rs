@@ -105,7 +105,7 @@ pub(crate) fn source_doc(source: &SourceRef) -> Value {
     ])
 }
 
-fn tool_path(name: &str, specified: Option<&str>) -> Result<PathBuf> {
+pub(crate) fn tool_path(name: &str, specified: Option<&str>) -> Result<PathBuf> {
     let candidate = match specified {
         Some(path) => {
             let tool = PathBuf::from(path);
@@ -140,7 +140,7 @@ fn tool_path(name: &str, specified: Option<&str>) -> Result<PathBuf> {
     Ok(launch)
 }
 
-fn toolchain(tool: &Path, name: &str) -> Result<Value> {
+pub(crate) fn toolchain(tool: &Path, name: &str) -> Result<Value> {
     let data = fs::read(tool).map_err(|e| format!("read compiler launcher: {e}"))?;
     if data.is_empty() || data.len() as u64 > MAX_BINARY_BYTES {
         return refuse("compiler launcher changed or exceeds 64 MiB");

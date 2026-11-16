@@ -809,32 +809,14 @@ fn competing_scip_indexes_quarantine_only_overlapping_paths() {
     .unwrap();
     // The head-revision indexes conflict, but the base-revision index is
     // still uniquely sourced and must remain usable for historical impact.
-    let effects = impact.get("candidate_source_impacts").unwrap().array_ref().unwrap();
-    assert!(!effects.is_empty());
-    assert!(effects.iter().all(|effect| {
-        effect
-            .get("hops")
-            .unwrap()
-            .array_ref()
-            .unwrap()
-            .iter()
-            .all(|hop| {
-                hop.get("source")
-                    .unwrap()
-                    .get("source_commit")
-                    .unwrap()
-                    .str()
-                    .unwrap()
-                    == f.base
-                    && hop
-                        .get("target")
-                        .unwrap()
-                        .get("source_commit")
-                        .unwrap()
-                        .str()
-                        .unwrap()
-                        == f.base
-            })
+    let witnesses = impact.get("candidate_source_impacts").unwrap().array_ref().unwrap();
+    assert!(!witnesses.is_empty());
+    assert!(witnesses.iter().all(|witness| {
+        let hop = witness.get("next_hop").unwrap();
+        witness.get("entity").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
+            && hop.get("source").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
+            && hop.get("target").unwrap().get("source_commit").unwrap().str().unwrap() == f.base
+            && !hop.get("evidence").unwrap().array_ref().unwrap().is_empty()
     }));
     assert_eq!(
         impact

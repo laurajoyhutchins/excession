@@ -14,10 +14,10 @@ case "$profile" in
   release|debug) ;;
   *) echo "unsupported build profile: $profile" >&2; exit 2 ;;
 esac
-test -f "$source_root/core/Cargo.lock" || test -f "$source_root/core/Cargo.toml" || {
-  echo "Excession source checkout missing" >&2
+if [[ ! -f "$source_root/core/Cargo.lock" || ! -f "$source_root/core/Cargo.toml" ]]; then
+  echo "Pinned Excession Cargo manifest or lockfile missing" >&2
   exit 2
-}
+fi
 test -f "$source_root/package-lock.json" || {
   echo "locked TypeScript sidecar missing" >&2
   exit 2

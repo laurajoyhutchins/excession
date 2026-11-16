@@ -765,6 +765,12 @@ pub(super) fn command() -> Command {
                 .arg(Arg::new("head-source-prefix").long("head-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
 
                 .arg(
+                    Arg::new("compact")
+                        .long("compact")
+                        .help("Emit v2 distinct-source witnesses without legacy path enumeration")
+                        .action(clap::ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("output")
                         .long("output")
                         .help("Save a replayable JSON report to a new absolute path outside the repository")

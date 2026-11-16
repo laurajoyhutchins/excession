@@ -15,8 +15,13 @@ on:
     branches: [main]
     paths:
       - core/src/compiler_check.rs
+      - core/src/compiler_matrix.rs
       - core/src/adapter.rs
       - core/tests/compiler_check_cli.rs
+      - core/tests/compiler_matrix_cli.rs
+      - core/src/bin/excession.rs
+      - core/src/bin/excession/cli.rs
+      - .github/workflows/compiler-checks.yml
   workflow_dispatch:
 
 concurrency:

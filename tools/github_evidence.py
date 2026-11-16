@@ -129,14 +129,23 @@ def validate_context(repo: Path, report: dict, head: str, tree: str, focus: list
     sources = report.get("sources")
     require(isinstance(sources, list) and len(sources) == len(focus), "Missing context source witnesses")
     require({item.get("path") for item in sources} == set(focus), "Context focus paths differ")
-    for source in sources:
+    def check_git_source(source: dict) -> None:
+        require(isinstance(source, dict), "Source witness must be an object")
         require(source.get("source_commit") == head and source.get("source_tree") == tree, "Context source identity mismatch")
         require(source.get("mode") in ("100644", "100755"), "Unsupported source file mode")
-        blob = git(repo, "rev-parse", "--verify", f"{head}:{source['path']}").decode().strip()
+        path = source.get("path")
+        require(isinstance(path, str) and bool(path), "Source witness path missing")
+        blob = git(repo, "rev-parse", "--verify", f"{head}:{path}").decode().strip()
         require(source.get("blob") == blob and bool(OID.fullmatch(blob)), "Source witness blob differs from Git")
+
+    for source in sources:
+        check_git_source(source)
     checks = report.get("test_candidates")
-    require(isinstance(checks, list), "Context test suggestions missing")
-    require(all(x.get("selection_verified") is False and x.get("reason") == "PATH_NAME_HEURISTIC" for x in checks), "Test suggestions asserted as verified")
+    require(isinstance(checks, list) and len(checks) <= 64, "Context test suggestions missing or unbounded")
+    for check in checks:
+        require(isinstance(check, dict), "Invalid check suggestion")
+        require(check.get("selection_verified") is False and check.get("reason") == "PATH_NAME_HEURISTIC", "Test suggestions asserted as verified")
+        check_git_source(check.get("source"))
 
 
 def make_report(

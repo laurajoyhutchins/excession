@@ -1,157 +1,89 @@
-# Compact source-impact witness forest
+# Source-impact witness forest
 
-The original `excession impact` report enumerates individual reverse-dependency
-paths. Its eight-hop and 512-path limits are useful for bounding explanatory
-output, but they are not sound bounds on *which sources are affected*. Layered
-dependency graphs can have exponentially many simple paths and only linearly
-many distinct sources. Stopping the path walk also used to stop processing
-later revisions.
+`excession impact` computes one rank-certified witness for each distinct
+source reachable from a changed source in the observed relationship graph.
+It does not enumerate alternative simple paths. In layered dependency graphs,
+there can be exponentially many such paths and only linearly many sources.
 
-This implementation keeps the legacy `effects` and their replayable claim
-IDs, and adds a separately calculated `candidate_source_impacts` inventory.
-There is **one witness per distinct non-seed source per revision**.
+The sole report format is `excession.impact.v3`. There is no legacy `effects`
+list, path claim selector, or compact-mode switch.
 
-## Witness interpretation
+## Source witness
 
-Each source impact record contains:
+Each `candidate_source_impacts` entry contains:
 
-- `entity`: Git-pinned source identity at the reported revision.
-- `next_hop`: the original producer-provided observed edge, source identity,
-  target identity, relationship kind, and evidence. No evidence is invented.
-- `distance_to_change`: the shortest observed path length to a changed seed.
-- `assessment: CANDIDATE_PATH`: source reachability is not behavioral failure.
+- `entity`: the Git-pinned source identity, including revision, path, blob,
+  tree and mode
+- `next_hop`: one original source-to-target edge with the producer's
+  relationship type and evidence unchanged
+- `distance_to_change`: the shortest observed path length to a changed seed
+- `assessment: CANDIDATE_PATH`: graph reachability, not behavioral breakage
 
-A changed seed has implicit rank zero. A witness of rank `d > 0` points to a
-changed seed if `d = 1`, otherwise to a witnessed source of rank `d - 1` at
-the *same revision*. This decreasing rank is an independently checkable
-structural reachability certificate. The report is bound by its existing
-`report_id` and retains its original revision-specific producer evidence.
+A changed seed has implicit rank zero. A witness at rank `d > 0` points to
+the changed seed when `d = 1`, or to another source of rank `d - 1` at
+the same revision. This makes every witness independently reconstructible
+and guarantees a finite explanation in the *observed* graph, even with cycles.
 
-The reverse graph search is multi-source BFS. For each candidate source it
-records the first parent hop, and never visits that source again. Its
-deterministic ordered-map/set implementation takes
-`O((|V| + |E|) log |V|)` time for the graph traversal and `O(|V| + |E|)`
-working memory, excluding native indexing and report serialization. The
-witness *forest* itself has at most `|V|` edges, not one object per possible
-path. Within the class of certificates containing an explicit outgoing
-witness edge for each affected non-seed source, this size is **optimal**:
-each of the `k` affected sources needs at least one such edge, and the BFS
-forest supplies exactly `k`. This standard graph-theoretic observation fixes
-a product-level enumeration failure; it is not claimed as a new theorem.
+The multi-source reverse BFS traverses each discovered vertex once.
+With ordered maps and sets, the reachability traversal has
+`O((|V| + |E|) log |V|)` time and `O(|V| + |E|)` working space.
+These bounds exclude Git indexing, language analyzers, report serialization,
+and any missing real dependency relationships.
 
-The inventory has an independent 10,000-entry output cap.
-`candidate_source_count` is the exact (base-plus-head) count prior to
-bounding. `candidate_source_enumeration_complete` is **true only if every
-discovered source is present in the emitted inventory**. If output is capped,
-the JSON report marks this false and records a `TRUNCATED` coverage gap.
-A legacy path truncation can occur while source enumeration remains complete.
+## Source and coverage bounds
 
-## Versioned compact reports
+`candidate_source_count` counts all observed non-seed reachable sources
+across the two revision graphs. The output contains up to 10,000 entries;
+`candidate_source_enumeration_complete` is false and a `TRUNCATED` gap
+is recorded if that limit is reached.
 
-The default `excession impact` remains the compatible `excession.impact.v1`
-format. It keeps up to 512 alternative paths in `effects`, with legacy
-`claim_id` values, and separately computes all distinct-source witnesses.
+Java compiler-supplied source references have a separate
+`native_reference_impacts` inventory and completeness flag.
+These observations remain explicitly unattested; they are not silently
+folded into static-import or SCIP observations.
 
-Use `--compact` for `excession.impact.v2`:
+`coverage.status` is `PARTIAL` and
+`safe_to_skip_unlisted_tests` is always false. Completeness of traversal
+over an *observed graph* is not completeness of dependencies in a program.
+
+## Replay and explanation
 
 ```sh
-excession impact . --compact --output /tmp/compact-impact.json --json
-excession explain . --report /tmp/compact-impact.json \
-  --source src/pkg/handler.py --json
-excession explain . --report /tmp/compact-impact.json --all-sources --json
-```
+excession impact . --base BASE_COMMIT --head HEAD_COMMIT \
+  --output /tmp/impact.json --json
 
-The v2 source reachability and native producer selection use **the exact same
-engine** as v1, except that the legacy alternative-path enumeration is not
-invoked. V2 retains `candidate_source_impacts`, every original source/Git
-identity, `distance_to_change`, producer evidence and independent source
-completeness flags. It emits `effects: []` and an explicit
-`path_effects_status: "OMITTED_COMPACT"`; an empty array **does not mean**
-there were no alternative paths or affected sources.
+excession explain . --report /tmp/impact.json \
+  --source src/pkg/handler.py --source-commit HEAD_COMMIT --json
 
-Both formats have separate content-hashed `report_id` values. An explanation
-of a v2 report recomputes **v2** against pinned Git revisions and saved producer
-selection and requires canonical equality before returning a path; a forged
-source witness is refused. A v2 report does not contain legacy path claim IDs:
-`explain --id` explicitly refuses, while `--source` or `--all-sources`
-reconstructs the ranked witness. A v1 saved report continues to work as before.
-
-The 10,000-source output limit and explicit partial coverage remain. The
-`TRUNCATED` gap in v1 can be caused solely by its legacy path limit; v2 does
-not assert that gap when no other producer/source output was truncated. This
-format change does **not** eliminate Git/analyzer replay costs. Compare actual
-end-to-end measurements before changing the default.
-
-## Replaying a source witness
-
-The source inventory can be larger than the legacy `effects` path list. To
-explain a dependent **source**, select its Git-relative path instead of trying
-to find a legacy claim ID among the first 512 enumerated paths:
-
-```sh
-excession impact . --output /tmp/impact.json
-excession explain . --report /tmp/impact.json --source src/pkg/handler.py --json
-excession explain . --report /tmp/impact.json --source src/pkg/handler.py --audit
 excession explain . --report /tmp/impact.json --all-sources --json
+excession explain . --report /tmp/impact.json \
+  --source src/pkg/handler.py --source-commit HEAD_COMMIT --audit
 ```
 
-Use `--source-commit COMMIT` when the same path has witnesses at the base
-and head revisions. Excession refuses an ambiguous selection instead of
-selecting an arbitrary revision. `--id` is still available for legacy
-individual-path claims.
+Use `--source-commit` if the same source path occurs in both revision
+inventories. Otherwise the selector explicitly refuses ambiguity.
+`--all-sources` emits at most 128 reconstructed explanations and
+refuses a larger batch rather than silently truncating it.
 
-The source explanation follows the exact `next_hop` evidence at decreasing
-`distance_to_change` until reaching a changed source. Missing, duplicate,
-cyclic, or non-decreasing source witnesses are refused. The source claim ID
-identifies the **compact witness**, not one of the legacy effect claim IDs.
-Both source and legacy explanations re-run the full pinned analysis and compare
-the saved JSON report against the newly authenticated report. No unauthenticated
-cache or source relationship is admitted.
+Explanations recompute the entire v3 report from pinned Git objects and the
+stored producer selection, then require canonical equality before returning
+source witnesses. A saved report is not a trusted cache. Forged or stale
+evidence is refused. The source witness's content hash is exposed as
+`claim_id` in the explanation, but it is not a legacy path claim and is not
+used to select explanations.
 
-`--all-sources` replays Git and configured analyzers **once** before
-reconstructing all output source witnesses. It fails explicitly beyond
-128 source certificates and returns `source_inventory_complete` separately
-from legacy alternative-path truncation. The batch is not advertised as
-complete if the original distinct-source inventory hit its 10,000-source cap.
-This avoids paying the full source-replay cost once **per** explanation,
-but does not eliminate the time required for one replay or the existing
-512-alternative-path report construction.
+A successful audit authenticates source replay, not behavioral correctness.
+The output explicitly reports `semantic_correctness: NOT_EVALUATED`.
 
-These are only paths in Excession's *observed source graph*. A passing replay
-does not establish that the program behavior or tests are affected, nor
-authorize skipping any unlisted tests.
+## Performance evidence
 
-## Proof boundary
+The earlier manual Requests experiment established that omitting alternative
+path enumeration reduced the serialized impact report from 2,235,217 to
+37,680 bytes and reduced one command's measured wall time from about 1.325 to
+1.246 seconds. This was a one-host result, not a general speedup guarantee.
+The post-refactor format removes the now-unused empty path metadata as well.
 
-**Soundness relative to the observed graph:** every emitted record links to a
-changed seed through strictly decreasing ranks and authentic original
-observation hops, assuming the analysis reports themselves passed Excession's
-existing identity/evidence checks.
-
-**Completeness relative to the observed graph:** if a source has any
-directed dependency path to a changed seed, induction on its shortest distance
-shows that BFS eventually visits it. This guarantee holds before the optional
-10,000-entry *output* cap.
-
-**Not proved:** the observed graph is a complete model of the program;
-the imports are runtime-executed; source changes will break a dependent;
-build/test receipts are independently authentic; or unlisted tests are safe
-to skip. Excession continues to report `coverage.status=PARTIAL` and
-`safe_to_skip_unlisted_tests=false`.
-
-## Regression and independent acceptance
-
-The Rust integration regression constructs seven 3-wide layers of Python
-modules, with every module in a layer importing every module in the previous
-layer. It changes the root between two Git commits. Each revision has only
-21 distinct dependent source files but 3,279 simple paths, all within the
-legacy eight-hop bound. The old `effects` list stops at 512; the compact
-inventory must retain all 42 revision-specific source witnesses. The test
-also independently checks each witness's strictly decreasing rank and its
-Git revision identity.
-
-This is deliberately a *graph adversary*, not an independently measured
-large-repository advantage. Hold-out real-repository validity, operational
-performance, and user-visible prevention of coding-agent mistakes remain the
-separate gates under issue #84. Do not market this result as a completed
-independent codebase evaluation.
+Source reanalysis and Git/SQLite authentication still dominate one explanation
+in that experiment. Improvements to that cost require independent
+phase-level measurements and unchanged refusal behavior. Track the remaining
+work in issue #244.

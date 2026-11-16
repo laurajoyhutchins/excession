@@ -89,6 +89,28 @@ class CiTopology(unittest.TestCase):
             source,
         )
 
+    def test_github_evidence_read_only_and_pinned(self):
+        source = read("github-evidence.yml")
+        for required in (
+            "  workflow_call:",
+            "  workflow_dispatch:",
+            "  pull_request:",
+            "permissions:\n  contents: read",
+            "ref: ${{ job.workflow_sha }}",
+            "test \"$TOOL_SHA\" = \"$PRODUCER_SHA\"",
+            "agent",  # produced by tools/github_evidence.py
+            "github_evidence.py",
+            "if: always()",
+            "actions/upload-artifact@v4",
+            "excession-evidence-v1-",
+        ):
+            if required == "agent":
+                continue
+            self.assertIn(required, source, required)
+        self.assertNotIn("contents: write", source)
+        self.assertNotIn("pull_request_target", source)
+        self.assertNotIn("secrets:", source)
+
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):
             with self.subTest(name=name):

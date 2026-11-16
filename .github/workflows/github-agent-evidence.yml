@@ -1,0 +1,119 @@
+name: Excession GitHub-native evidence
+
+# Advisory and reusable. Do not run untrusted subject repository code.
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        type: string
+        required: true
+      candidate_sha:
+        type: string
+        required: true
+      focus:
+        type: string
+        required: false
+        default: ''
+      task:
+        type: string
+        required: false
+        default: ''
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Exact base commit retained in the repository
+        type: string
+        required: true
+      candidate_sha:
+        description: Exact candidate commit retained in the repository
+        type: string
+        required: true
+      focus:
+        description: Optional comma-separated list of up to 16 tracked paths
+        type: string
+        required: false
+      task:
+        description: Optional context description
+        type: string
+        required: false
+  pull_request:
+    types: [opened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: excession-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  evidence:
+    name: Exact-revision source and verification evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha || github.event.pull_request.head.sha }}
+      FOCUS: ${{ inputs.focus }}
+      TASK: ${{ inputs.task }}
+      TOOL_SHA: dd4208f77741bc040d2142610d06a1104d1a346d
+    steps:
+      - name: Checkout subject Git objects without executing its code
+        uses: actions/checkout@v4
+        with:
+          path: subject
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout exact Excession analysis tool source
+        uses: actions/checkout@v4
+        with:
+          repository: laurajoyhutchins/excession
+          ref: dd4208f77741bc040d2142610d06a1104d1a346d
+          path: tool
+          persist-credentials: false
+      - name: Validate pinned source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C tool rev-parse HEAD)" = "$TOOL_SHA"
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git -C subject cat-file -e "$BASE_SHA^{commit}"
+          git -C subject cat-file -e "$CANDIDATE_SHA^{commit}"
+          test "$BASE_SHA" != "$CANDIDATE_SHA"
+      - name: Install pinned Rust compiler
+        shell: bash
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tool/core -> target
+      - name: Compile exact pinned Excession Rust CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.99.1 fetch --locked --manifest-path tool/core/Cargo.toml
+          cargo +1.99.1 build --offline --locked --manifest-path tool/core/Cargo.toml --bin excession
+      - name: Produce source-bound agent reports and GitHub envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tool/tools/github_agent_evidence.py \
+            --repo subject \
+            --binary tool/core/target/debug/excession \
+            --tool-source tool \
+            --tool-commit "$TOOL_SHA" \
+            --repository "$GITHUB_REPOSITORY" \
+            --base "$BASE_SHA" \
+            --candidate "$CANDIDATE_SHA" \
+            --focus "$FOCUS" \
+            --task "$TASK" \
+            --out "$RUNNER_TEMP/excession-github-evidence"
+          cat "$RUNNER_TEMP/excession-github-evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain machine-readable evidence for GitHub MCP retrieval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-github-evidence
+          path: ${{ runner.temp }}/excession-github-evidence/
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,10 +1,40 @@
 //! Language-neutral candidate and delta model over existing Git-bound producers.
 //! Native producer claims are preserved, not re-parsed or upgraded into safety proofs.
-use crate::json::{Value, obj};
+use crate::json::{self, Value, obj};
 use crate::{Result, git, refuse, source_capabilities};
 use std::collections::BTreeSet;
+use std::fs;
+use std::io::Read;
+use std::path::Path;
 
 pub(crate) const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
+
+/// A shared, size-bounded input gate for saved improvement evidence.
+///
+/// Checking length after fs::read is not a memory bound: the entire untrusted
+/// artifact has already been allocated. Limit the read itself, and reject
+/// non-regular inputs before parsing.
+pub(crate) fn read_artifact(path: &Path) -> Result<Value> {
+    let file = fs::File::open(path).map_err(|e| format!("open improvement artifact: {e}"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("inspect improvement artifact: {e}"))?;
+    if !metadata.is_file() {
+        return refuse("improvement artifact must be a regular file");
+    }
+    if metadata.len() > MAX_PLAN_BYTES as u64 {
+        return refuse("improvement artifact exceeds 4 MiB");
+    }
+    let mut bounded = file.take((MAX_PLAN_BYTES + 1) as u64);
+    let mut bytes = Vec::new();
+    bounded
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("read improvement artifact: {e}"))?;
+    if bytes.len() > MAX_PLAN_BYTES {
+        return refuse("improvement artifact exceeds 4 MiB");
+    }
+    json::parse(&bytes)
+}
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 struct Location {
@@ -368,6 +398,36 @@ pub(crate) fn evaluate_reports(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_improvement_artifacts_have_a_real_read_limit() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "excession-artifact-limit-{}-{nonce}.json",
+            std::process::id()
+        ));
+        let mut artifact = b"{\"checked\":true}".to_vec();
+        artifact.resize(MAX_PLAN_BYTES, b' ');
+        fs::write(&path, &artifact).unwrap();
+        assert!(
+            read_artifact(&path)
+                .unwrap()
+                .get("checked")
+                .unwrap()
+                .bool()
+                .unwrap()
+        );
+        artifact.push(b' ');
+        fs::write(&path, &artifact).unwrap();
+        assert!(read_artifact(&path).is_err());
+        fs::write(&path, b"not json").unwrap();
+        assert!(read_artifact(&path).is_err());
+        fs::remove_file(&path).unwrap();
+    }
+
 
     fn fixture(kind: &str, source: &str) -> Value {
         let (candidate, coverage) = if kind == "dependency_cycle" {

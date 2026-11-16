@@ -655,6 +655,7 @@ fn run_core(
 pub fn human(report: &Value) -> Result<String> {
     const PREVIEW_LIMIT: usize = 10;
     let effects = report.get("effects")?.array_ref()?;
+    let compact = report.get("schema")?.str()? == "excession.impact.v2";
     let source_count = report.get("candidate_source_count")?.integer()?;
     let native_count = report.get("native_reference_count")?.integer()?;
     let native_complete = report
@@ -689,7 +690,26 @@ pub fn human(report: &Value) -> Result<String> {
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
     ];
-    if effects.is_empty() {
+    if compact {
+        lines[0] = format!(
+            "Excession change impact: {source_count} distinct-source candidates; alternative paths not enumerated."
+        );
+        lines.push("Compact v2: source witnesses preserve original Git identities and producer evidence.".to_owned());
+        for witness in report
+            .get("candidate_source_impacts")?
+            .array_ref()?
+            .iter()
+            .take(PREVIEW_LIMIT)
+        {
+            lines.push(format!(
+                "  {:?} -> {:?} ({} hops to changed source)",
+                witness.get("entity")?.get("path")?.str()?,
+                witness.get("next_hop")?.get("target")?.get("path")?.str()?,
+                witness.get("distance_to_change")?.integer()?,
+            ));
+        }
+        lines.push("Use excession explain --source PATH or --all-sources to reconstruct authenticated paths.".to_owned());
+    } else if effects.is_empty() {
         lines.push("No static-import or SCIP candidates found in the analyzed scope.".to_owned());
     } else {
         lines.push("Candidate paths (source -> changed dependency):".to_owned());

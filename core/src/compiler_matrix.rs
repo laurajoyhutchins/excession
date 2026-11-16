@@ -14,6 +14,7 @@ use std::path::Path;
 const MANIFEST_SCHEMA: &str = "excession.compiler-matrix-config.v1";
 const REPORT_SCHEMA: &str = "excession.compiler-matrix.v1";
 const MAX_MANIFEST_BYTES: usize = 64 * 1024;
+const MAX_INPUT_BYTES: u64 = 1024 * 1024;
 const MAX_CHECKS: usize = 16;
 const MAX_INPUTS_PER_CHECK: usize = 32;
 
@@ -67,9 +68,13 @@ fn live_file_matches(root: &Path, source: &SourceRef) -> Result<()> {
     if !path.starts_with(root) || !path.is_file() {
         return refuse("declared compiler input resolves outside the Git checkout");
     }
+    let metadata = fs::metadata(&path).map_err(|e| format!("stat declared compiler input: {e}"))?;
+    if metadata.len() > MAX_INPUT_BYTES {
+        return refuse("declared compiler input exceeds 1 MiB");
+    }
     let bytes = fs::read(&path).map_err(|e| format!("read declared compiler input: {e}"))?;
-    if bytes.len() > MAX_MANIFEST_BYTES || digest::git_blob(&bytes) != source.blob {
-        return refuse("declared compiler input disagrees with Git, or exceeds 64 KiB");
+    if bytes.len() as u64 > MAX_INPUT_BYTES || digest::git_blob(&bytes) != source.blob {
+        return refuse("declared compiler input disagrees with Git, or exceeds 1 MiB");
     }
     Ok(())
 }

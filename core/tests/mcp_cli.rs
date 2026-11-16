@@ -37,7 +37,7 @@ fn server(repo: &std::path::Path) -> (std::process::Child, ChildStdin, BufReader
     (child, input, output)
 }
 
-fn stopped(mut child: std::process::Child, input: ChildStdin, output: BufReader<ChildStdout>) {
+fn stopped(child: std::process::Child, input: ChildStdin, output: BufReader<ChildStdout>) {
     drop(input);
     drop(output);
     let result = child.wait_with_output().unwrap();

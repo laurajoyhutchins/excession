@@ -24,7 +24,7 @@ def request(operation="locate", **overrides):
     }
     value.update({"locate": {"task": "Find source verification"},
                   "context": {"focus": ["core/src/agent.rs"]},
-                  "verify": {"base": BASE}}[operation])
+                  "verify": {"base": BASE}}.get(operation, {}))
     value.update(overrides)
     return value
 

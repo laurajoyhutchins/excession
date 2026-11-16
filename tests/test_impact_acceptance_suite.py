@@ -34,7 +34,7 @@ def manifest():
 def evidence(case):
     affected = "pkg/importer.py"
     return {
-        "schema": "excession.heldout-impact-evaluation.v1",
+        "schema": "excession.heldout-impact-evaluation.v2",
         "status": "MATCH",
         "upstream_repository": case.repository,
         "roots": list(case.roots),
@@ -44,7 +44,7 @@ def evidence(case):
         "invalid_hops": [],
         "oracle": {case.head: {"expected_affected_paths": [affected],
                               "unresolved_import_sites": 1}},
-        "compact_source_impacts": {
+        "source_impacts": {
             "complete_in_observed_graph": True,
             "actual": {case.head: [affected], case.base: [affected]},
             "missing": {case.head: [], case.base: []},
@@ -52,9 +52,7 @@ def evidence(case):
         },
         "candidate_source_enumeration_complete": True,
         "candidate_source_count": 2,
-        "candidate_effect_count": 512,
-        "legacy_explanations_truncated": True,
-        "impact_coverage": {"gaps": [{"reason": "TRUNCATED"}]},
+        "impact_coverage": {"gaps": []},
         "measured_wall_seconds": {"oracle_git_and_ast": 0.2,
                                   "excession_impact_with_indexing": 0.4},
         "impact_report_bytes": 12345,
@@ -124,10 +122,9 @@ class IndependentAssessmentTests(unittest.TestCase):
         return assess(self.case, self.result if result is None else result,
                       self.edges, self.files)
 
-    def test_bounded_explanations_do_not_exhaust_distinct_source_evidence(self):
+    def test_source_witnesses_match_independent_closure(self):
         scored = self.score()
         self.assertEqual(scored["status"], "PASS")
-        self.assertTrue(scored["explanations_truncated"])
         self.assertEqual(scored["missing_vs_independent_ast"], 0)
         self.assertEqual(scored["baselines"]["independent_full_transitive"], 1)
         self.assertEqual(scored["cost"]["excession_impact_json_bytes"], 12345)
@@ -143,11 +140,11 @@ class IndependentAssessmentTests(unittest.TestCase):
                 if field == "expected":
                     copy["oracle"][HEAD]["expected_affected_paths"] = replacement
                 else:
-                    copy["compact_source_impacts"]["actual"][HEAD] = replacement
+                    copy["source_impacts"]["actual"][HEAD] = replacement
                 with self.assertRaises(ValueError):
                     self.score(copy)
 
-    def test_refuses_incomplete_inventory_even_if_explanations_truncated(self):
+    def test_refuses_incomplete_source_inventory(self):
         copy = json.loads(json.dumps(self.result))
         copy["candidate_source_enumeration_complete"] = False
         with self.assertRaisesRegex(ValueError, "not complete"):

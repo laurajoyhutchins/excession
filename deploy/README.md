@@ -35,15 +35,22 @@ All routes except GET /healthz require Authorization: Bearer followed by the sha
 
 Locate and context resolve HEAD to an immutable 40-character Git commit when no revision is supplied. Verify requires full SHAs. Each successful response preserves Excession's native JSON report, including coverage gaps and unresolved obligations. A result is never merge authorization.
 
-## Connect the Hatchable MCP project
+## Use the existing Hatchable connection from ChatGPT
 
-Hatchable MCP endpoint: https://excession-mcp.hatchable.site/mcp
+No custom MCP server installation is required. The Hatchable project already exposes an **admin-only** `POST /api/run` endpoint. ChatGPT's connected Hatchable `run_function` operation can call it directly:
+
+- `project_id`: `proj_NXfZ0HkcEsNG`
+- `path`: `/api/run`
+- `method`: `POST`
+- `body`: `{"operation":"repositories"}`
+
+For analysis, send `{"operation":"locate","arguments":{"repository":"excession","task":"Find the agent verification code","limit":10}}`. The other operations are `context` (requires `repository` and an array of exact `focus` paths) and `verify` (requires `repository`, full `base` SHA and full `candidate` SHA). The gateway accepts only these four operations. It rejects unknown commands, paths, repositories, and unprivileged callers; it cannot execute shell commands through this interface.
 
 Hatchable console: https://hatchable.com/console/projects/excession-mcp
 
-Configure the **backend_url** with the HTTPS origin of the running container. In Setup, configure the **EXCESSION_SERVICE_TOKEN** secret to match the value injected into the container. In the ChatGPT custom MCP integration, authorize this endpoint through Hatchable OAuth; all four MCP tools are gated to the Hatchable project admin.
+The separately running Rust container still needs configuring: set **backend_url** to its HTTPS origin and the `EXCESSION_SERVICE_TOKEN` secret in Hatchable Setup to the same value injected into the container. Until the Rust backend is deployed and these settings are configured, valid calls return `NOT_CONFIGURED` or `BACKEND_UNREACHABLE`. Hatchable is a dispatcher and auth boundary, not a Rust execution host.
 
-The four tools are excession_repositories, excession_locate, excession_context, and excession_verify. Until the Rust backend is deployed and configured, the published MCP gateway responds NOT_CONFIGURED or BACKEND_UNREACHABLE. A deployed MCP gateway alone is not a working Excession analysis engine.
+Hatchable also publishes an optional MCP endpoint, but **ChatGPT need not register it as a custom MCP server** to use Excession through the existing Hatchable connector.
 
 ## Limits and verification
 

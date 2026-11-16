@@ -1,5 +1,12 @@
 # Coding-agent integration
 
+This is the **local stdio integration** for an agent that can launch processes
+inside a trusted checkout. For ChatGPT conversations using the GitHub connector,
+use the [GitHub-native analysis request workflow](GITHUB_NATIVE_ANALYSIS.md)
+instead. It executes on GitHub-hosted runners and delivers evidence through
+workflow artifacts, with no remote MCP service to register.
+
+
 Excession exposes a repository-scoped, read-only MCP server over standard
 input/output using the [official Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)
 (`rmcp` 3.10.0). MCP is an adapter over the same Rust Git/SQLite analysis used by

@@ -5,6 +5,15 @@ services:
       dockerfile: deploy/Dockerfile
     image: excession-agent:local
     restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    environment:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
     env_file:
       - path: ./.env
         required: true

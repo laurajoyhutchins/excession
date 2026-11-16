@@ -46,6 +46,42 @@ discovered source is present in the emitted inventory**. If output is capped,
 the JSON report marks this false and records a `TRUNCATED` coverage gap.
 A legacy path truncation can occur while source enumeration remains complete.
 
+## Versioned compact reports
+
+The default `excession impact` remains the compatible `excession.impact.v1`
+format. It keeps up to 512 alternative paths in `effects`, with legacy
+`claim_id` values, and separately computes all distinct-source witnesses.
+
+Use `--compact` for `excession.impact.v2`:
+
+```sh
+excession impact . --compact --output /tmp/compact-impact.json --json
+excession explain . --report /tmp/compact-impact.json \
+  --source src/pkg/handler.py --json
+excession explain . --report /tmp/compact-impact.json --all-sources --json
+```
+
+The v2 source reachability and native producer selection use **the exact same
+engine** as v1, except that the legacy alternative-path enumeration is not
+invoked. V2 retains `candidate_source_impacts`, every original source/Git
+identity, `distance_to_change`, producer evidence and independent source
+completeness flags. It emits `effects: []` and an explicit
+`path_effects_status: "OMITTED_COMPACT"`; an empty array **does not mean**
+there were no alternative paths or affected sources.
+
+Both formats have separate content-hashed `report_id` values. An explanation
+of a v2 report recomputes **v2** against pinned Git revisions and saved producer
+selection and requires canonical equality before returning a path; a forged
+source witness is refused. A v2 report does not contain legacy path claim IDs:
+`explain --id` explicitly refuses, while `--source` or `--all-sources`
+reconstructs the ranked witness. A v1 saved report continues to work as before.
+
+The 10,000-source output limit and explicit partial coverage remain. The
+`TRUNCATED` gap in v1 can be caused solely by its legacy path limit; v2 does
+not assert that gap when no other producer/source output was truncated. This
+format change does **not** eliminate Git/analyzer replay costs. Compare actual
+end-to-end measurements before changing the default.
+
 ## Replaying a source witness
 
 The source inventory can be larger than the legacy `effects` path list. To

@@ -371,6 +371,20 @@ fn equivalent_python_scopes_are_not_double_counted() {
 }
 
 #[test]
+fn non_python_check_refuses_an_explicit_dot_scope() {
+    let manifest = r#"{"schema":"excession.compiler-matrix-config.v1","checks":[
+      {"language":"rust","configuration":"packages/a/Cargo.toml","source_prefix":".",
+       "declared_inputs":["packages/a/Cargo.lock"]}
+    ]}"#;
+    let f = Fixture::new(manifest);
+    let output = f.matrix(None, true);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("source_prefix is only supported for Python"));
+}
+
+#[test]
 fn a_large_tracked_lockfile_is_accepted_without_inventing_dependency_coverage() {
     let manifest = r#"{"schema":"excession.compiler-matrix-config.v1","checks":[
       {"language":"rust","configuration":"packages/a/Cargo.toml","source_prefix":null,

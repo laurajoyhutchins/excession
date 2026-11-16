@@ -106,14 +106,15 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
         let language = item.get("language")?.str()?;
         let config = item.get("configuration")?.str()?;
         validate_configuration_name(language, config)?;
-        let prefix = match item.get("source_prefix")? {
+        let declared_prefix = item.get("source_prefix")?;
+        if language != "python" && declared_prefix != &Value::Null {
+            return refuse("compiler matrix source_prefix is only supported for Python");
+        }
+        let prefix = match declared_prefix {
             Value::Null => None,
             v if v.str()? == "." => None,
             v => Some(v.str()?.to_owned()),
         };
-        if language != "python" && prefix.is_some() {
-            return refuse("compiler matrix source_prefix is only supported for Python");
-        }
         if let Some(ref prefix) = prefix
             && prefix != "."
         {

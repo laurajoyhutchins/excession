@@ -421,6 +421,7 @@ def verify_product_workflow(
         "--roots", fixture["roots"], "--db", str(product_db), "--json",
         "--output", str(saved),
     ], timeout=240)
+    legacy_impact_bytes = len(proc.stdout)
     impact = json.loads(proc.stdout)
     if json.loads(saved.read_text(encoding="utf-8")) != impact:
         raise ValueError("the CLI saved a different report from its JSON output")
@@ -671,7 +672,7 @@ def verify_product_workflow(
             "compact_source_count": len(compact_sources),
             "legacy_impact_wall_ms": impact_ms,
             "compact_impact_wall_ms": compact_ms,
-            "legacy_report_bytes": len(proc.stdout),
+            "legacy_report_bytes": legacy_impact_bytes,
             "compact_report_bytes": len(compact_proc.stdout),
             "compact_selected_source_wall_ms": selected_compact_ms,
             "compact_batch_wall_ms": compact_batch_ms,

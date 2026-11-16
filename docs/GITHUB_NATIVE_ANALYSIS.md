@@ -31,7 +31,7 @@ the chat-native transport.
 {
   "schema": "excession.github-analysis-request.v1",
   "repository": "laurajoyhutchins/excession",
-  "revision": "0df408fa1d0836dfac6c7f2ba93d305100d9ddfb",
+  "revision": "REPLACE_WITH_EXACT_40_CHARACTER_LOWERCASE_COMMIT_SHA",
   "operation": "locate",
   "task": "Find the source that ranks impact witnesses",
   "limit": 16

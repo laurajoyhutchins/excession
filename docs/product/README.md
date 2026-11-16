@@ -1,5 +1,11 @@
 # Product contracts and executable acceptance
 
+> **Status:** These pages combine current contract notes with historical,
+> PR-numbered implementation plans. Individual plans describe the scope and
+> acceptance state at the time of writing, not current CLI availability.
+> For supported commands see [the current CLI reference](../CLI.md),
+> [quick start](../QUICKSTART.md), and [evidence limits](../EVIDENCE_AND_LIMITS.md).
+
 Excession already implements Git-pinned discovery, analysis, revision changes,
 impact, explanation, agent context/verification and evidence audit through one
 Rust CLI. The source-of-truth remains Git objects plus the SQLite observation

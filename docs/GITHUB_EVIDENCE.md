@@ -1,7 +1,8 @@
 # GitHub-native Excession evidence
 
-The first integration requires only GitHub Actions and workflow artifacts. It
-does not deploy an MCP server, database, scheduler, external worker, or API.
+This is the reusable PR-review evidence path. It uses GitHub Actions and
+workflow artifacts, separate from [on-demand agent queries](GITHUB_NATIVE_ANALYSIS.md).
+It does not deploy an MCP server, database, scheduler, external worker, or API.
 
 ## For a repository already using Excession
 

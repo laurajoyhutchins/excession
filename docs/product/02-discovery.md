@@ -1,6 +1,10 @@
 # PR 2: Zero-configuration repository discovery
 
-Status: **contract, initial documentation and TDD only**. No automatic discovery or cache implementation yet.
+**Historical PR planning note.** Initial documentation and TDD preceded
+implementation. The current CLI supports `excession discover .`; see
+[the implementation note](02-discovery-implementation.md) and
+[quick start](../QUICKSTART.md). The checklist below records the
+original proposed behavior.
 
 ## Intended behavior
 - Discover Git worktree root from any subdirectory, resolve `HEAD` to an exact SHA-1 commit/tree, and record the actual source root selection. Preserve a user-specified revision and roots.

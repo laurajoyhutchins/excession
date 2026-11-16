@@ -1,20 +1,20 @@
 //! A Git-declared collection of native compiler checks with independently
 //! replayable child receipts. The matrix is explicit, not a claim that every
 //! possible build feature, target, dependency, or configuration was inspected.
-use crate::compiler_check::{self, Request};
+use crate::compiler_check::{self, Request, exact_fields, source_doc, validate_configuration_name};
 use crate::evidence::identity::{SourceRef, Subject};
 use crate::evidence_store::{self, Batch, Observation, Receipt};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
 const MANIFEST_SCHEMA: &str = "excession.compiler-matrix-config.v1";
 const REPORT_SCHEMA: &str = "excession.compiler-matrix.v1";
 const MAX_MANIFEST_BYTES: usize = 64 * 1024;
-const MAX_INPUT_BYTES: u64 = 1024 * 1024;
+const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_CHECKS: usize = 16;
 const MAX_INPUTS_PER_CHECK: usize = 32;
 
@@ -32,26 +32,25 @@ pub struct MatrixRequest<'a> {
 struct Check {
     language: String,
     configuration: String,
+    configuration_source: SourceRef,
     source_prefix: Option<String>,
     declared_inputs: Vec<SourceRef>,
 }
 
-fn source_doc(source: &SourceRef) -> Value {
-    obj(&[
-        ("source_commit", Value::string(&source.commit)),
-        ("source_tree", Value::string(&source.tree)),
-        ("path", Value::string(&source.path)),
-        ("blob", Value::string(&source.blob)),
-        ("mode", Value::string(&source.mode)),
-    ])
-}
-
-fn exactly(value: &Value, names: &[&str]) -> Result<()> {
-    let fields = value.entries()?;
-    if fields.len() != names.len() || fields.keys().any(|field| !names.contains(&field.as_str())) {
-        return refuse("compiler matrix contains missing or unsupported fields");
+/// Cache exact Git lookups within one matrix parse. Every unique source is
+/// still authenticated through SourceRef::from_git at the pinned revision.
+fn source_cached(
+    root: &Path,
+    commit: &str,
+    path: &str,
+    cache: &mut BTreeMap<String, SourceRef>,
+) -> Result<SourceRef> {
+    if let Some(source) = cache.get(path) {
+        return Ok(source.clone());
     }
-    Ok(())
+    let source = SourceRef::from_git(root, commit, path)?;
+    cache.insert(path.to_owned(), source.clone());
+    Ok(source)
 }
 
 fn git_file(root: &Path, commit: &str, path: &str) -> Result<(SourceRef, Vec<u8>)> {
@@ -72,18 +71,18 @@ fn live_file_matches(root: &Path, source: &SourceRef) -> Result<()> {
     }
     let metadata = fs::metadata(&path).map_err(|e| format!("stat declared compiler input: {e}"))?;
     if metadata.len() > MAX_INPUT_BYTES {
-        return refuse("declared compiler input exceeds 1 MiB");
+        return refuse("declared compiler input exceeds 16 MiB");
     }
     let bytes = fs::read(&path).map_err(|e| format!("read declared compiler input: {e}"))?;
     if bytes.len() as u64 > MAX_INPUT_BYTES || digest::git_blob(&bytes) != source.blob {
-        return refuse("declared compiler input disagrees with Git, or exceeds 1 MiB");
+        return refuse("declared compiler input disagrees with Git, or exceeds 16 MiB");
     }
     Ok(())
 }
 
 fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<Vec<Check>> {
     let doc = json::parse(bytes)?;
-    exactly(&doc, &["schema", "checks"])?;
+    exact_fields(&doc, &["schema", "checks"])?;
     if doc.get("schema")?.str()? != MANIFEST_SCHEMA {
         return refuse("unsupported compiler matrix manifest version");
     }
@@ -92,9 +91,10 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
         return refuse("compiler matrix must declare 1..16 checks");
     }
     let mut seen = BTreeSet::new();
+    let mut source_cache = BTreeMap::new();
     let mut prepared = Vec::new();
     for item in inputs {
-        exactly(
+        exact_fields(
             item,
             &[
                 "language",
@@ -104,25 +104,17 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
             ],
         )?;
         let language = item.get("language")?.str()?;
-        let expected_name = match language {
-            "rust" => "Cargo.toml",
-            "typescript" => "tsconfig.json",
-            "python" => "mypy.ini",
-            _ => return refuse("compiler matrix language must be rust, typescript or python"),
-        };
         let config = item.get("configuration")?.str()?;
-        if !config.ends_with(expected_name) {
-            return refuse(format!(
-                "compiler matrix {language} needs a {expected_name}"
-            ));
-        }
-        let prefix = match item.get("source_prefix")? {
-            Value::Null => None,
-            v => Some(v.str()?.to_owned()),
-        };
-        if language != "python" && prefix.is_some() {
+        validate_configuration_name(language, config)?;
+        let declared_prefix = item.get("source_prefix")?;
+        if language != "python" && declared_prefix != &Value::Null {
             return refuse("compiler matrix source_prefix is only supported for Python");
         }
+        let prefix = match declared_prefix {
+            Value::Null => None,
+            v if v.str()? == "." => None,
+            v => Some(v.str()?.to_owned()),
+        };
         if let Some(ref prefix) = prefix
             && prefix != "."
         {
@@ -133,7 +125,7 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
         }
         // A tracked source configuration and every declared input is replayed
         // independently from Git, not trusted from the manifest's assertions.
-        let cfg = SourceRef::from_git(root, commit, config)?;
+        let cfg = source_cached(root, commit, config, &mut source_cache)?;
         if cfg.tree != source.tree {
             return refuse("compiler matrix contains a configuration from another tree");
         }
@@ -151,12 +143,13 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
             if path == config || path == source.path {
                 return refuse("compiler matrix declared_inputs must not repeat config or matrix");
             }
-            refs.push(SourceRef::from_git(root, commit, path)?);
+            refs.push(source_cached(root, commit, path, &mut source_cache)?);
         }
         refs.sort_by(|a, b| a.path.cmp(&b.path));
         prepared.push(Check {
             language: language.to_owned(),
             configuration: config.to_owned(),
+            configuration_source: cfg,
             source_prefix: prefix,
             declared_inputs: refs,
         });
@@ -173,7 +166,7 @@ fn read_manifest(root: &Path, commit: &str, path: &str) -> Result<(SourceRef, Ve
 fn entry(check: &Check, receipt: &Value) -> Result<Value> {
     if receipt.get("schema")?.str()? != "excession.compiler-check.v1"
         || receipt.get("language")?.str()? != check.language
-        || receipt.get("configuration")?.get("path")?.str()? != check.configuration
+        || receipt.get("configuration")? != &source_doc(&check.configuration_source)
         || receipt.get("source_scope")?.str()? != check.source_prefix.as_deref().unwrap_or(".")
     {
         return refuse("compiler matrix child receipt does not match declared configuration");
@@ -307,10 +300,7 @@ pub fn run(db: &Db, request: MatrixRequest<'_>) -> Result<Value> {
     live_file_matches(&root, &source)?;
     // No native tool executes until every tracked declaration is validated.
     for check in &checks {
-        live_file_matches(
-            &root,
-            &SourceRef::from_git(&root, &commit, &check.configuration)?,
-        )?;
+        live_file_matches(&root, &check.configuration_source)?;
         for dependency in &check.declared_inputs {
             live_file_matches(&root, dependency)?;
         }
@@ -421,8 +411,8 @@ mod tests {
     fn bounded_manifest_and_schema_are_required() {
         let empty = json::parse(br#"{"schema":"excession.compiler-matrix-config.v1","checks":[]}"#)
             .unwrap();
-        assert!(exactly(&empty, &["schema", "checks"]).is_ok());
-        assert!(exactly(&empty, &["schema", "checks", "more"]).is_err());
+        assert!(exact_fields(&empty, &["schema", "checks"]).is_ok());
+        assert!(exact_fields(&empty, &["schema", "checks", "more"]).is_err());
     }
 
     #[test]

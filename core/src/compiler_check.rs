@@ -76,7 +76,26 @@ fn spec(language: &str) -> Result<(&'static str, &'static str, &'static str)> {
     }
 }
 
-fn source_doc(source: &SourceRef) -> Value {
+/// Reject unrecognized receipt extensions rather than granting them new semantics.
+pub(crate) fn exact_fields(value: &Value, names: &[&str]) -> Result<()> {
+    let fields = value.entries()?;
+    if fields.len() != names.len() || fields.keys().any(|key| !names.contains(&key.as_str())) {
+        return refuse("compiler evidence contains missing or unsupported fields");
+    }
+    Ok(())
+}
+
+/// Select a native project configuration by its exact filename, not a suffix.
+pub(crate) fn validate_configuration_name(language: &str, path: &str) -> Result<()> {
+    git::validate_path(path)?;
+    let expected = spec(language)?.1;
+    if path.rsplit('/').next() != Some(expected) {
+        return refuse(format!("{language} requires a {expected} configuration"));
+    }
+    Ok(())
+}
+
+pub(crate) fn source_doc(source: &SourceRef) -> Value {
     obj(&[
         ("source_commit", Value::string(&source.commit)),
         ("source_tree", Value::string(&source.tree)),
@@ -275,6 +294,62 @@ fn report_from_execution(
 }
 
 fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<SourceRef> {
+    exact_fields(
+        report,
+        &[
+            "schema",
+            "status",
+            "language",
+            "profile",
+            "source_commit",
+            "source_tree",
+            "configuration",
+            "source_scope",
+            "toolchain",
+            "execution",
+            "coverage",
+            "execution_authority",
+            "artifact_build_provenance",
+            "rea",
+            "report_id",
+        ],
+    )?;
+    exact_fields(
+        report.get("toolchain")?,
+        &[
+            "name",
+            "executable",
+            "launcher_sha256",
+            "version",
+            "identity_scope",
+        ],
+    )?;
+    exact_fields(
+        report.get("execution")?,
+        &[
+            "exit_code",
+            "stdout_sha256",
+            "stderr_sha256",
+            "stdout_bytes",
+            "stderr_bytes",
+            "stdout_preview",
+            "stderr_preview",
+            "output_preview_truncated",
+        ],
+    )?;
+    exact_fields(
+        report.get("coverage")?,
+        &[
+            "configuration",
+            "source_membership",
+            "dependency_closure",
+            "other_configurations",
+        ],
+    )?;
+    exact_fields(
+        report.get("configuration")?,
+        &["source_commit", "source_tree", "path", "blob", "mode"],
+    )?;
     if report.get("schema")?.str()? != SCHEMA
         || !report.content_id_matches("report_id")?
         || report.get("execution_authority")?.str()? != "TRUSTED_LOCAL_NOT_ATTESTED"
@@ -290,8 +365,54 @@ fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<Source
     }
     let status = report.get("status")?.str()?;
     let exit = report.get("execution")?.get("exit_code")?.integer()?;
-    if !matches!((status, exit), ("PASS", 0) | ("FAIL", 1..=i64::MAX)) {
+    if !((status == "PASS" && exit == 0)
+        || (status == "FAIL" && (1..=i32::MAX as i64).contains(&exit)))
+    {
         return refuse("compiler check status and process exit code disagree");
+    }
+    validate_configuration_name(language, report.get("configuration")?.get("path")?.str()?)?;
+    let coverage = report.get("coverage")?;
+    if coverage.get("configuration")?.str()? != "ONE_SELECTED_GIT_CONFIGURATION"
+        || coverage.get("source_membership")?.str()? != "COMPILER_SELECTED_UNAUTHENTICATED"
+        || coverage.get("dependency_closure")?.str()? != "NOT_ESTABLISHED"
+        || coverage.get("other_configurations")?.str()? != "NOT_CHECKED"
+    {
+        return refuse(
+            "compiler check receipt claims unsupported source or configuration coverage",
+        );
+    }
+    let tool = report.get("toolchain")?;
+    let executable = tool.get("executable")?.str()?;
+    let version = tool.get("version")?.str()?;
+    if !Path::new(executable).is_absolute()
+        || executable.len() > 4096
+        || version.is_empty()
+        || version.len() > 300
+        || version.contains('\0')
+    {
+        return refuse("compiler check toolchain metadata invalid");
+    }
+    Subject::Configuration {
+        sha256: tool.get("launcher_sha256")?.str()?.to_owned(),
+    }
+    .validate()?;
+    let execution = report.get("execution")?;
+    for field in ["stdout_sha256", "stderr_sha256"] {
+        Subject::Configuration {
+            sha256: execution.get(field)?.str()?.to_owned(),
+        }
+        .validate()?;
+    }
+    let stdout_bytes = execution.get("stdout_bytes")?.integer()?;
+    let stderr_bytes = execution.get("stderr_bytes")?.integer()?;
+    if !(0..=4 * 1024 * 1024).contains(&stdout_bytes)
+        || !(0..=64 * 1024).contains(&stderr_bytes)
+        || execution.get("output_preview_truncated")?.bool()?
+            != (stdout_bytes > MAX_PREVIEW_CHARS as i64 || stderr_bytes > MAX_PREVIEW_CHARS as i64)
+        || execution.get("stdout_preview")?.str()?.chars().count() > MAX_PREVIEW_CHARS
+        || execution.get("stderr_preview")?.str()?.chars().count() > MAX_PREVIEW_CHARS
+    {
+        return refuse("compiler check diagnostic metadata exceeds bounded execution limits");
     }
     let commit = git::rev(repo, revision)?;
     let source = SourceRef::from_git(
@@ -305,17 +426,10 @@ fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<Source
     {
         return refuse("compiler check configuration differs from pinned Git source");
     }
-    let tool = report.get("toolchain")?;
     if tool.get("name")?.str()? != spec(language)?.0
-        || tool.get("launcher_sha256")?.str()?.len() != 64
         || tool.get("identity_scope")?.str()? != "LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN"
     {
         return refuse("compiler check toolchain identity invalid");
-    }
-    if report.get("coverage")?.get("dependency_closure")?.str()? != "NOT_ESTABLISHED"
-        || report.get("coverage")?.get("other_configurations")?.str()? != "NOT_CHECKED"
-    {
-        return refuse("compiler check cannot claim unobserved configuration coverage");
     }
     if language != "python" && report.get("source_scope")?.str()? != "." {
         return refuse("unexpected non-Python compiler source scope");
@@ -383,13 +497,8 @@ pub fn run(db: &Db, request: Request<'_>) -> Result<Value> {
     if !request.trusted_local {
         return refuse("compiler checks require --trusted-local true; no sandbox is provided");
     }
-    let (default_tool, expected_name, profile) = spec(request.language)?;
-    if !request.configuration.ends_with(expected_name) {
-        return refuse(format!(
-            "{} requires a {expected_name} configuration",
-            request.language
-        ));
-    }
+    let (default_tool, _, profile) = spec(request.language)?;
+    validate_configuration_name(request.language, request.configuration)?;
     let root = request
         .repo
         .canonicalize()
@@ -507,6 +616,78 @@ mod tests {
         assert!(spec("java").is_err());
         assert!(spec("typescript").is_ok());
         assert!(tool_path("cargo", Some("relative/compiler")).is_err());
+    }
+
+    #[test]
+    fn exact_native_configuration_filename_is_required() {
+        assert!(validate_configuration_name("rust", "crates/core/Cargo.toml").is_ok());
+        assert!(validate_configuration_name("rust", "crates/core/fakeCargo.toml").is_err());
+        assert!(validate_configuration_name("typescript", "web/nottsconfig.json").is_err());
+        assert!(validate_configuration_name("python", "configs/mypy.ini").is_ok());
+    }
+
+    #[test]
+    fn rehashed_receipts_cannot_assert_unobserved_coverage() {
+        let source = SourceRef {
+            commit: "a".repeat(40),
+            tree: "b".repeat(40),
+            path: "Cargo.toml".to_owned(),
+            blob: "c".repeat(40),
+            mode: "100644".to_owned(),
+        };
+        let result = adapter::ToolOutput {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            exit_code: 0,
+        };
+        let tool = obj(&[
+            ("name", Value::string("cargo")),
+            ("executable", Value::string("/usr/bin/cargo")),
+            ("launcher_sha256", Value::string("d".repeat(64))),
+            ("version", Value::string("cargo 1.99")),
+            (
+                "identity_scope",
+                Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN"),
+            ),
+        ]);
+        let report = report_from_execution(
+            &source,
+            "rust",
+            "CARGO_CHECK_FROZEN_ALL_TARGETS",
+            ".",
+            tool,
+            &result,
+        )
+        .unwrap();
+        let mut coverage = report.clone();
+        coverage.entries_mut().unwrap().remove("report_id");
+        coverage
+            .entries_mut()
+            .unwrap()
+            .get_mut("coverage")
+            .unwrap()
+            .entries_mut()
+            .unwrap()
+            .insert("source_membership".to_owned(), Value::string("COMPLETE"));
+        let forged = coverage.stamp_id("report_id").unwrap();
+        assert!(forged.content_id_matches("report_id").unwrap());
+        assert!(
+            validate_report(Path::new("."), "HEAD", &forged)
+                .unwrap_err()
+                .contains("unsupported source")
+        );
+        let mut extras = report.clone();
+        extras.entries_mut().unwrap().remove("report_id");
+        extras
+            .entries_mut()
+            .unwrap()
+            .insert("independent_attestation".to_owned(), Value::Bool(true));
+        let extras = extras.stamp_id("report_id").unwrap();
+        assert!(
+            validate_report(Path::new("."), "HEAD", &extras)
+                .unwrap_err()
+                .contains("unsupported fields")
+        );
     }
 
     #[test]

@@ -152,14 +152,7 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/excession-immediate-baseline" rev-parse HEAD)" = "$BEFORE_COMMIT"
           # Isolation criterion: this measures discovery reuse, not a
           # simultaneous compiler, parser, CLI, or toolchain change.
-          diff="$(git diff --name-only "$BEFORE_COMMIT" HEAD -- core/src | grep -v '^core/src/analyze.rs
-        uses: actions/upload-artifact@v4
-        with:
-          name: source-witness-benchmark
-          path: /tmp/source-witness-benchmark/
-          if-no-files-found: warn
-          retention-days: 30
- || true)"
+          diff="$(git diff --name-only "$BEFORE_COMMIT" HEAD -- core/src | grep -v '^core/src/analyze.rs$' || true)"
           test -z "$diff" || {
             printf 'Additional production files changed:\n%s\n' "$diff" >&2
             exit 1

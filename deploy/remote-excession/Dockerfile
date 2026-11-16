@@ -3,7 +3,8 @@
 FROM rust:1.99.1-bookworm AS rust-build
 WORKDIR /build
 COPY . .
-RUN cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
+RUN cargo fetch --locked --manifest-path core/Cargo.toml && \
+    cargo build --offline --locked --manifest-path core/Cargo.toml --release --bin excession
 
 FROM node:24-bookworm-slim AS typescript
 WORKDIR /build

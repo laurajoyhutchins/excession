@@ -1,10 +1,10 @@
 //! Replay a native edit producer's byte-exact plan without knowing its language.
 //! An edit plan is an unauthenticated proposal, never evidence of safe deletion.
+#[cfg(unix)]
+use crate::analyze;
 use crate::improve_generic::read_artifact;
 use crate::json::{Value, obj};
 use crate::{Result, digest, git, refuse};
-#[cfg(unix)]
-use crate::analyze;
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(unix)]
 use std::fs;

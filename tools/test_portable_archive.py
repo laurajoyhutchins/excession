@@ -56,6 +56,36 @@ def verify(archive: Path) -> None:
         assert "excession " in run(str(binary), "--version", cwd=source)
         assert "analyze" in run(str(binary), "--help", cwd=source)
         assert "index" in run(str(binary), "commands", cwd=source)
+        # Check the packaged binary, not the build-tree executable, exposes
+        # the new agent interface and completes a real MCP stdio handshake.
+        import json
+        onboard = json.loads(run(str(binary), "agent", "init", "--repo",
+                                 str(source), cwd=source))
+        assert onboard["schema"] == "excession.agent-integration.v1"
+        assert onboard["status"] == "PLAN"
+        assert not (source / ".mcp.json").exists()
+        assert not (source / ".codex").exists()
+        handshake = [
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+             "params": {"protocolVersion": "2025-11-25",
+                        "capabilities": {}, "clientInfo": {
+                            "name": "portable-smoke", "version": "1"}}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        ]
+        response = subprocess.run(
+            [str(binary), "mcp", "--repo", str(source)],
+            input="".join(json.dumps(msg) + "\n" for msg in handshake),
+            cwd=source, capture_output=True, text=True, encoding="utf-8",
+            timeout=30,
+        )
+        assert response.returncode == 0, response.stderr
+        replies = [json.loads(line) for line in response.stdout.splitlines()]
+        assert len(replies) == 2
+        assert replies[0]["result"]["protocolVersion"] == "2025-11-25"
+        discovered = {item["name"] for item in replies[1]["result"]["tools"]}
+        assert {"search_code", "get_context", "explain_impact", "verify_change",
+                "plan_tests", "check_coverage"} <= discovered
         index_help = run(str(binary), "index", "--help", cwd=source)
         assert all(flag in index_help for flag in ("--repo", "--db", "--name"))
         import json

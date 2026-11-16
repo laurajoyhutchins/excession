@@ -156,6 +156,26 @@ def prepare_source(request, directory):
     return source, tree
 
 
+def prepare_checkout_source(request, checkout):
+    """Use only Git objects already fetched into the private caller repository.
+
+    No network fetch, checkout of the candidate, source execution, or ref
+    mutation occurs here. The caller workflow supplies the private checkout.
+    """
+    checkout = checkout.resolve(strict=True)
+    if Path(git("rev-parse", "--show-toplevel", cwd=checkout)).resolve() != checkout:
+        raise Refusal("private source must be the root of a Git checkout")
+    for sha in (request["revision"], request.get("base")):
+        if sha is not None and git(
+            "rev-parse", "--verify", sha + "^{commit}", cwd=checkout
+        ) != sha:
+            raise Refusal("requested commit unavailable in private checkout")
+    tree = git("rev-parse", request["revision"] + "^{tree}", cwd=checkout)
+    if not SHA.fullmatch(tree):
+        raise Refusal("private checkout tree identity invalid")
+    return checkout, tree
+
+
 def command(request, source, binary):
     kind = request["operation"]
     argv = [str(binary), "agent", kind, "--repo", str(source)]
@@ -185,9 +205,9 @@ def check_report(request, report, tree):
         raise Refusal("source identities disagree with Git")
 
 
-def execute(request, binary, output):
+def execute(request, binary, output, source_checkout=None, tool_checkout=None):
     output.mkdir(parents=True, exist_ok=True)
-    tool_commit = git("rev-parse", "HEAD")
+    tool_commit = git("rev-parse", "HEAD", cwd=tool_checkout)
     receipt = {
         "schema": RECEIPT_SCHEMA, "status": "REFUSED", "request": request,
         "tool_commit": tool_commit, "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
@@ -199,7 +219,10 @@ def execute(request, binary, output):
         version = subprocess.run([str(binary), "--version"], capture_output=True, text=True,
                                  timeout=10, check=True).stdout.strip()
         receipt["tool_version"] = version
-        source, tree = prepare_source(request, output / "work")
+        if source_checkout is None:
+            source, tree = prepare_source(request, output / "work")
+        else:
+            source, tree = prepare_checkout_source(request, source_checkout)
         receipt["source_tree"] = tree
         report_file = output / "report.json"
         with report_file.open("wb") as sink:
@@ -248,9 +271,23 @@ def main():
     parser.add_argument("--request", type=Path)
     parser.add_argument("--binary", type=Path)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--trusted-repository")
+    parser.add_argument("--local-checkout", type=Path)
+    parser.add_argument("--tool-checkout", type=Path)
     args = parser.parse_args()
     try:
-        targets = load_targets(args.targets)
+        if args.trusted_repository is not None:
+            if not REPO.fullmatch(args.trusted_repository):
+                raise Refusal("invalid trusted caller repository")
+            if os.environ.get("GITHUB_REPOSITORY") != args.trusted_repository:
+                raise Refusal("trusted repository must match the GitHub caller")
+            targets = {args.trusted_repository}
+        else:
+            targets = load_targets(args.targets)
+        if args.local_checkout is not None and (
+            args.trusted_repository is None or args.tool_checkout is None
+        ):
+            raise Refusal("private checkout requires a trusted caller and tool checkout")
         if args.mode == "validate":
             if args.event is None:
                 raise Refusal("event path required")
@@ -262,7 +299,9 @@ def main():
             if args.request is None or args.binary is None:
                 raise Refusal("request and binary required")
             request = validate(json.loads(args.request.read_text(encoding="utf-8")), targets)
-            execute(request, args.binary.resolve(), args.out.resolve())
+            execute(request, args.binary.resolve(), args.out.resolve(),
+                    source_checkout=args.local_checkout,
+                    tool_checkout=args.tool_checkout)
         return 0
     except (Refusal, OSError, subprocess.SubprocessError, ValueError) as exc:
         print("EXCESSION_ANALYSIS_REFUSED: " + str(exc), file=sys.stderr)

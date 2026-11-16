@@ -40,7 +40,9 @@ struct Check {
 /// Cache exact Git lookups within one matrix parse. Every unique source is
 /// still authenticated through SourceRef::from_git at the pinned revision.
 fn source_cached(
-    root: &Path, commit: &str, path: &str,
+    root: &Path,
+    commit: &str,
+    path: &str,
     cache: &mut BTreeMap<String, SourceRef>,
 ) -> Result<SourceRef> {
     if let Some(source) = cache.get(path) {

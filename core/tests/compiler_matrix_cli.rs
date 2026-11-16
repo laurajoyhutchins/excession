@@ -380,14 +380,26 @@ fn a_large_tracked_lockfile_is_accepted_without_inventing_dependency_coverage() 
     f.change("large.lock", &"x".repeat(1_200_000));
     let report = result(f.matrix(None, true), true);
     let input = &report.get("checks").unwrap().array_ref().unwrap()[0]
-        .get("declared_inputs").unwrap().array_ref().unwrap()[0];
+        .get("declared_inputs")
+        .unwrap()
+        .array_ref()
+        .unwrap()[0];
     assert_eq!(input.get("path").unwrap().str().unwrap(), "large.lock");
     assert_eq!(
-        report.get("coverage").unwrap().get("dependency_closure")
-            .unwrap().str().unwrap(), "NOT_ESTABLISHED"
+        report
+            .get("coverage")
+            .unwrap()
+            .get("dependency_closure")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "NOT_ESTABLISHED"
     );
-    assert!(f.audit(report.get("snapshot_id").unwrap().str().unwrap(), "HEAD")
-        .status.success());
+    assert!(
+        f.audit(report.get("snapshot_id").unwrap().str().unwrap(), "HEAD")
+            .status
+            .success()
+    );
 }
 
 #[test]
@@ -397,12 +409,16 @@ fn unrelated_filename_ending_in_cargo_toml_is_refused() {
        "declared_inputs":[]}
     ]}"#;
     let mut f = Fixture::new(manifest);
-    f.change("packages/a/fakeCargo.toml", "[package]\nname=\"fake\"\nversion=\"0.1.0\"\n");
+    f.change(
+        "packages/a/fakeCargo.toml",
+        "[package]\nname=\"fake\"\nversion=\"0.1.0\"\n",
+    );
     let output = f.matrix(None, true);
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("requires a Cargo.toml configuration"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("requires a Cargo.toml configuration")
+    );
 }
 
 #[test]

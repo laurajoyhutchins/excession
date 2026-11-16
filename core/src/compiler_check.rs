@@ -297,27 +297,54 @@ fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<Source
     exact_fields(
         report,
         &[
-            "schema", "status", "language", "profile", "source_commit",
-            "source_tree", "configuration", "source_scope", "toolchain",
-            "execution", "coverage", "execution_authority",
-            "artifact_build_provenance", "rea", "report_id",
+            "schema",
+            "status",
+            "language",
+            "profile",
+            "source_commit",
+            "source_tree",
+            "configuration",
+            "source_scope",
+            "toolchain",
+            "execution",
+            "coverage",
+            "execution_authority",
+            "artifact_build_provenance",
+            "rea",
+            "report_id",
         ],
     )?;
     exact_fields(
         report.get("toolchain")?,
-        &["name", "executable", "launcher_sha256", "version", "identity_scope"],
+        &[
+            "name",
+            "executable",
+            "launcher_sha256",
+            "version",
+            "identity_scope",
+        ],
     )?;
     exact_fields(
         report.get("execution")?,
         &[
-            "exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes",
-            "stderr_bytes", "stdout_preview", "stderr_preview",
+            "exit_code",
+            "stdout_sha256",
+            "stderr_sha256",
+            "stdout_bytes",
+            "stderr_bytes",
+            "stdout_preview",
+            "stderr_preview",
             "output_preview_truncated",
         ],
     )?;
     exact_fields(
         report.get("coverage")?,
-        &["configuration", "source_membership", "dependency_closure", "other_configurations"],
+        &[
+            "configuration",
+            "source_membership",
+            "dependency_closure",
+            "other_configurations",
+        ],
     )?;
     exact_fields(
         report.get("configuration")?,
@@ -350,7 +377,9 @@ fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<Source
         || coverage.get("dependency_closure")?.str()? != "NOT_ESTABLISHED"
         || coverage.get("other_configurations")?.str()? != "NOT_CHECKED"
     {
-        return refuse("compiler check receipt claims unsupported source or configuration coverage");
+        return refuse(
+            "compiler check receipt claims unsupported source or configuration coverage",
+        );
     }
     let tool = report.get("toolchain")?;
     let executable = tool.get("executable")?.str()?;
@@ -366,21 +395,22 @@ fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<Source
     for field in ["launcher_sha256"] {
         Subject::Configuration {
             sha256: tool.get(field)?.str()?.to_owned(),
-        }.validate()?;
+        }
+        .validate()?;
     }
     let execution = report.get("execution")?;
     for field in ["stdout_sha256", "stderr_sha256"] {
         Subject::Configuration {
             sha256: execution.get(field)?.str()?.to_owned(),
-        }.validate()?;
+        }
+        .validate()?;
     }
     let stdout_bytes = execution.get("stdout_bytes")?.integer()?;
     let stderr_bytes = execution.get("stderr_bytes")?.integer()?;
     if !(0..=4 * 1024 * 1024).contains(&stdout_bytes)
         || !(0..=64 * 1024).contains(&stderr_bytes)
         || execution.get("output_preview_truncated")?.bool()?
-            != (stdout_bytes > MAX_PREVIEW_CHARS as i64
-                || stderr_bytes > MAX_PREVIEW_CHARS as i64)
+            != (stdout_bytes > MAX_PREVIEW_CHARS as i64 || stderr_bytes > MAX_PREVIEW_CHARS as i64)
         || execution.get("stdout_preview")?.str()?.chars().count() > MAX_PREVIEW_CHARS
         || execution.get("stderr_preview")?.str()?.chars().count() > MAX_PREVIEW_CHARS
     {
@@ -608,36 +638,58 @@ mod tests {
             mode: "100644".to_owned(),
         };
         let result = adapter::ToolOutput {
-            stdout: Vec::new(), stderr: Vec::new(), exit_code: 0,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            exit_code: 0,
         };
         let tool = obj(&[
             ("name", Value::string("cargo")),
             ("executable", Value::string("/usr/bin/cargo")),
             ("launcher_sha256", Value::string("d".repeat(64))),
             ("version", Value::string("cargo 1.99")),
-            ("identity_scope", Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN")),
+            (
+                "identity_scope",
+                Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN"),
+            ),
         ]);
         let report = report_from_execution(
-            &source, "rust", "CARGO_CHECK_FROZEN_ALL_TARGETS", ".", tool, &result
-        ).unwrap();
+            &source,
+            "rust",
+            "CARGO_CHECK_FROZEN_ALL_TARGETS",
+            ".",
+            tool,
+            &result,
+        )
+        .unwrap();
         let mut coverage = report.clone();
         coverage.entries_mut().unwrap().remove("report_id");
-        coverage.entries_mut().unwrap().get_mut("coverage").unwrap()
-            .entries_mut().unwrap().insert(
-                "source_membership".to_owned(), Value::string("COMPLETE"),
-            );
+        coverage
+            .entries_mut()
+            .unwrap()
+            .get_mut("coverage")
+            .unwrap()
+            .entries_mut()
+            .unwrap()
+            .insert("source_membership".to_owned(), Value::string("COMPLETE"));
         let forged = coverage.stamp_id("report_id").unwrap();
         assert!(forged.content_id_matches("report_id").unwrap());
-        assert!(validate_report(Path::new("."), "HEAD", &forged)
-            .unwrap_err().contains("unsupported source"));
+        assert!(
+            validate_report(Path::new("."), "HEAD", &forged)
+                .unwrap_err()
+                .contains("unsupported source")
+        );
         let mut extras = report.clone();
         extras.entries_mut().unwrap().remove("report_id");
-        extras.entries_mut().unwrap().insert(
-            "independent_attestation".to_owned(), Value::Bool(true)
-        );
+        extras
+            .entries_mut()
+            .unwrap()
+            .insert("independent_attestation".to_owned(), Value::Bool(true));
         let extras = extras.stamp_id("report_id").unwrap();
-        assert!(validate_report(Path::new("."), "HEAD", &extras)
-            .unwrap_err().contains("unsupported fields"));
+        assert!(
+            validate_report(Path::new("."), "HEAD", &extras)
+                .unwrap_err()
+                .contains("unsupported fields")
+        );
     }
 
     #[test]

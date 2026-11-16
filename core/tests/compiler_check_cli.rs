@@ -258,12 +258,16 @@ fn compiler_failure_still_persists_as_fail_and_never_promotes_build_provenance()
 #[test]
 fn suffix_only_compiler_configuration_does_not_count_as_a_native_manifest() {
     let mut f = Fixture::new();
-    f.changed("fakeCargo.toml", "[package]\nname=\"fake\"\nversion=\"0.1.0\"\n");
+    f.changed(
+        "fakeCargo.toml",
+        "[package]\nname=\"fake\"\nversion=\"0.1.0\"\n",
+    );
     let output = f.invoke("rust", "fakeCargo.toml", None, None);
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("requires a Cargo.toml configuration"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("requires a Cargo.toml configuration")
+    );
 }
 
 #[test]

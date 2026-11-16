@@ -85,7 +85,7 @@ fn reports_importer_as_candidate_without_authorizing_test_skips() {
     let result = json::parse(output.as_bytes()).unwrap();
     assert_eq!(
         result.get("schema").unwrap().str().unwrap(),
-        "excession.impact.v1"
+        "excession.impact.v3"
     );
     assert_eq!(result.get("base_commit").unwrap().str().unwrap(), base);
     assert_eq!(result.get("head_commit").unwrap().str().unwrap(), head);
@@ -106,44 +106,15 @@ fn reports_importer_as_candidate_without_authorizing_test_skips() {
             .unwrap(),
         "PARTIAL"
     );
-    let effects = result.get("effects").unwrap().array_ref().unwrap();
-    assert!(
-        effects
-            .iter()
-            .all(|effect| { effect.get("claim_id").unwrap().str().unwrap().len() == 64 })
-    );
-    assert!(
-        effects.iter().any(|effect| {
-            effect
-                .get("entity")
-                .unwrap()
-                .get("path")
-                .unwrap()
-                .str()
-                .unwrap()
-                == "pkg/first.py"
-                && effect.get("assessment").unwrap().str().unwrap() == "CANDIDATE_PATH"
-        }),
-        "expected an importer candidate in the independently constructed Git fixture"
-    );
-    assert!(effects.iter().all(|effect| {
-        effect
-            .get("hops")
-            .unwrap()
-            .array_ref()
-            .unwrap()
-            .iter()
-            .all(|hop| {
-                hop.get("evidence")
-                    .unwrap()
-                    .array_ref()
-                    .unwrap()
-                    .iter()
-                    .all(|e| e.get("assessment").unwrap().str().unwrap() == "CANDIDATE")
-            })
-    }));
-    // The human output must expose paths and full claim IDs. The saved
-    // report is exactly the machine-readable version used by explain.
+    assert!(result.entries().unwrap().get("effects").is_none());
+    let witnesses = result.get("candidate_source_impacts").unwrap().array_ref().unwrap();
+    assert!(witnesses.iter().any(|w| {
+        w.get("entity").unwrap().get("path").unwrap().str().unwrap() == "pkg/first.py"
+            && w.get("assessment").unwrap().str().unwrap() == "CANDIDATE_PATH"
+            && !w.get("next_hop").unwrap().get("evidence").unwrap()
+                .array_ref().unwrap().is_empty()
+    }), "independently created importer should have one Git-bound source witness");
+    // Human output must expose source reachability and preserve saved JSON.
     let saved_path = root.join("impact.json");
     let human = cmd(
         bin,
@@ -162,8 +133,7 @@ fn reports_importer_as_candidate_without_authorizing_test_skips() {
     );
     assert!(human.contains("pkg/first.py"));
     assert!(human.contains("Saved replayable report:"));
-    let first_id = effects[0].get("claim_id").unwrap().str().unwrap();
-    assert!(human.contains(first_id));
+    assert!(human.contains("distinct-source candidates"));
     assert_eq!(fs::read_to_string(&saved_path).unwrap().trim(), output);
 
     // Do not clobber existing evidence or create artifacts in the checkout.
@@ -294,7 +264,7 @@ fn revisions_without_supported_sources_are_explicitly_out_of_scope() {
     let result = json::parse(&report.stdout).unwrap();
     assert!(
         result
-            .get("effects")
+            .get("candidate_source_impacts")
             .unwrap()
             .array_ref()
             .unwrap()

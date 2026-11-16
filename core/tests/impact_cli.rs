@@ -354,6 +354,7 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
     ]);
     let head = cmd(&["rev-parse", "HEAD"]);
     let database = root.join("index.sqlite");
+    let report_path = root.join("impact-sources.json");
     let output = Command::new(env!("CARGO_BIN_EXE_excession"))
         .args([
             "impact",
@@ -367,6 +368,8 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
             "--db",
             database.to_str().unwrap(),
             "--json",
+            "--output",
+            report_path.to_str().unwrap(),
         ])
         .output()
         .unwrap();
@@ -391,21 +394,13 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
             .bool()
             .unwrap()
     );
-    // Existing path enumerator is bounded at 512, while the new source
-    // inventory carries all 21 distinct importers in each revision.
-    assert_eq!(
-        result.get("effects").unwrap().array_ref().unwrap().len(),
-        512
-    );
-    assert!(
-        result
-            .get("unknown")
-            .unwrap()
-            .array_ref()
-            .unwrap()
-            .iter()
-            .any(|g| g.get("reason").unwrap().str().unwrap() == "TRUNCATED")
-    );
+    assert_eq!(result.get("schema").unwrap().str().unwrap(), "excession.impact.v3");
+    assert!(result.entries().unwrap().get("effects").is_none());
+    assert!(result.entries().unwrap().get("path_effects_status").is_none());
+    assert_eq!(fs::read_to_string(&report_path).unwrap().trim(), result.canonical());
+    assert!(result.get("unknown").unwrap().array_ref().unwrap().iter()
+        .all(|gap| gap.get("reason").unwrap().str().unwrap() != "TRUNCATED"));
+
     let witnesses = result
         .get("candidate_source_impacts")
         .unwrap()
@@ -476,93 +471,10 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
             .unwrap()
     );
 
-    // v2 keeps every independent source certificate but does no path walk.
-    // Both reports use the same exact source graph and producer selection.
-    let compact_path = root.join("impact-compact.json");
-    let compact_out = Command::new(env!("CARGO_BIN_EXE_excession"))
-        .args([
-            "impact",
-            repo.to_str().unwrap(),
-            "--base",
-            &base,
-            "--head",
-            &head,
-            "--roots",
-            "pkg",
-            "--db",
-            database.to_str().unwrap(),
-            "--compact",
-            "--json",
-            "--output",
-            compact_path.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        compact_out.status.success(),
-        "compact impact: {}",
-        String::from_utf8_lossy(&compact_out.stderr)
-    );
-    let compact = json::parse(&compact_out.stdout).unwrap();
-    assert_eq!(
-        compact.get("schema").unwrap().str().unwrap(),
-        "excession.impact.v2"
-    );
-    assert_eq!(
-        compact.get("path_effects_status").unwrap().str().unwrap(),
-        "OMITTED_COMPACT"
-    );
-    assert!(
-        compact
-            .get("effects")
-            .unwrap()
-            .array_ref()
-            .unwrap()
-            .is_empty()
-    );
-    assert_eq!(
-        compact.get("candidate_source_impacts").unwrap(),
-        result.get("candidate_source_impacts").unwrap(),
-        "ranked source inventory must be identical with legacy path enumeration disabled"
-    );
-    assert_eq!(
-        compact.get("candidate_source_count").unwrap(),
-        result.get("candidate_source_count").unwrap()
-    );
-    assert_eq!(
-        compact
-            .get("candidate_source_enumeration_complete")
-            .unwrap(),
-        result.get("candidate_source_enumeration_complete").unwrap()
-    );
-    assert_eq!(
-        compact.get("change_inventory_id").unwrap(),
-        result.get("change_inventory_id").unwrap()
-    );
-    assert!(
-        compact
-            .get("unknown")
-            .unwrap()
-            .array_ref()
-            .unwrap()
-            .iter()
-            .all(|gap| gap.get("reason").unwrap().str().unwrap() != "TRUNCATED")
-    );
-    assert!(
-        !compact
-            .get("safe_to_skip_unlisted_tests")
-            .unwrap()
-            .bool()
-            .unwrap()
-    );
-    assert!(
-        compact_out.stdout.len() < output.stdout.len(),
-        "compact output should not serialize hundreds of alternative path proofs"
-    );
-    assert_eq!(
-        fs::read_to_string(&compact_path).unwrap().trim(),
-        compact.canonical()
-    );
+    // The sole report carries one witness per reachable non-seed source,
+    // regardless of the exponential number of alternative import paths.
+    let compact_path = report_path.clone();
+    let compact = result.clone();
 
     let selected = Command::new(env!("CARGO_BIN_EXE_excession"))
         .args([

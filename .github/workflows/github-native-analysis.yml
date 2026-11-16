@@ -70,6 +70,13 @@ jobs:
         run: |
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --offline --locked --release --manifest-path core/Cargo.toml --bin excession
+      - name: Install locked JavaScript analyzer
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install native Excession TypeScript adapter dependency
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run pinned, read-only source analysis
         run: |
           python3 tools/github_analysis.py execute \
@@ -113,6 +120,13 @@ jobs:
         run: |
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
           cargo +1.99.1 build --offline --locked --release --manifest-path core/Cargo.toml --bin excession
+      - name: Install locked JavaScript analyzer for the real CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Resolve the pinned TypeScript analyzer
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Pin an independently accessible GitHub commit for live retrieval
         env:
           SOURCE_SHA: ${{ github.event.pull_request.base.sha }}

@@ -12,6 +12,7 @@ on:
         required: true
         type: string
   pull_request:
+    types: [opened, synchronize, ready_for_review]
     paths:
       - '.github/workflows/github-native-analysis.yml'
       - 'config/github-analysis-targets.json'
@@ -93,3 +94,69 @@ jobs:
             ${{ runner.temp }}/excession-evidence/summary.md
           if-no-files-found: warn
           retention-days: 30
+
+  native-smoke:
+    # Deep replay only on the explicit ready-for-review transition, not each commit.
+    if: github.event_name == 'pull_request' && github.event.action == 'ready_for_review'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Build real Excession, no emulated CLI
+        run: |
+          cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
+          cargo +1.99.1 build --offline --locked --release --manifest-path core/Cargo.toml --bin excession
+      - name: Pin an independently accessible GitHub commit for live retrieval
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 - "$SOURCE_SHA" "$RUNNER_TEMP/source-request.json" <<'PY'
+          import json, sys
+          sha, path = sys.argv[1:]
+          assert len(sha) == 40 and set(sha) <= set("0123456789abcdef")
+          request = {
+              "schema": "excession.github-analysis-request.v1",
+              "repository": "laurajoyhutchins/excession",
+              "revision": sha,
+              "operation": "locate",
+              "task": "Find the agent verification implementation",
+              "limit": 5,
+          }
+          with open(path, "w") as f:
+              json.dump(request, f)
+          PY
+      - name: Fetch exact remote Git objects and analyze with the Rust binary
+        run: |
+          python3 tools/github_analysis.py execute \
+            --request "$RUNNER_TEMP/source-request.json" \
+            --binary "$GITHUB_WORKSPACE/core/target/release/excession" \
+            --out "$RUNNER_TEMP/source-proof"
+          python3 - "$RUNNER_TEMP/source-proof" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          receipt = json.loads((root / "receipt.json").read_text())
+          report = json.loads((root / "report.json").read_text())
+          assert receipt["status"] == "COMPLETED"
+          assert report["schema"] == "excession.agent-locate.v1"
+          assert report["source_commit"] == receipt["request"]["revision"]
+          assert report["source_tree"] == receipt["source_tree"]
+          assert receipt["safe_to_skip_unlisted_tests"] is False
+          PY
+      - name: Retain independent remote source smoke receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-issue-transport-smoke
+          path: |
+            ${{ runner.temp }}/source-proof/receipt.json
+            ${{ runner.temp }}/source-proof/report.json
+            ${{ runner.temp }}/source-proof/summary.md
+          if-no-files-found: warn
+          retention-days: 7

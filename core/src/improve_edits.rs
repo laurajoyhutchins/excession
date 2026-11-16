@@ -1,6 +1,7 @@
 //! Replay a native edit producer's byte-exact plan without knowing its language.
 //! An edit plan is an unauthenticated proposal, never evidence of safe deletion.
-use crate::json::{self, Value, obj};
+use crate::improve_generic::read_artifact;
+use crate::json::{Value, obj};
 use crate::{Result, analyze, digest, git, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -9,7 +10,6 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
-const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SOURCE_BYTES: usize = 512 * 1024;
 const MAX_EDIT_COUNT: usize = 32;
 const MAX_FILE_COUNT: usize = 8;
@@ -21,14 +21,6 @@ pub struct Request<'a> {
     pub plan: &'a Path,
     pub edits: &'a Path,
     pub output: Option<&'a Path>,
-}
-
-fn read(path: &Path) -> Result<Value> {
-    let bytes = fs::read(path).map_err(|e| format!("improvement artifact read: {e}"))?;
-    if bytes.len() > MAX_PLAN_BYTES {
-        return refuse("improvement artifact exceeds 4 MiB");
-    }
-    json::parse(&bytes)
 }
 
 fn selected_paths(plan: &Value, candidate: &str) -> Result<BTreeSet<String>> {
@@ -279,7 +271,7 @@ fn apply(repo: &Path, commit: &str, output: &Path, changed: &[Changed]) -> Resul
 pub fn execute(request: &Request<'_>) -> Result<Value> {
     let commit = git::rev(request.repo, request.revision)?;
     let tree = git::rev(request.repo, &format!("{commit}^{{tree}}"))?;
-    let plan = read(request.plan)?;
+    let plan = read_artifact(request.plan)?;
     if plan.get("schema")?.str()? != "excession.improvement-plan.v1"
         || !plan.content_id_matches("plan_id")?
         || plan.get("source_commit")?.str()? != commit
@@ -287,7 +279,7 @@ pub fn execute(request: &Request<'_>) -> Result<Value> {
     {
         return refuse("improvement plan is not bound to this Git commit");
     }
-    let native = read(request.edits)?;
+    let native = read_artifact(request.edits)?;
     let changed = prepare(request.repo, &commit, &plan, &native)?;
     if let Some(output) = request.output {
         apply(request.repo, &commit, output, &changed)?;

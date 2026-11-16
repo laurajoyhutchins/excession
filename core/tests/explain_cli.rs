@@ -86,12 +86,24 @@ fn real_git_source_explanation_replays_and_refuses_tampered_witness() {
         ],
     );
     let mut report = json::parse(impact.as_bytes()).unwrap();
-    assert_eq!(report.get("schema").unwrap().str().unwrap(), "excession.impact.v3");
-    let witnesses = report.get("candidate_source_impacts").unwrap().array_ref().unwrap();
+    assert_eq!(
+        report.get("schema").unwrap().str().unwrap(),
+        "excession.impact.v3"
+    );
+    let witnesses = report
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert!(!witnesses.is_empty());
     let entity = witnesses[0].get("entity").unwrap();
     let source = entity.get("path").unwrap().str().unwrap().to_owned();
-    let commit = entity.get("source_commit").unwrap().str().unwrap().to_owned();
+    let commit = entity
+        .get("source_commit")
+        .unwrap()
+        .str()
+        .unwrap()
+        .to_owned();
     assert_eq!(
         fs::read_to_string(&path).unwrap().trim(),
         report.canonical()
@@ -117,10 +129,18 @@ fn real_git_source_explanation_replays_and_refuses_tampered_witness() {
         explanation.get("schema").unwrap().str().unwrap(),
         "excession.explanation.v1"
     );
-    assert_eq!(explanation.get("source_commit").unwrap().str().unwrap(), commit);
+    assert_eq!(
+        explanation.get("source_commit").unwrap().str().unwrap(),
+        commit
+    );
     assert_eq!(
         explanation.get("steps").unwrap().array_ref().unwrap()[0]
-            .get("source").unwrap().get("path").unwrap().str().unwrap(),
+            .get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap(),
         source
     );
     assert!(
@@ -152,16 +172,21 @@ fn real_git_source_explanation_replays_and_refuses_tampered_witness() {
         audited.get("semantic_correctness").unwrap().str().unwrap(),
         "NOT_EVALUATED"
     );
-    let mut changed = report.get("candidate_source_impacts").unwrap().array_ref().unwrap().to_vec();
+    let mut changed = report
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap()
+        .to_vec();
     let effect = changed.get_mut(0).unwrap();
     effect.entries_mut().unwrap().insert(
         "assessment".into(),
         json::Value::string("OBSERVED_RELATIONSHIP_PATH"),
     );
-    report
-        .entries_mut()
-        .unwrap()
-        .insert("candidate_source_impacts".into(), json::Value::array(changed));
+    report.entries_mut().unwrap().insert(
+        "candidate_source_impacts".into(),
+        json::Value::array(changed),
+    );
     fs::write(&path, report.canonical()).unwrap();
     let rejected = cmd(
         bin,

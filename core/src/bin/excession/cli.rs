@@ -1108,8 +1108,7 @@ mod tests {
         };
         assert_eq!(compact.options.get("compact"), "true");
         assert_eq!(compact.options.get("json"), "true");
-        let ParseOutcome::Command(legacy) = parse(&strings(&["impact", "."])).unwrap()
-        else {
+        let ParseOutcome::Command(legacy) = parse(&strings(&["impact", "."])).unwrap() else {
             panic!("legacy impact CLI expected");
         };
         assert!(!legacy.options.0.contains_key("compact"));

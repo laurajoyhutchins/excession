@@ -6,7 +6,7 @@ on:
       compare_ref:
         description: "Optional exact 40-hex preoptimization commit for same-run A/B/A replay"
         required: false
-        default: ""
+        default: "bab4ece6c12b3343a4e995ea08ec348fc7206034"
         type: string
 
 permissions:

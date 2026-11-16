@@ -1,4 +1,5 @@
 name: Excession agent analysis (GitHub-native)
+run-name: "Excession analysis request ${{ github.event.issue.number || github.run_id }}"
 
 # A GitHub issue is the in-chat request transport. No external service, token,
 # GCP, or MCP installation is needed; the connected GitHub app can create issues.
@@ -94,7 +95,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: excession-analysis-${{ github.run_id }}
+          name: excession-analysis-${{ github.event.issue.number || 'manual' }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/excession-evidence/report.json
             ${{ runner.temp }}/excession-evidence/receipt.json

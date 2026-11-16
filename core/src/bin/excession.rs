@@ -833,6 +833,38 @@ fn execute(args: &[String]) -> Result<Response> {
                 opt.get("snapshot"),
             )?))
         }
+        [top, sub] if top == "check" && sub == "matrix" => {
+            if opt.get("trusted-local") != "true" {
+                return refuse("compiler matrix requires --trusted-local true");
+            }
+            let db_path = analyze::checked_external_destination(
+                opt.path("repo"),
+                opt.path("db"),
+                "compiler matrix evidence",
+            )?;
+            let db = excession::sqlite::Db::open(&db_path)?;
+            Ok(Response::CompilerCheck(excession::compiler_matrix::run(
+                &db,
+                excession::compiler_matrix::MatrixRequest {
+                    repo: opt.path("repo"),
+                    revision: opt.get_or("rev", "HEAD"),
+                    manifest: opt.get("manifest"),
+                    rust_tool: opt.0.get("rust-tool").map(String::as_str),
+                    typescript_tool: opt.0.get("typescript-tool").map(String::as_str),
+                    python_tool: opt.0.get("python-tool").map(String::as_str),
+                    trusted_local: true,
+                },
+            )?))
+        }
+        [top, sub] if top == "check" && sub == "matrix-audit" => {
+            let db = excession::sqlite::Db::open(opt.path("db"))?;
+            Ok(json(excession::compiler_matrix::audit(
+                &db,
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.get("snapshot"),
+            )?))
+        }
         [top, sub] if top == "analyze" && sub == "languages" => {
             let roots = opt.get_or("roots", ".").split(',').collect::<Vec<_>>();
             let report = excession::language_analysis::run(

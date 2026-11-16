@@ -636,6 +636,16 @@ pub(super) fn command() -> Command {
                     &["repo", "rev", "db", "snapshot"],
                     &[],
                 ).about("Replay a stored compiler-check receipt against its original Git configuration"),
+                leaf(
+                    "matrix",
+                    &["repo", "manifest", "db", "trusted-local"],
+                    &["rev", "rust-tool", "typescript-tool", "python-tool"],
+                ).about("Run all checks in one Git-declared compiler matrix and persist the aggregate"),
+                leaf(
+                    "matrix-audit",
+                    &["repo", "rev", "db", "snapshot"],
+                    &[],
+                ).about("Replay matrix and all child compiler receipts against original Git objects"),
             ],
         ).about("Explicit local compiler/typechecker receipts; not artifact build attestation"))
          .subcommand(Command::new("commands").about("List all commands, including specialist tools"))

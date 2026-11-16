@@ -12,6 +12,7 @@ pub mod benchmark;
 pub mod change_inventory;
 pub mod compiler_check;
 pub mod compiler_clang;
+pub mod compiler_matrix;
 pub mod configured_store;
 pub mod contracts;
 pub mod digest;

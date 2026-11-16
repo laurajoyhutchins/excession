@@ -452,7 +452,6 @@ mod tests {
         fs::remove_file(&path).unwrap();
     }
 
-
     fn fixture(kind: &str, source: &str) -> Value {
         let (candidate, coverage) = if kind == "dependency_cycle" {
             (

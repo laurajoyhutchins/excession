@@ -179,6 +179,15 @@ selection still narrows scope. See
 [observed relationship analysis](docs/OBSERVED_RELATIONSHIP_ANALYSIS.md).
 Build membership is never silently promoted to a source dependency.
 
+## GitHub Actions evidence (no service)
+
+The [GitHub evidence workflow](docs/GITHUB_EVIDENCE.md) can run Excession at
+an immutable commit in CI and upload a versioned, machine-readable report. It
+preserves base/head Git identities, source witnesses, candidate impacts,
+coverage, suggested checks, provenance and unresolved obligations. An agent
+with only GitHub access can retrieve the workflow artifact without using a
+live MCP server. A produced report is not a merge approval or a test receipt.
+
 ## Coding-agent interface
 
 For MCP-capable coding agents, configure Excession in the target repository

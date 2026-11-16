@@ -1,0 +1,136 @@
+name: Excession GitHub evidence
+
+# Callable from another repository at an immutable Excession commit, or run
+# directly in Excession. Neither mode needs a separate service or write token.
+on:
+  workflow_call:
+    inputs:
+      base:
+        type: string
+        required: false
+        default: ''
+      head:
+        type: string
+        required: false
+        default: ''
+      roots:
+        type: string
+        required: false
+        default: ''
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Base commit SHA (default HEAD^)
+        type: string
+        required: false
+      head:
+        description: Candidate commit SHA (default workflow commit)
+        type: string
+        required: false
+      roots:
+        description: Optional Excession source roots
+        type: string
+        required: false
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  evidence:
+    name: Publish bounded source evidence
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - name: Checkout target repository with full Git objects
+        uses: actions/checkout@v4
+        with:
+          path: source
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout Excession at the immutable workflow commit
+        uses: actions/checkout@v4
+        with:
+          repository: laurajoyhutchins/excession
+          ref: ${{ job.workflow_sha }}
+          path: tool
+          persist-credentials: false
+      - name: Resolve exact source and producer identities
+        id: identity
+        shell: bash
+        env:
+          REQUEST_BASE: ${{ inputs.base || github.event.pull_request.base.sha || '' }}
+          REQUEST_HEAD: ${{ inputs.head || github.event.pull_request.head.sha || github.sha }}
+          PRODUCER_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          TOOL_SHA="$(git -C tool rev-parse HEAD)"
+          test "$TOOL_SHA" = "$PRODUCER_SHA"
+          HEAD="$(git -C source rev-parse --verify "$REQUEST_HEAD^{commit}")"
+          if [ -n "$REQUEST_BASE" ]; then
+            BASE="$(git -C source rev-parse --verify "$REQUEST_BASE^{commit}")"
+          else
+            BASE="$(git -C source rev-parse --verify "$HEAD^")"
+          fi
+          test "$HEAD" != "$BASE"
+          printf 'base=%s\nhead=%s\nhead_short=%s\ntool_sha=%s\n' \
+            "$BASE" "$HEAD" "${HEAD:0:12}" "$TOOL_SHA" >> "$GITHUB_OUTPUT"
+      - name: Build exact Excession source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.99.1 --profile minimal
+          cargo +1.99.1 build --locked --manifest-path tool/core/Cargo.toml --bin excession
+          test -x tool/core/target/debug/excession
+      - name: Install supported source parser dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: tool/.node-version
+      - name: Install pinned Python for source observers
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: tool/.python-version
+      - name: Resolve locked TypeScript parser
+        run: npm ci --prefix tool --ignore-scripts --no-audit --no-fund
+      - name: Generate Git-pinned verification, context, and evidence envelope
+        shell: bash
+        env:
+          BASE: ${{ steps.identity.outputs.base }}
+          HEAD: ${{ steps.identity.outputs.head }}
+          TOOL_SHA: ${{ steps.identity.outputs.tool_sha }}
+          ROOTS: ${{ inputs.roots || '' }}
+        run: |
+          set -euo pipefail
+          python3 tool/tools/github_evidence.py \
+            --repo "$GITHUB_WORKSPACE/source" \
+            --bin "$GITHUB_WORKSPACE/tool/core/target/debug/excession" \
+            --base "$BASE" --head "$HEAD" \
+            --repository "$GITHUB_REPOSITORY" \
+            --tool-commit "$TOOL_SHA" \
+            --roots "$ROOTS" \
+            --run-id "$GITHUB_RUN_ID" \
+            --out "$RUNNER_TEMP/excession-evidence"
+      - name: Add short summary to workflow
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/excession-evidence/summary.md" ]; then
+            cat "$RUNNER_TEMP/excession-evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Excession evidence could not be generated; no report was published.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Retain versioned machine-readable report or failure diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-evidence-v1-${{ steps.identity.outputs.head_short }}
+          path: ${{ runner.temp }}/excession-evidence/
+          if-no-files-found: warn
+          retention-days: 30

@@ -666,9 +666,9 @@ pub(super) fn command() -> Command {
         )
         .subcommand(
             Command::new("explain")
-                .about("Replay and explain a claim, distinct source, or batch of source witnesses")
+                .about("Replay and explain distinct sources or a batch of source witnesses")
                 .group(ArgGroup::new("explanation-target")
-                    .args(["id", "source", "all-sources"])
+                    .args(["source", "all-sources"])
                     .required(true)
                     .multiple(false))
                 .arg(
@@ -684,12 +684,6 @@ pub(super) fn command() -> Command {
                         .value_parser(NonEmptyStringValueParser::new()),
                 )
                 .arg(
-                    Arg::new("id")
-                        .long("id")
-                        .num_args(1)
-                        .value_parser(NonEmptyStringValueParser::new()),
-                )
-                .arg(
                     Arg::new("source")
                         .long("source")
                         .help("Git-relative path of a distinct impacted source")
@@ -701,7 +695,6 @@ pub(super) fn command() -> Command {
                         .long("source-commit")
                         .help("Disambiguate a dependent source present in both revisions")
                         .requires("source")
-                        .conflicts_with("id")
                         .conflicts_with("all-sources")
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
@@ -774,12 +767,6 @@ pub(super) fn command() -> Command {
                 .arg(Arg::new("base-source-prefix").long("base-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
                 .arg(Arg::new("head-source-prefix").long("head-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
 
-                .arg(
-                    Arg::new("compact")
-                        .long("compact")
-                        .help("Emit v2 distinct-source witnesses without legacy path enumeration")
-                        .action(clap::ArgAction::SetTrue),
-                )
                 .arg(
                     Arg::new("output")
                         .long("output")

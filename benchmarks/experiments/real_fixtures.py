@@ -498,9 +498,8 @@ def verify_product_workflow(
             or audit["replay"] != "PASS"
             or audit["semantic_correctness"] != "NOT_EVALUATED"):
         raise ValueError("source replay promoted an observation to semantic correctness")
-    # Optional, manually invoked release-vs-head benchmark. All source paths
-    # are reconstructed from the fully replayed saved report with one process.
-    # This does not change the legacy claim-ID oracle or the frozen cohort.
+    # Optional manually invoked source-batch acceptance. Each selected witness
+    # is reconstructed against one fully authenticated source-only report.
     source_replay_results = None
     if source_replay:
         batch_out, batch_ms = call([
@@ -573,112 +572,20 @@ def verify_product_workflow(
         source_replay_results = {
             "batch_source_count": batch["count"],
             "batch_source_complete": batch["source_inventory_complete"],
-            "legacy_path_count": len(impact["effects"]),
             "batched_source_explanation_wall_ms": batch_ms,
             "one_selected_source_wall_ms": selected_ms,
             "one_selected_source_audit_wall_ms": source_audit_ms,
             "selected_source": source_path,
             "selected_commit": selected_commit,
         }
-    # Measure and independently audit v2 as an opt-in extension. The frozen
-    # legacy and published-release acceptance always run first.
-    compact_results = None
-    if compact_impact:
-        compact_saved = work / f"{fixture['name']}-compact-impact.json"
-        compact_proc, compact_ms = call([
-            str(binary), "impact", str(repo), "--base", commit, "--head", head,
-            "--roots", fixture["roots"], "--db", str(product_db), "--json",
-            "--compact", "--output", str(compact_saved),
-        ], timeout=240)
-        compact = json.loads(compact_proc.stdout)
-        if json.loads(compact_saved.read_text(encoding="utf-8")) != compact:
-            raise ValueError("compact saved report differs from emitted JSON")
-        if (compact["schema"] != "excession.impact.v2"
-                or compact["path_effects_status"] != "OMITTED_COMPACT"
-                or compact["effects"]
-                or compact["base_commit"] != commit
-                or compact["head_commit"] != head
-                or compact["change_inventory_id"] != impact["change_inventory_id"]
-                or compact["candidate_source_impacts"] != impact["candidate_source_impacts"]
-                or compact["candidate_source_count"] != impact["candidate_source_count"]
-                or compact["candidate_source_enumeration_complete"]
-                   != impact["candidate_source_enumeration_complete"]
-                or compact["native_reference_impacts"] != impact["native_reference_impacts"]
-                or compact["native_reference_count"] != impact["native_reference_count"]
-                or compact["safe_to_skip_unlisted_tests"] is not False
-                or compact["coverage"]["status"] != "PARTIAL"):
-            raise ValueError("compact v2 report changed the independent source inventory")
-        compact_sources = compact["candidate_source_impacts"]
-        compact_selected, selected_compact_ms = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--source", source_path,
-            "--source-commit", candidate["entity"]["source_commit"],
-            "--db", str(product_db), "--roots", fixture["roots"], "--json",
-        ], timeout=240)
-        compact_explanation = json.loads(compact_selected.stdout)
-        if (compact_explanation["schema"] != "excession.explanation.v1"
-                or compact_explanation["selection_kind"] != "DISTINCT_SOURCE_WITNESS"
-                or compact_explanation["source_commit"] != candidate["entity"]["source_commit"]
-                or compact_explanation["steps"][0]["source"]["path"] != source_path
-                or not compact_explanation["steps"]):
-            raise ValueError("compact source explanation lacks independently expected witness")
-        compact_batch, compact_batch_ms = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--all-sources", "--db", str(product_db), "--roots", fixture["roots"],
-            "--json",
-        ], timeout=240)
-        compact_all = json.loads(compact_batch.stdout)
-        if (compact_all["replayed_impact_report_id"] != compact["report_id"]
-                or compact_all["count"] != len(compact_sources)
-                or compact_all["source_inventory_complete"]
-                    != compact["candidate_source_enumeration_complete"]
-                or compact_all["semantic_correctness"] != "NOT_EVALUATED"
-                or not any(item["claim_id"] == compact_explanation["claim_id"]
-                           for item in compact_all["explanations"])):
-            raise ValueError("compact batch lost source witnesses or replay identity")
-        compact_audit, compact_audit_ms = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--source", source_path,
-            "--source-commit", candidate["entity"]["source_commit"],
-            "--db", str(product_db), "--roots", fixture["roots"], "--audit",
-        ], timeout=240)
-        audited_compact = json.loads(compact_audit.stdout)
-        if (audited_compact["git_authentication"] != "PASS"
-                or audited_compact["replay"] != "PASS"
-                or audited_compact["semantic_correctness"] != "NOT_EVALUATED"):
-            raise ValueError("compact source audit promoted candidate observations to proof")
-        forged = json.loads(json.dumps(compact))
-        forged["candidate_source_impacts"][0]["assessment"] = "OBSERVED"
-        compact_saved.write_text(json.dumps(forged, sort_keys=True) + "\n", encoding="utf-8")
-        rejected, _ = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--all-sources", "--db", str(product_db),
-            "--roots", fixture["roots"], "--json",
-        ], timeout=240, check=False)
-        if rejected.returncode == 0:
-            raise ValueError("forged v2 witness accepted without canonical Git replay")
-        compact_results = {
-            "schema": compact["schema"],
-            "exact_source_inventory_match": True,
-            "legacy_path_count": len(impact["effects"]),
-            "compact_path_count": len(compact["effects"]),
-            "compact_source_count": len(compact_sources),
-            "legacy_impact_wall_ms": impact_ms,
-            "compact_impact_wall_ms": compact_ms,
-            "legacy_report_bytes": legacy_impact_bytes,
-            "compact_report_bytes": len(compact_proc.stdout),
-            "compact_selected_source_wall_ms": selected_compact_ms,
-            "compact_batch_wall_ms": compact_batch_ms,
-            "compact_audit_wall_ms": compact_audit_ms,
-            "forged_compact_report_refused": True,
-        }
     # Re-serialized JSON with a forged relation must fail the *native* replay.
     mutated = json.loads(json.dumps(impact))
-    mutated["effects"][0]["assessment"] = "OBSERVED_RELATIONSHIP_PATH"
+    mutated["candidate_source_impacts"][0]["assessment"] = "OBSERVED"
     saved.write_text(json.dumps(mutated, sort_keys=True) + "\n", encoding="utf-8")
     failed, _ = call([
         str(binary), "explain", str(repo), "--report", str(saved),
-        "--id", claim_id, "--db", str(product_db),
+        "--source", source_path, "--source-commit", selected_commit,
+        "--db", str(product_db),
         "--roots", fixture["roots"], "--json",
     ], timeout=240, check=False)
     if failed.returncode == 0:
@@ -692,13 +599,13 @@ def verify_product_workflow(
         "not_proven_import_sites": len(py_unresolved) + len(js_unresolved),
         "changed_source": target_path,
         "independent_dependent": source_path,
-        "effect_count": len(impact["effects"]),
-        "claim_id": claim_id,
+        "source_witness_count": len(impact["candidate_source_impacts"]),
+        "source_witness_id": source_witness_id,
+        "impact_report_bytes": impact_bytes,
         "reported_coverage": impact["coverage"]["status"],
         "semantic_correctness": audit["semantic_correctness"],
         "forged_report_refused": True,
         "source_replay_acceptance": source_replay_results,
-        "compact_impact_acceptance": compact_results,
         "analyze_wall_ms": analyze_ms,
         "impact_wall_ms": impact_ms,
         "explain_wall_ms": explain_ms,

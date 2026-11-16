@@ -16,6 +16,10 @@ name = "excession"
 path = "src/bin/excession.rs"
 
 [dependencies]
+# Official Model Context Protocol Rust SDK. The SDK owns JSON-RPC and version negotiation.
+rmcp = { version = "=3.10.0", default-features = false, features = ["server", "macros", "schemars", "transport-io"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+tokio = { version = "=1.49.0", features = ["rt-multi-thread", "io-std"] }
 clap = { version = "=4.6.6", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions"] }
 # Local-only Draft 2020-12 validation. Disable remote resolution and TLS.
 jsonschema = { version = "=0.61.1", default-features = false }

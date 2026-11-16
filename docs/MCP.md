@@ -1,15 +1,17 @@
 # Coding-agent integration
 
 Excession exposes a repository-scoped, read-only MCP server over standard
-input/output. MCP is an adapter over the same Rust Git/SQLite analysis used by
+input/output using the [official Rust MCP SDK](https://github.com/modelcontextprotocol/rust-sdk)
+(`rmcp` 3.10.0). MCP is an adapter over the same Rust Git/SQLite analysis used by
 `excession agent locate`, `agent context`, `impact`, `agent verify`,
 `analyze`, and `tests`. It does not use a second language parser or a
 separate semantic authority.
 
 ## Install
 
-Install a [verified platform archive](RELEASE.md) and put the packaged
-`excession` binary on PATH, keeping its adjacent assets together.
+Install a release that includes the `excession mcp` subcommand or build
+a source revision containing the official SDK integration. The original
+v0.2.0 archive predates MCP; do not configure it as an MCP server.
 Check `excession doctor` before using native language adapters.
 
 In the target repository, inspect the proposed configuration:
@@ -43,8 +45,9 @@ To run the server without agent-client configuration:
 excession mcp --repo /path/to/repository
 ```
 
-The MCP client communicates using newline-delimited JSON-RPC 2.0 over
-stdio. Debug output must never be written to stdout.
+The official SDK handles MCP 2026-07-28 discovery/negotiation, older
+initialize-based clients, stdio framing, JSON-RPC errors, and typed tool
+schemas. Debug output must never be written to stdout.
 
 ## Exposed tools
 
@@ -87,9 +90,12 @@ provide a no-execution plan beforehand.
 - The stdio server is **local**. ChatGPT cloud connections require a
   separately deployed, authenticated HTTP transport or proxy. No public
   endpoint or authorization is installed by `agent init`.
-- `excession mcp` supports the legacy initialization handshake and
-  versioned JSON-RPC tool calls. No subscriptions, streaming responses,
-  shell-control methods, or remote filesystem roots are advertised.
+- The official SDK negotiates protocol versions. Excession exposes no
+  subscriptions, shell-control methods or remote filesystem roots; its
+  MCP transport remains local stdio. Git/SQLite analysis runs on blocking
+  workers rather than blocking the protocol runtime.
+- Tool results larger than 4 MiB return a tool-level refusal. No
+  arbitrary-shell or repository selection arguments are exposed.
 
 ## Acceptance
 

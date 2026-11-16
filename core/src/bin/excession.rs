@@ -1707,7 +1707,9 @@ fn execute(args: &[String]) -> Result<Response> {
                 return refuse("signed artifact verification requires --trusted-local true");
             }
             let db_path = analyze::checked_external_destination(
-                opt.path("repo"), opt.path("db"), "signed artifact evidence"
+                opt.path("repo"),
+                opt.path("db"),
+                "signed artifact evidence",
             )?;
             let db = Db::open(&db_path)?;
             Ok(json(excession::evidence::attestation::verify(
@@ -1726,8 +1728,11 @@ fn execute(args: &[String]) -> Result<Response> {
         [top, sub] if top == "inspect" && sub == "signed-artifact" => {
             let db = Db::open(opt.path("db"))?;
             Ok(json(excession::evidence::attestation::audit(
-                &db, opt.path("repo"), opt.get("rev"),
-                opt.path("artifact"), opt.get("snapshot"),
+                &db,
+                opt.path("repo"),
+                opt.get("rev"),
+                opt.path("artifact"),
+                opt.get("snapshot"),
             )?))
         }
         [top, sub] if top == "inspect" && sub == "artifact-evidence" => {

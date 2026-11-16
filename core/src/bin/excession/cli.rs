@@ -176,7 +176,8 @@ pub(super) fn command() -> Command {
                 "signed-artifact",
                 &["db", "repo", "rev", "artifact", "snapshot"],
                 &[],
-            ).about("Reverify the original signed artifact bundle and Git source using GitHub CLI"),
+            )
+            .about("Reverify the original signed artifact bundle and Git source using GitHub CLI"),
             leaf(
                 "artifact-evidence",
                 &["db", "artifact"],

@@ -59,7 +59,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: laurajoyhutchins/excession
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ job.workflow_sha }}
           path: tool
           persist-credentials: false
       - name: Resolve exact source and producer identities
@@ -68,7 +68,7 @@ jobs:
         env:
           REQUEST_BASE: ${{ inputs.base || github.event.pull_request.base.sha || '' }}
           REQUEST_HEAD: ${{ inputs.head || github.event.pull_request.head.sha || github.sha }}
-          PRODUCER_SHA: ${{ github.workflow_sha }}
+          PRODUCER_SHA: ${{ job.workflow_sha }}
         run: |
           set -euo pipefail
           TOOL_SHA="$(git -C tool rev-parse HEAD)"

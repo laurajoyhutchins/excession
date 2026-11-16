@@ -48,9 +48,12 @@ does not trust a self-hashed JSON receipt as cryptographic proof.
 
 Requirements and constraints:
 
-- Install and authenticate `gh` with access to the repository's artifact
-  attestations. The artifact is limited to 16 MiB by the existing build
-  artifact evidence contract. Store the SQLite database outside the checkout.
+- Install and authenticate **GitHub CLI 2.102.0 or newer** with access to
+  the repository's artifact attestations. Earlier versions have known
+  signer-workflow prefix and source-ref matching defects, and Excession
+  refuses them. See [GitHub's signer advisory](https://github.com/cli/cli/security/advisories/GHSA-wjmr-j3rp-mh2g).
+  The artifact is limited to 16 MiB by the existing build artifact evidence
+  contract. Store the SQLite database outside the checkout.
 - `--trusted-local true` authorizes running the installed local GitHub CLI.
   This is not independent verification of the local verifier binary or a
   sandbox. The receipt records the verifier launcher hash/version.

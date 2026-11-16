@@ -1,0 +1,20 @@
+services:
+  excession:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: excession-agent:local
+    restart: unless-stopped
+    env_file:
+      - path: ./.env
+        required: true
+    ports:
+      - "127.0.0.1:8080:8080"
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1024m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      start_period: 180s
+      interval: 30s
+      timeout: 5s
+      retries: 3

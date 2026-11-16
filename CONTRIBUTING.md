@@ -4,7 +4,9 @@ Excession is a Git-grounded, auditable code-intelligence CLI. Contributions shou
 
 ## Start
 
-Read [README](README.md), [development setup](docs/DEVELOPMENT.md), [contracts](contracts/README.md) and [product onboarding plan](docs/product/10-contributor-onboarding.md).
+Read [README](README.md), [documentation index](docs/README.md),
+[development setup](docs/DEVELOPMENT.md), [contracts](contracts/README.md),
+and [CI policy](docs/CI.md).
 
 Use `mise install && mise run setup && mise run check`, or invoke the underlying Rust/Python/Node checks directly. Dependencies should be installed from the repo's pinned version/lock files. Ordinary local verification should remain focused; run expensive external fixture, native compiler or cross-platform suites when specifically relevant. See [CI tiers](docs/CI.md) before broadening a workflow trigger.
 

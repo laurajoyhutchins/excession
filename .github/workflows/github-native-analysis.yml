@@ -18,6 +18,8 @@ on:
       - '.github/workflows/github-native-analysis.yml'
       - 'config/github-analysis-targets.json'
       - 'tools/github_analysis.py'
+      - 'tools/ci/prepare-excession.sh'
+      - '.github/ISSUE_TEMPLATE/excession-analysis.md'
       - 'tests/test_github_analysis.py'
 
 permissions:

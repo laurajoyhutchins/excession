@@ -615,7 +615,9 @@ pub fn evaluate(study_path: &Path, attempts: &Path, out: &Path) -> Result<()> {
             }
         }
     }
-    let total = list(&study, "cases")?.len() as u64 * number(&study, "repetitions")? * 4;
+    let total = list(&study, "cases")?.len() as u64
+        * number(&study, "repetitions")?
+        * ARMS.len() as u64;
     let arms: Vec<Value> = ARMS
         .iter()
         .map(|name| {

@@ -82,23 +82,21 @@ jobs:
           test "$HEAD" != "$BASE"
           printf 'base=%s\nhead=%s\nhead_short=%s\ntool_sha=%s\n' \
             "$BASE" "$HEAD" "${HEAD:0:12}" "$TOOL_SHA" >> "$GITHUB_OUTPUT"
-      - name: Build exact Excession source
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustup toolchain install 1.99.1 --profile minimal
-          cargo +1.99.1 build --locked --manifest-path tool/core/Cargo.toml --bin excession
-          test -x tool/core/target/debug/excession
-      - name: Install supported source parser dependencies
+      - name: Set up pinned Node for native parsers
         uses: actions/setup-node@v4
         with:
           node-version-file: tool/.node-version
+          cache: npm
+          cache-dependency-path: tool/package-lock.json
       - name: Install pinned Python for source observers
         uses: actions/setup-python@v5
         with:
           python-version-file: tool/.python-version
-      - name: Resolve locked TypeScript parser
-        run: npm ci --prefix tool --ignore-scripts --no-audit --no-fund
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tool/core -> target
+      - name: Prepare the pinned Rust CLI and native TypeScript parser
+        run: bash tool/tools/ci/prepare-excession.sh tool debug
       - name: Generate Git-pinned verification, context, and evidence envelope
         shell: bash
         env:

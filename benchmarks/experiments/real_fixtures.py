@@ -421,27 +421,28 @@ def verify_product_workflow(
         "--roots", fixture["roots"], "--db", str(product_db), "--json",
         "--output", str(saved),
     ], timeout=240)
-    legacy_impact_bytes = len(proc.stdout)
+    impact_bytes = len(proc.stdout)
     impact = json.loads(proc.stdout)
     if json.loads(saved.read_text(encoding="utf-8")) != impact:
         raise ValueError("the CLI saved a different report from its JSON output")
-    if (impact["schema"] != "excession.impact.v1"
+    if (impact["schema"] != "excession.impact.v3"
+            or "effects" in impact
+            or "path_effects_status" in impact
             or impact["base_commit"] != commit
             or impact["head_commit"] != head
             or impact["safe_to_skip_unlisted_tests"] is not False
             or impact["coverage"]["status"] != "PARTIAL"):
-        raise ValueError("impact identity or coverage contract mismatch")
+        raise ValueError("source-only impact identity or coverage contract mismatch")
     candidate = next((
-        effect for effect in impact["effects"]
-        if effect["entity"]["path"] == source_path
-        and effect["assessment"] == "CANDIDATE_PATH"
-        and any(hop["target"]["path"] == target_path for hop in effect["hops"])
+        witness for witness in impact["candidate_source_impacts"]
+        if witness["entity"]["path"] == source_path
+        and witness["assessment"] == "CANDIDATE_PATH"
+        and witness["next_hop"]["target"]["path"] == target_path
+        and witness["next_hop"]["evidence"]
     ), None)
     if candidate is None:
-        # Persist the *actual* failing candidate evidence before the temporary
-        # checkout disappears. This does not relax the source-oracle predicate.
-        witness = {
-            "schema": "excession.independent-impact-mismatch.v1",
+        diagnostic = {
+            "schema": "excession.independent-impact-mismatch.v2",
             "fixture": fixture["name"],
             "source_commit": commit,
             "mutation_commit": head,
@@ -454,57 +455,49 @@ def verify_product_workflow(
             "analyze_observed_paths": len(observed_paths),
             "impact_report_schema": impact.get("schema"),
             "impact_coverage": impact.get("coverage"),
-            "impact_effect_count": len(impact["effects"]),
-            "all_matching_source_effects": [
-                {"assessment": effect.get("assessment"),
-                 "claim_id": effect.get("claim_id"),
-                 "hops": [hop.get("target", {}).get("path")
-                          for hop in effect.get("hops", [])]}
-                for effect in impact["effects"]
-                if effect.get("entity", {}).get("path") == source_path
+            "source_witness_count": len(impact["candidate_source_impacts"]),
+            "matching_source_witnesses": [
+                {"assessment": witness.get("assessment"),
+                 "rank": witness.get("distance_to_change"),
+                 "next_target": witness.get("next_hop", {}).get("target", {}).get("path")}
+                for witness in impact["candidate_source_impacts"]
+                if witness.get("entity", {}).get("path") == source_path
             ][:100],
-            "other_effects_sample": [
-                {"source": effect.get("entity", {}).get("path"),
-                 "assessment": effect.get("assessment"),
-                 "hops": [hop.get("target", {}).get("path")
-                          for hop in effect.get("hops", [])]}
-                for effect in impact["effects"][:30]
-            ],
         }
         (work / f"{fixture['name']}-impact-diagnostic.json").write_text(
-            json.dumps(witness, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+            json.dumps(diagnostic, sort_keys=True, indent=2) + "\n", encoding="utf-8"
         )
         raise ValueError(
-            "independent imported-source change had no candidate dependent: "
+            "independent imported-source change had no ranked dependent: "
             f"{source_path} -> {target_path} ({_kind}, line {_line}); "
-            f"effects={len(impact['effects'])}; see preserved impact diagnostic"
+            f"sources={len(impact['candidate_source_impacts'])}; see preserved diagnostic"
         )
-    claim_id = candidate["claim_id"]
-    if claim_id != canonical_sha256({
-        k: v for k, v in candidate.items() if k != "claim_id"
-    }):
-        raise ValueError("product impact claim ID is not canonical")
+    selected_commit = candidate["entity"]["source_commit"]
     proc, explain_ms = call([
         str(binary), "explain", str(repo), "--report", str(saved),
-        "--id", claim_id, "--db", str(product_db),
-        "--roots", fixture["roots"], "--json",
+        "--source", source_path, "--source-commit", selected_commit,
+        "--db", str(product_db), "--roots", fixture["roots"], "--json",
     ], timeout=240)
     explanation = json.loads(proc.stdout)
+    source_witness_id = canonical_sha256(candidate)
     if (explanation["schema"] != "excession.explanation.v1"
-            or explanation["claim_id"] != claim_id
-            or explanation["source_commit"] not in (commit, head)
-            or not explanation["steps"]):
-        raise ValueError("source-bound impact explanation is missing its path")
+            or explanation["selection_kind"] != "DISTINCT_SOURCE_WITNESS"
+            or explanation["claim_id"] != source_witness_id
+            or explanation["source_commit"] != selected_commit
+            or not explanation["steps"]
+            or explanation["steps"][0]["source"]["path"] != source_path
+            or explanation["steps"][0]["target"]["path"] != target_path):
+        raise ValueError("source-bound impact explanation does not match the independent edge")
     proc, audit_ms = call([
         str(binary), "explain", str(repo), "--report", str(saved),
-        "--id", claim_id, "--db", str(product_db),
-        "--roots", fixture["roots"], "--audit",
+        "--source", source_path, "--source-commit", selected_commit,
+        "--db", str(product_db), "--roots", fixture["roots"], "--audit",
     ], timeout=240)
     audit = json.loads(proc.stdout)
     if (audit["git_authentication"] != "PASS"
             or audit["replay"] != "PASS"
             or audit["semantic_correctness"] != "NOT_EVALUATED"):
-        raise ValueError("replay audit promoted evidence to semantic correctness")
+        raise ValueError("source replay promoted an observation to semantic correctness")
     # Optional, manually invoked release-vs-head benchmark. All source paths
     # are reconstructed from the fully replayed saved report with one process.
     # This does not change the legacy claim-ID oracle or the frozen cohort.

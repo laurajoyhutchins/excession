@@ -179,35 +179,36 @@ fn invoke_verifier(
     Ok((bundle, toolchain))
 }
 
-fn claim(
-    commit: &str,
-    tree: &str,
-    sha256: &str,
+/// Source and artifact identity are one immutable, explicit verifier policy.
+struct BoundClaim<'a> {
+    commit: &'a str,
+    tree: &'a str,
+    sha256: &'a str,
     size_bytes: u64,
-    signed_repository: &str,
-    signer_workflow: &str,
-    source_ref: &str,
-    verifier: Value,
-    bundle: Value,
-) -> Result<Value> {
+    signed_repository: &'a str,
+    signer_workflow: &'a str,
+    source_ref: &'a str,
+}
+
+fn claim(bound: &BoundClaim<'_>, verifier: Value, bundle: Value) -> Result<Value> {
     let subject_id = Subject::Artifact {
-        sha256: sha256.to_owned(),
-        size_bytes,
+        sha256: bound.sha256.to_owned(),
+        size_bytes: bound.size_bytes,
     }
     .id()?;
     let bundle_sha = digest::sha256(bundle.canonical().as_bytes());
     obj(&[
         ("schema", Value::string(SCHEMA)),
-        ("source_commit", Value::string(commit)),
-        ("source_tree", Value::string(tree)),
-        ("source_ref", Value::string(source_ref)),
-        ("signed_repository", Value::string(signed_repository)),
-        ("signer_workflow", Value::string(signer_workflow)),
+        ("source_commit", Value::string(bound.commit)),
+        ("source_tree", Value::string(bound.tree)),
+        ("source_ref", Value::string(bound.source_ref)),
+        ("signed_repository", Value::string(bound.signed_repository)),
+        ("signer_workflow", Value::string(bound.signer_workflow)),
         (
             "artifact",
             obj(&[
-                ("sha256", Value::string(sha256)),
-                ("size_bytes", Value::number(size_bytes)),
+                ("sha256", Value::string(bound.sha256)),
+                ("size_bytes", Value::number(bound.size_bytes)),
                 ("subject_id", Value::string(&subject_id)),
             ]),
         ),
@@ -387,13 +388,15 @@ pub fn verify(db: &Db, spec: &VerifySpec<'_>) -> Result<Value> {
         return refuse("artifact bytes changed during GitHub verification");
     }
     let report = claim(
-        &commit,
-        &tree,
-        &sha,
-        size,
-        spec.signed_repository,
-        spec.signer_workflow,
-        spec.source_ref,
+        &BoundClaim {
+            commit: &commit,
+            tree: &tree,
+            sha256: &sha,
+            size_bytes: size,
+            signed_repository: spec.signed_repository,
+            signer_workflow: spec.signer_workflow,
+            source_ref: spec.source_ref,
+        },
         verifier,
         bundle,
     )?;
@@ -597,26 +600,24 @@ mod tests {
     #[test]
     fn self_hash_does_not_turn_claim_into_proven_build() {
         let v = claim(
-            &"a".repeat(40),
-            &"b".repeat(40),
-            &"c".repeat(64),
-            16,
-            "owner/repo",
-            "owner/repo/.github/workflows/build.yml",
-            "refs/heads/main",
+            &BoundClaim {
+                commit: &"a".repeat(40),
+                tree: &"b".repeat(40),
+                sha256: &"c".repeat(64),
+                size_bytes: 16,
+                signed_repository: "owner/repo",
+                signer_workflow: "owner/repo/.github/workflows/build.yml",
+                source_ref: "refs/heads/main",
+            },
             obj(&[
                 ("name", Value::string("gh")),
                 ("executable", Value::string("/usr/bin/gh")),
                 ("launcher_sha256", Value::string("d".repeat(64))),
                 ("version", Value::string("gh 2.x")),
-                (
-                    "identity_scope",
-                    Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN"),
-                ),
+                ("identity_scope", Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN")),
             ]),
             obj(&[("bundle", Value::string("test-only"))]),
-        )
-        .unwrap();
+        )        .unwrap();
         assert!(validate_claim(&v).is_ok());
         assert_eq!(
             v.get("source_artifact_relation").unwrap().str().unwrap(),

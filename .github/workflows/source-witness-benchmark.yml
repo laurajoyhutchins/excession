@@ -65,7 +65,7 @@ jobs:
             --manifest benchmarks/fixtures/real-repositories.json \
             --out /tmp/source-witness-benchmark/head.json \
             --repetitions 1 --fixture requests --product-fixture requests \
-            --source-replay
+            --source-replay --compact-impact
       - name: Independent result comparison and cost receipts
         shell: bash
         run: |
@@ -86,8 +86,15 @@ jobs:
           p = new["product_workflow"]
           baseline = old["product_workflow"]
           new_source = p["source_replay_acceptance"]
+          compact = p["compact_impact_acceptance"]
           if not new_source or new_source["batch_source_count"] < 2:
               raise SystemExit("No useful batched source witnesses were produced")
+          if (not compact or not compact["exact_source_inventory_match"]
+                  or compact["schema"] != "excession.impact.v2"
+                  or compact["compact_path_count"] != 0
+                  or compact["compact_source_count"] != new_source["batch_source_count"]
+                  or not compact["forged_compact_report_refused"]):
+              raise SystemExit("Compact impact must preserve every source and refuse forged evidence")
           repeated = (
               p["explain_wall_ms"] + p["audit_wall_ms"] +
               new_source["one_selected_source_wall_ms"]
@@ -106,6 +113,22 @@ jobs:
               "batch_wall_ms": new_source["batched_source_explanation_wall_ms"],
               "three_separate_verified_replays_wall_ms": repeated,
               "ratio_separate_to_batch": round(repeated / max(1, new_source["batched_source_explanation_wall_ms"]), 3),
+              "published_legacy_impact_wall_ms": baseline["impact_wall_ms"],
+              "merged_legacy_impact_wall_ms": compact["legacy_impact_wall_ms"],
+              "merged_compact_impact_wall_ms": compact["compact_impact_wall_ms"],
+              "compact_to_legacy_impact_wall_ratio": round(
+                  compact["compact_impact_wall_ms"] / max(1, compact["legacy_impact_wall_ms"]), 3
+              ),
+              "legacy_impact_report_bytes": compact["legacy_report_bytes"],
+              "compact_impact_report_bytes": compact["compact_report_bytes"],
+              "compact_to_legacy_report_size_ratio": round(
+                  compact["compact_report_bytes"] / max(1, compact["legacy_report_bytes"]), 3
+              ),
+              "compact_impact_source_count": compact["compact_source_count"],
+              "compact_impact_effect_paths": compact["compact_path_count"],
+              "compact_source_explain_wall_ms": compact["compact_selected_source_wall_ms"],
+              "compact_source_batch_wall_ms": compact["compact_batch_wall_ms"],
+              "compact_source_audit_wall_ms": compact["compact_audit_wall_ms"],
               "published_legacy_explain_wall_ms": baseline["explain_wall_ms"],
               "candidate_legacy_explain_wall_ms": p["explain_wall_ms"],
               "interpretation": "same-host command wall times including Git, analyzer, startup and replay; not semantic truth or a multi-host benchmark",

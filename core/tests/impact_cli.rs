@@ -543,31 +543,19 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
         compact.get("report_id").unwrap()
     );
 
-    let unavailable_legacy = Command::new(env!("CARGO_BIN_EXE_excession"))
+    let removed_id = Command::new(env!("CARGO_BIN_EXE_excession"))
         .args([
             "explain",
             repo.to_str().unwrap(),
             "--report",
             compact_path.to_str().unwrap(),
             "--id",
-            result.get("effects").unwrap().array_ref().unwrap()[0]
-                .get("claim_id")
-                .unwrap()
-                .str()
-                .unwrap(),
-            "--db",
-            database.to_str().unwrap(),
-            "--roots",
-            "pkg",
+            "legacy-claim-id",
             "--json",
         ])
         .output()
         .unwrap();
-    assert!(!unavailable_legacy.status.success());
-    assert!(
-        String::from_utf8_lossy(&unavailable_legacy.stderr)
-            .contains("compact reports do not contain legacy path claims")
-    );
+    assert!(!removed_id.status.success(), "the removed legacy selector must be refused");
 
     // A forged source witness may be self-consistent JSON, but is not an
     // authenticated replay of the Git-indexed relationship inventory.

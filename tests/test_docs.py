@@ -77,6 +77,14 @@ class DocumentationLinks(unittest.TestCase):
             doc.write_text("[bad](/docs/README.md)\n")
             self.assertEqual(check.check_document(root, doc)[0].reason, "repository-absolute link")
 
+    def test_all_top_level_guides_are_reachable_from_navigation(self):
+        docs = ROOT / "docs"
+        navigation = (docs / "README.md").read_text() + (docs / "REFERENCE.md").read_text()
+        for page in docs.glob("*.md"):
+            if page.name not in {"README.md", "REFERENCE.md"}:
+                with self.subTest(page=page.name):
+                    self.assertIn("(" + page.name + ")", navigation)
+
     def test_indexed_markdown_only(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

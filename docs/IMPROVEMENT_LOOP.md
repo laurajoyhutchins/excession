@@ -3,12 +3,16 @@
 The improvement coordinator is language-neutral. It takes independently
 generated, Git-bound candidate observations from supported producers,
 normalizes **source paths and symbols**, and compares exact revision evidence.
-The first producers are:
+The observation producers are:
 
 - `scip`: source-bound SCIP symbol references (Rust indexing demonstrated;
-  other SCIP languages are admitted only where real symbol observations exist)
-- `indexed`: Excession's existing Python/JavaScript module dependency-cycle
-  and same-language duplicate-body-fingerprint candidates
+  other SCIP languages require real symbol observations)
+- `indexed`: existing Python/JavaScript module cycles and duplicate-body
+  fingerprint candidates
+
+A separate native TypeScript language-service tool proposes narrowly bounded
+JavaScript/TypeScript unused-import deletions. It emits its own plan and edit
+artifacts for `improve replay`; it is not an `improve plan --producer` choice.
 
 Candidate reports are never proof of semantic equivalence, dead code,
 completeness, or safe test elision. No producer's missing edge establishes a
@@ -70,25 +74,29 @@ edit is safe. The preview and applied report retain
 `NATIVE_PRODUCER_AUTHENTICITY_UNVERIFIED`, independent build/test/API and
 provenance/REA obligations, and `ready_to_merge=false`.
 
-The initial narrow contract allows only existing, regular Git-tracked UTF-8
-source files already present in the chosen candidate. It refuses traversal,
-symlinked source blobs, stale Git hashes, out-of-candidate edits, oversized
-plans or sources, ambiguous byte ranges, ineffective edits, and reused or
-in-checkout worktree destinations. New files or non-UTF-8 source require
-explicitly designed extensions, not silent coercion.
+The initial contract allows only regular Git-tracked UTF-8 files already
+present in the selected candidate. It refuses traversal, symlinked source
+blobs, stale Git hashes, out-of-candidate edits, oversized inputs, ambiguous
+byte ranges, ineffective edits, and reused or in-checkout worktree paths.
+Inputs are size-limited while reading, not merely after allocation. New files
+and non-UTF-8 source require explicit extensions. Applying edits performs a
+Git worktree checkout, which may invoke configured content filters. Disabled
+Git hooks are not a sandbox: use an isolated worker for untrusted repositories.
 
-This replay API works for a native Python or JavaScript edit just as for Rust.
-**It does not generate that edit.** The language-specific producer must supply
-its own legitimate syntax/semantic action, including configuration-dependent
-usage and public API checks. Tests demonstrate the shared replay mechanism
-using deliberately *untrusted* edit plans, not automatic safe deletion.
+Replay does **not** generate edits. Rust extraction and the bounded
+JavaScript/TypeScript unused-import tool are separate native producers.
+Python and other languages need their own native edit generators. Any producer
+must independently address configuration-dependent usage and public API
+compatibility. Tests also exercise replay with deliberately untrusted edit
+plans; successful byte replay is not automatic safe deletion.
 
 ## Native TypeScript unused-import producer
 
-The first edit producer using the shared replay contract is the existing,
-pinned TypeScript 5.8.3 language service. It works on JavaScript and TypeScript
-source files. Excession does not implement JavaScript syntax, dependency
-resolution or import-rewriting rules in Rust.
+The source-checkout adapter uses the pinned TypeScript 5.8.3 language service
+for JavaScript and TypeScript source files. It is a Node script, not an
+`excession improve` subcommand or an automatically available binary feature:
+install the source checkout's pinned Node dependencies before invoking it.
+Excession does not implement JavaScript syntax or import rewrites in Rust.
 
 ```sh
 node core/adapters/improve_typescript.cjs \
@@ -106,8 +114,8 @@ excession improve replay --repo /work/repo --rev BASE_SHA \
 ```
 
 The producer reads the source blob from Git, not from the working tree. It
-uses TypeScript's *unused identifier* diagnostic and its own
-`unusedIdentifier` code fix. To keep the first experiment bounded, it accepts
+uses TypeScript's `TS6133` or `TS6196` unused-binding diagnostic and its
+native `unusedIdentifier` code fix. To keep the first experiment bounded, it accepts
 only **pure deletions of an unused binding in an existing multi-binding named
 import**, with no rewriting of the import module or side-effect imports.
 Ambiguous fixes, whole-import deletion, arbitrary code changes, non-UTF-8

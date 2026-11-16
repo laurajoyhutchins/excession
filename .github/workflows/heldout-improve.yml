@@ -7,6 +7,8 @@ on:
     paths:
       - 'core/adapters/improve_typescript.cjs'
       - 'core/src/improve_edits.rs'
+      - 'core/src/improve_generic.rs'
+      - 'core/src/improve.rs'
       - 'tests/improve_typescript.test.cjs'
       - 'tests/heldout_improve_upstream.sh'
       - '.github/workflows/heldout-improve.yml'
@@ -24,8 +26,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      HELDOUT_SHA: d16a2138a33b106b9e1499bbb9e1c67790370c97
-      HELDOUT_REPOSITORY: vuejs/core
       npm_config_ignore_scripts: 'true'
     steps:
       - uses: actions/checkout@v4

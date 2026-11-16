@@ -1,10 +1,9 @@
 //! Improvement orchestration over native, source-bound evidence producers.
 //! The normalized candidate and evaluation model is language-neutral.
-use crate::improve_generic::{MAX_PLAN_BYTES, evaluate_reports, plan_from_report};
-use crate::json::{self, Value};
+use crate::improve_generic::{evaluate_reports, plan_from_report, read_artifact};
+use crate::json::Value;
 use crate::sqlite::Db;
 use crate::{Result, change_inventory, git, refactor, refuse, scip_refactor};
-use std::fs;
 use std::path::Path;
 
 pub fn plan(repo: &Path, revision: &str, index: &Path, prefix: Option<&str>) -> Result<Value> {
@@ -31,11 +30,7 @@ pub fn plan_indexed(db: &Db, name: &str, revision: &str) -> Result<Value> {
 }
 
 fn read_plan(path: &Path) -> Result<Value> {
-    let bytes = fs::read(path).map_err(|e| format!("read improvement plan: {e}"))?;
-    if bytes.len() > MAX_PLAN_BYTES {
-        return refuse("improvement plan exceeds 4 MiB");
-    }
-    json::parse(&bytes)
+    read_artifact(path)
 }
 
 pub fn evaluate(request: &Evaluation<'_>) -> Result<Value> {

@@ -285,9 +285,15 @@ See [refactoring](docs/REFACTORING.md) and
 source-bound evidence contract across SCIP and indexed Python/JavaScript
 observations. They compare normalized source locations, Git changes, and
 producer-specific coverage without inferring behavioral equivalence. Rust
-extraction is an optional native edit adapter, not an assumption baked into
-the improvement evaluator. No improvement result permits automatic deletion
-or merge. See [the improvement loop](docs/IMPROVEMENT_LOOP.md).
+extraction remains a language-specific adapter. A separate TypeScript
+language-service script can propose an unused JavaScript/TypeScript named-import
+deletion; the shared `improve replay` command checks the exact Git source
+and previews the edit without writing to the original checkout. Application
+requires `--output` with a fresh external worktree on a supported Unix host.
+The script requires Excession's source checkout and pinned Node dependencies.
+
+No improvement report permits automatic deletion or merge. See the
+[commands, native producer setup, and verification limits](docs/IMPROVEMENT_LOOP.md).
 
 ### Inspect scanner evidence
 

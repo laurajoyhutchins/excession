@@ -122,7 +122,7 @@ class CiTopology(unittest.TestCase):
             "retention-days: 30",
             "bash tools/ci/prepare-excession.sh . release",
         ):
-            self.assertIn(expected.replace("\\\\n", "\\n"), request)
+            self.assertIn(expected, request)
         self.assertIn("bash tool/tools/ci/prepare-excession.sh tool debug", evidence)
         self.assertIn("Swatinem/rust-cache@v2", evidence)
         self.assertNotIn("deploy/remote-excession", verify)

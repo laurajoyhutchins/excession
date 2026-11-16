@@ -172,7 +172,13 @@ pub struct EvidenceByRevision<'a> {
 }
 
 /// Discover and pin existing producer evidence for the exact two Git revisions.
-pub fn run_auto(path: &Path, base: &str, head: &str, roots: Option<&str>, database: Option<&str>) -> Result<Value> {
+pub fn run_auto(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+) -> Result<Value> {
     let checkout = discovery::inspect(path, head)?;
     let destination = analyze::checked_external_destination(
         &checkout.root,
@@ -188,11 +194,31 @@ pub fn run_auto(path: &Path, base: &str, head: &str, roots: Option<&str>, databa
     } else {
         (Plan::default(), Plan::default())
     };
-    run_core(path, base, head, roots, database, Mode::Pinned(&base_plan, &head_plan))
+    run_core(
+        path,
+        base,
+        head,
+        roots,
+        database,
+        Mode::Pinned(&base_plan, &head_plan),
+    )
 }
 
-pub fn run(path: &Path, base: &str, head: &str, roots: Option<&str>, database: Option<&str>) -> Result<Value> {
-    run_with_evidence(path, base, head, roots, database, EvidenceByRevision::default())
+pub fn run(
+    path: &Path,
+    base: &str,
+    head: &str,
+    roots: Option<&str>,
+    database: Option<&str>,
+) -> Result<Value> {
+    run_with_evidence(
+        path,
+        base,
+        head,
+        roots,
+        database,
+        EvidenceByRevision::default(),
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -221,7 +247,14 @@ pub fn run_with_plans(
     base_plan: &Plan,
     head_plan: &Plan,
 ) -> Result<Value> {
-    run_core(path, base, head, roots, database, Mode::Pinned(base_plan, head_plan))
+    run_core(
+        path,
+        base,
+        head,
+        roots,
+        database,
+        Mode::Pinned(base_plan, head_plan),
+    )
 }
 
 fn run_core(
@@ -479,11 +512,19 @@ pub fn human(report: &Value) -> Result<String> {
         format!("Excession change impact: {source_count} distinct-source candidates."),
         format!(
             "Observed-graph source inventory: {}.",
-            if source_complete { "complete" } else { "truncated" }
+            if source_complete {
+                "complete"
+            } else {
+                "truncated"
+            }
         ),
         format!(
             "Java compiler-observed sources: {native_count} (unattested, {}).",
-            if native_complete { "complete" } else { "truncated" }
+            if native_complete {
+                "complete"
+            } else {
+                "truncated"
+            }
         ),
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
@@ -521,7 +562,10 @@ pub fn human(report: &Value) -> Result<String> {
         report.get("unknown")?.array_ref()?.len(),
     ));
     lines.push("Coverage: PARTIAL. Unlisted tests cannot be assumed safe to skip.".to_owned());
-    lines.push("Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence.".to_owned());
+    lines.push(
+        "Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence."
+            .to_owned(),
+    );
     Ok(lines.join("\n"))
 }
 
@@ -642,10 +686,13 @@ mod tests {
                 ("kind", Value::string("STATIC_IMPORT")),
                 ("source", obj(&[("path", Value::string(source))])),
                 ("target", obj(&[("path", Value::string(target))])),
-                ("evidence", Value::array([obj(&[
-                    ("assessment", Value::string("CANDIDATE")),
-                    ("receipt_id", Value::string("source-bound-receipt")),
-                ])])),
+                (
+                    "evidence",
+                    Value::array([obj(&[
+                        ("assessment", Value::string("CANDIDATE")),
+                        ("receipt_id", Value::string("source-bound-receipt")),
+                    ])]),
+                ),
             ])
         };
         let input = obj(&[(
@@ -663,8 +710,9 @@ mod tests {
         assert_eq!(witnesses.len(), 3);
         let top = witnesses
             .iter()
-            .filter(|w| w.get("entity").unwrap().get("path").unwrap().str().unwrap()
-                == "pkg/top.py")
+            .filter(|w| {
+                w.get("entity").unwrap().get("path").unwrap().str().unwrap() == "pkg/top.py"
+            })
             .collect::<Vec<_>>();
         assert_eq!(top.len(), 1, "one ranked witness per distinct source");
         assert_eq!(
@@ -672,13 +720,28 @@ mod tests {
             2
         );
         assert_eq!(
-            top[0].get("next_hop").unwrap().get("target").unwrap()
-                .get("path").unwrap().str().unwrap(),
+            top[0]
+                .get("next_hop")
+                .unwrap()
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "pkg/left.py",
             "ordered graph gives a deterministic next hop"
         );
-        assert!(!top[0].get("next_hop").unwrap().get("evidence").unwrap()
-            .array_ref().unwrap().is_empty());
+        assert!(
+            !top[0]
+                .get("next_hop")
+                .unwrap()
+                .get("evidence")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -770,10 +833,13 @@ mod tests {
                 ("kind", Value::string("STATIC_IMPORT")),
                 ("source", obj(&[("path", Value::string("pkg/first.py"))])),
                 ("target", obj(&[("path", Value::string("pkg/second.py"))])),
-                ("evidence", Value::array([obj(&[
-                    ("assessment", Value::string("CANDIDATE")),
-                    ("receipt_id", Value::string("receipt")),
-                ])])),
+                (
+                    "evidence",
+                    Value::array([obj(&[
+                        ("assessment", Value::string("CANDIDATE")),
+                        ("receipt_id", Value::string("receipt")),
+                    ])]),
+                ),
             ])]),
         )]);
         let witnesses = source_witnesses(
@@ -787,10 +853,18 @@ mod tests {
             "CANDIDATE_PATH"
         );
         assert_eq!(
-            witnesses[0].get("next_hop").unwrap().get("evidence").unwrap()
-                .array_ref().unwrap()[0].get("receipt_id").unwrap().str().unwrap(),
+            witnesses[0]
+                .get("next_hop")
+                .unwrap()
+                .get("evidence")
+                .unwrap()
+                .array_ref()
+                .unwrap()[0]
+                .get("receipt_id")
+                .unwrap()
+                .str()
+                .unwrap(),
             "receipt"
         );
     }
-
 }

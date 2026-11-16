@@ -1,9 +1,12 @@
 """Fail-closed tests for GitHub-native analysis request and result validation."""
 import importlib.util
 import json
+import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("github_analysis", ROOT / "tools/github_analysis.py")
@@ -127,6 +130,103 @@ class RequestTests(unittest.TestCase):
                                         "repositories": ["attacker/../../bad"]}))
             with self.assertRaises(module.Refusal):
                 module.load_targets(path)
+
+
+class PrivateCallerTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name) / "private"
+        self.repo.mkdir()
+        subprocess.run(["git", "-C", str(self.repo), "init", "-q"], check=True)
+        for argv in (("config", "user.email", "fixture@example.invalid"),
+                     ("config", "user.name", "Fixture")):
+            subprocess.run(["git", "-C", str(self.repo), *argv], check=True)
+        (self.repo / "source.rs").write_text("pub fn value() -> i32 { 42 }\n")
+        subprocess.run(["git", "-C", str(self.repo), "add", "source.rs"], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "base"], check=True)
+        self.base = self.git("rev-parse", "HEAD")
+        (self.repo / "source.rs").write_text("pub fn value() -> i32 { 43 }\n")
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qam", "candidate"], check=True)
+        self.candidate = self.git("rev-parse", "HEAD")
+        self.tree = self.git("rev-parse", "HEAD^{tree}")
+
+    def git(self, *args):
+        return subprocess.check_output(
+            ["git", "-C", str(self.repo), *args], text=True
+        ).strip()
+
+    def test_trusted_checkout_uses_original_git_objects_without_network(self):
+        request = {
+            "schema": module.REQUEST_SCHEMA,
+            "repository": "laurajoyhutchins/arcata",
+            "revision": self.candidate,
+            "operation": "verify",
+            "base": self.base,
+            "limit": 3,
+        }
+        with patch.object(module, "git", wraps=module.git) as inspected:
+            source, tree = module.prepare_checkout_source(request, self.repo)
+        self.assertEqual(source, self.repo.resolve())
+        self.assertEqual(tree, self.tree)
+        self.assertFalse(any("fetch" in call.args for call in inspected.call_args_list))
+        self.assertFalse(any("update-ref" in call.args for call in inspected.call_args_list))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.candidate)
+
+    def test_invalid_private_revision_and_checkout_refused(self):
+        request = {"revision": "f" * 40}
+        with self.assertRaises(module.Refusal):
+            module.prepare_checkout_source(request, self.repo)
+        with self.assertRaises(module.Refusal):
+            module.prepare_checkout_source({"revision": self.candidate},
+                                           self.repo / ".git")
+
+    def test_private_authorization_and_unchanged_public_allowlist(self):
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "laurajoyhutchins/arcata"}):
+            private = {"laurajoyhutchins/arcata"}
+            value = {
+                "schema": module.REQUEST_SCHEMA,
+                "repository": "laurajoyhutchins/arcata",
+                "revision": self.candidate,
+                "operation": "locate",
+                "task": "Find a transformer sizing routine",
+            }
+            self.assertEqual(module.from_event(issue(value), 0, private)["limit"], 16)
+            with self.assertRaises(module.Refusal):
+                module.validate(value, TARGETS)
+            with self.assertRaises(module.Refusal):
+                module.from_event(issue(value, owner=999), 0, private)
+
+    def test_private_report_executes_pinned_local_git_not_public_clone(self):
+        stub = Path(self.tmp.name) / "fake-excession"
+        stub.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json,sys\n"
+            "if '--version' in sys.argv: print('fake-excession'); sys.exit(0)\n"
+            f"print(json.dumps({{'schema':'excession.agent-context.v1',"
+            f"'source_commit':'{self.candidate}','source_tree':'{self.tree}'}}))\n"
+        )
+        stub.chmod(0o755)
+        request = {
+            "schema": module.REQUEST_SCHEMA,
+            "repository": "laurajoyhutchins/arcata",
+            "revision": self.candidate,
+            "operation": "context",
+            "focus": ["source.rs"],
+            "limit": 3,
+        }
+        out = Path(self.tmp.name) / "out"
+        with patch.object(module, "prepare_source",
+                          side_effect=AssertionError("public clone used")):
+            module.execute(request, stub, out,
+                           source_checkout=self.repo, tool_checkout=self.repo)
+        receipt = json.loads((out / "receipt.json").read_text())
+        report = json.loads((out / "report.json").read_text())
+        self.assertEqual(receipt["status"], "COMPLETED")
+        self.assertEqual(receipt["source_tree"], self.tree)
+        self.assertEqual(receipt["tool_commit"], self.candidate)
+        self.assertFalse(receipt["safe_to_skip_unlisted_tests"])
+        self.assertEqual(report["source_commit"], self.candidate)
 
 
 if __name__ == "__main__":

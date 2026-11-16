@@ -75,7 +75,7 @@ def verify(archive: Path) -> None:
         ]
         response = subprocess.run(
             [str(binary), "mcp", "--repo", str(source)],
-            input="".join(json.dumps(msg) + "\\n" for msg in handshake),
+            input="".join(json.dumps(msg) + "\n" for msg in handshake),
             cwd=source, capture_output=True, text=True, encoding="utf-8",
             timeout=30,
         )

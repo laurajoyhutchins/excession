@@ -173,7 +173,6 @@ fn old_git_revision_replays_but_new_revision_and_tampered_observation_refuse() {
     assert!(!f.audit(&snapshot, "HEAD").status.success());
     assert!(f.audit(&snapshot, &original).status.success());
     let db = Db::open(&f.db).unwrap();
-    db.exec("UPDATE evidence_observation_v1 SET document='{}' WHERE native_kind='NO_SUCH_COLUMN'").err();
     db.exec("UPDATE evidence_observation_v1 SET document='{}'").unwrap();
     assert!(!f.audit(&snapshot, &original).status.success());
 }

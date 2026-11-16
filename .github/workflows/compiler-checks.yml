@@ -4,8 +4,10 @@ on:
   pull_request:
     paths:
       - core/src/compiler_check.rs
+      - core/src/compiler_matrix.rs
       - core/src/adapter.rs
       - core/tests/compiler_check_cli.rs
+      - core/tests/compiler_matrix_cli.rs
       - core/src/bin/excession.rs
       - core/src/bin/excession/cli.rs
       - .github/workflows/compiler-checks.yml
@@ -47,4 +49,4 @@ jobs:
       - name: Prefetch locked Rust dependencies
         run: cargo fetch --locked --manifest-path core/Cargo.toml
       - name: Real configured check receipts and audit adversarial tests
-        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test compiler_check_cli
+        run: cargo test --offline --locked --manifest-path core/Cargo.toml --test compiler_check_cli --test compiler_matrix_cli

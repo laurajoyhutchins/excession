@@ -582,3 +582,82 @@ pub fn human(report: &Value, db_path: &Path) -> Result<String> {
         db_path.display()
     ))
 }
+
+#[cfg(test)]
+mod pinned_discovery_tests {
+    use super::*;
+    use std::process::Command;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn report_composition_keeps_the_resolved_git_revision_after_head_moves() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-pinned-discovery-{}-{}",
+            std::process::id(),
+            NEXT_TEST.fetch_add(1, Ordering::Relaxed),
+        ));
+        let repo = root.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| -> String {
+            let output = Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init", "-q"]);
+        fs::write(repo.join("README.md"), "before\n").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c", "user.name=Fixture",
+            "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "before",
+        ]);
+        let base = git(&["rev-parse", "HEAD"]);
+        let discovered = discovery::inspect(&repo, "HEAD").unwrap();
+        assert_eq!(discovered.commit, base);
+
+        // Move a mutable ref after authenticating its original content.
+        fs::write(repo.join("README.md"), "after\n").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c", "user.name=Fixture",
+            "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "after",
+        ]);
+        let head = git(&["rev-parse", "HEAD"]);
+        assert_ne!(base, head);
+
+        let database = root.join("cache.sqlite");
+        let db = database.to_str().unwrap();
+        let plan = Plan::default();
+        let old = run_with_plan_discovered(&discovered, None, Some(db), &plan)
+            .unwrap()
+            .0;
+        let old_direct = run_with_plan(&repo, &base, None, Some(db), &plan)
+            .unwrap()
+            .0;
+        assert_eq!(old.canonical(), old_direct.canonical());
+        assert_eq!(old.get("source_commit").unwrap().str().unwrap(), base);
+        assert_eq!(
+            old.get("source_tree").unwrap().str().unwrap(),
+            discovered.tree
+        );
+        let current = run_default(&repo, "HEAD", None, Some(db)).unwrap().0;
+        assert_eq!(current.get("source_commit").unwrap().str().unwrap(), head);
+        assert_ne!(current.get("source_tree"), old.get("source_tree"));
+        assert_eq!(
+            current.get("coverage").unwrap().get("status").unwrap().str().unwrap(),
+            "PARTIAL"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+}

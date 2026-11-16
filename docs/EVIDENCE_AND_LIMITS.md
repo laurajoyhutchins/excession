@@ -34,7 +34,7 @@ Git is authoritative for source. SQLite records derived relationships and
 evidence and can be rebuilt; it is not a parallel authority for source
 bytes. A local cache hit is not an independently checked receipt.
 
-The implementation begins in [Git source access](../core/src/git.rs),
+The implementation begins in [Git source access](../core/src/source/git.rs),
 [source indexing](../core/src/index.rs), and
 [evidence identity](../core/src/evidence/identity.rs).
 

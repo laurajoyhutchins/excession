@@ -80,7 +80,7 @@ fn spec(language: &str) -> Result<(&'static str, &'static str, &'static str)> {
 pub(crate) fn exact_fields(value: &Value, names: &[&str]) -> Result<()> {
     let fields = value.entries()?;
     if fields.len() != names.len() || fields.keys().any(|key| !names.contains(&key.as_str())) {
-        return refuse("compiler receipt contains missing or unsupported fields");
+        return refuse("compiler evidence contains missing or unsupported fields");
     }
     Ok(())
 }
@@ -392,12 +392,10 @@ fn validate_report(repo: &Path, revision: &str, report: &Value) -> Result<Source
     {
         return refuse("compiler check toolchain metadata invalid");
     }
-    for field in ["launcher_sha256"] {
-        Subject::Configuration {
-            sha256: tool.get(field)?.str()?.to_owned(),
-        }
-        .validate()?;
+    Subject::Configuration {
+        sha256: tool.get("launcher_sha256")?.str()?.to_owned(),
     }
+    .validate()?;
     let execution = report.get("execution")?;
     for field in ["stdout_sha256", "stderr_sha256"] {
         Subject::Configuration {

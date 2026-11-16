@@ -17,7 +17,7 @@ const ORACLE: &str = "excession.historical-review-oracle.v1";
 const ASSIGNMENT: &str = "excession.historical-review-assignment.v1";
 const ATTEMPT: &str = "excession.historical-review-attempt.v1";
 const RESULT: &str = "excession.historical-review-results.v1";
-const ARMS: [&str; 4] = ["baseline", "legacy_paths", "graph", "excession"];
+const ARMS: [&str; 3] = ["baseline", "graph", "excession"];
 const MAX_TRANSCRIPT: u64 = 8 * 1024 * 1024;
 
 fn load(path: &Path) -> Result<Value> {
@@ -236,10 +236,6 @@ fn evidence(report: &Value, condition: &str) -> Result<Value> {
         "safe_to_skip_unlisted_tests": false
     });
     match condition {
-        "legacy_paths" => {
-            common["candidate_impacts"] = value(report, "candidate_impacts")?.clone();
-            common["candidate_impact_count"] = value(report, "candidate_impact_count")?.clone();
-        }
         "graph" => {
             let entries: Vec<Value> = list(report, "candidate_source_impacts")?.iter()
                 .map(|item| json!({"entity":item["entity"],"distance_to_change":item["distance_to_change"]}))

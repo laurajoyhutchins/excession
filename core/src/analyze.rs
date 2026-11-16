@@ -617,9 +617,13 @@ mod pinned_discovery_tests {
         fs::write(repo.join("README.md"), "before\n").unwrap();
         git(&["add", "."]);
         git(&[
-            "-c", "user.name=Fixture",
-            "-c", "user.email=fixture@example.invalid",
-            "commit", "-qm", "before",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "before",
         ]);
         let base = git(&["rev-parse", "HEAD"]);
         let discovered = discovery::inspect(&repo, "HEAD").unwrap();
@@ -629,9 +633,13 @@ mod pinned_discovery_tests {
         fs::write(repo.join("README.md"), "after\n").unwrap();
         git(&["add", "."]);
         git(&[
-            "-c", "user.name=Fixture",
-            "-c", "user.email=fixture@example.invalid",
-            "commit", "-qm", "after",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "after",
         ]);
         let head = git(&["rev-parse", "HEAD"]);
         assert_ne!(base, head);
@@ -655,7 +663,13 @@ mod pinned_discovery_tests {
         assert_eq!(current.get("source_commit").unwrap().str().unwrap(), head);
         assert_ne!(current.get("source_tree"), old.get("source_tree"));
         assert_eq!(
-            current.get("coverage").unwrap().get("status").unwrap().str().unwrap(),
+            current
+                .get("coverage")
+                .unwrap()
+                .get("status")
+                .unwrap()
+                .str()
+                .unwrap(),
             "PARTIAL"
         );
         fs::remove_dir_all(root).unwrap();

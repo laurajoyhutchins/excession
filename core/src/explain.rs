@@ -40,7 +40,6 @@ fn checked_report(
     db: Option<&str>,
 ) -> Result<Value> {
     let reported = supported_report(saved_report)?;
-    let compact = reported.get("schema")?.str()? == "excession.impact.v2";
     let base = reported.get("base_commit")?.str()?;
     let head = reported.get("head_commit")?.str()?;
     let fresh = if let Some(chosen) = reported.entries()?.get("producer_selection_plan") {
@@ -65,13 +64,7 @@ fn checked_report(
             }
             (Plan::default(), Plan::default())
         };
-        if compact {
-            impact_query::run_with_plans_compact(
-                repo, base, head, roots, db, &base_plan, &head_plan,
-            )?
-        } else {
-            impact_query::run_with_plans(repo, base, head, roots, db, &base_plan, &head_plan)?
-        }
+        impact_query::run_with_plans(repo, base, head, roots, db, &base_plan, &head_plan)?
     } else if let Some(choices) = reported.entries()?.get("producer_selections") {
         let selected = |key: &str| -> Result<Option<&str>> {
             match choices.get(key)? {
@@ -91,17 +84,9 @@ fn checked_report(
                 source_prefix: selected("head_source_prefix")?,
             },
         };
-        if compact {
-            impact_query::run_with_evidence_compact(repo, base, head, roots, db, selections)?
-        } else {
-            impact_query::run_with_evidence(repo, base, head, roots, db, selections)?
-        }
+        impact_query::run_with_evidence(repo, base, head, roots, db, selections)?
     } else {
-        if compact {
-            impact_query::run_compact(repo, base, head, roots, db)?
-        } else {
-            impact_query::run(repo, base, head, roots, db)?
-        }
+        impact_query::run(repo, base, head, roots, db)?
     };
     if reported.canonical() != fresh.canonical() {
         return refuse(
@@ -109,23 +94,6 @@ fn checked_report(
         );
     }
     Ok(fresh)
-}
-
-fn checked_claim(
-    repo: &Path,
-    saved_report: &Path,
-    claim_id: &str,
-    roots: Option<&str>,
-    db: Option<&str>,
-) -> Result<(Value, Value)> {
-    let report = checked_report(repo, saved_report, roots, db)?;
-    if report.get("schema")?.str()? == "excession.impact.v2" {
-        return refuse(
-            "compact reports do not contain legacy path claims; explain --source instead",
-        );
-    }
-    let effect = find_claim(&report, claim_id)?.clone();
-    Ok((report, effect))
 }
 
 /// One authenticated source witness per (revision, dependent source). A
@@ -309,53 +277,6 @@ fn audit_result() -> Result<Value> {
         ("semantic_correctness", Value::string("NOT_EVALUATED")),
     ])
     .stamp_id("report_id")
-}
-
-pub fn explain(
-    repo: &Path,
-    saved_report: &Path,
-    claim_id: &str,
-    roots: Option<&str>,
-    db: Option<&str>,
-) -> Result<Value> {
-    let (report, effect) = checked_claim(repo, saved_report, claim_id, roots, db)?;
-    let steps = effect.get("hops")?.clone();
-    let hops = steps.array_ref()?;
-    if hops.is_empty() {
-        return refuse("impact claim has no evidence path");
-    }
-    let commit = hops[0].get("source")?.get("source_commit")?.str()?;
-    for hop in hops {
-        let a = hop.get("source")?.get("source_commit")?.str()?;
-        let b = hop.get("target")?.get("source_commit")?.str()?;
-        if a != commit || b != commit {
-            return refuse("evidence path crosses revisions without an explicit transition");
-        }
-        if hop.get("evidence")?.array_ref()?.is_empty() {
-            return refuse("claim explanation has no supporting observation");
-        }
-    }
-    let out = obj(&[
-        ("schema", Value::string("excession.explanation.v1")),
-        ("claim_id", Value::string(claim_id)),
-        ("source_commit", Value::string(commit)),
-        ("steps", steps),
-        ("coverage", report.get("coverage")?.clone()),
-    ]);
-    out.stamp_id("report_id")
-}
-
-pub fn audit(
-    repo: &Path,
-    saved_report: &Path,
-    claim_id: &str,
-    roots: Option<&str>,
-    db: Option<&str>,
-) -> Result<Value> {
-    let explanation = explain(repo, saved_report, claim_id, roots, db)?;
-    // Source replay authenticates the candidate path, not runtime behavior.
-    let _ = explanation.get("report_id")?;
-    audit_result()
 }
 
 pub fn human(explanation: &Value) -> Result<String> {

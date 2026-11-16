@@ -38,7 +38,7 @@ the chat-native transport.
    from the trusted default branch. Find the run whose event is `issues`,
    not an unrelated test or benchmark.
 5. Inspect the run's result and download its
-   `excession-analysis-<run-id>` artifact. The exact files are
+   `excession-analysis-<issue-number>-<run-id>` artifact (or `manual` for explicit dispatch). The exact files are
    `receipt.json`, `report.json` (only on success), and `summary.md`.
 6. Verify `receipt.status == "COMPLETED"`, its Git and report identities,
    and the report's native `coverage` and unresolved obligations. A successful
@@ -106,6 +106,8 @@ The request validator rejects duplicate JSON keys, unexpected arguments,
 foreign sources, non-commits, invalid focus paths, and identity mismatches.
 The analysis process is bounded to 240 seconds, and reports are capped at 8 MiB.
 Any source fetch or producer failure is a refusal, not a substitute algorithm.
+
+For PR-change review, reuse the existing `.github/workflows/github-evidence.yml` and `contracts/agent/github-evidence.v1.schema.json`. That workflow already publishes a richer source-bound verification envelope; the issue workflow adds on-demand locate/context/verify rather than duplicating the existing evidence producer.
 
 The older container/Cloud Run draft PR #247 is not required. This design
 does not depend on the existing Hatchable-to-GCP bridge.

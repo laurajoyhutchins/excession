@@ -5,6 +5,8 @@ use crate::{Result, git, refuse, source_capabilities};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 pub(crate) const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
@@ -15,15 +17,30 @@ pub(crate) const MAX_PLAN_BYTES: usize = 4 * 1024 * 1024;
 /// artifact has already been allocated. Limit the read itself, and reject
 /// non-regular inputs before parsing.
 pub(crate) fn read_artifact(path: &Path) -> Result<Value> {
-    let file = fs::File::open(path).map_err(|e| format!("open improvement artifact: {e}"))?;
-    let metadata = file
-        .metadata()
-        .map_err(|e| format!("inspect improvement artifact: {e}"))?;
-    if !metadata.is_file() {
-        return refuse("improvement artifact must be a regular file");
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|e| format!("inspect improvement artifact path: {e}"))?;
+    if !metadata.file_type().is_file() {
+        return refuse("improvement artifact must be an ordinary regular file");
     }
     if metadata.len() > MAX_PLAN_BYTES as u64 {
         return refuse("improvement artifact exceeds 4 MiB");
+    }
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let file = options
+        .open(path)
+        .map_err(|e| format!("open improvement artifact: {e}"))?;
+    let opened = file
+        .metadata()
+        .map_err(|e| format!("inspect opened improvement artifact: {e}"))?;
+    if !opened.is_file() || opened.len() > MAX_PLAN_BYTES as u64 {
+        return refuse("improvement artifact is not a bounded regular file");
+    }
+    #[cfg(unix)]
+    if (metadata.dev(), metadata.ino()) != (opened.dev(), opened.ino()) {
+        return refuse("improvement artifact changed while it was opened");
     }
     let mut bounded = file.take((MAX_PLAN_BYTES + 1) as u64);
     let mut bytes = Vec::new();
@@ -425,6 +442,13 @@ mod tests {
         assert!(read_artifact(&path).is_err());
         fs::write(&path, b"not json").unwrap();
         assert!(read_artifact(&path).is_err());
+        #[cfg(unix)]
+        {
+            let link = path.with_extension("symlink");
+            std::os::unix::fs::symlink(&path, &link).unwrap();
+            assert!(read_artifact(&link).is_err());
+            fs::remove_file(&link).unwrap();
+        }
         fs::remove_file(&path).unwrap();
     }
 

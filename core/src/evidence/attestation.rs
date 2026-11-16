@@ -99,17 +99,28 @@ fn policy(repo: &str, signer: &str, source_ref: &str) -> Result<()> {
 /// permitted signer-workflow prefix matches or case-insensitive source refs.
 fn require_patched_gh(tool: &Value) -> Result<()> {
     let version = tool.get("version")?.str()?;
-    let raw = version.lines().next()
+    let raw = version
+        .lines()
+        .next()
         .and_then(|line| line.strip_prefix("gh version "))
         .and_then(|line| line.split_whitespace().next())
         .ok_or("cannot establish GitHub CLI verifier version")?;
     let mut parts = raw.trim_start_matches('v').split('.');
-    let major = parts.next().ok_or("missing gh major version")?
-        .parse::<u32>().map_err(|_| "invalid gh major version")?;
-    let minor = parts.next().ok_or("missing gh minor version")?
-        .parse::<u32>().map_err(|_| "invalid gh minor version")?;
-    let _patch = parts.next().ok_or("missing gh patch version")?
-        .parse::<u32>().map_err(|_| "invalid gh patch version")?;
+    let major = parts
+        .next()
+        .ok_or("missing gh major version")?
+        .parse::<u32>()
+        .map_err(|_| "invalid gh major version")?;
+    let minor = parts
+        .next()
+        .ok_or("missing gh minor version")?
+        .parse::<u32>()
+        .map_err(|_| "invalid gh minor version")?;
+    let _patch = parts
+        .next()
+        .ok_or("missing gh patch version")?
+        .parse::<u32>()
+        .map_err(|_| "invalid gh patch version")?;
     if parts.next().is_some() || major < 2 || (major == 2 && minor < 102) {
         return refuse("GitHub attestation verification requires patched gh >= 2.102.0");
     }
@@ -589,9 +600,13 @@ mod tests {
         for version in ["gh version 2.96.0 (test)", "gh version 2.101.9 (test)"] {
             assert!(require_patched_gh(&obj(&[("version", Value::string(version))])).is_err());
         }
-        assert!(require_patched_gh(&obj(&[
-            ("version", Value::string("gh version 2.102.0 (test)"))
-        ])).is_ok());
+        assert!(
+            require_patched_gh(&obj(&[(
+                "version",
+                Value::string("gh version 2.102.0 (test)")
+            )]))
+            .is_ok()
+        );
     }
 
     #[test]

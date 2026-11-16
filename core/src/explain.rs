@@ -24,37 +24,13 @@ fn supported_report(path: &Path) -> Result<Value> {
     }
     let bytes = fs::read(path).map_err(|e| format!("impact report: {e}"))?;
     let report = json::parse(&bytes)?;
-    if !matches!(
-        report.get("schema")?.str()?,
-        "excession.impact.v1" | "excession.impact.v2"
-    ) {
-        return refuse("expected an excession.impact.v1 or .v2 report");
+    if report.get("schema")?.str()? != "excession.impact.v3" {
+        return refuse("expected an excession.impact.v3 source-witness report");
     }
     Ok(report)
 }
 
-fn find_claim<'a>(report: &'a Value, id: &str) -> Result<&'a Value> {
-    if id.len() != 64
-        || !id
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-    {
-        return refuse("explanation claim ID requires a lowercase SHA-256 digest");
-    }
-    let mut found = None;
-    for effect in report.get("effects")?.array_ref()? {
-        let actual = effect.get("claim_id")?.str()?;
-        if !effect.content_id_matches("claim_id")? {
-            return refuse("impact claim identifier disagrees with its content");
-        }
-        if actual == id && found.replace(effect).is_some() {
-            return refuse("ambiguous impact claim identifier");
-        }
-    }
-    found.ok_or_else(|| format!("unknown impact claim: {id}"))
-}
-
-/// Recompute the complete candidate impact report before selecting a claim.
+/// Recompute the complete candidate impact report before selecting a source.
 /// Matching JSON alone would only establish self-consistency; reindexing
 /// authenticates source against Git objects and repeats the native analyzers.
 fn checked_report(
@@ -64,7 +40,6 @@ fn checked_report(
     db: Option<&str>,
 ) -> Result<Value> {
     let reported = supported_report(saved_report)?;
-    let compact = reported.get("schema")?.str()? == "excession.impact.v2";
     let base = reported.get("base_commit")?.str()?;
     let head = reported.get("head_commit")?.str()?;
     let fresh = if let Some(chosen) = reported.entries()?.get("producer_selection_plan") {
@@ -89,13 +64,7 @@ fn checked_report(
             }
             (Plan::default(), Plan::default())
         };
-        if compact {
-            impact_query::run_with_plans_compact(
-                repo, base, head, roots, db, &base_plan, &head_plan,
-            )?
-        } else {
-            impact_query::run_with_plans(repo, base, head, roots, db, &base_plan, &head_plan)?
-        }
+        impact_query::run_with_plans(repo, base, head, roots, db, &base_plan, &head_plan)?
     } else if let Some(choices) = reported.entries()?.get("producer_selections") {
         let selected = |key: &str| -> Result<Option<&str>> {
             match choices.get(key)? {
@@ -115,17 +84,9 @@ fn checked_report(
                 source_prefix: selected("head_source_prefix")?,
             },
         };
-        if compact {
-            impact_query::run_with_evidence_compact(repo, base, head, roots, db, selections)?
-        } else {
-            impact_query::run_with_evidence(repo, base, head, roots, db, selections)?
-        }
+        impact_query::run_with_evidence(repo, base, head, roots, db, selections)?
     } else {
-        if compact {
-            impact_query::run_compact(repo, base, head, roots, db)?
-        } else {
-            impact_query::run(repo, base, head, roots, db)?
-        }
+        impact_query::run(repo, base, head, roots, db)?
     };
     if reported.canonical() != fresh.canonical() {
         return refuse(
@@ -133,23 +94,6 @@ fn checked_report(
         );
     }
     Ok(fresh)
-}
-
-fn checked_claim(
-    repo: &Path,
-    saved_report: &Path,
-    claim_id: &str,
-    roots: Option<&str>,
-    db: Option<&str>,
-) -> Result<(Value, Value)> {
-    let report = checked_report(repo, saved_report, roots, db)?;
-    if report.get("schema")?.str()? == "excession.impact.v2" {
-        return refuse(
-            "compact reports do not contain legacy path claims; explain --source instead",
-        );
-    }
-    let effect = find_claim(&report, claim_id)?.clone();
-    Ok((report, effect))
 }
 
 /// One authenticated source witness per (revision, dependent source). A
@@ -335,53 +279,6 @@ fn audit_result() -> Result<Value> {
     .stamp_id("report_id")
 }
 
-pub fn explain(
-    repo: &Path,
-    saved_report: &Path,
-    claim_id: &str,
-    roots: Option<&str>,
-    db: Option<&str>,
-) -> Result<Value> {
-    let (report, effect) = checked_claim(repo, saved_report, claim_id, roots, db)?;
-    let steps = effect.get("hops")?.clone();
-    let hops = steps.array_ref()?;
-    if hops.is_empty() {
-        return refuse("impact claim has no evidence path");
-    }
-    let commit = hops[0].get("source")?.get("source_commit")?.str()?;
-    for hop in hops {
-        let a = hop.get("source")?.get("source_commit")?.str()?;
-        let b = hop.get("target")?.get("source_commit")?.str()?;
-        if a != commit || b != commit {
-            return refuse("evidence path crosses revisions without an explicit transition");
-        }
-        if hop.get("evidence")?.array_ref()?.is_empty() {
-            return refuse("claim explanation has no supporting observation");
-        }
-    }
-    let out = obj(&[
-        ("schema", Value::string("excession.explanation.v1")),
-        ("claim_id", Value::string(claim_id)),
-        ("source_commit", Value::string(commit)),
-        ("steps", steps),
-        ("coverage", report.get("coverage")?.clone()),
-    ]);
-    out.stamp_id("report_id")
-}
-
-pub fn audit(
-    repo: &Path,
-    saved_report: &Path,
-    claim_id: &str,
-    roots: Option<&str>,
-    db: Option<&str>,
-) -> Result<Value> {
-    let explanation = explain(repo, saved_report, claim_id, roots, db)?;
-    // Source replay authenticates the candidate path, not runtime behavior.
-    let _ = explanation.get("report_id")?;
-    audit_result()
-}
-
 pub fn human(explanation: &Value) -> Result<String> {
     let mut lines = vec![format!(
         "Excession candidate explanation {} (commit {})",
@@ -556,26 +453,5 @@ mod tests {
             source_witnesses(&forged).is_err(),
             "self edges cannot be source dependents"
         );
-    }
-
-    #[test]
-    fn refuses_claim_hash_tampering_and_ambiguous_ids() {
-        let effect = obj(&[
-            ("entity", Value::string("source")),
-            ("assessment", Value::string("CANDIDATE_PATH")),
-        ]);
-        let mut correct = effect.clone();
-        correct
-            .entries_mut()
-            .unwrap()
-            .insert("claim_id".into(), Value::string(effect.sha256()));
-        let report = obj(&[("effects", Value::array([correct.clone()]))]);
-        assert!(find_claim(&report, &effect.sha256()).is_ok());
-        correct
-            .entries_mut()
-            .unwrap()
-            .insert("claim_id".into(), Value::string("a".repeat(64)));
-        let poisoned = obj(&[("effects", Value::array([correct]))]);
-        assert!(find_claim(&poisoned, &effect.sha256()).is_err());
     }
 }

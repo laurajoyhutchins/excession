@@ -12,7 +12,6 @@ No model API key or agent tokens are needed to prepare or test the infrastructur
 | Arm | Reviewer sees |
 | --- | --- |
 | `baseline` | Git candidate and its ancestors, task and ordinary developer tooling |
-| `legacy_paths` | The same candidate plus Excession's bounded simple dependency paths |
 | `graph` | The same candidate plus a flat distinct-source set/ranks, without witness edges |
 | `excession` | The same candidate plus the compact provenance-bearing witness forest |
 

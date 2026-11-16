@@ -14,7 +14,7 @@ The command families correspond to different evidence layers:
 
 | Work | Commands | Output |
 | --- | --- | --- |
-| Everyday source change impact | `discover`, `analyze`, `changes`, `impact`, `explain` | Git-pinned static candidate paths, evidence and explicit unknowns |
+| Everyday source change impact | `discover`, `analyze`, `changes`, `impact`, `explain` | Git-pinned source witnesses, evidence and explicit unknowns |
 | Static repository relationships | `index`, `inspect dependencies`, `view deps` | Source-linked module relations and navigable views |
 | Syntax and native inputs | `syntax`, `semantic`, `inspect evidence` | Source-bound candidates and separately typed native observations |
 | Refactoring investigation | `refactor suggest`, `refactor scip-suggest`, audit variants | Git-bound hypotheses, not source edits |
@@ -54,46 +54,31 @@ excession analyze languages
 excession analyze languages --roots src,tests --json
 excession changes .
 excession impact . --output /tmp/impact.json
-# To avoid enumerating the legacy 512 alternative paths:
-excession impact . --compact --output /tmp/impact-v2.json
-```
+excession impact . --json
 
-The default v1 human report shows up to ten alternative paths and their full
-`claim_id` values. V2 `--compact` instead shows distinct-source candidates
-without building alternative path records; it marks `path_effects_status`
-as `OMITTED_COMPACT` and retains independently bounded source coverage. `--output` saves the complete versioned JSON at a new,
-absolute path outside the source checkout, refusing to overwrite an existing
-file. It does not create parent directories. `--json` can also print the full
-machine-readable report to stdout, and may be combined with `--output`.
-A report with no affected paths does not prove absence of runtime effects.
-When there is a candidate, copy its displayed ID and request a source-replayed
-explanation:
-
-```sh
-excession explain . --report /tmp/impact.json --id CLAIM_ID
-excession explain . --report /tmp/impact.json --id CLAIM_ID --audit
-
-# Source reachability is independently represented even when legacy effects
-# fill their 512-path display budget.
 excession explain . --report /tmp/impact.json --source src/pkg/handler.py --json
 excession explain . --report /tmp/impact.json --source src/pkg/handler.py \
   --source-commit PINNED_COMMIT --audit
 excession explain . --report /tmp/impact.json --all-sources --json
-
-# A versioned compact impact report has no legacy effect claim IDs:
-excession explain . --report /tmp/impact-v2.json \
-  --source src/pkg/handler.py --json
-excession explain . --report /tmp/impact-v2.json --all-sources --json
 ```
 
-Source witness explanations use one decreasing-rank path per distinct dependent
-source, not the potentially exponential collection of alternative routes. The
-batched form authenticates the saved report **once** and returns a bounded set
-of source explanations; it refuses batches exceeding 128 sources and reports
-whether the source inventory itself was truncated. A source present at both
-revisions requires `--source-commit` to disambiguate. The single-source form
-still replays the original report and must not be described as cheaper than
-the old one-claim replay without independent measurement.
+`impact` produces one `excession.impact.v3` report with a
+`candidate_source_impacts` inventory. Each observed dependent source has
+one rank-certified `next_hop` toward a changed source, preserving its
+original Git identity and producer receipt. Alternative paths are not
+enumerated. The complete report is saved to a new absolute path outside
+the checkout; existing files are never overwritten. `--json` writes the
+same canonical report to stdout.
+
+The source path must be relative to the repository. If the same dependent
+source appears in both revisions, specify `--source-commit`; otherwise
+explanation refuses ambiguity. `--all-sources` replays the source once
+and reconstructs at most 128 witnesses. The batch refuses a larger
+result rather than truncating it.
+
+Every result retains explicit partial coverage, and an empty source
+inventory does not prove that tests are safe to skip. The source witness
+forest is documented in [source impact](COMPACT_IMPACT.md).
 
 The explanation command re-runs its source-bound impact query against pinned Git
 objects and refuses mutated or stale reports. The audit reports Git

@@ -146,9 +146,9 @@ def assess(case: Case, result: dict, independent_head_edges: set[tuple[str, str]
            independent_head_files: set[str]) -> dict:
     """Score Excession against a separate Git/CPython AST oracle.
 
-    Legacy explanation truncation is not a waiver of distinct-source coverage.
+    Source-witness coverage must match independent Git/AST reachability.
     """
-    if result.get("schema") != "excession.heldout-impact-evaluation.v1":
+    if result.get("schema") != "excession.heldout-impact-evaluation.v2":
         raise ValueError("unexpected independent evidence schema")
     if result.get("status") != "MATCH":
         raise ValueError(f"independent source/oracle mismatch: "
@@ -162,19 +162,19 @@ def assess(case: Case, result: dict, independent_head_edges: set[tuple[str, str]
     changed = set(result.get("changed_paths", []))
     if changed != set(case.expected_changed_paths):
         raise ValueError(f"fixture source changes differ from pinned expectations: {sorted(changed)}")
-    compact = result.get("compact_source_impacts", {})
-    if compact.get("complete_in_observed_graph") is not True:
+    sources = result.get("source_impacts", {})
+    if sources.get("complete_in_observed_graph") is not True:
         raise ValueError("distinct source-impact inventory was truncated")
     if result.get("candidate_source_enumeration_complete") is not True:
         raise ValueError("source coverage is not complete within observed graph")
     expected = set(result["oracle"][case.head]["expected_affected_paths"])
-    actual = set(compact["actual"][case.head])
+    actual = set(sources["actual"][case.head])
     if (expected != actual or not set(case.must_include_head_paths).issubset(expected)
             or len(expected) < case.minimum_head_affected_paths):
         raise ValueError("head candidate set does not satisfy independent expectations")
     if result["invalid_hops"]:
         raise ValueError("unverified Git or producer evidence in source impact report")
-    if any(compact[k][side] for k in ("missing", "unexpected")
+    if any(sources[k][side] for k in ("missing", "unexpected")
            for side in (case.base, case.head)):
         raise ValueError("unexpected or missing distinct sources")
     if not independent_head_files.issuperset(expected):
@@ -198,8 +198,6 @@ def assess(case: Case, result: dict, independent_head_edges: set[tuple[str, str]
         "head_required_paths_found": list(case.must_include_head_paths),
         "candidate_source_count_both_revisions": result["candidate_source_count"],
         "source_enumeration_complete": True,
-        "explanation_paths": result["candidate_effect_count"],
-        "explanations_truncated": result["legacy_explanations_truncated"],
         "missing_vs_independent_ast": 0,
         "unexpected_vs_independent_ast": 0,
         "independent_unresolved_import_sites": result["oracle"][case.head]["unresolved_import_sites"],

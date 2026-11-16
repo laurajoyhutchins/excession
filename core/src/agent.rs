@@ -353,7 +353,6 @@ pub fn verify(
     }
 
     let all_changes = changes.get("changes")?.array_ref()?;
-    let effects = impact.get("effects")?.array_ref()?;
     let configured = impact.get("configured_observations")?.array_ref()?;
     let producer_coverage = impact.get("producer_coverage")?.array_ref()?;
     if producer_coverage.iter().any(|item| {
@@ -386,7 +385,6 @@ pub fn verify(
         obligations.insert("UNRESOLVED_SOURCE_COVERAGE".into());
     }
     let truncated = all_changes.len() > limit
-        || effects.len() > limit
         || configured.len() > limit
         || producer_coverage.len() > limit
         || candidate_sources.len() > limit
@@ -407,11 +405,6 @@ pub fn verify(
         ("impact_report_id", impact.get("report_id")?.clone()),
         ("changes", Value::array(take_bounded(all_changes, limit))),
         ("change_count", Value::number(all_changes.len())),
-        (
-            "candidate_impacts",
-            Value::array(take_bounded(effects, limit)),
-        ),
-        ("candidate_impact_count", Value::number(effects.len())),
         (
             "configured_observations",
             Value::array(take_bounded(configured, limit)),

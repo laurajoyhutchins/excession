@@ -9,18 +9,8 @@ use crate::{Result, discovery, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
-const MAX_DEPTH: usize = 8;
-const MAX_EFFECTS: usize = 512;
 const MAX_SOURCE_IMPACTS: usize = 10_000;
 const MAX_GAPS: usize = 9999;
-
-/// Leave the legacy path-heavy report available for stable claim IDs, while
-/// making finite distinct-source reachability a separate versioned result.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PathDetail {
-    Legacy,
-    Compact,
-}
 
 /// Return each producer's native relationship and its evidence unchanged.
 /// Current aggregate analysis only emits static import *candidates*.
@@ -123,53 +113,6 @@ fn changed_paths(inventory: &Value, side: &str) -> Result<BTreeSet<String>> {
     Ok(paths)
 }
 
-/// Reversed BFS from a changed source: every returned ordered path flows
-/// from an importer toward the changed module, with each hop's original
-/// source and producer observation intact.
-fn walk(
-    incoming: &BTreeMap<String, Vec<Value>>,
-    changed: &BTreeSet<String>,
-    effects: &mut Vec<Value>,
-) -> Result<bool> {
-    for seed in changed {
-        // An importer may depend on the changed module through more than one
-        // route. A global visited set loses distinct evidence chains in a
-        // diamond graph; only forbid cycles *within the current path*.
-        let visited = BTreeSet::from([seed.to_owned()]);
-        let mut queue = VecDeque::from([(seed.to_owned(), Vec::<Value>::new(), visited)]);
-        while let Some((target, suffix, visited)) = queue.pop_front() {
-            if let Some(edges) = incoming.get(&target) {
-                for edge in edges {
-                    let path = edge.get("source")?.get("path")?.str()?.to_owned();
-                    if visited.contains(&path) {
-                        continue;
-                    }
-                    if suffix.len() >= MAX_DEPTH {
-                        return Ok(true);
-                    }
-                    let mut hops = Vec::with_capacity(suffix.len() + 1);
-                    hops.push(edge.clone());
-                    hops.extend(suffix.iter().cloned());
-                    let entity = edge.get("source")?.clone();
-                    let effect = obj(&[
-                        ("entity", entity),
-                        ("assessment", Value::string("CANDIDATE_PATH")),
-                        ("hops", Value::array(hops.clone())),
-                    ]);
-                    effects.push(effect.stamp_id("claim_id")?);
-                    if effects.len() >= MAX_EFFECTS {
-                        return Ok(true);
-                    }
-                    let mut next_visited = visited.clone();
-                    next_visited.insert(path.clone());
-                    queue.push_back((path, hops, next_visited));
-                }
-            }
-        }
-    }
-    Ok(false)
-}
-
 /// One parent edge per *distinct source*, rather than one entry per simple
 /// path. Multi-source reverse BFS discovers every reachable source in the
 /// observed graph exactly once. The distance is a decreasing rank certificate:
@@ -228,37 +171,13 @@ pub struct EvidenceByRevision<'a> {
     pub head: Selection<'a>,
 }
 
-/// Use the same revision-pinned producer selection as the CLI and agent
-/// verification. Nothing executes native compilers during impact queries.
+/// Discover and pin existing producer evidence for the exact two Git revisions.
 pub fn run_auto(
     path: &Path,
     base: &str,
     head: &str,
     roots: Option<&str>,
     database: Option<&str>,
-) -> Result<Value> {
-    run_auto_with_detail(path, base, head, roots, database, PathDetail::Legacy)
-}
-
-/// Source-reachability report without enumerating alternative simple paths.
-/// Produces v2; the legacy entrypoints continue to produce exactly v1.
-pub fn run_auto_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-) -> Result<Value> {
-    run_auto_with_detail(path, base, head, roots, database, PathDetail::Compact)
-}
-
-fn run_auto_with_detail(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-    detail: PathDetail,
 ) -> Result<Value> {
     let checkout = discovery::inspect(path, head)?;
     let destination = analyze::checked_external_destination(
@@ -282,7 +201,6 @@ fn run_auto_with_detail(
         roots,
         database,
         Mode::Pinned(&base_plan, &head_plan),
-        detail,
     )
 }
 
@@ -294,23 +212,6 @@ pub fn run(
     database: Option<&str>,
 ) -> Result<Value> {
     run_with_evidence(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        EvidenceByRevision::default(),
-    )
-}
-
-pub fn run_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-) -> Result<Value> {
-    run_with_evidence_compact(
         path,
         base,
         head,
@@ -334,38 +235,9 @@ pub fn run_with_evidence(
     database: Option<&str>,
     selected: EvidenceByRevision<'_>,
 ) -> Result<Value> {
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Explicit(selected),
-        PathDetail::Legacy,
-    )
+    run_core(path, base, head, roots, database, Mode::Explicit(selected))
 }
 
-pub fn run_with_evidence_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-    selected: EvidenceByRevision<'_>,
-) -> Result<Value> {
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Explicit(selected),
-        PathDetail::Compact,
-    )
-}
-
-/// Replay the selected identities, not a fresh discovery of future imports.
-/// This is also the entrypoint for ordinary, automatically composed impact.
 pub fn run_with_plans(
     path: &Path,
     base: &str,
@@ -382,27 +254,6 @@ pub fn run_with_plans(
         roots,
         database,
         Mode::Pinned(base_plan, head_plan),
-        PathDetail::Legacy,
-    )
-}
-
-pub fn run_with_plans_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-    base_plan: &Plan,
-    head_plan: &Plan,
-) -> Result<Value> {
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Pinned(base_plan, head_plan),
-        PathDetail::Compact,
     )
 }
 
@@ -413,7 +264,6 @@ fn run_core(
     roots: Option<&str>,
     database: Option<&str>,
     selected: Mode<'_>,
-    detail: PathDetail,
 ) -> Result<Value> {
     if let Mode::Explicit(scope) = selected
         && ((scope.base.source_prefix.is_some() && scope.base.scip_snapshot.is_none())
@@ -424,13 +274,11 @@ fn run_core(
     let changes = change_inventory::inventory(path, base, head)?;
     let base_commit = changes.get("base_commit")?.str()?;
     let head_commit = changes.get("head_commit")?.str()?;
-    let mut effects = Vec::new();
     let mut candidate_source_impacts = Vec::new();
     let mut native_reference_impacts = Vec::new();
     let mut native_reference_count = 0usize;
     let mut native_reference_truncated = false;
     let mut candidate_source_count = 0usize;
-    let mut effect_truncated = false;
     let mut source_truncated = false;
     let mut configured_observations = Vec::new();
     let mut producer_coverage = Vec::new();
@@ -536,14 +384,8 @@ fn run_core(
             source_truncated = true;
         }
         candidate_source_impacts.extend(witnesses.into_iter().take(room));
-        // The legacy explanations enumerate distinct paths and may hit their
-        // output bound. Never let that bound suppress the next revision or
-        // the distinct-source impact inventory.
-        if detail == PathDetail::Legacy && !effect_truncated {
-            effect_truncated = walk(&graph, &changed, &mut effects)?;
-        }
     }
-    let mut truncated = effect_truncated || source_truncated || native_reference_truncated;
+    let mut truncated = source_truncated || native_reference_truncated;
     if gaps.len() > MAX_GAPS {
         gaps.truncate(MAX_GAPS);
         truncated = true;
@@ -552,18 +394,10 @@ fn run_core(
         gaps.push(obj(&[("reason", Value::string("TRUNCATED"))]));
     }
     let mut result = obj(&[
-        (
-            "schema",
-            Value::string(if detail == PathDetail::Legacy {
-                "excession.impact.v1"
-            } else {
-                "excession.impact.v2"
-            }),
-        ),
+        ("schema", Value::string("excession.impact.v3")),
         ("base_commit", Value::string(base_commit)),
         ("head_commit", Value::string(head_commit)),
         ("change_inventory_id", changes.get("report_id")?.clone()),
-        ("effects", Value::array(effects)),
         (
             "candidate_source_impacts",
             Value::array(candidate_source_impacts),
@@ -599,14 +433,6 @@ fn run_core(
             Value::Bool(!native_reference_truncated),
         ),
     ]);
-    if detail == PathDetail::Compact {
-        // An empty effects array alone is ambiguous: omitted path enumeration
-        // must not be confused with complete proof of zero alternatives.
-        result.entries_mut()?.insert(
-            "path_effects_status".into(),
-            Value::string("OMITTED_COMPACT"),
-        );
-    }
     match selected {
         Mode::Pinned(before, after) => {
             let body = result.entries_mut()?;
@@ -674,25 +500,18 @@ fn run_core(
 
 pub fn human(report: &Value) -> Result<String> {
     const PREVIEW_LIMIT: usize = 10;
-    let effects = report.get("effects")?.array_ref()?;
-    let compact = report.get("schema")?.str()? == "excession.impact.v2";
     let source_count = report.get("candidate_source_count")?.integer()?;
+    let source_complete = report
+        .get("candidate_source_enumeration_complete")?
+        .bool()?;
     let native_count = report.get("native_reference_count")?.integer()?;
     let native_complete = report
         .get("native_reference_enumeration_complete")?
         .bool()?;
-    let native_candidates = report.get("native_reference_impacts")?.array_ref()?;
-    let source_complete = report
-        .get("candidate_source_enumeration_complete")?
-        .bool()?;
-    let gaps = report.get("unknown")?.array_ref()?.len();
     let mut lines = vec![
+        format!("Excession change impact: {source_count} distinct-source candidates."),
         format!(
-            "Excession change impact: {} candidate dependent paths.",
-            effects.len()
-        ),
-        format!(
-            "Distinct dependent sources: {source_count} (observed-graph inventory {}).",
+            "Observed-graph source inventory: {}.",
             if source_complete {
                 "complete"
             } else {
@@ -700,7 +519,7 @@ pub fn human(report: &Value) -> Result<String> {
             }
         ),
         format!(
-            "Java compiler-observed sources: {native_count} (unattested, observed graph {}).",
+            "Java compiler-observed sources: {native_count} (unattested, {}).",
             if native_complete {
                 "complete"
             } else {
@@ -710,71 +529,38 @@ pub fn human(report: &Value) -> Result<String> {
         format!("Base: {}", report.get("base_commit")?.str()?),
         format!("Head: {}", report.get("head_commit")?.str()?),
     ];
-    if compact {
-        lines[0] = format!(
-            "Excession change impact: {source_count} distinct-source candidates; alternative paths not enumerated."
-        );
-        lines.push(
-            "Compact v2: source witnesses preserve original Git identities and producer evidence."
-                .to_owned(),
-        );
-        for witness in report
-            .get("candidate_source_impacts")?
-            .array_ref()?
-            .iter()
-            .take(PREVIEW_LIMIT)
-        {
-            lines.push(format!(
-                "  {:?} -> {:?} ({} hops to changed source)",
-                witness.get("entity")?.get("path")?.str()?,
-                witness.get("next_hop")?.get("target")?.get("path")?.str()?,
-                witness.get("distance_to_change")?.integer()?,
-            ));
-        }
-        lines.push("Use excession explain --source PATH or --all-sources to reconstruct authenticated paths.".to_owned());
-    } else if effects.is_empty() {
-        lines.push("No static-import or SCIP candidates found in the analyzed scope.".to_owned());
-    } else {
-        lines.push("Candidate paths (source -> changed dependency):".to_owned());
-        for effect in effects.iter().take(PREVIEW_LIMIT) {
-            let hops = effect.get("hops")?.array_ref()?;
-            let last = hops.last().ok_or("impact candidate has no evidence path")?;
-            lines.push(format!(
-                "  {:?} -> {:?} ({} hop{})",
-                effect.get("entity")?.get("path")?.str()?,
-                last.get("target")?.get("path")?.str()?,
-                hops.len(),
-                if hops.len() == 1 { "" } else { "s" }
-            ));
-            lines.push(format!("    claim {}", effect.get("claim_id")?.str()?));
-        }
-        if effects.len() > PREVIEW_LIMIT {
-            lines.push(format!(
-                "  ... {} additional candidate paths (use --json to inspect all)",
-                effects.len() - PREVIEW_LIMIT
-            ));
-        }
+    let sources = report.get("candidate_source_impacts")?.array_ref()?;
+    for witness in sources.iter().take(PREVIEW_LIMIT) {
+        lines.push(format!(
+            "  {:?} -> {:?} ({} hops to changed source)",
+            witness.get("entity")?.get("path")?.str()?,
+            witness.get("next_hop")?.get("target")?.get("path")?.str()?,
+            witness.get("distance_to_change")?.integer()?,
+        ));
     }
-    if !native_candidates.is_empty() {
-        lines.push(
-            "Java compiler-observed source candidates (not runtime dependencies):".to_owned(),
-        );
-        for witness in native_candidates.iter().take(PREVIEW_LIMIT) {
-            lines.push(format!(
-                "  {:?} -> {:?} ({} hops; producer unattested)",
-                witness.get("entity")?.get("path")?.str()?,
-                witness.get("next_hop")?.get("target")?.get("path")?.str()?,
-                witness.get("distance_to_change")?.integer()?,
-            ));
-        }
-        if native_candidates.len() > PREVIEW_LIMIT {
-            lines.push(format!(
-                "  ... {} more Java candidates (use --json)",
-                native_candidates.len() - PREVIEW_LIMIT
-            ));
-        }
+    if sources.len() > PREVIEW_LIMIT {
+        lines.push(format!(
+            "  ... {} further source witnesses (use --json)",
+            sources.len() - PREVIEW_LIMIT
+        ));
     }
-    lines.push(format!("Unknown/unsupported: {gaps} observations."));
+    for witness in report
+        .get("native_reference_impacts")?
+        .array_ref()?
+        .iter()
+        .take(PREVIEW_LIMIT)
+    {
+        lines.push(format!(
+            "  Java {:?} -> {:?} ({} hops; producer unattested)",
+            witness.get("entity")?.get("path")?.str()?,
+            witness.get("next_hop")?.get("target")?.get("path")?.str()?,
+            witness.get("distance_to_change")?.integer()?,
+        ));
+    }
+    lines.push(format!(
+        "Unknown/unsupported: {} observations.",
+        report.get("unknown")?.array_ref()?.len(),
+    ));
     lines.push("Coverage: PARTIAL. Unlisted tests cannot be assumed safe to skip.".to_owned());
     lines.push(
         "Use --output ABSOLUTE_PATH to save a replayable JSON report; --json prints full evidence."
@@ -821,10 +607,6 @@ mod tests {
         let analysis = obj(&[("relationships", Value::array(edges))]);
         let graph = incoming(&analysis).unwrap();
         let seeds = BTreeSet::from(["pkg/changed.py".to_owned()]);
-        let mut enumerated_paths = Vec::new();
-        assert!(walk(&graph, &seeds, &mut enumerated_paths).unwrap());
-        assert_eq!(enumerated_paths.len(), MAX_EFFECTS);
-
         let witnesses = source_witnesses(&graph, &seeds).unwrap();
         assert_eq!(witnesses.len(), 21);
         let mut ranks = BTreeMap::from([("pkg/changed.py".to_owned(), 0i64)]);
@@ -898,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_independent_paths_through_a_diamond() {
+    fn diamond_preserves_deterministic_source_witness_without_path_expansion() {
         let make_edge = |source: &str, target: &str| {
             obj(&[
                 ("kind", Value::string("STATIC_IMPORT")),
@@ -906,7 +688,10 @@ mod tests {
                 ("target", obj(&[("path", Value::string(target))])),
                 (
                     "evidence",
-                    Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])]),
+                    Value::array([obj(&[
+                        ("assessment", Value::string("CANDIDATE")),
+                        ("receipt_id", Value::string("source-bound-receipt")),
+                    ])]),
                 ),
             ])
         };
@@ -919,32 +704,43 @@ mod tests {
                 make_edge("pkg/top.py", "pkg/right.py"),
             ]),
         )]);
-        let mut effects = Vec::new();
-        assert!(
-            !walk(
-                &incoming(&input).unwrap(),
-                &BTreeSet::from(["pkg/changed.py".to_owned()]),
-                &mut effects,
-            )
-            .unwrap()
-        );
-        let from_top = effects
+        let graph = incoming(&input).unwrap();
+        let seeds = BTreeSet::from(["pkg/changed.py".to_owned()]);
+        let witnesses = source_witnesses(&graph, &seeds).unwrap();
+        assert_eq!(witnesses.len(), 3);
+        let top = witnesses
             .iter()
-            .filter(|effect| {
-                effect
-                    .get("entity")
-                    .unwrap()
-                    .get("path")
-                    .unwrap()
-                    .str()
-                    .unwrap()
-                    == "pkg/top.py"
+            .filter(|w| {
+                w.get("entity").unwrap().get("path").unwrap().str().unwrap() == "pkg/top.py"
             })
             .collect::<Vec<_>>();
-        assert_eq!(from_top.len(), 2, "each distinct import path has evidence");
-        assert_ne!(
-            from_top[0].get("claim_id").unwrap(),
-            from_top[1].get("claim_id").unwrap()
+        assert_eq!(top.len(), 1, "one ranked witness per distinct source");
+        assert_eq!(
+            top[0].get("distance_to_change").unwrap().integer().unwrap(),
+            2
+        );
+        assert_eq!(
+            top[0]
+                .get("next_hop")
+                .unwrap()
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "pkg/left.py",
+            "ordered graph gives a deterministic next hop"
+        );
+        assert!(
+            !top[0]
+                .get("next_hop")
+                .unwrap()
+                .get("evidence")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
         );
     }
 
@@ -1046,22 +842,20 @@ mod tests {
                 ),
             ])]),
         )]);
-        let mut effects = Vec::new();
-        assert!(
-            !walk(
-                &incoming(&input).unwrap(),
-                &BTreeSet::from(["pkg/second.py".to_owned()]),
-                &mut effects
-            )
-            .unwrap()
-        );
-        assert_eq!(effects.len(), 1);
+        let witnesses = source_witnesses(
+            &incoming(&input).unwrap(),
+            &BTreeSet::from(["pkg/second.py".to_owned()]),
+        )
+        .unwrap();
+        assert_eq!(witnesses.len(), 1);
         assert_eq!(
-            effects[0].get("assessment").unwrap().str().unwrap(),
+            witnesses[0].get("assessment").unwrap().str().unwrap(),
             "CANDIDATE_PATH"
         );
         assert_eq!(
-            effects[0].get("hops").unwrap().array_ref().unwrap()[0]
+            witnesses[0]
+                .get("next_hop")
+                .unwrap()
                 .get("evidence")
                 .unwrap()
                 .array_ref()

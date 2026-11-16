@@ -324,7 +324,6 @@ def verify_product_workflow(
     binary: Path, repo: Path, work: Path, fixture: dict, commit: str,
     tree: str, objects: dict[str, tuple[str, str]],
     source_replay: bool = False,
-    compact_impact: bool = False,
 ) -> dict:
     """Held-out Git-source oracle for the public CLI on a pinned upstream repo.
 
@@ -421,27 +420,28 @@ def verify_product_workflow(
         "--roots", fixture["roots"], "--db", str(product_db), "--json",
         "--output", str(saved),
     ], timeout=240)
-    legacy_impact_bytes = len(proc.stdout)
+    impact_bytes = len(proc.stdout)
     impact = json.loads(proc.stdout)
     if json.loads(saved.read_text(encoding="utf-8")) != impact:
         raise ValueError("the CLI saved a different report from its JSON output")
-    if (impact["schema"] != "excession.impact.v1"
+    if (impact["schema"] != "excession.impact.v3"
+            or "effects" in impact
+            or "path_effects_status" in impact
             or impact["base_commit"] != commit
             or impact["head_commit"] != head
             or impact["safe_to_skip_unlisted_tests"] is not False
             or impact["coverage"]["status"] != "PARTIAL"):
-        raise ValueError("impact identity or coverage contract mismatch")
+        raise ValueError("source-only impact identity or coverage contract mismatch")
     candidate = next((
-        effect for effect in impact["effects"]
-        if effect["entity"]["path"] == source_path
-        and effect["assessment"] == "CANDIDATE_PATH"
-        and any(hop["target"]["path"] == target_path for hop in effect["hops"])
+        witness for witness in impact["candidate_source_impacts"]
+        if witness["entity"]["path"] == source_path
+        and witness["assessment"] == "CANDIDATE_PATH"
+        and witness["next_hop"]["target"]["path"] == target_path
+        and witness["next_hop"]["evidence"]
     ), None)
     if candidate is None:
-        # Persist the *actual* failing candidate evidence before the temporary
-        # checkout disappears. This does not relax the source-oracle predicate.
-        witness = {
-            "schema": "excession.independent-impact-mismatch.v1",
+        diagnostic = {
+            "schema": "excession.independent-impact-mismatch.v2",
             "fixture": fixture["name"],
             "source_commit": commit,
             "mutation_commit": head,
@@ -454,60 +454,51 @@ def verify_product_workflow(
             "analyze_observed_paths": len(observed_paths),
             "impact_report_schema": impact.get("schema"),
             "impact_coverage": impact.get("coverage"),
-            "impact_effect_count": len(impact["effects"]),
-            "all_matching_source_effects": [
-                {"assessment": effect.get("assessment"),
-                 "claim_id": effect.get("claim_id"),
-                 "hops": [hop.get("target", {}).get("path")
-                          for hop in effect.get("hops", [])]}
-                for effect in impact["effects"]
-                if effect.get("entity", {}).get("path") == source_path
+            "source_witness_count": len(impact["candidate_source_impacts"]),
+            "matching_source_witnesses": [
+                {"assessment": witness.get("assessment"),
+                 "rank": witness.get("distance_to_change"),
+                 "next_target": witness.get("next_hop", {}).get("target", {}).get("path")}
+                for witness in impact["candidate_source_impacts"]
+                if witness.get("entity", {}).get("path") == source_path
             ][:100],
-            "other_effects_sample": [
-                {"source": effect.get("entity", {}).get("path"),
-                 "assessment": effect.get("assessment"),
-                 "hops": [hop.get("target", {}).get("path")
-                          for hop in effect.get("hops", [])]}
-                for effect in impact["effects"][:30]
-            ],
         }
         (work / f"{fixture['name']}-impact-diagnostic.json").write_text(
-            json.dumps(witness, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+            json.dumps(diagnostic, sort_keys=True, indent=2) + "\n", encoding="utf-8"
         )
         raise ValueError(
-            "independent imported-source change had no candidate dependent: "
+            "independent imported-source change had no ranked dependent: "
             f"{source_path} -> {target_path} ({_kind}, line {_line}); "
-            f"effects={len(impact['effects'])}; see preserved impact diagnostic"
+            f"sources={len(impact['candidate_source_impacts'])}; see preserved diagnostic"
         )
-    claim_id = candidate["claim_id"]
-    if claim_id != canonical_sha256({
-        k: v for k, v in candidate.items() if k != "claim_id"
-    }):
-        raise ValueError("product impact claim ID is not canonical")
+    selected_commit = candidate["entity"]["source_commit"]
     proc, explain_ms = call([
         str(binary), "explain", str(repo), "--report", str(saved),
-        "--id", claim_id, "--db", str(product_db),
-        "--roots", fixture["roots"], "--json",
+        "--source", source_path, "--source-commit", selected_commit,
+        "--db", str(product_db), "--roots", fixture["roots"], "--json",
     ], timeout=240)
     explanation = json.loads(proc.stdout)
+    source_witness_id = canonical_sha256(candidate)
     if (explanation["schema"] != "excession.explanation.v1"
-            or explanation["claim_id"] != claim_id
-            or explanation["source_commit"] not in (commit, head)
-            or not explanation["steps"]):
-        raise ValueError("source-bound impact explanation is missing its path")
+            or explanation["selection_kind"] != "DISTINCT_SOURCE_WITNESS"
+            or explanation["claim_id"] != source_witness_id
+            or explanation["source_commit"] != selected_commit
+            or not explanation["steps"]
+            or explanation["steps"][0]["source"]["path"] != source_path
+            or explanation["steps"][0]["target"]["path"] != target_path):
+        raise ValueError("source-bound impact explanation does not match the independent edge")
     proc, audit_ms = call([
         str(binary), "explain", str(repo), "--report", str(saved),
-        "--id", claim_id, "--db", str(product_db),
-        "--roots", fixture["roots"], "--audit",
+        "--source", source_path, "--source-commit", selected_commit,
+        "--db", str(product_db), "--roots", fixture["roots"], "--audit",
     ], timeout=240)
     audit = json.loads(proc.stdout)
     if (audit["git_authentication"] != "PASS"
             or audit["replay"] != "PASS"
             or audit["semantic_correctness"] != "NOT_EVALUATED"):
-        raise ValueError("replay audit promoted evidence to semantic correctness")
-    # Optional, manually invoked release-vs-head benchmark. All source paths
-    # are reconstructed from the fully replayed saved report with one process.
-    # This does not change the legacy claim-ID oracle or the frozen cohort.
+        raise ValueError("source replay promoted an observation to semantic correctness")
+    # Optional manually invoked source-batch acceptance. Each selected witness
+    # is reconstructed against one fully authenticated source-only report.
     source_replay_results = None
     if source_replay:
         batch_out, batch_ms = call([
@@ -580,112 +571,20 @@ def verify_product_workflow(
         source_replay_results = {
             "batch_source_count": batch["count"],
             "batch_source_complete": batch["source_inventory_complete"],
-            "legacy_path_count": len(impact["effects"]),
             "batched_source_explanation_wall_ms": batch_ms,
             "one_selected_source_wall_ms": selected_ms,
             "one_selected_source_audit_wall_ms": source_audit_ms,
             "selected_source": source_path,
             "selected_commit": selected_commit,
         }
-    # Measure and independently audit v2 as an opt-in extension. The frozen
-    # legacy and published-release acceptance always run first.
-    compact_results = None
-    if compact_impact:
-        compact_saved = work / f"{fixture['name']}-compact-impact.json"
-        compact_proc, compact_ms = call([
-            str(binary), "impact", str(repo), "--base", commit, "--head", head,
-            "--roots", fixture["roots"], "--db", str(product_db), "--json",
-            "--compact", "--output", str(compact_saved),
-        ], timeout=240)
-        compact = json.loads(compact_proc.stdout)
-        if json.loads(compact_saved.read_text(encoding="utf-8")) != compact:
-            raise ValueError("compact saved report differs from emitted JSON")
-        if (compact["schema"] != "excession.impact.v2"
-                or compact["path_effects_status"] != "OMITTED_COMPACT"
-                or compact["effects"]
-                or compact["base_commit"] != commit
-                or compact["head_commit"] != head
-                or compact["change_inventory_id"] != impact["change_inventory_id"]
-                or compact["candidate_source_impacts"] != impact["candidate_source_impacts"]
-                or compact["candidate_source_count"] != impact["candidate_source_count"]
-                or compact["candidate_source_enumeration_complete"]
-                   != impact["candidate_source_enumeration_complete"]
-                or compact["native_reference_impacts"] != impact["native_reference_impacts"]
-                or compact["native_reference_count"] != impact["native_reference_count"]
-                or compact["safe_to_skip_unlisted_tests"] is not False
-                or compact["coverage"]["status"] != "PARTIAL"):
-            raise ValueError("compact v2 report changed the independent source inventory")
-        compact_sources = compact["candidate_source_impacts"]
-        compact_selected, selected_compact_ms = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--source", source_path,
-            "--source-commit", candidate["entity"]["source_commit"],
-            "--db", str(product_db), "--roots", fixture["roots"], "--json",
-        ], timeout=240)
-        compact_explanation = json.loads(compact_selected.stdout)
-        if (compact_explanation["schema"] != "excession.explanation.v1"
-                or compact_explanation["selection_kind"] != "DISTINCT_SOURCE_WITNESS"
-                or compact_explanation["source_commit"] != candidate["entity"]["source_commit"]
-                or compact_explanation["steps"][0]["source"]["path"] != source_path
-                or not compact_explanation["steps"]):
-            raise ValueError("compact source explanation lacks independently expected witness")
-        compact_batch, compact_batch_ms = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--all-sources", "--db", str(product_db), "--roots", fixture["roots"],
-            "--json",
-        ], timeout=240)
-        compact_all = json.loads(compact_batch.stdout)
-        if (compact_all["replayed_impact_report_id"] != compact["report_id"]
-                or compact_all["count"] != len(compact_sources)
-                or compact_all["source_inventory_complete"]
-                    != compact["candidate_source_enumeration_complete"]
-                or compact_all["semantic_correctness"] != "NOT_EVALUATED"
-                or not any(item["claim_id"] == compact_explanation["claim_id"]
-                           for item in compact_all["explanations"])):
-            raise ValueError("compact batch lost source witnesses or replay identity")
-        compact_audit, compact_audit_ms = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--source", source_path,
-            "--source-commit", candidate["entity"]["source_commit"],
-            "--db", str(product_db), "--roots", fixture["roots"], "--audit",
-        ], timeout=240)
-        audited_compact = json.loads(compact_audit.stdout)
-        if (audited_compact["git_authentication"] != "PASS"
-                or audited_compact["replay"] != "PASS"
-                or audited_compact["semantic_correctness"] != "NOT_EVALUATED"):
-            raise ValueError("compact source audit promoted candidate observations to proof")
-        forged = json.loads(json.dumps(compact))
-        forged["candidate_source_impacts"][0]["assessment"] = "OBSERVED"
-        compact_saved.write_text(json.dumps(forged, sort_keys=True) + "\n", encoding="utf-8")
-        rejected, _ = call([
-            str(binary), "explain", str(repo), "--report", str(compact_saved),
-            "--all-sources", "--db", str(product_db),
-            "--roots", fixture["roots"], "--json",
-        ], timeout=240, check=False)
-        if rejected.returncode == 0:
-            raise ValueError("forged v2 witness accepted without canonical Git replay")
-        compact_results = {
-            "schema": compact["schema"],
-            "exact_source_inventory_match": True,
-            "legacy_path_count": len(impact["effects"]),
-            "compact_path_count": len(compact["effects"]),
-            "compact_source_count": len(compact_sources),
-            "legacy_impact_wall_ms": impact_ms,
-            "compact_impact_wall_ms": compact_ms,
-            "legacy_report_bytes": legacy_impact_bytes,
-            "compact_report_bytes": len(compact_proc.stdout),
-            "compact_selected_source_wall_ms": selected_compact_ms,
-            "compact_batch_wall_ms": compact_batch_ms,
-            "compact_audit_wall_ms": compact_audit_ms,
-            "forged_compact_report_refused": True,
-        }
     # Re-serialized JSON with a forged relation must fail the *native* replay.
     mutated = json.loads(json.dumps(impact))
-    mutated["effects"][0]["assessment"] = "OBSERVED_RELATIONSHIP_PATH"
+    mutated["candidate_source_impacts"][0]["assessment"] = "OBSERVED"
     saved.write_text(json.dumps(mutated, sort_keys=True) + "\n", encoding="utf-8")
     failed, _ = call([
         str(binary), "explain", str(repo), "--report", str(saved),
-        "--id", claim_id, "--db", str(product_db),
+        "--source", source_path, "--source-commit", selected_commit,
+        "--db", str(product_db),
         "--roots", fixture["roots"], "--json",
     ], timeout=240, check=False)
     if failed.returncode == 0:
@@ -699,13 +598,13 @@ def verify_product_workflow(
         "not_proven_import_sites": len(py_unresolved) + len(js_unresolved),
         "changed_source": target_path,
         "independent_dependent": source_path,
-        "effect_count": len(impact["effects"]),
-        "claim_id": claim_id,
+        "source_witness_count": len(impact["candidate_source_impacts"]),
+        "source_witness_id": source_witness_id,
+        "impact_report_bytes": impact_bytes,
         "reported_coverage": impact["coverage"]["status"],
         "semantic_correctness": audit["semantic_correctness"],
         "forged_report_refused": True,
         "source_replay_acceptance": source_replay_results,
-        "compact_impact_acceptance": compact_results,
         "analyze_wall_ms": analyze_ms,
         "impact_wall_ms": impact_ms,
         "explain_wall_ms": explain_ms,
@@ -716,7 +615,7 @@ def verify_product_workflow(
 
 def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int,
                     product_fixtures: frozenset[str] = frozenset(("h11", "axios")),
-                    source_replay: bool = False, compact_impact: bool = False) -> dict:
+                    source_replay: bool = False) -> dict:
     name = fixture["name"]
     repo = work / name
     commit, tree = checkout(fixture, repo)
@@ -749,7 +648,6 @@ def inspect_fixture(binary: Path, fixture: dict, work: Path, repetitions: int,
         verify_product_workflow(
             binary, repo, work, fixture, commit, tree, source,
             source_replay=source_replay,
-            compact_impact=compact_impact,
         )
         if name in product_fixtures else None
     )
@@ -792,8 +690,6 @@ def main() -> None:
     parser.add_argument("--product-fixture", action="append", default=[], help="Run full independent product workflow for this selected fixture")
     parser.add_argument("--source-replay", action="store_true",
                         help="Manually check and time source-witness batch vs existing replay")
-    parser.add_argument("--compact-impact", action="store_true",
-                        help="Manually compare compact v2 impact and source replay against legacy v1")
     args = parser.parse_args()
     if args.repetitions < 1:
         parser.error("repetitions must be positive")
@@ -804,17 +700,16 @@ def main() -> None:
         raise ValueError("unknown fixture declaration schema")
     selected, products = select_fixtures(fixtures["fixtures"], args.fixture, args.product_fixture)
     report = {
-        "schema": "excession.real-projection-fixture-results.v1",
+        "schema": "excession.real-projection-fixture-results.v2",
         "fixture_spec_sha256": hashlib.sha256(fixtures_file.read_bytes()).hexdigest(),
         "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
         "repetitions": args.repetitions,
         "source_replay_enabled": args.source_replay,
-        "compact_impact_enabled": args.compact_impact,
         "selected_fixtures": [f["name"] for f in selected],
         "product_fixtures": sorted(products),
         "fixtures": [],
         "limitations": (
-            "Source OIDs, compact/full parity, and tamper refusal are checked. "
+            "Source OIDs, source witness replay, and tamper refusal are checked. "
             "Pinned h11 and Axios also exercise exact-revision public analyze-impact-"
             "explain replay against an independent source-import oracle. "
             "Graph retrieval and view selection both consume the same semantic SQLite index; "
@@ -834,7 +729,6 @@ def main() -> None:
                 result = inspect_fixture(
                     binary, fixture, work, args.repetitions, products,
                     source_replay=args.source_replay,
-                    compact_impact=args.compact_impact,
                 )
                 report["fixtures"].append(result)
                 audit = result["dependency_audit"]["counts"]

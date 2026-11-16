@@ -666,9 +666,9 @@ pub(super) fn command() -> Command {
         )
         .subcommand(
             Command::new("explain")
-                .about("Replay and explain a claim, distinct source, or batch of source witnesses")
+                .about("Replay and explain distinct sources or a batch of source witnesses")
                 .group(ArgGroup::new("explanation-target")
-                    .args(["id", "source", "all-sources"])
+                    .args(["source", "all-sources"])
                     .required(true)
                     .multiple(false))
                 .arg(
@@ -684,12 +684,6 @@ pub(super) fn command() -> Command {
                         .value_parser(NonEmptyStringValueParser::new()),
                 )
                 .arg(
-                    Arg::new("id")
-                        .long("id")
-                        .num_args(1)
-                        .value_parser(NonEmptyStringValueParser::new()),
-                )
-                .arg(
                     Arg::new("source")
                         .long("source")
                         .help("Git-relative path of a distinct impacted source")
@@ -701,7 +695,6 @@ pub(super) fn command() -> Command {
                         .long("source-commit")
                         .help("Disambiguate a dependent source present in both revisions")
                         .requires("source")
-                        .conflicts_with("id")
                         .conflicts_with("all-sources")
                         .num_args(1)
                         .value_parser(NonEmptyStringValueParser::new()),
@@ -774,12 +767,6 @@ pub(super) fn command() -> Command {
                 .arg(Arg::new("base-source-prefix").long("base-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
                 .arg(Arg::new("head-source-prefix").long("head-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
 
-                .arg(
-                    Arg::new("compact")
-                        .long("compact")
-                        .help("Emit v2 distinct-source witnesses without legacy path enumeration")
-                        .action(clap::ArgAction::SetTrue),
-                )
                 .arg(
                     Arg::new("output")
                         .long("output")
@@ -1008,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn explain_selection_is_exactly_one_claim_source_or_bounded_batch() {
+    fn explain_accepts_one_source_or_bounded_batch_not_legacy_claim_ids() {
         let selected = parse(&strings(&[
             "explain",
             "--report",
@@ -1030,17 +1017,7 @@ mod tests {
                 "--report",
                 "/tmp/report.json",
                 "--all-sources",
-                "--json"
-            ]))
-            .is_ok()
-        );
-        assert!(
-            parse(&strings(&[
-                "explain",
-                "--report",
-                "/tmp/report.json",
-                "--id",
-                "claim-id"
+                "--json",
             ]))
             .is_ok()
         );
@@ -1052,8 +1029,6 @@ mod tests {
                 "/tmp/report.json",
                 "--id",
                 "claim-id",
-                "--source",
-                "pkg/affected.py",
             ],
             vec![
                 "explain",
@@ -1061,7 +1036,7 @@ mod tests {
                 "/tmp/report.json",
                 "--all-sources",
                 "--source",
-                "pkg/affected.py",
+                "pkg/a.py",
             ],
             vec![
                 "explain",
@@ -1069,8 +1044,7 @@ mod tests {
                 "/tmp/report.json",
                 "--source-commit",
                 "commit",
-                "--id",
-                "claim-id",
+                "--all-sources",
             ],
         ] {
             assert!(parse(&strings(&args)).is_err(), "{args:?}");
@@ -1110,18 +1084,13 @@ mod tests {
     }
 
     #[test]
-    fn compact_impact_is_opt_in_and_does_not_change_other_commands() {
-        let ParseOutcome::Command(compact) =
-            parse(&strings(&["impact", ".", "--compact", "--json"])).unwrap()
+    fn source_witness_impact_is_the_only_command_shape() {
+        let ParseOutcome::Command(impact) = parse(&strings(&["impact", ".", "--json"])).unwrap()
         else {
-            panic!("compact impact CLI expected");
+            panic!("impact CLI expected");
         };
-        assert_eq!(compact.options.get("compact"), "true");
-        assert_eq!(compact.options.get("json"), "true");
-        let ParseOutcome::Command(legacy) = parse(&strings(&["impact", "."])).unwrap() else {
-            panic!("legacy impact CLI expected");
-        };
-        assert!(!legacy.options.0.contains_key("compact"));
+        assert_eq!(impact.options.get("json"), "true");
+        assert!(parse(&strings(&["impact", ".", "--compact"])).is_err());
         assert!(parse(&strings(&["changes", ".", "--compact"])).is_err());
     }
 

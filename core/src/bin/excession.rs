@@ -1034,17 +1034,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     )))
                 }
             } else {
-                let claim = opt.get("id");
-                if auditing {
-                    Ok(json(explain::audit(repo, report, claim, roots, db)?))
-                } else {
-                    let result = explain::explain(repo, report, claim, roots, db)?;
-                    if as_json {
-                        Ok(json(result))
-                    } else {
-                        Ok(Response::Message(explain::human(&result)?))
-                    }
-                }
+                refuse("select an impacted source with --source or --all-sources")
             }
         }
         [top] if top == "impact" => {
@@ -1063,7 +1053,6 @@ fn execute(args: &[String]) -> Result<Response> {
             ]
             .iter()
             .any(|key| opt.0.contains_key(*key));
-            let compact = opt.get_or("compact", "false") == "true";
             let result = if explicit {
                 let selected = impact_query::EvidenceByRevision {
                     base: Selection {
@@ -1077,15 +1066,7 @@ fn execute(args: &[String]) -> Result<Response> {
                         source_prefix: opt.0.get("head-source-prefix").map(String::as_str),
                     },
                 };
-                if compact {
-                    impact_query::run_with_evidence_compact(
-                        repo, base, head, roots, db_arg, selected,
-                    )?
-                } else {
-                    impact_query::run_with_evidence(repo, base, head, roots, db_arg, selected)?
-                }
-            } else if compact {
-                impact_query::run_auto_compact(repo, base, head, roots, db_arg)?
+                impact_query::run_with_evidence(repo, base, head, roots, db_arg, selected)?
             } else {
                 impact_query::run_auto(repo, base, head, roots, db_arg)?
             };

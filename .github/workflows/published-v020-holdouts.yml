@@ -52,7 +52,8 @@ jobs:
         run: |
           set -euo pipefail
           # Manifest computation runs from the tagged source tree, not main.
-          # The holdout harness stays on main and exercises the public binary.
+          # Keep the released harness with its released format. Current main
+          # deliberately does not accept the historical v0.2.0 impact schema.
           git worktree add --detach "$RUNNER_TEMP/excession-release-source" refs/tags/v0.2.0
           python3 "$RUNNER_TEMP/excession-release-source/tools/release_manifest.py" \
             --dist "$PWD/dist" \
@@ -84,9 +85,9 @@ jobs:
               ;;
             *) echo "Unsupported holdout scope" >&2; exit 2 ;;
           esac
-          python3 benchmarks/experiments/real_fixtures.py \
+          NODE_PATH="$PWD/node_modules" python3 "$RUNNER_TEMP/excession-release-source/benchmarks/experiments/real_fixtures.py" \
             --bin installed/excession/excession \
-            --manifest benchmarks/fixtures/real-repositories.json \
+            --manifest "$RUNNER_TEMP/excession-release-source/benchmarks/fixtures/real-repositories.json" \
             --out /tmp/excession-published-holdout/outcomes.json \
             --repetitions 1 "${scope_args[@]}"
       - name: Preserve independent receipts, including failures

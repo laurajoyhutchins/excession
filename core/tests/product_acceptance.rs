@@ -138,7 +138,7 @@ fn independent_git_oracle_checks_exact_import_edges_and_changed_dependents() {
     );
     let reported = json::parse(impact.as_bytes()).unwrap();
     let affected: BTreeSet<_> = reported
-        .get("effects")
+        .get("candidate_source_impacts")
         .unwrap()
         .array_ref()
         .unwrap()

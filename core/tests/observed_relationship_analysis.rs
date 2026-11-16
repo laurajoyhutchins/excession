@@ -341,7 +341,11 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
             .bool()
             .unwrap()
     );
-    let effects = impacted.get("effects").unwrap().array_ref().unwrap();
+    let effects = impacted
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
     assert!(effects.iter().any(|item| {
         item.get("entity")
             .unwrap()
@@ -352,7 +356,7 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
             == "src/a.rs"
             && item.get("assessment").unwrap().str().unwrap() == "CANDIDATE_PATH"
     }));
-    let claim = effects
+    let selected = effects
         .iter()
         .find(|item| {
             item.get("entity")
@@ -363,8 +367,11 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
                 .unwrap()
                 == "src/a.rs"
         })
+        .unwrap();
+    let source_commit = selected
+        .get("entity")
         .unwrap()
-        .get("claim_id")
+        .get("source_commit")
         .unwrap()
         .str()
         .unwrap();
@@ -374,8 +381,10 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
             f.repo(),
             "--report",
             saved.to_str().unwrap(),
-            "--id",
-            claim,
+            "--source",
+            "src/a.rs",
+            "--source-commit",
+            source_commit,
             "--db",
             f.db(),
             "--json",
@@ -383,7 +392,20 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
         .as_bytes(),
     )
     .unwrap();
-    assert_eq!(explained.get("claim_id").unwrap().str().unwrap(), claim);
+    assert_eq!(
+        explained.get("source_commit").unwrap().str().unwrap(),
+        source_commit
+    );
+    assert_eq!(
+        explained.get("steps").unwrap().array_ref().unwrap()[0]
+            .get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "src/a.rs"
+    );
 }
 
 #[test]
@@ -446,7 +468,7 @@ fn configured_membership_is_visible_but_never_invents_a_dependency() {
     .unwrap();
     assert!(
         impact
-            .get("effects")
+            .get("candidate_source_impacts")
             .unwrap()
             .array_ref()
             .unwrap()
@@ -682,14 +704,20 @@ fn default_discovers_unique_revision_evidence_and_pins_replay() {
         f.head_snapshot
     );
     let effect = impact
-        .get("effects")
+        .get("candidate_source_impacts")
         .unwrap()
         .array_ref()
         .unwrap()
         .iter()
         .find(|x| x.get("entity").unwrap().get("path").unwrap().str().unwrap() == "src/a.rs")
         .unwrap();
-    let claim = effect.get("claim_id").unwrap().str().unwrap();
+    let source_commit = effect
+        .get("entity")
+        .unwrap()
+        .get("source_commit")
+        .unwrap()
+        .str()
+        .unwrap();
     // Import a new competing SCIP snapshot after the report was generated.
     // Explanation must replay only the original chosen identities.
     let db = Db::open(&f.db).unwrap();
@@ -705,8 +733,10 @@ fn default_discovers_unique_revision_evidence_and_pins_replay() {
             f.repo(),
             "--report",
             saved.to_str().unwrap(),
-            "--id",
-            claim,
+            "--source",
+            "src/a.rs",
+            "--source-commit",
+            source_commit,
             "--db",
             f.db(),
             "--json",
@@ -714,7 +744,20 @@ fn default_discovers_unique_revision_evidence_and_pins_replay() {
         .as_bytes(),
     )
     .unwrap();
-    assert_eq!(explained.get("claim_id").unwrap().str().unwrap(), claim);
+    assert_eq!(
+        explained.get("source_commit").unwrap().str().unwrap(),
+        source_commit
+    );
+    assert_eq!(
+        explained.get("steps").unwrap().array_ref().unwrap()[0]
+            .get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "src/a.rs"
+    );
     assert!(
         !impact
             .get("safe_to_skip_unlisted_tests")
@@ -805,32 +848,39 @@ fn competing_scip_indexes_quarantine_only_overlapping_paths() {
     .unwrap();
     // The head-revision indexes conflict, but the base-revision index is
     // still uniquely sourced and must remain usable for historical impact.
-    let effects = impact.get("effects").unwrap().array_ref().unwrap();
-    assert!(!effects.is_empty());
-    assert!(effects.iter().all(|effect| {
-        effect
-            .get("hops")
+    let witnesses = impact
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(!witnesses.is_empty());
+    assert!(witnesses.iter().all(|witness| {
+        let hop = witness.get("next_hop").unwrap();
+        witness
+            .get("entity")
             .unwrap()
-            .array_ref()
+            .get("source_commit")
             .unwrap()
-            .iter()
-            .all(|hop| {
-                hop.get("source")
-                    .unwrap()
-                    .get("source_commit")
-                    .unwrap()
-                    .str()
-                    .unwrap()
-                    == f.base
-                    && hop
-                        .get("target")
-                        .unwrap()
-                        .get("source_commit")
-                        .unwrap()
-                        .str()
-                        .unwrap()
-                        == f.base
-            })
+            .str()
+            .unwrap()
+            == f.base
+            && hop
+                .get("source")
+                .unwrap()
+                .get("source_commit")
+                .unwrap()
+                .str()
+                .unwrap()
+                == f.base
+            && hop
+                .get("target")
+                .unwrap()
+                .get("source_commit")
+                .unwrap()
+                .str()
+                .unwrap()
+                == f.base
+            && !hop.get("evidence").unwrap().array_ref().unwrap().is_empty()
     }));
     assert_eq!(
         impact
@@ -1059,7 +1109,7 @@ fn conflicting_configurations_remain_separate_without_blocking_scip() {
     .unwrap();
     assert!(
         impact
-            .get("effects")
+            .get("candidate_source_impacts")
             .unwrap()
             .array_ref()
             .unwrap()

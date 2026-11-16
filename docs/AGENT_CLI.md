@@ -95,10 +95,10 @@ excession agent verify --repo /work/project \
 ```
 
 Both revisions must be retained Git commits. No checkout, branch, worktree,
-build or test is created. The command recomputes the existing bounded impact
+build or test is created. The command recomputes the source-only v3 impact
 report against the two pinned commits, cross-checks the change inventory
-digest, carries original candidate paths and coverage gaps, and preserves all
-unresolved obligations. It reports the source recomputation separately from
+digest, carries one rank-certified witness per observed dependent source plus
+coverage gaps, and preserves all unresolved obligations. It reports the source recomputation separately from
 semantic correctness. The optional `--roots` and `--db` flags select the
 same underlying analyzer as `excession impact`.
 

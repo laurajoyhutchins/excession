@@ -92,19 +92,16 @@ def reachable(edges: set[tuple[str, str]], changed: set[str]) -> set[str]:
 def result_matches_oracle(
     *,
     invalid: list[str],
-    explanation_missing: dict[str, list[str]],
-    explanation_unexpected: dict[str, list[str]],
     source_missing: dict[str, list[str]],
     source_unexpected: dict[str, list[str]],
-    explanations_truncated: bool,
+    source_complete: bool,
 ) -> bool:
-    """Capped explanations may omit paths; authenticated source inventories may not."""
+    """Every ranked source must match the independent Git/AST closure."""
     return (
-        not invalid
+        source_complete
+        and not invalid
         and not any(source_missing.values())
         and not any(source_unexpected.values())
-        and not any(explanation_unexpected.values())
-        and (explanations_truncated or not any(explanation_missing.values()))
     )
 
 
@@ -142,8 +139,8 @@ def evaluate(
         report_bytes = len(raw_report)
         impact_wall_s = time.perf_counter() - start
 
-    if report.get("schema") != "excession.impact.v1":
-        raise ValueError("not an excession.impact.v1 report")
+    if report.get("schema") != "excession.impact.v3" or "effects" in report:
+        raise ValueError("not a source-only excession.impact.v3 report")
     if report.get("base_commit") != base or report.get("head_commit") != head:
         raise ValueError("reported revision differs from pinned input")
     if report.get("safe_to_skip_unlisted_tests") is not False:
@@ -151,54 +148,20 @@ def evaluate(
     if report.get("coverage", {}).get("status") != "PARTIAL":
         raise ValueError("static candidates must not claim full coverage")
 
-    actual: dict[str, set[str]] = {base: set(), head: set()}
-    compact_actual: dict[str, set[str]] = {base: set(), head: set()}
-    compact_ranks: dict[tuple[str, str], int] = {}
+    source_actual: dict[str, set[str]] = {base: set(), head: set()}
+    source_ranks: dict[tuple[str, str], int] = {}
     invalid = []
-    for effect in report["effects"]:
-        entity = effect["entity"]
-        commit = entity["source_commit"]
-        if commit not in by_revision:
-            invalid.append("claim uses an unrequested revision")
-            continue
-        view = by_revision[commit]
-        def check_source(source: dict) -> bool:
-            path = source["path"]
-            return (source["source_commit"] == commit
-                    and source["source_tree"] == view["tree"]
-                    and (source["blob"], source["mode"]) == view["files"].get(path))
-        if effect.get("assessment") != "CANDIDATE_PATH" or not check_source(entity):
-            invalid.append(f"unearned/invalid source claim {entity.get('path')}")
-            continue
-        # A changed seed can also appear as an importer of another changed
-        # seed. It is already in Git's change inventory, not a newly
-        # discovered dependent; its hops must still pass evidence checks.
-        if entity["path"] not in changed:
-            actual[commit].add(entity["path"])
-        hops = effect["hops"]
-        if not hops or hops[-1]["target"]["path"] not in changed:
-            invalid.append(f"nonterminating path {entity['path']}")
-        for hop in hops:
-            a, b = hop["source"], hop["target"]
-            if (hop["relation"] != "STATIC_IMPORT" or not check_source(a)
-                    or not check_source(b)
-                    or (a["path"], b["path"]) not in view["edges"]
-                    or not hop["evidence"]
-                    or any(item.get("assessment") != "CANDIDATE" or not item.get("receipt_id")
-                           for item in hop["evidence"])):
-                invalid.append(f"unsupported/invented hop {a['path']} -> {b['path']}")
-    # An independently checked, rank-decreasing forest must cover the whole
-    # observed reverse-reachable set even when legacy path output is capped.
-    compact = report.get("candidate_source_impacts", [])
-    compact_count = report.get("candidate_source_count")
-    compact_complete = report.get("candidate_source_enumeration_complete")
-    if compact_count != len(compact) or compact_complete is not True:
+    # One finite rank-certified witness per affected source, never one per path.
+    witnesses = report.get("candidate_source_impacts", [])
+    source_count = report.get("candidate_source_count")
+    source_complete = report.get("candidate_source_enumeration_complete")
+    if source_count != len(witnesses) or source_complete is not True:
         invalid.append("distinct-source inventory is incomplete or miscounted")
-    for item in compact:
+    for item in witnesses:
         entity = item["entity"]
         commit, path = entity["source_commit"], entity["path"]
         if commit not in by_revision:
-            invalid.append(f"compact witness has unrequested revision {commit}")
+            invalid.append(f"source witness has unrequested revision {commit}")
             continue
         view = by_revision[commit]
         def source_valid(source: dict) -> bool:
@@ -210,7 +173,7 @@ def evaluate(
         next_source, next_target = hop["source"], hop["target"]
         rank = item["distance_to_change"]
         key = (commit, path)
-        if (key in compact_ranks or rank < 1
+        if (key in source_ranks or rank < 1
                 or item.get("assessment") != "CANDIDATE_PATH"
                 or not source_valid(entity) or not source_valid(next_source)
                 or not source_valid(next_target) or next_source != entity
@@ -221,46 +184,38 @@ def evaluate(
                     or not observation.get("receipt_id")
                     for observation in hop["evidence"]
                 )):
-            invalid.append(f"invalid compact witness {path}")
+            invalid.append(f"invalid source witness {path}")
         else:
-            compact_actual[commit].add(path)
-            compact_ranks[key] = rank
-    for item in compact:
+            source_actual[commit].add(path)
+            source_ranks[key] = rank
+    for item in witnesses:
         entity, hop = item["entity"], item["next_hop"]
         commit, path = entity["source_commit"], entity["path"]
-        if (commit, path) not in compact_ranks:
+        if (commit, path) not in source_ranks:
             continue
         target = hop["target"]["path"]
-        rank = compact_ranks[(commit, path)]
+        rank = source_ranks[(commit, path)]
         if target in changed and target in by_revision[commit]["files"]:
             if rank != 1:
                 invalid.append(f"seed not at rank 1 for {path}")
-        elif compact_ranks.get((commit, target)) != rank - 1:
+        elif source_ranks.get((commit, target)) != rank - 1:
             invalid.append(f"witness rank does not decrease for {path}")
-    compact_missing = {
-        r: sorted(by_revision[r]["expected"] - compact_actual[r])
-        for r in compact_actual
+    source_missing = {
+        r: sorted(by_revision[r]["expected"] - source_actual[r])
+        for r in source_actual
     }
-    compact_unexpected = {
-        r: sorted(compact_actual[r] - by_revision[r]["expected"])
-        for r in compact_actual
+    source_unexpected = {
+        r: sorted(source_actual[r] - by_revision[r]["expected"])
+        for r in source_actual
     }
-    missing = {r: sorted(by_revision[r]["expected"] - actual[r]) for r in actual}
-    unexpected = {r: sorted(actual[r] - by_revision[r]["expected"]) for r in actual}
-    explanations_truncated = any(
-        gap.get("reason") == "TRUNCATED"
-        for gap in report["coverage"]["gaps"]
-    )
     passed = result_matches_oracle(
         invalid=invalid,
-        explanation_missing=missing,
-        explanation_unexpected=unexpected,
-        source_missing=compact_missing,
-        source_unexpected=compact_unexpected,
-        explanations_truncated=explanations_truncated,
+        source_missing=source_missing,
+        source_unexpected=source_unexpected,
+        source_complete=source_complete,
     )
     return {
-        "schema": "excession.heldout-impact-evaluation.v1",
+        "schema": "excession.heldout-impact-evaluation.v2",
         "status": "MATCH" if passed else "MISMATCH",
         "upstream_repository": repository_name,
         "base_commit": base,
@@ -277,23 +232,21 @@ def evaluate(
                 "expected_affected_paths": sorted(by_revision[r]["expected"]),
             } for r in (base, head)
         },
-        "actual": {r: sorted(actual[r]) for r in (base, head)},
-        "missing": missing,
-        "unexpected": unexpected,
-        "legacy_explanations_truncated": explanations_truncated,
+        "actual": {r: sorted(source_actual[r]) for r in (base, head)},
+        "missing": source_missing,
+        "unexpected": source_unexpected,
         "invalid_hops": invalid[:50],
-        "compact_source_impacts": {
-            "reported_count": compact_count,
-            "complete_in_observed_graph": compact_complete,
-            "actual": {r: sorted(compact_actual[r]) for r in compact_actual},
-            "missing": compact_missing,
-            "unexpected": compact_unexpected,
+        "source_impacts": {
+            "reported_count": source_count,
+            "complete_in_observed_graph": source_complete,
+            "actual": {r: sorted(source_actual[r]) for r in source_actual},
+            "missing": source_missing,
+            "unexpected": source_unexpected,
         },
         "impact_coverage": report["coverage"],
-        "candidate_effect_count": len(report["effects"]),
         "impact_report_bytes": report_bytes,
-        "candidate_source_count": compact_count,
-        "candidate_source_enumeration_complete": compact_complete,
+        "candidate_source_count": source_count,
+        "candidate_source_enumeration_complete": source_complete,
         "measured_wall_seconds": {
             "oracle_git_and_ast": round(oracle_wall_s, 3),
             "excession_impact_with_indexing": round(impact_wall_s, 3),

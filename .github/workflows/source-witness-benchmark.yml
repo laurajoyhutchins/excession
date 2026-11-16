@@ -1,4 +1,4 @@
-name: Published baseline vs demand-driven source witnesses
+name: Source-bound impact acceptance and replay cost
 
 on:
   workflow_dispatch:
@@ -21,52 +21,28 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Install locked independent Python and JS source oracles
+      - name: Install independent source-oracle dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Build exact-head source witness implementation
+      - name: Build current source-witness-only executable
         shell: bash
         run: |
           set -euo pipefail
           rustup toolchain install 1.99.1 --profile minimal
           cargo +1.99.1 fetch --locked --manifest-path core/Cargo.toml
-          cargo +1.99.1 build --locked --offline --release --manifest-path core/Cargo.toml --bin excession
-      - name: Retrieve immutable published v0.2.0 reference
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin refs/tags/v0.2.0:refs/tags/v0.2.0
-          test "$(git rev-parse 'refs/tags/v0.2.0^{commit}')" = eab215a690b1654ed89ee41159abf0e525c85b76
-          mkdir -p release/downloaded release/extracted
-          gh release download v0.2.0 --repo "$GITHUB_REPOSITORY" \
-            --dir release/downloaded \
-            --pattern 'excession-v0.2.0-x86_64-unknown-linux-gnu.tar.gz*'
-          (cd release/downloaded && sha256sum -c excession-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256)
-          tar -xzf release/downloaded/excession-v0.2.0-x86_64-unknown-linux-gnu.tar.gz \
-            -C release/extracted
-          test "$(release/extracted/excession/excession --version)" = "excession 0.2.0"
-      - name: Same pinned Requests source and legacy exact evidence, published executable
+          cargo +1.99.1 build --locked --offline --release \
+            --manifest-path core/Cargo.toml --bin excession
+      - name: Check pinned Requests source and replay, including adversarial refusal
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/source-witness-benchmark
           python3 benchmarks/experiments/real_fixtures.py \
-            --bin release/extracted/excession/excession \
-            --manifest benchmarks/fixtures/real-repositories.json \
-            --out /tmp/source-witness-benchmark/v0.2.0.json \
-            --repetitions 1 --fixture requests --product-fixture requests
-      - name: Exact-head implementation and bounded-source replay, same pinned Requests source
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 benchmarks/experiments/real_fixtures.py \
             --bin core/target/release/excession \
             --manifest benchmarks/fixtures/real-repositories.json \
-            --out /tmp/source-witness-benchmark/head.json \
+            --out /tmp/source-witness-benchmark/requests.json \
             --repetitions 1 --fixture requests --product-fixture requests \
-            --source-replay --compact-impact
-      - name: Independent result comparison and cost receipts
+            --source-replay
+      - name: Validate source-only product contract and retain cost receipt
         shell: bash
         run: |
           set -euo pipefail
@@ -75,68 +51,42 @@ jobs:
           import json
 
           root = Path("/tmp/source-witness-benchmark")
-          reference = json.loads((root / "v0.2.0.json").read_text())
-          candidate = json.loads((root / "head.json").read_text())
-          if (reference["passed"], reference["failed"], candidate["passed"], candidate["failed"]) != (1, 0, 1, 0):
-              raise SystemExit("Both versions must independently pass the pinned Requests source oracle")
-          old = reference["fixtures"][0]
-          new = candidate["fixtures"][0]
-          if old["dependency_audit"]["counts"] != new["dependency_audit"]["counts"]:
-              raise SystemExit("Source inventory denominators changed across versions")
-          p = new["product_workflow"]
-          baseline = old["product_workflow"]
-          new_source = p["source_replay_acceptance"]
-          compact = p["compact_impact_acceptance"]
-          if not new_source or new_source["batch_source_count"] < 2:
-              raise SystemExit("No useful batched source witnesses were produced")
-          if (not compact or not compact["exact_source_inventory_match"]
-                  or compact["schema"] != "excession.impact.v2"
-                  or compact["compact_path_count"] != 0
-                  or compact["compact_source_count"] != new_source["batch_source_count"]
-                  or not compact["forged_compact_report_refused"]):
-              raise SystemExit("Compact impact must preserve every source and refuse forged evidence")
-          repeated = (
-              p["explain_wall_ms"] + p["audit_wall_ms"] +
-              new_source["one_selected_source_wall_ms"]
-          )
-          report = {
-              "schema": "excession.published-source-replay-comparison.v1",
-              "source_repository": "psf/requests",
-              "source_commit": old["source_commit"],
-              "published_release": "v0.2.0",
-              "published_binary_sha256": reference["binary_sha256"],
-              "candidate_binary_sha256": candidate["binary_sha256"],
-              "same_independent_import_counts": True,
-              "legacy_effects_baseline": baseline["effect_count"],
-              "legacy_effects_candidate": p["effect_count"],
-              "distinct_sources_reconstructed": new_source["batch_source_count"],
-              "batch_wall_ms": new_source["batched_source_explanation_wall_ms"],
-              "three_separate_verified_replays_wall_ms": repeated,
-              "ratio_separate_to_batch": round(repeated / max(1, new_source["batched_source_explanation_wall_ms"]), 3),
-              "published_legacy_impact_wall_ms": baseline["impact_wall_ms"],
-              "merged_legacy_impact_wall_ms": compact["legacy_impact_wall_ms"],
-              "merged_compact_impact_wall_ms": compact["compact_impact_wall_ms"],
-              "compact_to_legacy_impact_wall_ratio": round(
-                  compact["compact_impact_wall_ms"] / max(1, compact["legacy_impact_wall_ms"]), 3
+          fixture = json.loads((root / "requests.json").read_text())
+          if (fixture["passed"], fixture["failed"]) != (1, 0):
+              raise SystemExit("Pinned Requests independent source-oracle acceptance failed")
+          checked = fixture["fixtures"][0]
+          counts = checked["dependency_audit"]["counts"]
+          if counts["missing_edges"] or counts["unexpected_edges"]:
+              raise SystemExit("Independent Git/AST source-edge inventory diverged")
+          product = checked["product_workflow"]
+          sources = product["source_replay_acceptance"]
+          if (not sources or not sources["batch_source_complete"]
+                  or sources["batch_source_count"] < 2
+                  or not product["forged_report_refused"]
+                  or product["reported_coverage"] != "PARTIAL"
+                  or product["semantic_correctness"] != "NOT_EVALUATED"):
+              raise SystemExit("Source witness replay promoted or omitted evidence")
+          cost = {
+              "schema": "excession.source-only-replay-cost.v1",
+              "binary_sha256": fixture["binary_sha256"],
+              "source_commit": checked["source_commit"],
+              "source_oracle_counts": counts,
+              "not_proven_import_sites": product["not_proven_import_sites"],
+              "distinct_sources": sources["batch_source_count"],
+              "impact_report_bytes": product["impact_report_bytes"],
+              "impact_wall_ms": product["impact_wall_ms"],
+              "single_source_wall_ms": product["explain_wall_ms"],
+              "single_source_audit_wall_ms": product["audit_wall_ms"],
+              "batch_wall_ms": sources["batched_source_explanation_wall_ms"],
+              "interpretation": (
+                  "Single-host total process wall times including Git, SQL, and parser work; "
+                  "not a proof of runtime dependencies or a statistical speedup"
               ),
-              "legacy_impact_report_bytes": compact["legacy_report_bytes"],
-              "compact_impact_report_bytes": compact["compact_report_bytes"],
-              "compact_to_legacy_report_size_ratio": round(
-                  compact["compact_report_bytes"] / max(1, compact["legacy_report_bytes"]), 3
-              ),
-              "compact_impact_source_count": compact["compact_source_count"],
-              "compact_impact_effect_paths": compact["compact_path_count"],
-              "compact_source_explain_wall_ms": compact["compact_selected_source_wall_ms"],
-              "compact_source_batch_wall_ms": compact["compact_batch_wall_ms"],
-              "compact_source_audit_wall_ms": compact["compact_audit_wall_ms"],
-              "published_legacy_explain_wall_ms": baseline["explain_wall_ms"],
-              "candidate_legacy_explain_wall_ms": p["explain_wall_ms"],
-              "interpretation": "same-host command wall times including Git, analyzer, startup and replay; not semantic truth or a multi-host benchmark",
           }
-          (root / "comparison.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
-          print(json.dumps(report, indent=2, sort_keys=True))
+          (root / "cost.json").write_text(json.dumps(cost, sort_keys=True, indent=2) + "\n")
+          print(json.dumps(cost, sort_keys=True, indent=2))
           PY
-      - name: Retain results on success and failure
+      - name: Preserve receipts on success and failure
         if: always()
         uses: actions/upload-artifact@v4
         with:

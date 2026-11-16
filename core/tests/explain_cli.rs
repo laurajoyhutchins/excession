@@ -1,4 +1,4 @@
-//! End-to-end explanation replays its source-bound impact claim rather than trusting JSON.
+//! End-to-end source explanation replays pinned Git evidence instead of trusting JSON.
 use excession::json;
 use std::fs;
 use std::path::PathBuf;
@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 #[test]
-fn real_git_explanation_replays_and_refuses_tampered_claim() {
+fn real_git_source_explanation_replays_and_refuses_tampered_witness() {
     let root: PathBuf = std::env::temp_dir().join(format!(
         "excession-explain-{}-{}",
         std::process::id(),
@@ -86,10 +86,20 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
         ],
     );
     let mut report = json::parse(impact.as_bytes()).unwrap();
-    let effects = report.get("effects").unwrap().array_ref().unwrap();
-    assert!(!effects.is_empty());
-    let id = effects[0]
-        .get("claim_id")
+    assert_eq!(
+        report.get("schema").unwrap().str().unwrap(),
+        "excession.impact.v3"
+    );
+    let witnesses = report
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(!witnesses.is_empty());
+    let entity = witnesses[0].get("entity").unwrap();
+    let source = entity.get("path").unwrap().str().unwrap().to_owned();
+    let commit = entity
+        .get("source_commit")
         .unwrap()
         .str()
         .unwrap()
@@ -105,8 +115,10 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
             ".",
             "--report",
             path.to_str().unwrap(),
-            "--id",
-            &id,
+            "--source",
+            &source,
+            "--source-commit",
+            &commit,
             "--db",
             db.to_str().unwrap(),
             "--json",
@@ -117,7 +129,20 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
         explanation.get("schema").unwrap().str().unwrap(),
         "excession.explanation.v1"
     );
-    assert_eq!(explanation.get("claim_id").unwrap().str().unwrap(), id);
+    assert_eq!(
+        explanation.get("source_commit").unwrap().str().unwrap(),
+        commit
+    );
+    assert_eq!(
+        explanation.get("steps").unwrap().array_ref().unwrap()[0]
+            .get("source")
+            .unwrap()
+            .get("path")
+            .unwrap()
+            .str()
+            .unwrap(),
+        source
+    );
     assert!(
         !explanation
             .get("steps")
@@ -133,8 +158,10 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
             ".",
             "--report",
             path.to_str().unwrap(),
-            "--id",
-            &id,
+            "--source",
+            &source,
+            "--source-commit",
+            &commit,
             "--db",
             db.to_str().unwrap(),
             "--audit",
@@ -145,16 +172,21 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
         audited.get("semantic_correctness").unwrap().str().unwrap(),
         "NOT_EVALUATED"
     );
-    let mut changed = report.get("effects").unwrap().array_ref().unwrap().to_vec();
+    let mut changed = report
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap()
+        .to_vec();
     let effect = changed.get_mut(0).unwrap();
     effect.entries_mut().unwrap().insert(
         "assessment".into(),
         json::Value::string("OBSERVED_RELATIONSHIP_PATH"),
     );
-    report
-        .entries_mut()
-        .unwrap()
-        .insert("effects".into(), json::Value::array(changed));
+    report.entries_mut().unwrap().insert(
+        "candidate_source_impacts".into(),
+        json::Value::array(changed),
+    );
     fs::write(&path, report.canonical()).unwrap();
     let rejected = cmd(
         bin,
@@ -163,8 +195,10 @@ fn real_git_explanation_replays_and_refuses_tampered_claim() {
             ".",
             "--report",
             path.to_str().unwrap(),
-            "--id",
-            &id,
+            "--source",
+            &source,
+            "--source-commit",
+            &commit,
             "--db",
             db.to_str().unwrap(),
             "--json",

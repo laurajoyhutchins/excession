@@ -341,7 +341,7 @@ fn rust_only_scip_reference_enters_analysis_and_revision_impact() {
             .bool()
             .unwrap()
     );
-    let effects = impacted.get("effects").unwrap().array_ref().unwrap();
+    let effects = impacted.get("candidate_source_impacts").unwrap().array_ref().unwrap();
     assert!(effects.iter().any(|item| {
         item.get("entity")
             .unwrap()
@@ -446,7 +446,7 @@ fn configured_membership_is_visible_but_never_invents_a_dependency() {
     .unwrap();
     assert!(
         impact
-            .get("effects")
+            .get("candidate_source_impacts")
             .unwrap()
             .array_ref()
             .unwrap()
@@ -682,7 +682,7 @@ fn default_discovers_unique_revision_evidence_and_pins_replay() {
         f.head_snapshot
     );
     let effect = impact
-        .get("effects")
+        .get("candidate_source_impacts")
         .unwrap()
         .array_ref()
         .unwrap()
@@ -805,7 +805,7 @@ fn competing_scip_indexes_quarantine_only_overlapping_paths() {
     .unwrap();
     // The head-revision indexes conflict, but the base-revision index is
     // still uniquely sourced and must remain usable for historical impact.
-    let effects = impact.get("effects").unwrap().array_ref().unwrap();
+    let effects = impact.get("candidate_source_impacts").unwrap().array_ref().unwrap();
     assert!(!effects.is_empty());
     assert!(effects.iter().all(|effect| {
         effect
@@ -1059,7 +1059,7 @@ fn conflicting_configurations_remain_separate_without_blocking_scip() {
     .unwrap();
     assert!(
         impact
-            .get("effects")
+            .get("candidate_source_impacts")
             .unwrap()
             .array_ref()
             .unwrap()

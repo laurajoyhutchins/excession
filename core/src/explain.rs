@@ -24,8 +24,11 @@ fn supported_report(path: &Path) -> Result<Value> {
     }
     let bytes = fs::read(path).map_err(|e| format!("impact report: {e}"))?;
     let report = json::parse(&bytes)?;
-    if report.get("schema")?.str()? != "excession.impact.v1" {
-        return refuse("expected an excession.impact.v1 report");
+    if !matches!(
+        report.get("schema")?.str()?,
+        "excession.impact.v1" | "excession.impact.v2"
+    ) {
+        return refuse("expected an excession.impact.v1 or .v2 report");
     }
     Ok(report)
 }
@@ -61,6 +64,7 @@ fn checked_report(
     db: Option<&str>,
 ) -> Result<Value> {
     let reported = supported_report(saved_report)?;
+    let compact = reported.get("schema")?.str()? == "excession.impact.v2";
     let base = reported.get("base_commit")?.str()?;
     let head = reported.get("head_commit")?.str()?;
     let fresh = if let Some(chosen) = reported.entries()?.get("producer_selection_plan") {
@@ -85,7 +89,13 @@ fn checked_report(
             }
             (Plan::default(), Plan::default())
         };
-        impact_query::run_with_plans(repo, base, head, roots, db, &base_plan, &head_plan)?
+        if compact {
+            impact_query::run_with_plans_compact(
+                repo, base, head, roots, db, &base_plan, &head_plan,
+            )?
+        } else {
+            impact_query::run_with_plans(repo, base, head, roots, db, &base_plan, &head_plan)?
+        }
     } else if let Some(choices) = reported.entries()?.get("producer_selections") {
         let selected = |key: &str| -> Result<Option<&str>> {
             match choices.get(key)? {
@@ -93,27 +103,29 @@ fn checked_report(
                 item => Ok(Some(item.str()?)),
             }
         };
-        impact_query::run_with_evidence(
-            repo,
-            base,
-            head,
-            roots,
-            db,
-            EvidenceByRevision {
-                base: Selection {
-                    scip_snapshot: selected("base_scip_snapshot")?,
-                    graph_id: selected("base_graph_id")?,
-                    source_prefix: selected("base_source_prefix")?,
-                },
-                head: Selection {
-                    scip_snapshot: selected("head_scip_snapshot")?,
-                    graph_id: selected("head_graph_id")?,
-                    source_prefix: selected("head_source_prefix")?,
-                },
+        let selections = EvidenceByRevision {
+            base: Selection {
+                scip_snapshot: selected("base_scip_snapshot")?,
+                graph_id: selected("base_graph_id")?,
+                source_prefix: selected("base_source_prefix")?,
             },
-        )?
+            head: Selection {
+                scip_snapshot: selected("head_scip_snapshot")?,
+                graph_id: selected("head_graph_id")?,
+                source_prefix: selected("head_source_prefix")?,
+            },
+        };
+        if compact {
+            impact_query::run_with_evidence_compact(repo, base, head, roots, db, selections)?
+        } else {
+            impact_query::run_with_evidence(repo, base, head, roots, db, selections)?
+        }
     } else {
-        impact_query::run(repo, base, head, roots, db)?
+        if compact {
+            impact_query::run_compact(repo, base, head, roots, db)?
+        } else {
+            impact_query::run(repo, base, head, roots, db)?
+        }
     };
     if reported.canonical() != fresh.canonical() {
         return refuse(
@@ -131,6 +143,11 @@ fn checked_claim(
     db: Option<&str>,
 ) -> Result<(Value, Value)> {
     let report = checked_report(repo, saved_report, roots, db)?;
+    if report.get("schema")?.str()? == "excession.impact.v2" {
+        return refuse(
+            "compact reports do not contain legacy path claims; explain --source instead",
+        );
+    }
     let effect = find_claim(&report, claim_id)?.clone();
     Ok((report, effect))
 }

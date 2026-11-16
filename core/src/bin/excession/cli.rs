@@ -775,6 +775,12 @@ pub(super) fn command() -> Command {
                 .arg(Arg::new("head-source-prefix").long("head-source-prefix").num_args(1).value_parser(NonEmptyStringValueParser::new()))
 
                 .arg(
+                    Arg::new("compact")
+                        .long("compact")
+                        .help("Emit v2 distinct-source witnesses without legacy path enumeration")
+                        .action(clap::ArgAction::SetTrue),
+                )
+                .arg(
                     Arg::new("output")
                         .long("output")
                         .help("Save a replayable JSON report to a new absolute path outside the repository")
@@ -1101,6 +1107,22 @@ mod tests {
             };
             assert!(!parsed.options.0.contains_key("base"));
         }
+    }
+
+    #[test]
+    fn compact_impact_is_opt_in_and_does_not_change_other_commands() {
+        let ParseOutcome::Command(compact) =
+            parse(&strings(&["impact", ".", "--compact", "--json"])).unwrap()
+        else {
+            panic!("compact impact CLI expected");
+        };
+        assert_eq!(compact.options.get("compact"), "true");
+        assert_eq!(compact.options.get("json"), "true");
+        let ParseOutcome::Command(legacy) = parse(&strings(&["impact", "."])).unwrap() else {
+            panic!("legacy impact CLI expected");
+        };
+        assert!(!legacy.options.0.contains_key("compact"));
+        assert!(parse(&strings(&["changes", ".", "--compact"])).is_err());
     }
 
     #[test]

@@ -2,7 +2,20 @@
 
 This container runs the existing Rust Excession CLI against pinned Git objects. The HTTP layer only transports four read-only operations. It does not reimplement the analysis, scan arbitrary URLs, run tests or run user-supplied commands.
 
-## Build and run
+## One-command Docker Compose deployment
+
+On a host with Docker Compose, set up a private token once and start the service:
+
+```sh
+cp deploy/.env.example deploy/.env
+# Fill EXCESSION_SERVICE_TOKEN in deploy/.env with `openssl rand -hex 32` output.
+docker compose -f deploy/compose.yml up --build -d
+curl --fail http://127.0.0.1:8080/healthz
+```
+
+The Compose configuration binds only to localhost, never exposes the analysis process publicly, and uses a tmpfs for transient Git clones and SQLite caches. Put it behind your own HTTPS reverse proxy with authentication or an existing private ingress when remote access is required. Do not commit `deploy/.env` or log the token. Check `docker compose -f deploy/compose.yml logs excession` for clone/bootstrap errors. Clones are read-only sources and the runtime's Git history is refreshed only on service restart.
+
+## Build and run without Compose
 
 From the repository root, build with:
 
@@ -34,6 +47,14 @@ All routes except GET /healthz require Authorization: Bearer followed by the sha
 | POST /v1/agent/verify | repository, base SHA, candidate SHA, optional limit | Run Excession agent verify |
 
 Locate and context resolve HEAD to an immutable 40-character Git commit when no revision is supplied. Verify requires full SHAs. Each successful response preserves Excession's native JSON report, including coverage gaps and unresolved obligations. A result is never merge authorization.
+
+## Owner-approved Google Cloud deployment experiment
+
+A no-build Cloud Run **experiment** is staged in `deploy/cloudrun-bootstrap.mjs`. It downloads the pinned v0.2.0 Linux musl release, validates the full archive SHA-256, and starts the reviewed Rust adapter with a fixed public GitHub source allowlist. It assumes Git and tar are present in the chosen runtime image, a fact that has **not** been verified on Cloud Run. Its startup-generated token is intentionally not externally recoverable: no gateway connection is possible until a proper secret or private identity path is configured. Prefer the source-built Docker image for production.
+
+The existing engineering GCP gateway accepted an exact request but returned `approval_required`; **nothing has been deployed**. The pending, secret-free request is captured as [`cloudrun-owner-request.json`](cloudrun-owner-request.json). Its verified approval digest is `ef9ab64cd430049bad2460b6ac5d3c940a533185fc9b3ff22e456dfefa134872`.
+
+The existing [owner-approval workflow](https://github.com/laurajoyhutchins/engineering-infra/actions/workflows/mcp-tool-call-owner.yml) requires the owner to dispatch from `engineering-infra/main` with the JSON in `call_request` and the digest in `approved_digest`. This approval is not a grant of cloud permissions. The isolated tool identity is ordinarily a Cloud Run viewer, so the attempted deployment may still fail on IAM and must never be reported as ready until a new revision is independently verified. Do not bypass its identity or approval checks.
 
 ## Use the existing Hatchable connection from ChatGPT
 

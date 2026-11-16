@@ -231,7 +231,6 @@ fn run_core(
     roots: Option<&str>,
     database: Option<&str>,
     selected: Mode<'_>,
-    detail: PathDetail,
 ) -> Result<Value> {
     if let Mode::Explicit(scope) = selected
         && ((scope.base.source_prefix.is_some() && scope.base.scip_snapshot.is_none())
@@ -242,13 +241,11 @@ fn run_core(
     let changes = change_inventory::inventory(path, base, head)?;
     let base_commit = changes.get("base_commit")?.str()?;
     let head_commit = changes.get("head_commit")?.str()?;
-    let mut effects = Vec::new();
     let mut candidate_source_impacts = Vec::new();
     let mut native_reference_impacts = Vec::new();
     let mut native_reference_count = 0usize;
     let mut native_reference_truncated = false;
     let mut candidate_source_count = 0usize;
-    let mut effect_truncated = false;
     let mut source_truncated = false;
     let mut configured_observations = Vec::new();
     let mut producer_coverage = Vec::new();
@@ -354,14 +351,8 @@ fn run_core(
             source_truncated = true;
         }
         candidate_source_impacts.extend(witnesses.into_iter().take(room));
-        // The legacy explanations enumerate distinct paths and may hit their
-        // output bound. Never let that bound suppress the next revision or
-        // the distinct-source impact inventory.
-        if detail == PathDetail::Legacy && !effect_truncated {
-            effect_truncated = walk(&graph, &changed, &mut effects)?;
-        }
     }
-    let mut truncated = effect_truncated || source_truncated || native_reference_truncated;
+    let mut truncated = source_truncated || native_reference_truncated;
     if gaps.len() > MAX_GAPS {
         gaps.truncate(MAX_GAPS);
         truncated = true;
@@ -370,18 +361,10 @@ fn run_core(
         gaps.push(obj(&[("reason", Value::string("TRUNCATED"))]));
     }
     let mut result = obj(&[
-        (
-            "schema",
-            Value::string(if detail == PathDetail::Legacy {
-                "excession.impact.v1"
-            } else {
-                "excession.impact.v2"
-            }),
-        ),
+        ("schema", Value::string("excession.impact.v3")),
         ("base_commit", Value::string(base_commit)),
         ("head_commit", Value::string(head_commit)),
         ("change_inventory_id", changes.get("report_id")?.clone()),
-        ("effects", Value::array(effects)),
         (
             "candidate_source_impacts",
             Value::array(candidate_source_impacts),
@@ -417,14 +400,6 @@ fn run_core(
             Value::Bool(!native_reference_truncated),
         ),
     ]);
-    if detail == PathDetail::Compact {
-        // An empty effects array alone is ambiguous: omitted path enumeration
-        // must not be confused with complete proof of zero alternatives.
-        result.entries_mut()?.insert(
-            "path_effects_status".into(),
-            Value::string("OMITTED_COMPACT"),
-        );
-    }
     match selected {
         Mode::Pinned(before, after) => {
             let body = result.entries_mut()?;

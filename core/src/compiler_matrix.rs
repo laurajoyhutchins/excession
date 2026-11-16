@@ -63,7 +63,9 @@ fn git_file(root: &Path, commit: &str, path: &str) -> Result<(SourceRef, Vec<u8>
 }
 
 fn live_file_matches(root: &Path, source: &SourceRef) -> Result<()> {
-    let path = root.join(&source.path).canonicalize()
+    let path = root
+        .join(&source.path)
+        .canonicalize()
         .map_err(|e| format!("declared compiler input missing from checkout: {e}"))?;
     if !path.starts_with(root) || !path.is_file() {
         return refuse("declared compiler input resolves outside the Git checkout");
@@ -92,7 +94,15 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
     let mut seen = BTreeSet::new();
     let mut prepared = Vec::new();
     for item in inputs {
-        exactly(item, &["language", "configuration", "source_prefix", "declared_inputs"])?;
+        exactly(
+            item,
+            &[
+                "language",
+                "configuration",
+                "source_prefix",
+                "declared_inputs",
+            ],
+        )?;
         let language = item.get("language")?.str()?;
         let expected_name = match language {
             "rust" => "Cargo.toml",
@@ -102,7 +112,9 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
         };
         let config = item.get("configuration")?.str()?;
         if !config.ends_with(expected_name) {
-            return refuse(format!("compiler matrix {language} needs a {expected_name}"));
+            return refuse(format!(
+                "compiler matrix {language} needs a {expected_name}"
+            ));
         }
         let prefix = match item.get("source_prefix")? {
             Value::Null => None,
@@ -162,8 +174,7 @@ fn entry(check: &Check, receipt: &Value) -> Result<Value> {
     if receipt.get("schema")?.str()? != "excession.compiler-check.v1"
         || receipt.get("language")?.str()? != check.language
         || receipt.get("configuration")?.get("path")?.str()? != check.configuration
-        || receipt.get("source_scope")?.str()?
-            != check.source_prefix.as_deref().unwrap_or(".")
+        || receipt.get("source_scope")?.str()? != check.source_prefix.as_deref().unwrap_or(".")
     {
         return refuse("compiler matrix child receipt does not match declared configuration");
     }
@@ -182,25 +193,48 @@ fn entry(check: &Check, receipt: &Value) -> Result<Value> {
 }
 
 fn build_report(source: &SourceRef, checks: Vec<Value>) -> Result<Value> {
-    let passed = checks.iter().all(|v| v.get("status").ok()
-        .and_then(|v| v.str().ok()) == Some("PASS"));
+    let passed = checks
+        .iter()
+        .all(|v| v.get("status").ok().and_then(|v| v.str().ok()) == Some("PASS"));
     obj(&[
         ("schema", Value::string(REPORT_SCHEMA)),
         ("source_commit", Value::string(&source.commit)),
         ("source_tree", Value::string(&source.tree)),
         ("manifest", source_doc(source)),
         ("checks", Value::array(checks)),
-        ("status", Value::string(if passed { "PASS" } else { "FAIL" })),
-        ("coverage", obj(&[
-            ("listed_configurations", Value::string("ALL_DECLARED_CHECKS_EXECUTED")),
-            ("configuration_completeness", Value::string("USER_DECLARATION_NOT_EXHAUSTIVE")),
-            ("declared_inputs", Value::string("GIT_AUTHENTICATED_NOT_COMPILER_MEMBERSHIP")),
-            ("dependency_closure", Value::string("NOT_ESTABLISHED")),
-        ])),
-        ("execution_authority", Value::string("TRUSTED_LOCAL_NOT_ATTESTED")),
-        ("artifact_build_provenance", Value::string("NOT_ESTABLISHED")),
+        (
+            "status",
+            Value::string(if passed { "PASS" } else { "FAIL" }),
+        ),
+        (
+            "coverage",
+            obj(&[
+                (
+                    "listed_configurations",
+                    Value::string("ALL_DECLARED_CHECKS_EXECUTED"),
+                ),
+                (
+                    "configuration_completeness",
+                    Value::string("USER_DECLARATION_NOT_EXHAUSTIVE"),
+                ),
+                (
+                    "declared_inputs",
+                    Value::string("GIT_AUTHENTICATED_NOT_COMPILER_MEMBERSHIP"),
+                ),
+                ("dependency_closure", Value::string("NOT_ESTABLISHED")),
+            ]),
+        ),
+        (
+            "execution_authority",
+            Value::string("TRUSTED_LOCAL_NOT_ATTESTED"),
+        ),
+        (
+            "artifact_build_provenance",
+            Value::string("NOT_ESTABLISHED"),
+        ),
         ("rea", Value::string("NOT_ESTABLISHED")),
-    ]).stamp_id("report_id")
+    ])
+    .stamp_id("report_id")
 }
 
 fn batch(source: &SourceRef, report: &Value) -> Result<Batch> {
@@ -231,8 +265,14 @@ fn batch(source: &SourceRef, report: &Value) -> Result<Batch> {
                 ("status", report.get("status")?.clone()),
                 ("checks", report.get("checks")?.clone()),
                 ("coverage", report.get("coverage")?.clone()),
-                ("execution_authority", report.get("execution_authority")?.clone()),
-                ("artifact_build_provenance", report.get("artifact_build_provenance")?.clone()),
+                (
+                    "execution_authority",
+                    report.get("execution_authority")?.clone(),
+                ),
+                (
+                    "artifact_build_provenance",
+                    report.get("artifact_build_provenance")?.clone(),
+                ),
                 ("rea", report.get("rea")?.clone()),
             ]),
         }],
@@ -240,7 +280,9 @@ fn batch(source: &SourceRef, report: &Value) -> Result<Batch> {
 }
 
 fn snapshot(mut report: Value, id: &str) -> Result<Value> {
-    report.entries_mut()?.insert("snapshot_id".into(), Value::string(id));
+    report
+        .entries_mut()?
+        .insert("snapshot_id".into(), Value::string(id));
     Ok(report)
 }
 
@@ -251,7 +293,9 @@ pub fn run(db: &Db, request: MatrixRequest<'_>) -> Result<Value> {
     if !request.trusted_local {
         return refuse("compiler matrix execution requires --trusted-local true");
     }
-    let root = request.repo.canonicalize()
+    let root = request
+        .repo
+        .canonicalize()
         .map_err(|e| format!("resolve compiler matrix checkout: {e}"))?;
     git::verify_repo(&root)?;
     git::clean(&root)?;
@@ -263,7 +307,10 @@ pub fn run(db: &Db, request: MatrixRequest<'_>) -> Result<Value> {
     live_file_matches(&root, &source)?;
     // No native tool executes until every tracked declaration is validated.
     for check in &checks {
-        live_file_matches(&root, &SourceRef::from_git(&root, &commit, &check.configuration)?)?;
+        live_file_matches(
+            &root,
+            &SourceRef::from_git(&root, &commit, &check.configuration)?,
+        )?;
         for dependency in &check.declared_inputs {
             live_file_matches(&root, dependency)?;
         }
@@ -276,15 +323,18 @@ pub fn run(db: &Db, request: MatrixRequest<'_>) -> Result<Value> {
             "python" => request.python_tool,
             _ => unreachable!("validated language"),
         };
-        let receipt = compiler_check::run(db, Request {
-            repo: &root,
-            revision: &commit,
-            language: &check.language,
-            configuration: &check.configuration,
-            source_prefix: check.source_prefix.as_deref(),
-            executable,
-            trusted_local: true,
-        })?;
+        let receipt = compiler_check::run(
+            db,
+            Request {
+                repo: &root,
+                revision: &commit,
+                language: &check.language,
+                configuration: &check.configuration,
+                source_prefix: check.source_prefix.as_deref(),
+                executable,
+                trusted_local: true,
+            },
+        )?;
         results.push(entry(check, &receipt)?);
     }
     git::clean(&root)?;
@@ -313,8 +363,12 @@ pub fn audit(db: &Db, repo: &Path, revision: &str, id: &str) -> Result<Value> {
     if rows.len() != 1 {
         return refuse("compiler matrix snapshot must contain exactly one receipt");
     }
-    let receipt = json::parse(rows[0][0].as_deref()
-        .ok_or("missing compiler matrix receipt")?.as_bytes())?;
+    let receipt = json::parse(
+        rows[0][0]
+            .as_deref()
+            .ok_or("missing compiler matrix receipt")?
+            .as_bytes(),
+    )?;
     if receipt.get("producer")?.str()? != "excession:compiler-matrix"
         || receipt.get("version")?.str()? != "1"
     {
@@ -322,7 +376,8 @@ pub fn audit(db: &Db, repo: &Path, revision: &str, id: &str) -> Result<Value> {
     }
     let raw = receipt.get("raw_json")?.str()?;
     let claimed = json::parse(raw.as_bytes())?;
-    if raw != claimed.canonical() || claimed.get("schema")?.str()? != REPORT_SCHEMA
+    if raw != claimed.canonical()
+        || claimed.get("schema")?.str()? != REPORT_SCHEMA
         || !claimed.content_id_matches("report_id")?
         || receipt.get("native_id")?.str()? != claimed.get("report_id")?.str()?
     {
@@ -364,7 +419,8 @@ mod tests {
 
     #[test]
     fn bounded_manifest_and_schema_are_required() {
-        let empty = json::parse(br#"{"schema":"excession.compiler-matrix-config.v1","checks":[]}"#).unwrap();
+        let empty = json::parse(br#"{"schema":"excession.compiler-matrix-config.v1","checks":[]}"#)
+            .unwrap();
         assert!(exactly(&empty, &["schema", "checks"]).is_ok());
         assert!(exactly(&empty, &["schema", "checks", "more"]).is_err());
     }
@@ -378,11 +434,24 @@ mod tests {
             blob: "c".repeat(40),
             mode: "100644".into(),
         };
-        let report = build_report(&source, vec![
-            obj(&[("status", Value::string("PASS"))]),
-            obj(&[("status", Value::string("FAIL"))]),
-        ]).unwrap();
+        let report = build_report(
+            &source,
+            vec![
+                obj(&[("status", Value::string("PASS"))]),
+                obj(&[("status", Value::string("FAIL"))]),
+            ],
+        )
+        .unwrap();
         assert_eq!(report.get("status").unwrap().str().unwrap(), "FAIL");
-        assert_eq!(report.get("coverage").unwrap().get("dependency_closure").unwrap().str().unwrap(), "NOT_ESTABLISHED");
+        assert_eq!(
+            report
+                .get("coverage")
+                .unwrap()
+                .get("dependency_closure")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "NOT_ESTABLISHED"
+        );
     }
 }

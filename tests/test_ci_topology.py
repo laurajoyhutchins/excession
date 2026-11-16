@@ -116,7 +116,7 @@ class CiTopology(unittest.TestCase):
             "  issues:",
             "github.event.issue.user.id == 219002713",
             "github.actor_id == '219002713'",
-            "permissions:\\n  contents: read",
+            "permissions:\n  contents: read",
             "tools/github_analysis.py validate",
             "tools/github_analysis.py execute",
             "retention-days: 30",

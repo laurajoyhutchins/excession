@@ -505,5 +505,186 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
             .bool()
             .unwrap()
     );
+
+    // v2 keeps every independent source certificate but does no path walk.
+    // Both reports use the same exact source graph and producer selection.
+    let compact_path = root.join("impact-compact.json");
+    let compact_out = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .args([
+            "impact",
+            repo.to_str().unwrap(),
+            "--base",
+            &base,
+            "--head",
+            &head,
+            "--roots",
+            "pkg",
+            "--db",
+            database.to_str().unwrap(),
+            "--compact",
+            "--json",
+            "--output",
+            compact_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        compact_out.status.success(),
+        "compact impact: {}",
+        String::from_utf8_lossy(&compact_out.stderr)
+    );
+    let compact = json::parse(&compact_out.stdout).unwrap();
+    assert_eq!(compact.get("schema").unwrap().str().unwrap(), "excession.impact.v2");
+    assert_eq!(
+        compact.get("path_effects_status").unwrap().str().unwrap(),
+        "OMITTED_COMPACT"
+    );
+    assert!(compact.get("effects").unwrap().array_ref().unwrap().is_empty());
+    assert_eq!(
+        compact.get("candidate_source_impacts").unwrap(),
+        result.get("candidate_source_impacts").unwrap(),
+        "ranked source inventory must be identical with legacy path enumeration disabled"
+    );
+    assert_eq!(
+        compact.get("candidate_source_count").unwrap(),
+        result.get("candidate_source_count").unwrap()
+    );
+    assert_eq!(
+        compact.get("candidate_source_enumeration_complete").unwrap(),
+        result.get("candidate_source_enumeration_complete").unwrap()
+    );
+    assert_eq!(
+        compact.get("change_inventory_id").unwrap(),
+        result.get("change_inventory_id").unwrap()
+    );
+    assert!(compact.get("unknown").unwrap().array_ref().unwrap().iter().all(
+        |gap| gap.get("reason").unwrap().str().unwrap() != "TRUNCATED"
+    ));
+    assert!(!compact.get("safe_to_skip_unlisted_tests").unwrap().bool().unwrap());
+    assert!(
+        compact_out.stdout.len() < output.stdout.len(),
+        "compact output should not serialize hundreds of alternative path proofs"
+    );
+    assert_eq!(
+        fs::read_to_string(&compact_path).unwrap().trim(),
+        compact.canonical()
+    );
+
+    let selected = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .args([
+            "explain",
+            repo.to_str().unwrap(),
+            "--report",
+            compact_path.to_str().unwrap(),
+            "--source",
+            "pkg/l7_0.py",
+            "--source-commit",
+            &base,
+            "--db",
+            database.to_str().unwrap(),
+            "--roots",
+            "pkg",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        selected.status.success(),
+        "source explanation: {}",
+        String::from_utf8_lossy(&selected.stderr)
+    );
+    let explanation = json::parse(&selected.stdout).unwrap();
+    assert_eq!(
+        explanation.get("steps").unwrap().array_ref().unwrap().len(),
+        7
+    );
+    assert_eq!(
+        explanation.get("source_commit").unwrap().str().unwrap(),
+        base
+    );
+
+    let batched = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .args([
+            "explain",
+            repo.to_str().unwrap(),
+            "--report",
+            compact_path.to_str().unwrap(),
+            "--all-sources",
+            "--db",
+            database.to_str().unwrap(),
+            "--roots",
+            "pkg",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        batched.status.success(),
+        "source batch: {}",
+        String::from_utf8_lossy(&batched.stderr)
+    );
+    let batch = json::parse(&batched.stdout).unwrap();
+    assert_eq!(batch.get("count").unwrap().integer().unwrap(), 42);
+    assert!(batch.get("source_inventory_complete").unwrap().bool().unwrap());
+    assert_eq!(
+        batch.get("replayed_impact_report_id").unwrap(),
+        compact.get("report_id").unwrap()
+    );
+
+    let unavailable_legacy = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .args([
+            "explain",
+            repo.to_str().unwrap(),
+            "--report",
+            compact_path.to_str().unwrap(),
+            "--id",
+            result.get("effects").unwrap().array_ref().unwrap()[0]
+                .get("claim_id").unwrap().str().unwrap(),
+            "--db",
+            database.to_str().unwrap(),
+            "--roots",
+            "pkg",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!unavailable_legacy.status.success());
+    assert!(
+        String::from_utf8_lossy(&unavailable_legacy.stderr)
+            .contains("compact reports do not contain legacy path claims")
+    );
+
+    // A forged source witness may be self-consistent JSON, but is not an
+    // authenticated replay of the Git-indexed relationship inventory.
+    let mut poisoned = compact.clone();
+    let first = poisoned.get("candidate_source_impacts").unwrap().array_ref().unwrap()[0].clone();
+    let mut broken = first;
+    broken.entries_mut().unwrap().insert(
+        "assessment".into(),
+        json::Value::string("OBSERVED"),
+    );
+    let mut rows = poisoned.get("candidate_source_impacts").unwrap().array_ref().unwrap().to_vec();
+    rows[0] = broken;
+    poisoned.entries_mut().unwrap().insert(
+        "candidate_source_impacts".into(),
+        json::Value::array(rows),
+    );
+    fs::write(&compact_path, poisoned.canonical()).unwrap();
+    let forged = Command::new(env!("CARGO_BIN_EXE_excession"))
+        .args([
+            "explain",
+            repo.to_str().unwrap(),
+            "--report",
+            compact_path.to_str().unwrap(),
+            "--all-sources",
+            "--db",
+            database.to_str().unwrap(),
+            "--roots",
+            "pkg",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!forged.status.success());
     fs::remove_dir_all(root).unwrap();
 }

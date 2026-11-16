@@ -172,7 +172,8 @@ class ImpactIndependentAcceptance(unittest.TestCase):
 
         report = self.run_impact()
         self.assertEqual(report, self.run_impact(), "reports should be deterministic")
-        self.assertEqual(report["schema"], "excession.impact.v1")
+        self.assertEqual(report["schema"], "excession.impact.v3")
+        self.assertNotIn("effects", report)
         self.assertEqual((report["base_commit"], report["head_commit"]),
                          (self.base, self.head))
         self.assertFalse(report["safe_to_skip_unlisted_tests"])
@@ -184,42 +185,63 @@ class ImpactIndependentAcceptance(unittest.TestCase):
         )
 
         actual: dict[str, set[str]] = {self.base: set(), self.head: set()}
-        self.assertTrue(report["effects"], "fixture should produce candidate impacts")
-        for effect in report["effects"]:
-            self.assertEqual(effect["assessment"], "CANDIDATE_PATH")
-            entity = effect["entity"]
+        self.assertTrue(report["candidate_source_impacts"], "expected source witnesses")
+        witnesses_by_revision = {}
+        for witness in report["candidate_source_impacts"]:
+            self.assertEqual(witness["assessment"], "CANDIDATE_PATH")
+            entity = witness["entity"]
             rev = entity["source_commit"]
             self.assertIn(rev, actual)
             self.evidence_matches_git(entity, rev, trees[rev], inventories[rev])
             actual[rev].add(entity["path"])
-            hops = effect["hops"]
-            self.assertGreater(len(hops), 0)
-            self.assertIn(hops[-1]["target"]["path"], changed)
-            for hop in hops:
-                self.assertEqual(hop["relation"], "STATIC_IMPORT")
-                source, target = hop["source"], hop["target"]
-                self.evidence_matches_git(source, rev, trees[rev], inventories[rev])
-                self.evidence_matches_git(target, rev, trees[rev], inventories[rev])
-                self.assertIn((source["path"], target["path"]), native_edges[rev])
-                self.assertTrue(hop["evidence"])
-                self.assertTrue(all(
-                    e["assessment"] == "CANDIDATE" and e["receipt_id"]
-                    for e in hop["evidence"]
-                ))
+            key = (rev, entity["path"])
+            self.assertNotIn(key, witnesses_by_revision)
+            witnesses_by_revision[key] = witness
+            hop = witness["next_hop"]
+            self.assertEqual(hop["relation"], "STATIC_IMPORT")
+            source, target = hop["source"], hop["target"]
+            self.assertEqual(source, entity)
+            self.evidence_matches_git(source, rev, trees[rev], inventories[rev])
+            self.evidence_matches_git(target, rev, trees[rev], inventories[rev])
+            self.assertIn((source["path"], target["path"]), native_edges[rev])
+            self.assertTrue(hop["evidence"])
+            self.assertTrue(all(
+                e["assessment"] == "CANDIDATE" and e["receipt_id"]
+                for e in hop["evidence"]
+            ))
+        for (rev, path), witness in witnesses_by_revision.items():
+            rank = witness["distance_to_change"]
+            self.assertGreaterEqual(rank, 1)
+            target = witness["next_hop"]["target"]["path"]
+            if target in changed:
+                self.assertEqual(rank, 1)
+            else:
+                self.assertIn((rev, target), witnesses_by_revision)
+                self.assertEqual(
+                    witnesses_by_revision[(rev, target)]["distance_to_change"], rank - 1
+                )
+        self.assertTrue(report["candidate_source_enumeration_complete"])
+        self.assertEqual(report["candidate_source_count"], len(witnesses_by_revision))
         self.assertEqual(actual, expected)
         self.assertNotIn("pkg/unrelated.py", actual[self.head])
         self.assertEqual(git(self.repo, "status", "--porcelain"), "")
 
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
-        claim = report["effects"][0]["claim_id"]
+        selected = report["candidate_source_impacts"][0]
+        selected_path = selected["entity"]["path"]
+        selected_commit = selected["entity"]["source_commit"]
         explanation = json.loads(command(
-            BIN, "explain", self.repo, "--report", self.report_path, "--id", claim,
+            BIN, "explain", self.repo, "--report", self.report_path,
+            "--source", selected_path, "--source-commit", selected_commit,
             "--db", self.db, "--roots", "pkg", "--json",
         ).stdout)
-        self.assertEqual(explanation["claim_id"], claim)
-        self.assertEqual(explanation["steps"], report["effects"][0]["hops"])
+        self.assertEqual(explanation["source_commit"], selected_commit)
+        self.assertEqual(explanation["selection_kind"], "DISTINCT_SOURCE_WITNESS")
+        self.assertEqual(explanation["steps"][0], selected["next_hop"])
+        self.assertEqual(len(explanation["steps"]), selected["distance_to_change"])
         audit = json.loads(command(
-            BIN, "explain", self.repo, "--report", self.report_path, "--id", claim,
+            BIN, "explain", self.repo, "--report", self.report_path,
+            "--source", selected_path, "--source-commit", selected_commit,
             "--db", self.db, "--roots", "pkg", "--audit",
         ).stdout)
         self.assertEqual(audit["replay"], "PASS")
@@ -227,16 +249,20 @@ class ImpactIndependentAcceptance(unittest.TestCase):
 
     def test_explanation_rejects_tampered_report(self) -> None:
         report = self.run_impact()
-        self.assertTrue(report["effects"])
-        claim = report["effects"][0]["claim_id"]
-        report["effects"][0]["hops"][0]["target"]["blob"] = "f" * 40
+        self.assertTrue(report["candidate_source_impacts"])
+        witness = report["candidate_source_impacts"][0]
+        source_path = witness["entity"]["path"]
+        source_commit = witness["entity"]["source_commit"]
+        witness["next_hop"]["target"]["blob"] = "f" * 40
         self.report_path.write_text(json.dumps(report), encoding="utf-8")
         proc = command(
-            BIN, "explain", self.repo, "--report", self.report_path, "--id", claim,
+            BIN, "explain", self.repo, "--report", self.report_path,
+            "--source", source_path, "--source-commit", source_commit,
             "--db", self.db, "--roots", "pkg", "--json", check=False,
         )
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("REFUSED", proc.stderr.upper())
+
 
 
 if __name__ == "__main__":

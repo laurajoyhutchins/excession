@@ -1,5 +1,3 @@
-// Cloud Run no-build bootstrap for a pinned, published Excession CLI.
-// This is a deployment experiment; the primary production path remains deploy/Dockerfile.
 import {mkdtempSync,writeFileSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';

@@ -1031,26 +1031,29 @@ fn execute(args: &[String]) -> Result<Response> {
             ]
             .iter()
             .any(|key| opt.0.contains_key(*key));
+            let compact = opt.get_or("compact", "false") == "true";
             let result = if explicit {
-                impact_query::run_with_evidence(
-                    repo,
-                    base,
-                    head,
-                    roots,
-                    db_arg,
-                    impact_query::EvidenceByRevision {
-                        base: Selection {
-                            scip_snapshot: opt.0.get("base-scip-snapshot").map(String::as_str),
-                            graph_id: opt.0.get("base-graph-id").map(String::as_str),
-                            source_prefix: opt.0.get("base-source-prefix").map(String::as_str),
-                        },
-                        head: Selection {
-                            scip_snapshot: opt.0.get("head-scip-snapshot").map(String::as_str),
-                            graph_id: opt.0.get("head-graph-id").map(String::as_str),
-                            source_prefix: opt.0.get("head-source-prefix").map(String::as_str),
-                        },
+                let selected = impact_query::EvidenceByRevision {
+                    base: Selection {
+                        scip_snapshot: opt.0.get("base-scip-snapshot").map(String::as_str),
+                        graph_id: opt.0.get("base-graph-id").map(String::as_str),
+                        source_prefix: opt.0.get("base-source-prefix").map(String::as_str),
                     },
-                )?
+                    head: Selection {
+                        scip_snapshot: opt.0.get("head-scip-snapshot").map(String::as_str),
+                        graph_id: opt.0.get("head-graph-id").map(String::as_str),
+                        source_prefix: opt.0.get("head-source-prefix").map(String::as_str),
+                    },
+                };
+                if compact {
+                    impact_query::run_with_evidence_compact(
+                        repo, base, head, roots, db_arg, selected,
+                    )?
+                } else {
+                    impact_query::run_with_evidence(repo, base, head, roots, db_arg, selected)?
+                }
+            } else if compact {
+                impact_query::run_auto_compact(repo, base, head, roots, db_arg)?
             } else {
                 impact_query::run_auto(repo, base, head, roots, db_arg)?
             };

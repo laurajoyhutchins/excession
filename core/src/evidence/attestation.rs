@@ -95,6 +95,27 @@ fn policy(repo: &str, signer: &str, source_ref: &str) -> Result<()> {
     Ok(())
 }
 
+/// GHSA-wjmr-j3rp-mh2g and GHSA-4mq3-hpgx-9cx8: older gh versions
+/// permitted signer-workflow prefix matches or case-insensitive source refs.
+fn require_patched_gh(tool: &Value) -> Result<()> {
+    let version = tool.get("version")?.str()?;
+    let raw = version.lines().next()
+        .and_then(|line| line.strip_prefix("gh version "))
+        .and_then(|line| line.split_whitespace().next())
+        .ok_or("cannot establish GitHub CLI verifier version")?;
+    let mut parts = raw.trim_start_matches('v').split('.');
+    let major = parts.next().ok_or("missing gh major version")?
+        .parse::<u32>().map_err(|_| "invalid gh major version")?;
+    let minor = parts.next().ok_or("missing gh minor version")?
+        .parse::<u32>().map_err(|_| "invalid gh minor version")?;
+    let _patch = parts.next().ok_or("missing gh patch version")?
+        .parse::<u32>().map_err(|_| "invalid gh patch version")?;
+    if parts.next().is_some() || major < 2 || (major == 2 && minor < 102) {
+        return refuse("GitHub attestation verification requires patched gh >= 2.102.0");
+    }
+    Ok(())
+}
+
 fn verified_bundle(report: &Value, expected_artifact_sha256: &str) -> Result<Value> {
     let records = report.array_ref()?;
     if records.is_empty() || records.len() > MAX_ATTESTATIONS {
@@ -146,6 +167,7 @@ fn invoke_verifier(
 ) -> Result<(Value, Value)> {
     let tool = tool_path("gh", None)?;
     let toolchain = toolchain(&tool, "gh")?;
+    require_patched_gh(&toolchain)?;
     let mut command = Command::new(&tool);
     command
         .arg("attestation")
@@ -304,6 +326,7 @@ fn validate_claim(report: &Value) -> Result<()> {
         return refuse("signed artifact verifier metadata invalid");
     }
     hex_sha256(verifier.get("launcher_sha256")?.str()?)?;
+    require_patched_gh(verifier)?;
     Ok(())
 }
 
@@ -562,6 +585,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_gh_versions_before_complete_workflow_and_ref_matching_fixes() {
+        for version in ["gh version 2.96.0 (test)", "gh version 2.101.9 (test)"] {
+            assert!(require_patched_gh(&obj(&[("version", Value::string(version))])).is_err());
+        }
+        assert!(require_patched_gh(&obj(&[
+            ("version", Value::string("gh version 2.102.0 (test)"))
+        ])).is_ok());
+    }
+
+    #[test]
     fn signer_and_git_source_ref_are_explicit_and_bounded() {
         assert!(
             policy(
@@ -613,7 +646,7 @@ mod tests {
                 ("name", Value::string("gh")),
                 ("executable", Value::string("/usr/bin/gh")),
                 ("launcher_sha256", Value::string("d".repeat(64))),
-                ("version", Value::string("gh 2.x")),
+                ("version", Value::string("gh version 2.102.0 (test)")),
                 (
                     "identity_scope",
                     Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN"),

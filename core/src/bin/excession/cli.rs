@@ -997,8 +997,13 @@ mod tests {
     #[test]
     fn explain_accepts_one_source_or_bounded_batch_not_legacy_claim_ids() {
         let selected = parse(&strings(&[
-            "explain", "--report", "/tmp/report.json",
-            "--source", "pkg/affected.py", "--source-commit", "commit",
+            "explain",
+            "--report",
+            "/tmp/report.json",
+            "--source",
+            "pkg/affected.py",
+            "--source-commit",
+            "commit",
         ]))
         .unwrap();
         let ParseOutcome::Command(parsed) = selected else {
@@ -1006,14 +1011,41 @@ mod tests {
         };
         assert_eq!(parsed.options.get("source"), "pkg/affected.py");
         assert_eq!(parsed.options.get("source-commit"), "commit");
-        assert!(parse(&strings(&[
-            "explain", "--report", "/tmp/report.json", "--all-sources", "--json",
-        ])).is_ok());
+        assert!(
+            parse(&strings(&[
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--all-sources",
+                "--json",
+            ]))
+            .is_ok()
+        );
         for args in [
             vec!["explain", "--report", "/tmp/report.json"],
-            vec!["explain", "--report", "/tmp/report.json", "--id", "claim-id"],
-            vec!["explain", "--report", "/tmp/report.json", "--all-sources", "--source", "pkg/a.py"],
-            vec!["explain", "--report", "/tmp/report.json", "--source-commit", "commit", "--all-sources"],
+            vec![
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--id",
+                "claim-id",
+            ],
+            vec![
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--all-sources",
+                "--source",
+                "pkg/a.py",
+            ],
+            vec![
+                "explain",
+                "--report",
+                "/tmp/report.json",
+                "--source-commit",
+                "commit",
+                "--all-sources",
+            ],
         ] {
             assert!(parse(&strings(&args)).is_err(), "{args:?}");
         }
@@ -1053,8 +1085,7 @@ mod tests {
 
     #[test]
     fn source_witness_impact_is_the_only_command_shape() {
-        let ParseOutcome::Command(impact) =
-            parse(&strings(&["impact", ".", "--json"])).unwrap()
+        let ParseOutcome::Command(impact) = parse(&strings(&["impact", ".", "--json"])).unwrap()
         else {
             panic!("impact CLI expected");
         };

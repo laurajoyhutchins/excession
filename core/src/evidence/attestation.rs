@@ -614,10 +614,14 @@ mod tests {
                 ("executable", Value::string("/usr/bin/gh")),
                 ("launcher_sha256", Value::string("d".repeat(64))),
                 ("version", Value::string("gh 2.x")),
-                ("identity_scope", Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN")),
+                (
+                    "identity_scope",
+                    Value::string("LAUNCHER_AND_VERSION_NOT_TRANSITIVE_TOOLCHAIN"),
+                ),
             ]),
             obj(&[("bundle", Value::string("test-only"))]),
-        )        .unwrap();
+        )
+        .unwrap();
         assert!(validate_claim(&v).is_ok());
         assert_eq!(
             v.get("source_artifact_relation").unwrap().str().unwrap(),

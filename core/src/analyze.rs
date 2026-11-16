@@ -176,6 +176,17 @@ pub fn run_if_supported(
     db_override: Option<&str>,
 ) -> Result<Option<(Value, PathBuf)>> {
     let discovered = discovery::inspect(path, rev)?;
+    run_if_supported_discovered(&discovered, explicit_roots, db_override)
+}
+
+/// Analyze one already resolved Git commit. Every index operation still
+/// independently authenticates Git objects against the selected revision.
+/// Reusing discovery avoids resolving a mutable ref twice within one request.
+fn run_if_supported_discovered(
+    discovered: &Discovery,
+    explicit_roots: Option<&str>,
+    db_override: Option<&str>,
+) -> Result<Option<(Value, PathBuf)>> {
     let roots: Vec<String> = if let Some(spec) = explicit_roots {
         let roots: Vec<String> = spec
             .split(',')
@@ -202,7 +213,7 @@ pub fn run_if_supported(
     let mut normalized_roots = roots;
     normalized_roots.sort();
     normalized_roots.dedup();
-    let languages = scoped_languages(&discovered, &normalized_roots, explicit_roots.is_some())?;
+    let languages = scoped_languages(discovered, &normalized_roots, explicit_roots.is_some())?;
     let capabilities = doctor::report();
     let cap = capabilities.get("capabilities")?;
     for producer in source_capabilities::STATIC_MODULE_PRODUCERS {
@@ -248,8 +259,8 @@ pub fn run_if_supported(
         let to = item.get("target_name")?.str()?;
         let source_module = catalog.get(from).ok_or("missing indexed source module")?;
         let target_module = catalog.get(to).ok_or("missing indexed target module")?;
-        let from_source = source(&discovered, source_module);
-        let to_source = source(&discovered, target_module);
+        let from_source = source(discovered, source_module);
+        let to_source = source(discovered, target_module);
         let observation = obj(&[
             ("source", from_source.clone()),
             ("target", to_source.clone()),
@@ -338,8 +349,6 @@ pub fn run_if_supported(
 /// candidates. This is the single report assembly point for explicit and
 /// default selection, so coverage and receipt handling cannot drift.
 struct Compose<'a> {
-    path: &'a Path,
-    rev: &'a str,
     roots: Option<&'a str>,
     database: Option<&'a str>,
     discovered: &'a Discovery,
@@ -351,8 +360,6 @@ struct Compose<'a> {
 
 fn compose(request: Compose<'_>) -> Result<(Value, PathBuf)> {
     let Compose {
-        path,
-        rev,
         roots,
         database,
         discovered,
@@ -366,7 +373,7 @@ fn compose(request: Compose<'_>) -> Result<(Value, PathBuf)> {
         database.map(Path::new).unwrap_or(&discovered.index_path),
         "SQLite",
     )?;
-    let (mut report, _) = match run_if_supported(path, rev, roots, database)? {
+    let (mut report, _) = match run_if_supported_discovered(discovered, roots, database)? {
         Some(current) => current,
         None => {
             let gaps = discovered.report()?.get("coverage")?.get("gaps")?.clone();
@@ -469,8 +476,6 @@ pub fn run_with_evidence(
         )?
     };
     compose(Compose {
-        path,
-        rev,
         roots,
         database: db_override,
         discovered: &discovered,
@@ -503,6 +508,15 @@ pub fn run_with_plan(
     plan: &Plan,
 ) -> Result<(Value, PathBuf)> {
     let discovered = discovery::inspect(path, rev)?;
+    run_with_plan_discovered(&discovered, roots, db_override, plan)
+}
+
+fn run_with_plan_discovered(
+    discovered: &Discovery,
+    roots: Option<&str>,
+    db_override: Option<&str>,
+    plan: &Plan,
+) -> Result<(Value, PathBuf)> {
     let selected = if plan.is_empty() {
         Observed::default()
     } else {
@@ -522,11 +536,9 @@ pub fn run_with_plan(
         )?
     };
     compose(Compose {
-        path,
-        rev,
         roots,
         database: db_override,
-        discovered: &discovered,
+        discovered,
         selected,
         selection_key: "producer_selection_plan",
         selection_record: plan.document(),
@@ -554,7 +566,7 @@ pub fn run_default(
     } else {
         Plan::default()
     };
-    run_with_plan(path, rev, roots, db_override, &plan)
+    run_with_plan_discovered(&discovered, roots, db_override, &plan)
 }
 
 pub fn human(report: &Value, db_path: &Path) -> Result<String> {
@@ -569,4 +581,97 @@ pub fn human(report: &Value, db_path: &Path) -> Result<String> {
         report.get("source_commit")?.str()?,
         db_path.display()
     ))
+}
+
+#[cfg(test)]
+mod pinned_discovery_tests {
+    use super::*;
+    use std::process::Command;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn report_composition_keeps_the_resolved_git_revision_after_head_moves() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-pinned-discovery-{}-{}",
+            std::process::id(),
+            NEXT_TEST.fetch_add(1, Ordering::Relaxed),
+        ));
+        let repo = root.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| -> String {
+            let output = Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init", "-q"]);
+        fs::write(repo.join("README.md"), "before\n").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "before",
+        ]);
+        let base = git(&["rev-parse", "HEAD"]);
+        let discovered = discovery::inspect(&repo, "HEAD").unwrap();
+        assert_eq!(discovered.commit, base);
+
+        // Move a mutable ref after authenticating its original content.
+        fs::write(repo.join("README.md"), "after\n").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "after",
+        ]);
+        let head = git(&["rev-parse", "HEAD"]);
+        assert_ne!(base, head);
+
+        let database = root.join("cache.sqlite");
+        let db = database.to_str().unwrap();
+        let plan = Plan::default();
+        let old = run_with_plan_discovered(&discovered, None, Some(db), &plan)
+            .unwrap()
+            .0;
+        let old_direct = run_with_plan(&repo, &base, None, Some(db), &plan)
+            .unwrap()
+            .0;
+        assert_eq!(old.canonical(), old_direct.canonical());
+        assert_eq!(old.get("source_commit").unwrap().str().unwrap(), base);
+        assert_eq!(
+            old.get("source_tree").unwrap().str().unwrap(),
+            discovered.tree
+        );
+        let current = run_default(&repo, "HEAD", None, Some(db)).unwrap().0;
+        assert_eq!(current.get("source_commit").unwrap().str().unwrap(), head);
+        assert_ne!(current.get("source_tree"), old.get("source_tree"));
+        assert_eq!(
+            current
+                .get("coverage")
+                .unwrap()
+                .get("status")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "PARTIAL"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }

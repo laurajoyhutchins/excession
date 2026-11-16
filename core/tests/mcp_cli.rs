@@ -7,12 +7,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
-
 fn rpc(input: &mut ChildStdin, output: &mut BufReader<ChildStdout>, request: Value) -> Value {
     writeln!(input, "{request}").unwrap();
     input.flush().unwrap();
     let mut line = String::new();
-    assert!(output.read_line(&mut line).unwrap() > 0, "MCP server closed early");
+    assert!(
+        output.read_line(&mut line).unwrap() > 0,
+        "MCP server closed early"
+    );
     serde_json::from_str(&line).unwrap()
 }
 
@@ -101,7 +103,6 @@ fn stdio_agent_discovers_tools_and_authenticates_git_source() {
     )
     .unwrap();
 
-
     // An MCP client waits for initialize before sending the initialized
     // notification, then waits for tool responses by request ID. Do not rely
     // on response order for a pipelined asynchronous SDK server.
@@ -125,7 +126,11 @@ fn stdio_agent_discovers_tools_and_authenticates_git_source() {
         json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
     );
     assert_eq!(tools["id"], 2);
-    assert_eq!(tools["result"]["tools"].as_array().map(Vec::len), Some(6), "{tools}");
+    assert_eq!(
+        tools["result"]["tools"].as_array().map(Vec::len),
+        Some(6),
+        "{tools}"
+    );
     let search = rpc(
         &mut input,
         &mut output,
@@ -135,7 +140,10 @@ fn stdio_agent_discovers_tools_and_authenticates_git_source() {
     );
     assert_eq!(search["id"], 3);
     assert_eq!(search["result"]["isError"], false, "{search}");
-    assert_eq!(search["result"]["structuredContent"]["source_commit"], commit);
+    assert_eq!(
+        search["result"]["structuredContent"]["source_commit"],
+        commit
+    );
     assert_eq!(
         search["result"]["structuredContent"]["candidates"][0]["source"]["path"],
         "src/lease.py"

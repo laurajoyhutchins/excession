@@ -123,10 +123,10 @@ fn parse(root: &Path, commit: &str, source: &SourceRef, bytes: &[u8]) -> Result<
         if language != "python" && prefix.is_some() {
             return refuse("compiler matrix source_prefix is only supported for Python");
         }
-        if let Some(ref prefix) = prefix {
-            if prefix != "." {
-                git::validate_path(prefix)?;
-            }
+        if let Some(ref prefix) = prefix
+            && prefix != "."
+        {
+            git::validate_path(prefix)?;
         }
         if !seen.insert((language.to_owned(), config.to_owned(), prefix.clone())) {
             return refuse("duplicate compiler matrix configuration and scope");

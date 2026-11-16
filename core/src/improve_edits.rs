@@ -5,6 +5,7 @@ use crate::json::{Value, obj};
 use crate::{Result, analyze, digest, git, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+#[cfg(unix)]
 use std::io::{Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -173,6 +174,7 @@ fn prepare(repo: &Path, commit: &str, plan: &Value, native: &Value) -> Result<Ve
 /// Verify and edit an already checked-out regular blob through a single
 /// descriptor. Never follow a symlink in a candidate's final path, even if
 /// that path changes after Git checkout and before the write.
+#[cfg(unix)]
 fn write_pinned_regular_file(target: &Path, original: &[u8], rewritten: &[u8]) -> Result<()> {
     let path_meta =
         fs::symlink_metadata(target).map_err(|e| format!("inspect candidate source: {e}"))?;
@@ -211,6 +213,13 @@ fn write_pinned_regular_file(target: &Path, original: &[u8], rewritten: &[u8]) -
     file.sync_all()
         .map_err(|e| format!("sync checked candidate source: {e}"))?;
     Ok(())
+}
+
+/// Until no-follow, file-identity verification is supported on this
+/// platform, preview remains available but mutation must fail closed.
+#[cfg(not(unix))]
+fn write_pinned_regular_file(_target: &Path, _original: &[u8], _rewritten: &[u8]) -> Result<()> {
+    refuse("native edit application is unsupported on this platform")
 }
 
 fn apply(repo: &Path, commit: &str, output: &Path, changed: &[Changed]) -> Result<()> {

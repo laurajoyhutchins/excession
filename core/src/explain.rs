@@ -116,9 +116,7 @@ fn checked_report(
             },
         };
         if compact {
-            impact_query::run_with_evidence_compact(
-                repo, base, head, roots, db, selections,
-            )?
+            impact_query::run_with_evidence_compact(repo, base, head, roots, db, selections)?
         } else {
             impact_query::run_with_evidence(repo, base, head, roots, db, selections)?
         }
@@ -146,7 +144,9 @@ fn checked_claim(
 ) -> Result<(Value, Value)> {
     let report = checked_report(repo, saved_report, roots, db)?;
     if report.get("schema")?.str()? == "excession.impact.v2" {
-        return refuse("compact reports do not contain legacy path claims; explain --source instead");
+        return refuse(
+            "compact reports do not contain legacy path claims; explain --source instead",
+        );
     }
     let effect = find_claim(&report, claim_id)?.clone();
     Ok((report, effect))

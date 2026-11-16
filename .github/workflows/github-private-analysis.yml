@@ -1,0 +1,92 @@
+name: Excession private repository analysis
+
+# Call from an owner-controlled private repository's issues workflow.
+# Source, run logs and artifacts stay in that caller's private repository.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: excession-private-analysis-${{ github.repository }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.action == 'opened' &&
+      github.event.repository.private == true &&
+      github.event.issue.title == 'Excession analysis request' &&
+      github.event.issue.user.id == 219002713 &&
+      !github.event.issue.pull_request
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout private caller Git objects
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Checkout exact public Excession tool revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: laurajoyhutchins/excession
+          ref: ${{ job.workflow_sha }}
+          path: tool
+          persist-credentials: false
+      - name: Validate caller identity and strict request contract
+        shell: bash
+        env:
+          REQUEST_ACTOR_ID: ${{ github.actor_id }}
+          PRODUCER_SHA: ${{ job.workflow_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C tool rev-parse HEAD)" = "$PRODUCER_SHA"
+          python3 tool/tools/github_analysis.py validate \
+            --event "$GITHUB_EVENT_PATH" \
+            --actor-id "$REQUEST_ACTOR_ID" \
+            --trusted-repository "$GITHUB_REPOSITORY" \
+            --out "$RUNNER_TEMP/excession-private-request.json"
+      - name: Set up locked TypeScript source parser
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: tool/.node-version
+          cache: npm
+          cache-dependency-path: tool/package-lock.json
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tool/core -> target
+      - name: Build the real pinned Excession Rust CLI
+        run: bash tool/tools/ci/prepare-excession.sh tool release
+      - name: Analyze caller's exact retained Git commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tool/tools/github_analysis.py execute \
+            --request "$RUNNER_TEMP/excession-private-request.json" \
+            --trusted-repository "$GITHUB_REPOSITORY" \
+            --local-checkout "$GITHUB_WORKSPACE/source" \
+            --tool-checkout "$GITHUB_WORKSPACE/tool" \
+            --binary "$GITHUB_WORKSPACE/tool/core/target/release/excession" \
+            --out "$RUNNER_TEMP/excession-private-evidence"
+      - name: Summarize advisory result
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/excession-private-evidence/summary.md" ]; then
+            cat "$RUNNER_TEMP/excession-private-evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Keep source-bound evidence only in private caller's artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excession-private-analysis-${{ github.event.issue.number }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/excession-private-evidence/report.json
+            ${{ runner.temp }}/excession-private-evidence/receipt.json
+            ${{ runner.temp }}/excession-private-evidence/summary.md
+          if-no-files-found: warn
+          retention-days: 7

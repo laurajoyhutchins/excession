@@ -11,6 +11,7 @@ not evidence that a feature is present in the current release.**
 - [CLI options and command families](CLI.md)
 - [Agent locate, context, and verify](AGENT_CLI.md)
 - [GitHub-native analysis requests](GITHUB_NATIVE_ANALYSIS.md)
+- [Private GitHub analysis requests](PRIVATE_GITHUB_ANALYSIS.md)
 - [Reusable PR evidence](GITHUB_EVIDENCE.md)
 - [Local stdio MCP](MCP.md)
 - [Source-impact witness semantics](COMPACT_IMPACT.md)

@@ -11,6 +11,7 @@ Start with the task you want to perform. Documentation here distinguishes
 | --- | --- | --- |
 | Install and inspect a repository | [Quick start](QUICKSTART.md) | A report pinned to Git source |
 | Ask Excession from ChatGPT | [GitHub-native analysis](GITHUB_NATIVE_ANALYSIS.md) | Workflow artifact with original report and receipt |
+| Ask about a private repository | [Private GitHub analysis](PRIVATE_GITHUB_ANALYSIS.md) | Advisory evidence retained only in the caller's private Actions run |
 | Review a pull request | [GitHub PR evidence](GITHUB_EVIDENCE.md) | Base/head report, provenance, coverage, open obligations |
 | Integrate a local agent | [Stdio MCP](MCP.md) | Tools executed inside the agent's trusted local checkout |
 | Interpret results | [Evidence and limits](EVIDENCE_AND_LIMITS.md) | Clear boundaries between observations and conclusions |

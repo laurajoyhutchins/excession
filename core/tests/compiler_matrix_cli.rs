@@ -356,6 +356,88 @@ fn full_rust_typescript_mypy_matrix_in_its_native_ci_environment() {
 }
 
 #[test]
+fn equivalent_python_scopes_are_not_double_counted() {
+    let manifest = r#"{"schema":"excession.compiler-matrix-config.v1","checks":[
+      {"language":"python","configuration":"mypy.ini","source_prefix":null,
+       "declared_inputs":["py/mathlib.py"]},
+      {"language":"python","configuration":"mypy.ini","source_prefix":".",
+       "declared_inputs":["py/mathlib.py"]}
+    ]}"#;
+    let f = Fixture::new(manifest);
+    let output = f.matrix(None, true);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("duplicate"));
+}
+
+#[test]
+fn non_python_check_refuses_an_explicit_dot_scope() {
+    let manifest = r#"{"schema":"excession.compiler-matrix-config.v1","checks":[
+      {"language":"rust","configuration":"packages/a/Cargo.toml","source_prefix":".",
+       "declared_inputs":["packages/a/Cargo.lock"]}
+    ]}"#;
+    let f = Fixture::new(manifest);
+    let output = f.matrix(None, true);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("source_prefix is only supported for Python")
+    );
+}
+
+#[test]
+fn a_large_tracked_lockfile_is_accepted_without_inventing_dependency_coverage() {
+    let manifest = r#"{"schema":"excession.compiler-matrix-config.v1","checks":[
+      {"language":"rust","configuration":"packages/a/Cargo.toml","source_prefix":null,
+       "declared_inputs":["large.lock"]}
+    ]}"#;
+    let mut f = Fixture::new(manifest);
+    f.change("large.lock", &"x".repeat(1_200_000));
+    let report = result(f.matrix(None, true), true);
+    let input = &report.get("checks").unwrap().array_ref().unwrap()[0]
+        .get("declared_inputs")
+        .unwrap()
+        .array_ref()
+        .unwrap()[0];
+    assert_eq!(input.get("path").unwrap().str().unwrap(), "large.lock");
+    assert_eq!(
+        report
+            .get("coverage")
+            .unwrap()
+            .get("dependency_closure")
+            .unwrap()
+            .str()
+            .unwrap(),
+        "NOT_ESTABLISHED"
+    );
+    assert!(
+        f.audit(report.get("snapshot_id").unwrap().str().unwrap(), "HEAD")
+            .status
+            .success()
+    );
+}
+
+#[test]
+fn unrelated_filename_ending_in_cargo_toml_is_refused() {
+    let manifest = r#"{"schema":"excession.compiler-matrix-config.v1","checks":[
+      {"language":"rust","configuration":"packages/a/fakeCargo.toml","source_prefix":null,
+       "declared_inputs":[]}
+    ]}"#;
+    let mut f = Fixture::new(manifest);
+    f.change(
+        "packages/a/fakeCargo.toml",
+        "[package]\nname=\"fake\"\nversion=\"0.1.0\"\n",
+    );
+    let output = f.matrix(None, true);
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("requires a Cargo.toml configuration")
+    );
+}
+
+#[test]
 fn malformed_manifest_fails_before_child_execution() {
     let manifest = r#"{"schema":"excession.compiler-matrix-config.v1","checks":[
       {"language":"rust","configuration":"packages/a/Cargo.toml","source_prefix":null,

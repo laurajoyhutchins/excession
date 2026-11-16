@@ -9,18 +9,8 @@ use crate::{Result, discovery, refuse};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 
-const MAX_DEPTH: usize = 8;
-const MAX_EFFECTS: usize = 512;
 const MAX_SOURCE_IMPACTS: usize = 10_000;
 const MAX_GAPS: usize = 9999;
-
-/// Leave the legacy path-heavy report available for stable claim IDs, while
-/// making finite distinct-source reachability a separate versioned result.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PathDetail {
-    Legacy,
-    Compact,
-}
 
 /// Return each producer's native relationship and its evidence unchanged.
 /// Current aggregate analysis only emits static import *candidates*.
@@ -123,53 +113,6 @@ fn changed_paths(inventory: &Value, side: &str) -> Result<BTreeSet<String>> {
     Ok(paths)
 }
 
-/// Reversed BFS from a changed source: every returned ordered path flows
-/// from an importer toward the changed module, with each hop's original
-/// source and producer observation intact.
-fn walk(
-    incoming: &BTreeMap<String, Vec<Value>>,
-    changed: &BTreeSet<String>,
-    effects: &mut Vec<Value>,
-) -> Result<bool> {
-    for seed in changed {
-        // An importer may depend on the changed module through more than one
-        // route. A global visited set loses distinct evidence chains in a
-        // diamond graph; only forbid cycles *within the current path*.
-        let visited = BTreeSet::from([seed.to_owned()]);
-        let mut queue = VecDeque::from([(seed.to_owned(), Vec::<Value>::new(), visited)]);
-        while let Some((target, suffix, visited)) = queue.pop_front() {
-            if let Some(edges) = incoming.get(&target) {
-                for edge in edges {
-                    let path = edge.get("source")?.get("path")?.str()?.to_owned();
-                    if visited.contains(&path) {
-                        continue;
-                    }
-                    if suffix.len() >= MAX_DEPTH {
-                        return Ok(true);
-                    }
-                    let mut hops = Vec::with_capacity(suffix.len() + 1);
-                    hops.push(edge.clone());
-                    hops.extend(suffix.iter().cloned());
-                    let entity = edge.get("source")?.clone();
-                    let effect = obj(&[
-                        ("entity", entity),
-                        ("assessment", Value::string("CANDIDATE_PATH")),
-                        ("hops", Value::array(hops.clone())),
-                    ]);
-                    effects.push(effect.stamp_id("claim_id")?);
-                    if effects.len() >= MAX_EFFECTS {
-                        return Ok(true);
-                    }
-                    let mut next_visited = visited.clone();
-                    next_visited.insert(path.clone());
-                    queue.push_back((path, hops, next_visited));
-                }
-            }
-        }
-    }
-    Ok(false)
-}
-
 /// One parent edge per *distinct source*, rather than one entry per simple
 /// path. Multi-source reverse BFS discovers every reachable source in the
 /// observed graph exactly once. The distance is a decreasing rank certificate:
@@ -228,38 +171,8 @@ pub struct EvidenceByRevision<'a> {
     pub head: Selection<'a>,
 }
 
-/// Use the same revision-pinned producer selection as the CLI and agent
-/// verification. Nothing executes native compilers during impact queries.
-pub fn run_auto(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-) -> Result<Value> {
-    run_auto_with_detail(path, base, head, roots, database, PathDetail::Legacy)
-}
-
-/// Source-reachability report without enumerating alternative simple paths.
-/// Produces v2; the legacy entrypoints continue to produce exactly v1.
-pub fn run_auto_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-) -> Result<Value> {
-    run_auto_with_detail(path, base, head, roots, database, PathDetail::Compact)
-}
-
-fn run_auto_with_detail(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-    detail: PathDetail,
-) -> Result<Value> {
+/// Discover and pin existing producer evidence for the exact two Git revisions.
+pub fn run_auto(path: &Path, base: &str, head: &str, roots: Option<&str>, database: Option<&str>) -> Result<Value> {
     let checkout = discovery::inspect(path, head)?;
     let destination = analyze::checked_external_destination(
         &checkout.root,
@@ -275,49 +188,11 @@ fn run_auto_with_detail(
     } else {
         (Plan::default(), Plan::default())
     };
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Pinned(&base_plan, &head_plan),
-        detail,
-    )
+    run_core(path, base, head, roots, database, Mode::Pinned(&base_plan, &head_plan))
 }
 
-pub fn run(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-) -> Result<Value> {
-    run_with_evidence(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        EvidenceByRevision::default(),
-    )
-}
-
-pub fn run_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-) -> Result<Value> {
-    run_with_evidence_compact(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        EvidenceByRevision::default(),
-    )
+pub fn run(path: &Path, base: &str, head: &str, roots: Option<&str>, database: Option<&str>) -> Result<Value> {
+    run_with_evidence(path, base, head, roots, database, EvidenceByRevision::default())
 }
 
 #[derive(Clone, Copy)]
@@ -334,38 +209,9 @@ pub fn run_with_evidence(
     database: Option<&str>,
     selected: EvidenceByRevision<'_>,
 ) -> Result<Value> {
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Explicit(selected),
-        PathDetail::Legacy,
-    )
+    run_core(path, base, head, roots, database, Mode::Explicit(selected))
 }
 
-pub fn run_with_evidence_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-    selected: EvidenceByRevision<'_>,
-) -> Result<Value> {
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Explicit(selected),
-        PathDetail::Compact,
-    )
-}
-
-/// Replay the selected identities, not a fresh discovery of future imports.
-/// This is also the entrypoint for ordinary, automatically composed impact.
 pub fn run_with_plans(
     path: &Path,
     base: &str,
@@ -375,35 +221,7 @@ pub fn run_with_plans(
     base_plan: &Plan,
     head_plan: &Plan,
 ) -> Result<Value> {
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Pinned(base_plan, head_plan),
-        PathDetail::Legacy,
-    )
-}
-
-pub fn run_with_plans_compact(
-    path: &Path,
-    base: &str,
-    head: &str,
-    roots: Option<&str>,
-    database: Option<&str>,
-    base_plan: &Plan,
-    head_plan: &Plan,
-) -> Result<Value> {
-    run_core(
-        path,
-        base,
-        head,
-        roots,
-        database,
-        Mode::Pinned(base_plan, head_plan),
-        PathDetail::Compact,
-    )
+    run_core(path, base, head, roots, database, Mode::Pinned(base_plan, head_plan))
 }
 
 fn run_core(

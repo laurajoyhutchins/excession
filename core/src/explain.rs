@@ -454,5 +454,4 @@ mod tests {
             "self edges cannot be source dependents"
         );
     }
-
 }

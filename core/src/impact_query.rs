@@ -563,10 +563,6 @@ mod tests {
         let analysis = obj(&[("relationships", Value::array(edges))]);
         let graph = incoming(&analysis).unwrap();
         let seeds = BTreeSet::from(["pkg/changed.py".to_owned()]);
-        let mut enumerated_paths = Vec::new();
-        assert!(walk(&graph, &seeds, &mut enumerated_paths).unwrap());
-        assert_eq!(enumerated_paths.len(), MAX_EFFECTS);
-
         let witnesses = source_witnesses(&graph, &seeds).unwrap();
         assert_eq!(witnesses.len(), 21);
         let mut ranks = BTreeMap::from([("pkg/changed.py".to_owned(), 0i64)]);
@@ -640,16 +636,16 @@ mod tests {
     }
 
     #[test]
-    fn preserves_independent_paths_through_a_diamond() {
+    fn diamond_preserves_deterministic_source_witness_without_path_expansion() {
         let make_edge = |source: &str, target: &str| {
             obj(&[
                 ("kind", Value::string("STATIC_IMPORT")),
                 ("source", obj(&[("path", Value::string(source))])),
                 ("target", obj(&[("path", Value::string(target))])),
-                (
-                    "evidence",
-                    Value::array([obj(&[("assessment", Value::string("CANDIDATE"))])]),
-                ),
+                ("evidence", Value::array([obj(&[
+                    ("assessment", Value::string("CANDIDATE")),
+                    ("receipt_id", Value::string("source-bound-receipt")),
+                ])])),
             ])
         };
         let input = obj(&[(
@@ -661,33 +657,28 @@ mod tests {
                 make_edge("pkg/top.py", "pkg/right.py"),
             ]),
         )]);
-        let mut effects = Vec::new();
-        assert!(
-            !walk(
-                &incoming(&input).unwrap(),
-                &BTreeSet::from(["pkg/changed.py".to_owned()]),
-                &mut effects,
-            )
-            .unwrap()
-        );
-        let from_top = effects
+        let graph = incoming(&input).unwrap();
+        let seeds = BTreeSet::from(["pkg/changed.py".to_owned()]);
+        let witnesses = source_witnesses(&graph, &seeds).unwrap();
+        assert_eq!(witnesses.len(), 3);
+        let top = witnesses
             .iter()
-            .filter(|effect| {
-                effect
-                    .get("entity")
-                    .unwrap()
-                    .get("path")
-                    .unwrap()
-                    .str()
-                    .unwrap()
-                    == "pkg/top.py"
-            })
+            .filter(|w| w.get("entity").unwrap().get("path").unwrap().str().unwrap()
+                == "pkg/top.py")
             .collect::<Vec<_>>();
-        assert_eq!(from_top.len(), 2, "each distinct import path has evidence");
-        assert_ne!(
-            from_top[0].get("claim_id").unwrap(),
-            from_top[1].get("claim_id").unwrap()
+        assert_eq!(top.len(), 1, "one ranked witness per distinct source");
+        assert_eq!(
+            top[0].get("distance_to_change").unwrap().integer().unwrap(),
+            2
         );
+        assert_eq!(
+            top[0].get("next_hop").unwrap().get("target").unwrap()
+                .get("path").unwrap().str().unwrap(),
+            "pkg/left.py",
+            "ordered graph gives a deterministic next hop"
+        );
+        assert!(!top[0].get("next_hop").unwrap().get("evidence").unwrap()
+            .array_ref().unwrap().is_empty());
     }
 
     #[test]
@@ -779,40 +770,27 @@ mod tests {
                 ("kind", Value::string("STATIC_IMPORT")),
                 ("source", obj(&[("path", Value::string("pkg/first.py"))])),
                 ("target", obj(&[("path", Value::string("pkg/second.py"))])),
-                (
-                    "evidence",
-                    Value::array([obj(&[
-                        ("assessment", Value::string("CANDIDATE")),
-                        ("receipt_id", Value::string("receipt")),
-                    ])]),
-                ),
+                ("evidence", Value::array([obj(&[
+                    ("assessment", Value::string("CANDIDATE")),
+                    ("receipt_id", Value::string("receipt")),
+                ])])),
             ])]),
         )]);
-        let mut effects = Vec::new();
-        assert!(
-            !walk(
-                &incoming(&input).unwrap(),
-                &BTreeSet::from(["pkg/second.py".to_owned()]),
-                &mut effects
-            )
-            .unwrap()
-        );
-        assert_eq!(effects.len(), 1);
+        let witnesses = source_witnesses(
+            &incoming(&input).unwrap(),
+            &BTreeSet::from(["pkg/second.py".to_owned()]),
+        )
+        .unwrap();
+        assert_eq!(witnesses.len(), 1);
         assert_eq!(
-            effects[0].get("assessment").unwrap().str().unwrap(),
+            witnesses[0].get("assessment").unwrap().str().unwrap(),
             "CANDIDATE_PATH"
         );
         assert_eq!(
-            effects[0].get("hops").unwrap().array_ref().unwrap()[0]
-                .get("evidence")
-                .unwrap()
-                .array_ref()
-                .unwrap()[0]
-                .get("receipt_id")
-                .unwrap()
-                .str()
-                .unwrap(),
+            witnesses[0].get("next_hop").unwrap().get("evidence").unwrap()
+                .array_ref().unwrap()[0].get("receipt_id").unwrap().str().unwrap(),
             "receipt"
         );
     }
+
 }

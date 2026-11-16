@@ -107,13 +107,26 @@ fn reports_importer_as_candidate_without_authorizing_test_skips() {
         "PARTIAL"
     );
     assert!(result.entries().unwrap().get("effects").is_none());
-    let witnesses = result.get("candidate_source_impacts").unwrap().array_ref().unwrap();
-    assert!(witnesses.iter().any(|w| {
-        w.get("entity").unwrap().get("path").unwrap().str().unwrap() == "pkg/first.py"
-            && w.get("assessment").unwrap().str().unwrap() == "CANDIDATE_PATH"
-            && !w.get("next_hop").unwrap().get("evidence").unwrap()
-                .array_ref().unwrap().is_empty()
-    }), "independently created importer should have one Git-bound source witness");
+    let witnesses = result
+        .get("candidate_source_impacts")
+        .unwrap()
+        .array_ref()
+        .unwrap();
+    assert!(
+        witnesses.iter().any(|w| {
+            w.get("entity").unwrap().get("path").unwrap().str().unwrap() == "pkg/first.py"
+                && w.get("assessment").unwrap().str().unwrap() == "CANDIDATE_PATH"
+                && !w
+                    .get("next_hop")
+                    .unwrap()
+                    .get("evidence")
+                    .unwrap()
+                    .array_ref()
+                    .unwrap()
+                    .is_empty()
+        }),
+        "independently created importer should have one Git-bound source witness"
+    );
     // Human output must expose source reachability and preserve saved JSON.
     let saved_path = root.join("impact.json");
     let human = cmd(
@@ -394,12 +407,31 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
             .bool()
             .unwrap()
     );
-    assert_eq!(result.get("schema").unwrap().str().unwrap(), "excession.impact.v3");
+    assert_eq!(
+        result.get("schema").unwrap().str().unwrap(),
+        "excession.impact.v3"
+    );
     assert!(result.entries().unwrap().get("effects").is_none());
-    assert!(result.entries().unwrap().get("path_effects_status").is_none());
-    assert_eq!(fs::read_to_string(&report_path).unwrap().trim(), result.canonical());
-    assert!(result.get("unknown").unwrap().array_ref().unwrap().iter()
-        .all(|gap| gap.get("reason").unwrap().str().unwrap() != "TRUNCATED"));
+    assert!(
+        result
+            .entries()
+            .unwrap()
+            .get("path_effects_status")
+            .is_none()
+    );
+    assert_eq!(
+        fs::read_to_string(&report_path).unwrap().trim(),
+        result.canonical()
+    );
+    assert!(
+        result
+            .get("unknown")
+            .unwrap()
+            .array_ref()
+            .unwrap()
+            .iter()
+            .all(|gap| gap.get("reason").unwrap().str().unwrap() != "TRUNCATED")
+    );
 
     let witnesses = result
         .get("candidate_source_impacts")
@@ -555,7 +587,10 @@ fn layered_imports_preserve_distinct_source_coverage_after_path_cap() {
         ])
         .output()
         .unwrap();
-    assert!(!removed_id.status.success(), "the removed legacy selector must be refused");
+    assert!(
+        !removed_id.status.success(),
+        "the removed legacy selector must be refused"
+    );
 
     // A forged source witness may be self-consistent JSON, but is not an
     // authenticated replay of the Git-indexed relationship inventory.

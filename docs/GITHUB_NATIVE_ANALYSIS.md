@@ -6,9 +6,11 @@ analysis. Use GitHub issues as authorized requests, GitHub-hosted Actions as
 ephemeral workers, Git commit and tree hashes as source identity, and workflow
 artifacts as the report transport.
 
-The request workflow is [.github/workflows/github-native-analysis.yml](../.github/workflows/github-native-analysis.yml).
-It reuses the actual Rust CLI, not an approximation or generated summary.
-Existing acceptance and benchmark workflows remain independent.
+The [request workflow](../.github/workflows/github-native-analysis.yml)
+reuses the actual Rust CLI, not an approximation or generated summary. It
+shares the locked Rust/TypeScript setup with the
+[reusable GitHub PR evidence workflow](GITHUB_EVIDENCE.md). Acceptance,
+benchmarks, release checks, and local stdio MCP remain independent.
 
 ## From a ChatGPT conversation
 
@@ -18,8 +20,10 @@ currently invoke workflow_dispatch directly, so a dedicated issue title is
 the chat-native transport.
 
 1. Find the exact 40-character Git SHA of the commit you want analyzed.
-2. Create an issue in laurajoyhutchins/excession with the **exact** title
-   `Excession analysis request`, authored by the repository owner.
+2. Create an issue in laurajoyhutchins/excession using the
+   [Excession source analysis issue template](../.github/ISSUE_TEMPLATE/excession-analysis.md).
+   Its title must be exactly `Excession analysis request` and the author
+   must be the authorized repository owner.
 3. Put **only** this JSON in the issue body (a fenced JSON block is also
    supported). This is an example; replace the revision with the target commit:
 
@@ -105,9 +109,14 @@ Tests: `python3 -m unittest discover -s tests -p test_github_analysis.py -v`.
 The request validator rejects duplicate JSON keys, unexpected arguments,
 foreign sources, non-commits, invalid focus paths, and identity mismatches.
 The analysis process is bounded to 240 seconds, and reports are capped at 8 MiB.
+The shared `tools/ci/prepare-excession.sh` compiles the trusted Rust
+CLI and installs the locked TypeScript sidecar. GitHub cache reuse can
+shorten the build, but is never treated as source or runtime evidence.
 Any source fetch or producer failure is a refusal, not a substitute algorithm.
 
-For PR-change review, reuse the existing `.github/workflows/github-evidence.yml` and `contracts/agent/github-evidence.v1.schema.json`. That workflow already publishes a richer source-bound verification envelope; the issue workflow adds on-demand locate/context/verify rather than duplicating the existing evidence producer.
-
-The older container/Cloud Run draft PR #247 is not required. This design
-does not depend on the existing Hatchable-to-GCP bridge.
+For PR-change review, reuse the existing
+[`github-evidence.yml`](../.github/workflows/github-evidence.yml) and
+[`github-evidence.v1` contract](../contracts/agent/github-evidence.v1.schema.json).
+That workflow already publishes a richer source-bound verification envelope;
+the issue workflow adds on-demand locate/context/verify rather than duplicating
+the evidence producer. It does not require a container host or GCP bridge.

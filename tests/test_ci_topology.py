@@ -98,14 +98,11 @@ class CiTopology(unittest.TestCase):
             "permissions:\n  contents: read",
             "ref: ${{ job.workflow_sha }}",
             "test \"$TOOL_SHA\" = \"$PRODUCER_SHA\"",
-            "agent",  # produced by tools/github_evidence.py
             "github_evidence.py",
             "if: always()",
             "actions/upload-artifact@v4",
             "excession-evidence-v1-",
         ):
-            if required == "agent":
-                continue
             self.assertIn(required, source, required)
         self.assertNotIn("contents: write", source)
         self.assertNotIn("pull_request_target", source)

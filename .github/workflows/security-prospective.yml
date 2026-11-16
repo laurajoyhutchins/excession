@@ -1,0 +1,192 @@
+name: Prospective security discovery experiment
+on:
+  push:
+    branches: [security/prospective-cohort-v1]
+    paths:
+      - '.github/workflows/security-prospective.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: prospective-security-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      cases: ${{ steps.matrix.outputs.cases }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: matrix
+        shell: bash
+        run: |
+          python3 tools/compare_prospective_security.py --manifest benchmarks/security-prospective/manifest.v1.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          m = json.load(open("benchmarks/security-prospective/manifest.v1.json"))
+          print("cases=" + json.dumps([x["id"] for x in m["cases"]], separators=(",",":")))
+          PY
+      - name: Validate preregistration contracts
+        run: python3 -m unittest discover -s tests -p test_security_prospective.py -v
+  scan:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        case: ${{ fromJSON(needs.prepare.outputs.cases) }}
+    env:
+      CASE_ID: ${{ matrix.case }}
+      SEMGREP_RULES_SHA: 311ca4e9ba59d700624539bf658e3d29b134ee77
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Resolve immutable source inputs
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json,os
+          m=json.load(open("benchmarks/security-prospective/manifest.v1.json"))
+          c=next(x for x in m["cases"] if x["id"]==os.environ["CASE_ID"])
+          print("SOURCE_REPO="+c["repository"])
+          print("SOURCE_FILE="+c["file"])
+          PY
+      - name: Restore frozen analyzer and native Excession ingest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/evidence"
+          python3 -m venv "$RUNNER_TEMP/semgrep-venv"
+          "$RUNNER_TEMP/semgrep-venv/bin/python" -m pip -q install 'semgrep==1.145.0' 'pydantic==2.11.10'
+          "$RUNNER_TEMP/semgrep-venv/bin/semgrep" --version > "$RUNNER_TEMP/evidence/semgrep-version.txt"
+          test "$(tr -d '\r\n' < "$RUNNER_TEMP/evidence/semgrep-version.txt")" = '1.145.0'
+          git init -q "$RUNNER_TEMP/semgrep-rules"
+          git -C "$RUNNER_TEMP/semgrep-rules" remote add origin https://github.com/semgrep/semgrep-rules.git
+          git -C "$RUNNER_TEMP/semgrep-rules" sparse-checkout init --cone
+          git -C "$RUNNER_TEMP/semgrep-rules" sparse-checkout set python
+          git -C "$RUNNER_TEMP/semgrep-rules" fetch -q --depth 1 --filter=blob:none origin "$SEMGREP_RULES_SHA"
+          git -C "$RUNNER_TEMP/semgrep-rules" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/semgrep-rules" rev-parse HEAD)" = "$SEMGREP_RULES_SHA"
+          cargo build --locked --manifest-path core/Cargo.toml --bin excession
+          git init -q "$RUNNER_TEMP/upstream"
+          git -C "$RUNNER_TEMP/upstream" remote add origin "https://github.com/$SOURCE_REPO.git"
+      - name: Run both frozen phases, native witness then real Semgrep
+        shell: bash
+        run: |
+          set -euo pipefail
+          for PHASE in vulnerable patched; do
+            export PHASE
+            COMMIT="$(python3 - <<'PY'
+          import json,os
+          m=json.load(open("benchmarks/security-prospective/manifest.v1.json"))
+          c=next(x for x in m["cases"] if x["id"]==os.environ["CASE_ID"])
+          print(c[os.environ["PHASE"]]["commit"])
+          PY
+            )"
+            export COMMIT
+            OUT="$RUNNER_TEMP/evidence/$PHASE"
+            export OUT
+            mkdir -p "$OUT"
+            git -C "$RUNNER_TEMP/upstream" fetch -q --depth 1 origin "$COMMIT"
+            git -C "$RUNNER_TEMP/upstream" checkout -q --detach "$COMMIT"
+            git -C "$RUNNER_TEMP/upstream" clean -q -ffdx
+            test "$(git -C "$RUNNER_TEMP/upstream" rev-parse HEAD)" = "$COMMIT"
+            python3 - <<'PY'
+          import json,os,pathlib,subprocess
+          m=json.load(open("benchmarks/security-prospective/manifest.v1.json"))
+          c=next(x for x in m["cases"] if x["id"]==os.environ["CASE_ID"])
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"upstream"
+          blob=subprocess.check_output(["git","-C",str(root),"rev-parse",
+                    "HEAD:"+c["file"]],text=True).strip()
+          on_disk=subprocess.check_output(["git","-C",str(root),"hash-object",
+                    str(root/c["file"])],text=True).strip()
+          assert blob==on_disk==c[os.environ["PHASE"]]["blob"]
+          metadata={"case":c["id"],"phase":os.environ["PHASE"],
+                    "source_repo":c["repository"],"source_commit":os.environ["COMMIT"],
+                    "source_file":c["file"],"source_blob":blob,
+                    "harness_commit":os.environ["GITHUB_SHA"]}
+          (pathlib.Path(os.environ["OUT"])/"metadata.json").write_text(
+                    json.dumps(metadata,indent=2)+"\n")
+          PY
+            python3 tools/prospective_security_oracle.py \
+              --root "$RUNNER_TEMP/upstream" \
+              --manifest benchmarks/security-prospective/manifest.v1.json \
+              --case "$CASE_ID" --phase "$PHASE" --output "$OUT/oracle.json"
+            set +e
+            (
+              cd "$RUNNER_TEMP/upstream"
+              "$RUNNER_TEMP/semgrep-venv/bin/semgrep" scan \
+                 --metrics off --config "$RUNNER_TEMP/semgrep-rules/python" \
+                 --timeout 5 --json --output "$OUT/semgrep.json" "$SOURCE_FILE"
+            ) > "$OUT/semgrep.stdout" 2> "$OUT/semgrep.stderr"
+            STATUS=$?
+            set -e
+            export STATUS
+            if [ "$STATUS" = 0 ] && [ -s "$OUT/semgrep.json" ]; then
+              "$GITHUB_WORKSPACE/core/target/debug/excession" security ingest \
+                --repo "$RUNNER_TEMP/upstream" --report "$OUT/semgrep.json" \
+                --db "$OUT/semgrep.sqlite" --engine semgrep > "$OUT/semgrep-ingest.json"
+              "$GITHUB_WORKSPACE/core/target/debug/excession" security audit \
+                --repo "$RUNNER_TEMP/upstream" --report "$OUT/semgrep.json" \
+                --db "$OUT/semgrep.sqlite" --engine semgrep > "$OUT/semgrep-audit.json"
+            fi
+            python3 - <<'PY'
+          import hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ["OUT"])
+          report=root/"semgrep.json"
+          status={"case":os.environ["CASE_ID"],"phase":os.environ["PHASE"],
+                  "scan_exit":int(os.environ["STATUS"]),
+                  "scanner_version":"1.145.0",
+                  "rules_commit":os.environ["SEMGREP_RULES_SHA"],
+                  "report_sha256":hashlib.sha256(report.read_bytes()).hexdigest()
+                                   if report.exists() else None,
+                  "git_source_identity_verified":True}
+          (root/"scan-status.json").write_text(json.dumps(status,indent=2)+"\n")
+          PY
+          done
+      - name: Retain all real scanner and source-bound audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-${{ matrix.case }}
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: warn
+          retention-days: 30
+  compare:
+    needs: [prepare, scan]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prospective-*
+          path: ${{ runner.temp }}/prospective-evidence
+          merge-multiple: false
+      - name: Compare every preregistered revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/compare_prospective_security.py \
+            --manifest benchmarks/security-prospective/manifest.v1.json \
+            --evidence "$RUNNER_TEMP/prospective-evidence" \
+            --output "$RUNNER_TEMP/prospective-results.json" \
+            --markdown "$RUNNER_TEMP/prospective-results.md"
+          cat "$RUNNER_TEMP/prospective-results.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain results, even for incomplete experiments
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-results
+          path: |
+            ${{ runner.temp }}/prospective-results.json
+            ${{ runner.temp }}/prospective-results.md
+          if-no-files-found: warn
+          retention-days: 30

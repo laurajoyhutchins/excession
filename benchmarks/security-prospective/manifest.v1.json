@@ -1,0 +1,135 @@
+{
+  "schema": "excession.security.prospective.v1",
+  "frozen_protocol": "selection-and-scanner-config-preregistered-before-running-any-scanner",
+  "issue": "https://github.com/laurajoyhutchins/excession/issues/139",
+  "selection": "Six distinct published security advisories; two per upstream repository; three weakness families; vulnerable last affected release and first fixed release. Cases and versions chosen prior to scanner output. Oracle implementation may be refined before executing but may not change the candidate generator or this manifest after scanner results are viewed.",
+  "exclude": [
+    "Kludex/starlette GHSA-v5gw-mw7f-84px",
+    "aio-libs/aiohttp GHSA-5h86-8mv2-jq9f"
+  ],
+  "cases": [
+    {
+      "id": "gitpython-unsafe-kwargs",
+      "repository": "gitpython-developers/GitPython",
+      "advisory": "GHSA-rpm5-65cw-6hj4",
+      "weakness": "CWE-78",
+      "file": "git/cmd.py",
+      "oracle": "github-gitpython-check-unsafe-options",
+      "selection": "documented-upstream-release-pair",
+      "vulnerable": {
+        "commit": "9e24eb6b72c1851e46e09133b83b48f2059037d7",
+        "blob": "15d7820df5dbbc0b4693b7367883ebb9eb7af23e"
+      },
+      "patched": {
+        "commit": "4199cb89755f705801a4cb241723325b46201f51",
+        "blob": "096900819f8eea6fd458fce013317a8cbfb600f5"
+      }
+    },
+    {
+      "id": "gitpython-single-char-smuggling",
+      "repository": "gitpython-developers/GitPython",
+      "advisory": "GHSA-r9mr-m37c-5fr3",
+      "weakness": "CWE-78",
+      "file": "git/cmd.py",
+      "oracle": "github-gitpython-single-char-guard",
+      "selection": "documented-upstream-release-pair",
+      "vulnerable": {
+        "commit": "faf3c09038b03bc2bdd8545ef34bbf6d7f1cd11f",
+        "blob": "1868862d3d2e775f9edde129390305803f166f69"
+      },
+      "patched": {
+        "commit": "e59d9bab02b095a97e179f47019afee95f4e3c18",
+        "blob": "5cba11f97ade9cf73a8018121b95a2a40909dffc"
+      }
+    },
+    {
+      "id": "dulwich-process-merge-driver",
+      "repository": "jelmer/dulwich",
+      "advisory": "GHSA-9277-mp7x-85jf",
+      "weakness": "CWE-78",
+      "file": "dulwich/merge_drivers.py",
+      "oracle": "dulwich-process-merge-command-construction",
+      "selection": "documented-upstream-release-pair",
+      "vulnerable": {
+        "commit": "8efb7d19eac519cd7fac39e79ca354327897e133",
+        "blob": "0e327ea11a35b0992c91d56c3c0abaf7d5f1d664"
+      },
+      "patched": {
+        "commit": "073f4dfa9840af2da59887ed828b026b609faa6c",
+        "blob": "a716c7a2baef923755e4a1e3c044b31a293a68b7"
+      }
+    },
+    {
+      "id": "dulwich-symlink-checkout",
+      "repository": "jelmer/dulwich",
+      "advisory": "GHSA-8w8g-wq8h-fq33",
+      "weakness": "CWE-22",
+      "file": "dulwich/porcelain/__init__.py",
+      "oracle": "dulwich-checkout-symlink-containment",
+      "selection": "documented-upstream-release-pair",
+      "vulnerable": {
+        "commit": "e076b16aa4ee77c18fbdb3d639cd037d76daee0b",
+        "blob": "f91ef883ff9beaaab75d6e58f579d96e83deef96"
+      },
+      "patched": {
+        "commit": "e5bc9a4604e1699509447bc09760850062382d8d",
+        "blob": "18fa3e46bf2187804e831f387c3adb45e54238c2"
+      }
+    },
+    {
+      "id": "tornado-static-symlink",
+      "repository": "tornadoweb/tornado",
+      "advisory": "GHSA-c2m8-h5v5-343r",
+      "weakness": "CWE-22",
+      "file": "tornado/web.py",
+      "oracle": "tornado-staticfile-realpath-containment",
+      "selection": "documented-upstream-release-pair",
+      "vulnerable": {
+        "commit": "a55abe3e3bf59994f29b2f7084c46341f0d4f6a7",
+        "blob": "6f1ae30470f6a36c965c1ea759a484574bd328b5"
+      },
+      "patched": {
+        "commit": "75ef8b1cfa0e658aceb17c5a810ad1c74dc69bc7",
+        "blob": "2c8a1e1d6419ddc5dad30b1dd9027804f211ab17"
+      }
+    },
+    {
+      "id": "tornado-protocol-relative-redirect",
+      "repository": "tornadoweb/tornado",
+      "advisory": "GHSA-pw9p-v7r6-gx4p",
+      "weakness": "CWE-601",
+      "file": "tornado/web.py",
+      "oracle": "tornado-redirect-protocol-relative",
+      "selection": "documented-upstream-release-pair",
+      "vulnerable": {
+        "commit": "75ef8b1cfa0e658aceb17c5a810ad1c74dc69bc7",
+        "blob": "2c8a1e1d6419ddc5dad30b1dd9027804f211ab17"
+      },
+      "patched": {
+        "commit": "e2b0f452bbf0e554c64e9d9ee922341c1c634d95",
+        "blob": "a4d74ab0141cf61b2e48c03ba698068f0384e82c"
+      }
+    }
+  ],
+  "scanner": {
+    "name": "semgrep",
+    "version": "1.145.0",
+    "pydantic": "2.11.10",
+    "rules_repo": "semgrep/semgrep-rules",
+    "rules_commit": "311ca4e9ba59d700624539bf658e3d29b134ee77",
+    "config_subtree": "python",
+    "scan_scope": "exact changed file only",
+    "scan_timeout_seconds": 300
+  },
+  "metric": {
+    "relevant_candidate": "scanner report metadata cwe includes case weakness AND source path matches pinned case file",
+    "warnings": "A relevant scanner candidate is not vulnerability validation. Compare vulnerable and patched phases. Missing scan or unsupported oracle never counts as a negative safe case.",
+    "oracle": "A bounded, isolated, method- or API-level native witness should demonstrate adverse behavior in the vulnerable revision, prevention in the patched revision, and benign permitted behavior in both. If this cannot run, record UNSUPPORTED or INCONCLUSIVE, never substitute syntax heuristics."
+  },
+  "controls": {
+    "root_source_sha": "git HEAD + blob OID required",
+    "no_external_side_effects": true,
+    "scan_runs": "manually gated, not every commit",
+    "availability": "Only internet-connected GitHub Actions runners perform public source checkouts and scanner installation."
+  }
+}

@@ -1,0 +1,65 @@
+name: Reconcile prospective security evidence
+on:
+  push:
+    branches: [security/prospective-cohort-v1]
+    paths: ['.github/workflows/security-prospective-reconcile.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Recheck frozen manifest and failure accounting
+        run: |
+          python3 -m unittest discover -s tests -p test_security_prospective.py -v
+      - name: Restore original scanner and method-level oracle evidence
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 43149355892
+          pattern: prospective-*
+          path: ${{ runner.temp }}/prospective-evidence
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reconcile without rescanning or changing the preregistered metric
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/compare_prospective_security.py \
+            --manifest benchmarks/security-prospective/manifest.v1.json \
+            --evidence "$RUNNER_TEMP/prospective-evidence" \
+            --output "$RUNNER_TEMP/prospective-results.json" \
+            --markdown "$RUNNER_TEMP/prospective-results.md" || CODE=$?
+          test "${CODE:-0}" = 2
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          r = json.loads((root / "prospective-results.json").read_text())
+          assert r["case_count"] == 6
+          assert r["complete_pairs"] == 5
+          assert r["oracle_confirmed_pairs"] == 6
+          errors = [(c["case"], phase, c[phase]["scan_status"])
+                    for c in r["cases"] for phase in ("vulnerable", "patched")
+                    if c[phase]["scan_status"] != "COMPLETE"]
+          assert errors == [("tornado-protocol-relative-redirect","patched","SCANNER_ERROR")], errors
+          assert all(c["vulnerable"].get("relevant")==c["patched"].get("relevant")
+                     for c in r["cases"]
+                     if c["patched"]["scan_status"]=="COMPLETE")
+          assert all(c["patched"].get("oracle")=="OBSERVED_EXPECTED" for c in r["cases"])
+          print("PASS: six native oracles; five complete scans; one classified scanner syntax error")
+          PY
+          cat "$RUNNER_TEMP/prospective-results.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve reconciled comparison separately from original evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-reconciled-results
+          path: |
+            ${{ runner.temp }}/prospective-results.json
+            ${{ runner.temp }}/prospective-results.md
+          retention-days: 30

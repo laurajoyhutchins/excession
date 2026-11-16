@@ -1,0 +1,145 @@
+name: Real SCIP retrieval benchmark
+
+on:
+  pull_request:
+    paths:
+      - 'core/examples/retrieval_scip_benchmark.rs'
+      - 'experiments/retrieval/**'
+      - '.github/workflows/real-scip-retrieval.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-scip-retrieval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  source-bound-retrieval:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+      H11_SHA: 62c5068c971579d61fa1b55373390e12f25fd856
+      SCIP_CLI_VERSION: v0.10.0
+      SCIP_PYTHON_VERSION: 0.6.6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+
+      - name: Build the Rust product and independent Rust evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --manifest-path core/Cargo.toml
+          cargo build --offline --locked --release --manifest-path core/Cargo.toml --bin excession --example retrieval_scip_benchmark
+
+      - name: Fetch source and validate the pinned upstream Git identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/h11-source"
+          git init -q "$SRC"
+          git -C "$SRC" remote add origin https://github.com/python-hyper/h11.git
+          git -C "$SRC" fetch -q --depth 1 origin "$H11_SHA"
+          git -C "$SRC" checkout -q --detach "$H11_SHA"
+          test "$(git -C "$SRC" rev-parse HEAD)" = "$H11_SHA"
+          test "$(git -C "$SRC" rev-parse HEAD:h11/_connection.py)" = e37d82a82a882c072cb938a90eb4486b51cdad99
+          git -C "$SRC" status --short
+          git -C "$SRC" ls-tree -r --name-only HEAD > "$RUNNER_TEMP/h11-inventory.txt"
+
+      - name: Install version-pinned external SCIP producers
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$RUNNER_TEMP/scip-tools"
+          mkdir -p "$TOOLS"
+          npm install --prefix "$TOOLS" --save-exact --package-lock=true \
+            "@sourcegraph/scip-python@$SCIP_PYTHON_VERSION"
+          curl -fLsS --retry 3 \
+            "https://github.com/scip-code/scip/releases/download/$SCIP_CLI_VERSION/scip-linux-amd64.tar.gz" \
+            -o "$RUNNER_TEMP/scip-cli.tar.gz"
+          tar xzf "$RUNNER_TEMP/scip-cli.tar.gz" -C "$TOOLS" scip
+          chmod +x "$TOOLS/scip"
+          "$TOOLS/scip" --version
+          sha256sum "$RUNNER_TEMP/scip-cli.tar.gz" "$TOOLS/scip" > "$RUNNER_TEMP/scip-tool-digests.txt"
+          sha256sum "$TOOLS/package-lock.json" >> "$RUNNER_TEMP/scip-tool-digests.txt"
+
+      - name: Generate genuine upstream SCIP and ingest source-bound observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/h11-source"
+          TOOLS="$RUNNER_TEMP/scip-tools"
+          CLI="$GITHUB_WORKSPACE/core/target/release/excession"
+          cd "$SRC"
+          "$TOOLS/node_modules/.bin/scip-python" index . --project-name h11
+          test -s index.scip
+          "$TOOLS/scip" print --json index.scip > "$RUNNER_TEMP/h11-scip.json"
+          test -s "$RUNNER_TEMP/h11-scip.json"
+          test "$(wc -c < "$RUNNER_TEMP/h11-scip.json")" -lt 4194304
+          sha256sum index.scip "$RUNNER_TEMP/h11-scip.json" > "$RUNNER_TEMP/scip-index-digests.txt"
+          "$CLI" refactor scip-ingest --repo "$SRC" --rev "$H11_SHA" \
+            --index "$RUNNER_TEMP/h11-scip.json" --db "$RUNNER_TEMP/h11-evidence.sqlite" \
+            > "$RUNNER_TEMP/scip-import.json"
+          "$CLI" inspect producer-candidates --repo "$SRC" --rev "$H11_SHA" \
+            --db "$RUNNER_TEMP/h11-evidence.sqlite" > "$RUNNER_TEMP/scip-producers.json"
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json, pathlib, sys
+          folder = pathlib.Path(sys.argv[1])
+          imported = json.loads((folder / "scip-import.json").read_text())
+          assert imported["matched_cross_file_references"] > 0, imported
+          candidates = json.loads((folder / "scip-producers.json").read_text())
+          assert candidates.get("scip_candidates"), candidates
+          print({"matched_cross_file_references": imported["matched_cross_file_references"],
+                 "snapshot_id": imported["snapshot_id"],
+                 "scip_candidates": len(candidates["scip_candidates"])})
+          PY
+
+      - name: Compare equal-budget BM25 and SCIP-augmented retrieval
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/time -v -o "$RUNNER_TEMP/retrieval-benchmark.time" \
+            "$GITHUB_WORKSPACE/core/target/release/examples/retrieval_scip_benchmark" \
+            "$RUNNER_TEMP/h11-source" "$H11_SHA" \
+            "$RUNNER_TEMP/h11-evidence.sqlite" \
+            "$GITHUB_WORKSPACE/experiments/retrieval/h11-gold.json" \
+            "$RUNNER_TEMP/retrieval-results.json"
+          python3 - "$RUNNER_TEMP/retrieval-results.json" <<'PY'
+          import json,sys
+          result=json.load(open(sys.argv[1]))
+          assert result["positive_cases"] == 16, result
+          assert result["negative_cases"] == 2, result
+          assert result["cases_with_native_scip_neighbors"] > 0, result
+          print("BM25 recall@5:",result["lexical_recall_at_k"])
+          assert result["schema"] == "excession.retrieval-benchmark.v2", result
+          print("Mixed-graph recall@5:",result["hybrid_recall_at_k"])
+          print("SCIP-only recall@5:",result["scip_only_recall_at_k"])
+          print("Static-only recall@5:",result["static_only_recall_at_k"])
+          print("BM25 MRR@5:",result["lexical_mrr_at_k"])
+          print("Mixed-graph MRR@5:",result["hybrid_mrr_at_k"])
+          print("SCIP-only MRR@5:",result["scip_only_mrr_at_k"])
+          print("Static-only MRR@5:",result["static_only_mrr_at_k"])
+          print("Review status:",result["review_status"])
+          PY
+
+      - name: Preserve source, index, provenance, and comparison receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-scip-retrieval-evidence
+          path: |
+            ${{ runner.temp }}/h11-inventory.txt
+            ${{ runner.temp }}/scip-tool-digests.txt
+            ${{ runner.temp }}/scip-index-digests.txt
+            ${{ runner.temp }}/scip-import.json
+            ${{ runner.temp }}/scip-producers.json
+            ${{ runner.temp }}/retrieval-benchmark.time
+            ${{ runner.temp }}/retrieval-results.json
+          if-no-files-found: warn
+          retention-days: 14

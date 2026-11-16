@@ -108,6 +108,28 @@ class CiTopology(unittest.TestCase):
         self.assertNotIn("pull_request_target", source)
         self.assertNotIn("secrets:", source)
 
+    def test_github_native_transport_is_only_hosted_agent_path(self):
+        request = read("github-native-analysis.yml")
+        evidence = read("github-evidence.yml")
+        verify = read("verify.yml")
+        for expected in (
+            "  issues:",
+            "github.event.issue.user.id == 219002713",
+            "github.actor_id == '219002713'",
+            "permissions:\\n  contents: read",
+            "tools/github_analysis.py validate",
+            "tools/github_analysis.py execute",
+            "retention-days: 30",
+            "bash tools/ci/prepare-excession.sh . release",
+        ):
+            self.assertIn(expected.replace("\\\\n", "\\n"), request)
+        self.assertIn("bash tool/tools/ci/prepare-excession.sh tool debug", evidence)
+        self.assertIn("Swatinem/rust-cache@v2", evidence)
+        self.assertNotIn("deploy/remote-excession", verify)
+        for workflow in (request, evidence, verify):
+            self.assertNotIn("pull_request_target:", workflow)
+            self.assertNotIn("contents: write", workflow)
+
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):
             with self.subTest(name=name):

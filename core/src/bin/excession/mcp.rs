@@ -1,55 +1,99 @@
-//! Repository-scoped MCP stdio adapter. All analysis stays in the existing Rust
-//! implementation. The wire protocol never executes project tools or edits Git.
-use excession::{
-    Result, agent, agent_locate, analyze, discovery, impact_query, native_test_workflow,
+//! Repository-scoped stdio server built on the official Model Context Protocol Rust SDK.
+//! rmcp handles JSON-RPC framing, lifecycle, protocol negotiation and tool routing.
+//! Excession remains the sole Git/SQLite authority for every exposed computation.
+use excession::{agent, agent_locate, analyze, discovery, impact_query, native_test_workflow};
+use rmcp::{
+    ErrorData as McpError, ServerHandler, ServiceExt,
+    handler::server::wrapper::Parameters,
+    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig},
+    schemars, tool, tool_handler, tool_router,
 };
-use serde_json::{Map, Value, json};
-use std::io::{self, BufRead, Write};
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use std::path::{Path, PathBuf};
 
-const PROTOCOL: &str = "2025-11-25";
-const MAX_REQUEST_BYTES: usize = 1024 * 1024;
+const MAX_REPORT_BYTES: usize = 4 * 1024 * 1024;
 
-fn fault(id: Value, code: i64, message: &str) -> Value {
-    json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
+#[derive(Clone)]
+struct ExcessionMcp {
+    repo: PathBuf,
+    roots: Option<String>,
+    db: Option<String>,
 }
 
-fn reply(id: Value, result: Value) -> Value {
-    json!({"jsonrpc":"2.0","id":id,"result":result})
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchArgs {
+    /// Task description for Git-pinned lexical source discovery.
+    task: String,
+    /// Git revision; defaults to HEAD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision: Option<String>,
+    /// Maximum source candidates; defaults to 20 (1..64).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+    /// Lexical index partitions refreshed; defaults to 8 (1..256).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    index_segments: Option<usize>,
 }
 
-fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
-    json!({
-        "name":name,
-        "description":description,
-        "inputSchema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
-        "annotations":{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":false}
-    })
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ContextArgs {
+    /// One to sixteen exact tracked Git paths.
+    focus: Vec<String>,
+    /// Git revision; defaults to HEAD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision: Option<String>,
+    /// Optional task description for context selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task: Option<String>,
+    /// Maximum entries; defaults to 32 (1..64).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
 }
 
-fn tool_catalog() -> Value {
-    json!({"tools":[
-        tool("search_code", "Find Git-pinned source candidates for a natural-language coding task. Heuristic results may be partial; check index coverage.",
-            json!({"task":{"type":"string","minLength":1,"maxLength":2000},
-                   "revision":{"type":"string","description":"Git revision, default HEAD"},
-                   "limit":{"type":"integer","minimum":1,"maximum":64},
-                   "index_segments":{"type":"integer","minimum":1,"maximum":256,"description":"Changed FTS partitions to refresh, default 8"}}), &["task"]),
-        tool("get_context", "Explain authenticated sources, candidate relationships, test suggestions, and evidence gaps for exact tracked paths.",
-            json!({"focus":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":16},
-                   "revision":{"type":"string","description":"Git revision, default HEAD"},
-                   "task":{"type":"string","maxLength":2000},
-                   "limit":{"type":"integer","minimum":1,"maximum":64}}), &["focus"]),
-        tool("explain_impact", "Recompute possible effects between two pinned Git revisions; no implied behavioral proof.",
-            json!({"base":{"type":"string"},"candidate":{"type":"string"}}), &["base","candidate"]),
-        tool("verify_change", "Compare two distinct retained commits. Reports unresolved obligations and never authorizes merge.",
-            json!({"base":{"type":"string"},"candidate":{"type":"string"},
-                   "limit":{"type":"integer","minimum":1,"maximum":64}}), &["base","candidate"]),
-        tool("plan_tests", "Plan native test selection without executing project code; may return unsupported or blocked.",
-            json!({"base":{"type":"string"},"candidate":{"type":"string"},
-                   "provider":{"type":"string","enum":["auto","jest","pytest-testmon"]}}), &[]),
-        tool("check_coverage", "Analyze supported Git-pinned source relationships and report coverage gaps. No compiler execution.",
-            json!({"revision":{"type":"string","description":"Git revision, default HEAD"}}), &[])
-    ]})
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ImpactArgs {
+    /// Retained base Git commit.
+    base: String,
+    /// Retained candidate Git commit.
+    candidate: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct VerifyArgs {
+    /// Retained base Git commit.
+    base: String,
+    /// Retained candidate Git commit.
+    candidate: String,
+    /// Maximum evidence entries; defaults to 32 (1..64).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct PlanTestsArgs {
+    /// Optional base Git commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base: Option<String>,
+    /// Optional candidate Git commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    candidate: Option<String>,
+    /// Test planner: auto, jest or pytest-testmon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CoverageArgs {
+    /// Git revision; defaults to HEAD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision: Option<String>,
 }
 
 fn allowed(args: &Map<String, Value>, keys: &[&str]) -> std::result::Result<(), String> {
@@ -219,205 +263,192 @@ fn call(
     as_wire(report)
 }
 
-fn handle(
-    message: Value,
-    repo: &Path,
-    roots: Option<&str>,
-    db: Option<&str>,
-    initialized: &mut bool,
-    ready: &mut bool,
-) -> Option<Value> {
-    let id = message.get("id")?.clone();
-    if !(id.is_null() || id.is_string() || id.is_number()) {
-        return Some(fault(Value::Null, -32600, "invalid JSON-RPC request id"));
-    }
-    if message.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-        return Some(fault(id, -32600, "expected jsonrpc 2.0"));
-    }
-    let Some(method) = message.get("method").and_then(Value::as_str) else {
-        return Some(fault(id, -32600, "missing JSON-RPC method"));
-    };
-    match method {
-        "initialize" => {
-            let requested = message
-                .pointer("/params/protocolVersion")
-                .and_then(Value::as_str)
-                .unwrap_or(PROTOCOL);
-            let version = if matches!(requested, "2025-11-25" | "2025-06-18" | "2025-03-26") {
-                requested
-            } else {
-                PROTOCOL
-            };
-            *initialized = true;
-            *ready = false;
-            Some(reply(
-                id,
-                json!({
-                    "protocolVersion":version,
-                    "capabilities":{"tools":{"listChanged":false}},
-                    "serverInfo":{"name":"excession","version":env!("CARGO_PKG_VERSION")},
-                    "instructions":"Use search_code to locate relevant Git sources and get_context for exact paths. Use check_coverage to inspect unsupported or partial analysis, plan_tests before execution, and verify_change after committing. Candidate relationships are not correctness proofs. No MCP tool executes tests, edits source, or authorizes merge. This server is confined to its configured repository."
-                }),
-            ))
-        }
-        "ping" => Some(reply(id, json!({}))),
-        _ if !*initialized || !*ready => Some(fault(
-            id,
-            -32000,
-            "initialize and notifications/initialized are required first",
-        )),
-        "tools/list" => Some(reply(id, tool_catalog())),
-        "tools/call" => {
-            let params = match message.get("params").and_then(Value::as_object) {
-                Some(p) => p,
-                None => return Some(fault(id, -32602, "tools/call requires params object")),
-            };
-            let Some(name) = params.get("name").and_then(Value::as_str) else {
-                return Some(fault(id, -32602, "tools/call requires name"));
-            };
-            if ![
-                "search_code",
-                "get_context",
-                "explain_impact",
-                "verify_change",
-                "plan_tests",
-                "check_coverage",
-            ]
-            .contains(&name)
-            {
-                return Some(fault(id, -32602, &format!("unknown tool: {name}")));
+impl ExcessionMcp {
+    /// CPU/SQLite/Git operations are blocking; leave the MCP I/O runtime responsive.
+    async fn invoke<T: Serialize>(
+        &self,
+        name: &'static str,
+        args: T,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        let serialized = serde_json::to_value(args)
+            .map_err(|error| McpError::invalid_params(error.to_string(), None))?;
+        let Value::Object(args) = serialized else {
+            return Err(McpError::invalid_params(
+                "expected an argument object",
+                None,
+            ));
+        };
+        let repo = self.repo.clone();
+        let roots = self.roots.clone();
+        let db = self.db.clone();
+        let computed = tokio::task::spawn_blocking(move || {
+            call(name, &args, &repo, roots.as_deref(), db.as_deref())
+        })
+        .await;
+        match computed {
+            Ok(Ok(report)) => {
+                if report.to_string().len() > MAX_REPORT_BYTES {
+                    Ok(CallToolResult::error(vec![ContentBlock::text(
+                        "REFUSED: report exceeds 4 MiB; narrow the query",
+                    )]))
+                } else {
+                    Ok(CallToolResult::structured(report))
+                }
             }
-            let empty = Map::new();
-            let args = match params.get("arguments") {
-                None => &empty,
-                Some(Value::Object(a)) => a,
-                _ => return Some(fault(id, -32602, "arguments must be an object")),
-            };
-            let result = match call(name, args, repo, roots, db) {
-                Ok(value) => json!({
-                    "content":[{"type":"text","text":value.to_string()}],
-                    "structuredContent":value,"isError":false
-                }),
-                Err(error) => json!({
-                    "content":[{"type":"text","text":error}],"isError":true
-                }),
-            };
-            Some(reply(id, result))
+            Ok(Err(reason)) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "REFUSED: {reason}"
+            ))])),
+            Err(error) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "REFUSED: analysis task failed: {error}"
+            ))])),
         }
-        _ => Some(fault(id, -32601, &format!("unknown method: {method}"))),
     }
 }
 
-/// Stdio consumes one line-delimited JSON-RPC message per request. No logs on stdout.
-pub(super) fn serve(repo: &Path, roots: Option<&str>, db: Option<&str>) -> Result<()> {
-    let repo = discovery::inspect(repo, "HEAD")?.root;
-    let input = io::stdin();
-    let mut input = input.lock();
-    let output = io::stdout();
-    let mut output = output.lock();
-    let mut initialized = false;
-    let mut ready = false;
-    loop {
-        let mut line = String::new();
-        let bytes = input
-            .read_line(&mut line)
-            .map_err(|e| format!("read MCP stdin: {e}"))?;
-        if bytes == 0 {
-            return Ok(());
-        }
-        let response = if bytes > MAX_REQUEST_BYTES {
-            Some(fault(Value::Null, -32600, "MCP request exceeds 1 MiB"))
-        } else {
-            match serde_json::from_str::<Value>(&line) {
-                Ok(message) => {
-                    if message.get("id").is_none() {
-                        if message.get("method").and_then(Value::as_str)
-                            == Some("notifications/initialized")
-                            && initialized
-                        {
-                            ready = true;
-                        }
-                        None
-                    } else {
-                        handle(message, &repo, roots, db, &mut initialized, &mut ready)
-                    }
-                }
-                Err(_) => Some(fault(Value::Null, -32700, "invalid JSON message")),
-            }
-        };
-        if let Some(response) = response {
-            writeln!(output, "{response}").map_err(|e| format!("write MCP stdout: {e}"))?;
-            output
-                .flush()
-                .map_err(|e| format!("flush MCP stdout: {e}"))?;
-        }
+#[tool_router]
+impl ExcessionMcp {
+    #[tool(
+        description = "Find Git-pinned source candidates for a coding task. Results are heuristic; check coverage.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn search_code(
+        &self,
+        Parameters(args): Parameters<SearchArgs>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        self.invoke("search_code", args).await
     }
+
+    #[tool(
+        description = "Explain source identities, possible relationships, and gaps for exact tracked paths.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn get_context(
+        &self,
+        Parameters(args): Parameters<ContextArgs>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        self.invoke("get_context", args).await
+    }
+
+    #[tool(
+        description = "Compute candidate source impacts between two retained Git commits; not a behavioral proof.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn explain_impact(
+        &self,
+        Parameters(args): Parameters<ImpactArgs>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        self.invoke("explain_impact", args).await
+    }
+
+    #[tool(
+        description = "Recompute change impact and unresolved obligations; never authorizes merge.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn verify_change(
+        &self,
+        Parameters(args): Parameters<VerifyArgs>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        self.invoke("verify_change", args).await
+    }
+
+    #[tool(
+        description = "Plan native test selection without executing project code.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn plan_tests(
+        &self,
+        Parameters(args): Parameters<PlanTestsArgs>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        self.invoke("plan_tests", args).await
+    }
+
+    #[tool(
+        description = "Analyze supported Git source relationships and explicit coverage gaps without compiler execution.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn check_coverage(
+        &self,
+        Parameters(args): Parameters<CoverageArgs>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        self.invoke("check_coverage", args).await
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for ExcessionMcp {
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::from_build_env())
+            .with_instructions(
+                "Repository-scoped, Git-pinned evidence. Search for sources, inspect exact paths and coverage, then verify committed changes. Unknowns remain explicit. No tool edits source, executes tests, or approves merge.".to_string()
+            )
+    }
+}
+
+pub(super) fn serve(repo: &Path, roots: Option<&str>, db: Option<&str>) -> excession::Result<()> {
+    let repo = discovery::inspect(repo, "HEAD")?.root;
+    let server = ExcessionMcp {
+        repo,
+        roots: roots.map(str::to_owned),
+        db: db.map(str::to_owned),
+    };
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| format!("create MCP runtime: {error}"))?
+        .block_on(async move {
+            let running = server
+                .serve(rmcp::transport::stdio())
+                .await
+                .map_err(|error| format!("initialize MCP stdio server: {error}"))?;
+            running
+                .waiting()
+                .await
+                .map_err(|error| format!("run MCP stdio server: {error}"))?;
+            Ok(())
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn handshake_and_catalog_do_not_need_project_execution() {
-        let mut initialized = false;
-        let mut ready = false;
-        let init = handle(
-            json!({"jsonrpc":"2.0","id":1,"method":"initialize",
-            "params":{"protocolVersion":"2025-03-26"}}),
-            Path::new("."),
-            None,
-            None,
-            &mut initialized,
-            &mut ready,
-        )
-        .unwrap();
-        assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
-        ready = true;
-        let list = handle(
-            json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
-            Path::new("."),
-            None,
-            None,
-            &mut initialized,
-            &mut ready,
-        )
-        .unwrap();
-        let tools = list["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 6);
-        assert!(
-            tools
-                .iter()
-                .all(|v| v["annotations"]["readOnlyHint"] == true)
-        );
-    }
-
-    #[test]
-    fn refusal_is_machine_readable_and_not_silent_success() {
-        let mut initialized = true;
-        let mut ready = true;
-        let result = handle(
-            json!({"jsonrpc":"2.0","id":"req","method":"tools/call",
-            "params":{"name":"get_context","arguments":{"focus":[]}}}),
-            Path::new("."),
-            None,
-            None,
-            &mut initialized,
-            &mut ready,
-        )
-        .unwrap();
-        assert_eq!(result["id"], "req");
-        assert_eq!(result["result"]["isError"], true);
-        let unknown = handle(
-            json!({"jsonrpc":"2.0","id":3,"method":"tools/call",
-            "params":{"name":"run_shell","arguments":{}}}),
-            Path::new("."),
-            None,
-            None,
-            &mut initialized,
-            &mut ready,
-        )
-        .unwrap();
-        assert_eq!(unknown["error"]["code"], -32602);
+    fn tools_have_typed_schemas_and_read_only_annotations() {
+        let tools = ExcessionMcp::tool_router();
+        assert_eq!(tools.map.len(), 6);
+        for entry in tools.map.values() {
+            assert_eq!(
+                entry
+                    .attr
+                    .annotations
+                    .as_ref()
+                    .and_then(|a| a.read_only_hint),
+                Some(true)
+            );
+        }
     }
 }

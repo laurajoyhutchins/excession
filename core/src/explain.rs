@@ -24,37 +24,13 @@ fn supported_report(path: &Path) -> Result<Value> {
     }
     let bytes = fs::read(path).map_err(|e| format!("impact report: {e}"))?;
     let report = json::parse(&bytes)?;
-    if !matches!(
-        report.get("schema")?.str()?,
-        "excession.impact.v1" | "excession.impact.v2"
-    ) {
-        return refuse("expected an excession.impact.v1 or .v2 report");
+    if report.get("schema")?.str()? != "excession.impact.v3" {
+        return refuse("expected an excession.impact.v3 source-witness report");
     }
     Ok(report)
 }
 
-fn find_claim<'a>(report: &'a Value, id: &str) -> Result<&'a Value> {
-    if id.len() != 64
-        || !id
-            .bytes()
-            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-    {
-        return refuse("explanation claim ID requires a lowercase SHA-256 digest");
-    }
-    let mut found = None;
-    for effect in report.get("effects")?.array_ref()? {
-        let actual = effect.get("claim_id")?.str()?;
-        if !effect.content_id_matches("claim_id")? {
-            return refuse("impact claim identifier disagrees with its content");
-        }
-        if actual == id && found.replace(effect).is_some() {
-            return refuse("ambiguous impact claim identifier");
-        }
-    }
-    found.ok_or_else(|| format!("unknown impact claim: {id}"))
-}
-
-/// Recompute the complete candidate impact report before selecting a claim.
+/// Recompute the complete candidate impact report before selecting a source.
 /// Matching JSON alone would only establish self-consistency; reindexing
 /// authenticates source against Git objects and repeats the native analyzers.
 fn checked_report(

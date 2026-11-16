@@ -514,23 +514,47 @@ mod tests {
         assert!(verified_bundle(&value, &sha).is_ok());
         assert!(verified_bundle(&value, &"b".repeat(64)).is_err());
         let mut first = value.array_ref().unwrap()[0].clone();
-        *first.entries_mut().unwrap().get_mut("verificationResult").unwrap()
-            .entries_mut().unwrap().get_mut("verifiedTimestamps").unwrap()
-            = Value::array(Vec::new());
+        *first
+            .entries_mut()
+            .unwrap()
+            .get_mut("verificationResult")
+            .unwrap()
+            .entries_mut()
+            .unwrap()
+            .get_mut("verifiedTimestamps")
+            .unwrap() = Value::array(Vec::new());
         assert!(verified_bundle(&Value::array(vec![first]), &sha).is_err());
 
         let mut wrong_predicate = value.array_ref().unwrap()[0].clone();
-        *wrong_predicate.entries_mut().unwrap().get_mut("verificationResult").unwrap()
-            .entries_mut().unwrap().get_mut("statement").unwrap()
-            .entries_mut().unwrap().get_mut("predicateType").unwrap()
-            = Value::string("untrusted predicate");
+        *wrong_predicate
+            .entries_mut()
+            .unwrap()
+            .get_mut("verificationResult")
+            .unwrap()
+            .entries_mut()
+            .unwrap()
+            .get_mut("statement")
+            .unwrap()
+            .entries_mut()
+            .unwrap()
+            .get_mut("predicateType")
+            .unwrap() = Value::string("untrusted predicate");
         assert!(verified_bundle(&Value::array(vec![wrong_predicate]), &sha).is_err());
 
         let mut no_certificate = value.array_ref().unwrap()[0].clone();
-        *no_certificate.entries_mut().unwrap().get_mut("verificationResult").unwrap()
-            .entries_mut().unwrap().get_mut("signature").unwrap()
-            .entries_mut().unwrap().get_mut("certificate").unwrap()
-            = obj(&[]);
+        *no_certificate
+            .entries_mut()
+            .unwrap()
+            .get_mut("verificationResult")
+            .unwrap()
+            .entries_mut()
+            .unwrap()
+            .get_mut("signature")
+            .unwrap()
+            .entries_mut()
+            .unwrap()
+            .get_mut("certificate")
+            .unwrap() = obj(&[]);
         assert!(verified_bundle(&Value::array(vec![no_certificate]), &sha).is_err());
     }
 

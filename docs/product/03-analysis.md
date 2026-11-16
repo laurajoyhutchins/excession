@@ -1,9 +1,14 @@
 # PR 3: One-command repository analysis
 
-Status: **scaffold only**. Contract: `excession.analysis.v1`.
+**Historical PR planning note.** This was a scaffold-only proposal when
+written. The current CLI implements `excession analyze .`; see
+[the implementation note](03-analyze-implementation.md) and
+[current CLI reference](../CLI.md). Contract: `excession.analysis.v1`.
 
 ## Workflow
-`excession analyze . [--json]` is a proposed command, **not available yet**. It must coexist with the existing `excession analyze clang` subcommand rather than shadow or replace it.
+At the time of this plan, `excession analyze . [--json]` was proposed.
+It has since been implemented. The original design constraint was to retain
+`excession analyze clang` alongside the ordinary analysis command. It must coexist with the existing `excession analyze clang` subcommand rather than shadow or replace it.
 
 Use the same Git/SQLite and language-native observation producers as `excession index`, `semantic scan`, `inspect evidence`, SCIP and configured graph. Aggregate receipt references, not a second store. Each relationship preserves its source/target Git binding and native evidence type. A valid report may be partial.
 

@@ -17,13 +17,15 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 COPY --from=rust-build /build/core/target/release/excession /usr/local/bin/excession
 COPY --from=typescript /build/node_modules/typescript/lib/typescript.js /usr/local/bin/lib/typescript.js
 COPY deploy/remote-excession/server.mjs /opt/excession/server.mjs
-COPY . /srv/excession
-RUN test -d /srv/excession/.git && git -C /srv/excession rev-parse --verify HEAD
+COPY --chown=node:node . /srv/excession
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV EXCESSION_BIN=/usr/local/bin/excession
 ENV EXCESSION_REPOSITORIES='{"excession":"/srv/excession"}'
 WORKDIR /opt/excession
 USER node
+# Git refuses source owned by a different UID; validate under the runtime
+# identity rather than marking untrusted paths globally safe.
+RUN test -d /srv/excession/.git && git -C /srv/excession rev-parse --verify HEAD
 EXPOSE 8080
 CMD ["node","/opt/excession/server.mjs"]

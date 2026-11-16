@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/agent/github-evidence.v1.schema.json",
+  "title": "GitHub-native bounded Excession evidence artifact v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repository",
+    "base",
+    "head",
+    "producer",
+    "source_witnesses",
+    "coverage",
+    "suggested_checks",
+    "provenance",
+    "unresolved_obligations",
+    "verification",
+    "context",
+    "status",
+    "ready_to_merge",
+    "safe_to_skip_unlisted_tests",
+    "report_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "excession.github-evidence.v1"},
+    "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
+    "base": {"$ref": "#/$defs/revision"},
+    "head": {"$ref": "#/$defs/revision"},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "repository", "source_commit"],
+      "properties": {
+        "name": {"const": "Excession"},
+        "repository": {"const": "laurajoyhutchins/excession"},
+        "source_commit": {"$ref": "#/$defs/oid"}
+      }
+    },
+    "source_witnesses": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {"$ref": "#/$defs/source"}
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification", "context", "changed_paths", "focus_paths", "focus_complete"],
+      "properties": {
+        "verification": {
+          "type": "object",
+          "required": ["status", "truncated"],
+          "properties": {
+            "status": {"const": "PARTIAL"},
+            "truncated": {"type": "boolean"}
+          }
+        },
+        "context": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["status", "truncated", "gaps"],
+              "properties": {
+                "status": {"const": "PARTIAL"},
+                "truncated": {"type": "boolean"},
+                "gaps": {"type": "array"}
+              }
+            }
+          ]
+        },
+        "changed_paths": {"type": "integer", "minimum": 0},
+        "focus_paths": {"type": "integer", "minimum": 0, "maximum": 16},
+        "focus_complete": {"type": "boolean"}
+      }
+    },
+    "suggested_checks": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["source", "reason", "selection_verified"],
+        "properties": {
+          "source": {"$ref": "#/$defs/source"},
+          "reason": {"const": "PATH_NAME_HEURISTIC"},
+          "selection_verified": {"const": false}
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verification_report_id", "context_report_id", "github_run_id",
+        "independent_checks_executed", "receipt_authenticity"
+      ],
+      "properties": {
+        "verification_report_id": {"$ref": "#/$defs/digest"},
+        "context_report_id": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/digest"}]
+        },
+        "github_run_id": {
+          "type": ["string", "null"]
+        },
+        "independent_checks_executed": {"const": false},
+        "receipt_authenticity": {"const": "NOT_ATTESTED"}
+      }
+    },
+    "unresolved_obligations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"}
+    },
+    "verification": {"type": "object"},
+    "context": {"type": ["object", "null"]},
+    "status": {"enum": ["OPEN_OBLIGATIONS", "REPORTED_FAILURE"]},
+    "ready_to_merge": {"const": false},
+    "safe_to_skip_unlisted_tests": {"const": false},
+    "report_sha256": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "oid": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+    "digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "tree"],
+      "properties": {
+        "commit": {"$ref": "#/$defs/oid"},
+        "tree": {"$ref": "#/$defs/oid"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["source_commit", "source_tree", "path", "blob", "mode"],
+      "properties": {
+        "source_commit": {"$ref": "#/$defs/oid"},
+        "source_tree": {"$ref": "#/$defs/oid"},
+        "path": {"type": "string", "minLength": 1},
+        "blob": {"$ref": "#/$defs/oid"},
+        "mode": {"enum": ["100644", "100755"]}
+      }
+    }
+  }
+}

@@ -380,8 +380,10 @@ fn non_python_check_refuses_an_explicit_dot_scope() {
     let output = f.matrix(None, true);
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("source_prefix is only supported for Python"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("source_prefix is only supported for Python")
+    );
 }
 
 #[test]

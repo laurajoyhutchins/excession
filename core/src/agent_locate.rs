@@ -554,8 +554,7 @@ fn reading_plan(
                 .unwrap_or(false)
         })
         .collect::<Vec<_>>();
-    let has_tests =
-        !task_tests.is_empty()
+    let has_tests = !task_tests.is_empty()
         || (context != &Value::Null && !context.get("test_candidates")?.array_ref()?.is_empty());
     let reserved_test = usize::from(has_tests && budget > 1);
 

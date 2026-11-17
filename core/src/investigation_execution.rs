@@ -260,7 +260,7 @@ pub(crate) fn validate_event(
         || report.get("base_commit")?.str()? != commit
         || report.get("base_tree")?.str()? != tree
         || report.get("plan_event_id")?.str()? != plan_id
-        || report.get("witness_event_ids")?.array_ref()? != witness_ids
+        || report.get("witness_event_ids")?.array_ref()? != witness_ids.as_slice()
         || report.get("trust")?.str()? != "TRUSTED_LOCAL_EXECUTION_UNATTESTED"
         || report.get("semantic_verification")?.str()? != "NOT_ESTABLISHED"
         || report.get("ready_to_merge")?.bool()?
@@ -338,10 +338,20 @@ pub fn compare(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
         return refuse("execution timeout and output budgets must be positive representable values");
     }
     let arguments = argv(request.argv_json)?;
+    if !request.program.is_absolute() {
+        return refuse("execution requires an absolute trusted host executable path");
+    }
     let program = request.program.canonicalize()
         .map_err(|e| format!("trusted host executable: {e}"))?;
-    if !program.is_absolute() || !program.is_file() {
+    if !program.is_file() {
         return refuse("execution requires a regular absolute host executable");
+    }
+    let source_root = repo.canonicalize().map_err(|e| format!("source checkout: {e}"))?;
+    if program.starts_with(&source_root)
+        || arguments.iter().any(|arg| Path::new(arg).is_absolute()
+            && Path::new(arg).starts_with(&source_root))
+    {
+        return refuse("host executable and absolute script paths must not refer to the mutable source checkout");
     }
     let (program_sha, _) = sha256_file(&program)?;
     let history = investigation::audit(db, repo, request.id)?;

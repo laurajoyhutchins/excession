@@ -923,3 +923,160 @@ fn source_witness_streams_complete_large_blobs_with_bounded_span_memory() {
     let replay = command(&["investigation", "show", "--repo", r, "--db", d, "--id", id]);
     assert_eq!(replay["revision"], 3);
 }
+
+
+fn local_python() -> String {
+    let output = checked(Command::new("which").arg("python3"));
+    let path = String::from_utf8(output.stdout).unwrap().trim().to_owned();
+    assert!(Path::new(&path).is_absolute(), "Python must resolve to an absolute executable");
+    path
+}
+
+#[test]
+fn differential_execution_binds_real_outputs_to_witness_backed_preservation_plan() {
+    let (_tmp, repo, db, _initial) = setup();
+    fs::write(
+        repo.join("src/counter.py"),
+        "def update(x):\n    state = 0\n    if x > 2:\n        state += x\n    return state\nprint(update(3))\n",
+    ).unwrap();
+    let base = commit(&repo, "baseline behavior");
+    let r = repo.to_str().unwrap();
+    let d = db.to_str().unwrap();
+    let py = local_python();
+    let args = r#"["-B","src/counter.py"]"#;
+    let started = command(&["investigation","start","--repo",r,"--db",d,
+        "--rev",&base,"--question","What happens to the counter for input three?"]);
+    let id = started["investigation_id"].as_str().unwrap();
+    let claim = command(&["investigation","claim","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","1","--path","src/counter.py",
+        "--statement","The source conditionally updates a counter",
+        "--assumption","Source reviewed, no runtime proof",
+        "--assessment","SOURCE_REVIEW_REPORTED"]);
+    let witness = command(&["investigation","witness","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","2",
+        "--claim-event",claim["event_id"].as_str().unwrap(),
+        "--first-line","4","--last-line","4",
+        "--kind","STATE_MUTATION","--interpretation","Counter may increase"]);
+    let plan = command(&["investigation","plan","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","3",
+        "--claim-event",claim["event_id"].as_str().unwrap(),
+        "--obligation","Preserve the output for the given input three"]);
+    let plan_id = plan["event_id"].as_str().unwrap();
+
+    // A source revision with only an implementation comment gives the same result.
+    fs::write(
+        repo.join("src/counter.py"),
+        "# Implementation note\n\
+         def update(x):\n    state = 0\n    if x > 2:\n        state += x\n    return state\nprint(update(3))\n",
+    ).unwrap();
+    let same_output = commit(&repo, "comment-only source change");
+    refused(&["investigation","execute","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","4","--plan-event",plan_id,
+        "--candidate",&same_output,"--program",&py,
+        "--argv-json",args,"--trusted-local","false"]);
+    let agreed = command(&["investigation","execute","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","4","--plan-event",plan_id,
+        "--candidate",&same_output,"--program",&py,
+        "--argv-json",args,"--trusted-local","true",
+        "--timeout-ms","12000","--max-output-bytes","8192"]);
+    assert_eq!(agreed["kind"], "EXECUTION");
+    let report = &agreed["payload"]["report"];
+    assert_eq!(report["schema"], "excession.investigation-execution.v1");
+    assert_eq!(report["base_commit"], base);
+    assert_eq!(report["candidate_commit"], same_output);
+    assert_eq!(report["comparison"], "AGREEMENT_OBSERVED");
+    assert_eq!(report["trust"], "TRUSTED_LOCAL_EXECUTION_UNATTESTED");
+    assert_eq!(report["semantic_verification"], "NOT_ESTABLISHED");
+    assert_eq!(report["ready_to_merge"], false);
+    assert_eq!(report["witness_event_ids"], json!([witness["event_id"]]));
+    assert_eq!(report["base"]["status"], "EXITED");
+    assert_eq!(report["candidate"]["exit_code"], 0);
+    assert_eq!(report["base"]["stdout_sha256"], report["candidate"]["stdout_sha256"]);
+
+    // A different stdout on the same command and input is directly observable.
+    fs::write(
+        repo.join("src/counter.py"),
+        "def update(x):\n    state = 0\n    if x > 2:\n        state += x + 1\n    return state\nprint(update(3))\n",
+    ).unwrap();
+    let changed = commit(&repo, "change counter output");
+    let differed = command(&["investigation","execute","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","5","--plan-event",plan_id,
+        "--candidate",&changed,"--program",&py,"--argv-json",args,
+        "--trusted-local","true","--timeout-ms","12000","--max-output-bytes","8192"]);
+    assert_eq!(differed["payload"]["report"]["comparison"], "DIFFERENCE_OBSERVED");
+    assert_ne!(differed["payload"]["report"]["base"]["stdout_sha256"],
+        differed["payload"]["report"]["candidate"]["stdout_sha256"]);
+    refused(&["investigation","execute","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","5","--plan-event",plan_id,
+        "--candidate",&changed,"--program",&py,"--argv-json",args,
+        "--trusted-local","true"]);
+
+    // Explicit finite output budgets yield INCONCLUSIVE, not synthetic agreement.
+    let limited = command(&["investigation","execute","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","6","--plan-event",plan_id,
+        "--candidate",&changed,"--program",&py,"--argv-json",args,
+        "--trusted-local","true","--max-output-bytes","1","--timeout-ms","12000"]);
+    assert_eq!(limited["payload"]["report"]["comparison"], "INCONCLUSIVE");
+    assert_eq!(limited["payload"]["report"]["base"]["status"], "OUTPUT_LIMIT");
+    assert_eq!(limited["payload"]["report"]["candidate"]["status"], "OUTPUT_LIMIT");
+    refused(&["investigation","execute","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","7","--plan-event",plan_id,
+        "--candidate",&changed,"--program",&py,"--argv-json","not-json",
+        "--trusted-local","true"]);
+
+    let history = command(&["investigation","show","--repo",r,"--db",d,"--id",id]);
+    assert_eq!(history["revision"], 7);
+    let projection = command(&["investigation","explain","--repo",r,"--db",d,"--id",id]);
+    assert_eq!(projection["execution_comparisons"].as_array().unwrap().len(), 3);
+    assert_eq!(projection["preservation_plans"][0]["state"], "OPEN");
+    assert_eq!(projection["behavior_witnesses"][0]["runtime_verified"], false);
+    assert_eq!(projection["semantic_verification"], "NOT_ESTABLISHED");
+
+    let event_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-event.v1.schema.json"
+    )).unwrap();
+    let exec_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-execution.v1.schema.json"
+    )).unwrap();
+    let view_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-explanation.v1.schema.json"
+    )).unwrap();
+    let event_validator = jsonschema::draft202012::new(&event_schema).unwrap();
+    let exec_validator = jsonschema::draft202012::new(&exec_schema).unwrap();
+    let view_validator = jsonschema::draft202012::new(&view_schema).unwrap();
+    for row in history["events"].as_array().unwrap() {
+        assert!(event_validator.is_valid(row), "event: {row}");
+    }
+    assert!(exec_validator.is_valid(report), "execution report: {report}");
+    assert!(view_validator.is_valid(&projection), "projection: {projection}");
+    let mut forged = report.clone();
+    forged["semantic_verification"] = json!("PROVEN");
+    assert!(!exec_validator.is_valid(&forged));
+}
+
+#[test]
+fn execution_requires_prior_witness_and_plan_and_never_runs_by_default() {
+    let (_tmp, repo, db, base) = setup();
+    let r = repo.to_str().unwrap();
+    let d = db.to_str().unwrap();
+    let started = command(&["investigation","start","--repo",r,"--db",d,
+        "--rev",&base,"--question","What does the worker return?"]);
+    let id = started["investigation_id"].as_str().unwrap();
+    let claim = command(&["investigation","claim","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","1","--path","src/recovery.rs",
+        "--statement","The source invokes recovery",
+        "--assumption","Only a source claim","--assessment","HYPOTHESIS"]);
+    let plan = command(&["investigation","plan","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","2",
+        "--claim-event",claim["event_id"].as_str().unwrap(),
+        "--obligation","Preserve behavior"]);
+    fs::write(repo.join("src/other.rs"), "pub fn changed() {}\n").unwrap();
+    let candidate = commit(&repo, "unrelated candidate change");
+    let py = local_python();
+    refused(&["investigation","execute","--repo",r,"--db",d,
+        "--id",id,"--expected-revision","3",
+        "--plan-event",plan["event_id"].as_str().unwrap(),
+        "--candidate",&candidate,"--program",&py,
+        "--argv-json",r#"["-c","print(2)"]"#,"--trusted-local","true"]);
+    assert_eq!(command(&["investigation","show","--repo",r,"--db",d,"--id",id])["revision"], 3);
+}

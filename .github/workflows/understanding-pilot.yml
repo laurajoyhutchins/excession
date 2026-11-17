@@ -1,0 +1,85 @@
+name: Understanding pilot (source-first)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'benchmarks/understanding/**'
+      - 'tests/test_code_understanding_pilot.py'
+      - '.github/workflows/understanding-pilot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: understanding-pilot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  source-understanding-diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+
+      - name: Offline preregistered study and source-oracle tests
+        run: python3 -m unittest discover -s tests -p test_code_understanding_pilot.py -v
+
+      - name: Build current Rust Excession executable (no test code execution)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/ci/prepare-excession.sh . release
+
+      - name: Inspect pinned source, compare native Git and Excession retrieval
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/understanding/pilot.py \
+            --manifest benchmarks/understanding/study.json \
+            --bin "$GITHUB_WORKSPACE/core/target/release/excession" \
+            --out "$RUNNER_TEMP/understanding-pilot"
+
+      - name: Summarize diagnostic without fabricating agent outcomes
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/understanding-pilot/summary.json"; then
+            python3 - "$RUNNER_TEMP/understanding-pilot/summary.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          print("### Source-first codebase understanding pilot")
+          print()
+          print(f"Pinned source cases: {x['cases_registered']}, completed retrieval comparisons: {x['cases_retrieval_measured']}")
+          print()
+          print("| Question | Git source files | Excession reading plan |")
+          print("|---|---:|---:|")
+          for row in x["results"]:
+            g=row.get("git",{}).get("discovery_proxy",{})
+            e=row.get("excession",{}).get("discovery_proxy",{})
+            def fmt(z):
+              return f"{len(z.get('found_required', []))}/{z.get('required_paths', '?')}" if z else "INCOMPLETE"
+            print(f"| {row['case']} | {fmt(g)} | {fmt(e)} |")
+          print()
+          print("This is an **implementation/test path-discovery proxy**, NOT an agent comprehension score.")
+          print("No model run or independent human answer review has been performed.")
+          print("Missing or skipped cases remain visible; incomplete arms do not count as correct.")
+          PY
+          fi
+
+      - name: Retain original Git identities, source anchors and both-arm costs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-understanding-pilot-diagnostic
+          path: ${{ runner.temp }}/understanding-pilot/
+          if-no-files-found: warn
+          retention-days: 21

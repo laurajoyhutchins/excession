@@ -1,3 +1,9 @@
+> **Specialist evidence view.** Graph queries expose observed
+> relationships for a bounded purpose; they are not Excession's
+> product output or proof of runtime behavior. The canonical
+> [product](PRODUCT.md) is question-led investigation and transformation.
+> See [architecture](ARCHITECTURE.md).
+
 # The Excession graph
 
 The graph is an **evidence model**, not a CMake graph, a Kbuild graph,

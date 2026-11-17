@@ -1,3 +1,10 @@
+> **Reference for implemented commands.** The product is
+> [investigation-first understanding and transformation](PRODUCT.md).
+> This reference documents source, evidence and edit-building operations
+> that support those workflows, not a separate graph-query product.
+> There is no shipped `excession investigate` or `excession transform`
+> command yet. See [current practical workflow](CODEBASE_UNDERSTANDING.md).
+
 # Excession CLI
 
 `excession` is the Rust command-line interface for Git-grounded code

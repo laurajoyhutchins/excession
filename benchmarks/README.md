@@ -1,12 +1,17 @@
 # Excession benchmark program
 
-The old tests answered, "How quickly can Excession look up a file or construct
-a dependency view?" That is a **microbenchmark**, not the main research
-question.
+**The primary Excession benchmark is an independently graded investigation
+or behavior-preserving refactoring task on unfamiliar source.** See
+[product evaluation](../docs/EVALUATION.md). It measures behavioral answer
+accuracy, relevant source/test discovery, unsupported conclusions, preservation
+obligations, and end-to-end cost against agents using ordinary source tools.
 
-The reorganized question is: **Can Excession return exact, independently
-validated source relationships at lower *total* resource cost across multiple
-queries and Git revisions, while preserving a stated verification guarantee?**
+The existing relational, SCIP, native-provider, index, and graph measurements
+remain important **provider diagnostics**, retained with their original
+protocols and reproducible historical results. Their research question is
+whether Excession can return exact, independently validated source
+relationships efficiently over multiple queries and Git revisions. That is
+not a demonstration of codebase understanding.
 
 ## Structure
 
@@ -18,7 +23,9 @@ queries and Git revisions, while preserving a stated verification guarantee?**
 | [Single-query microbenchmarks](micro/README.md) | Existing, preserved | Git, ripgrep, clangd, graph-only and view phase diagnostics |
 | [Historical reports](results/) | Retained | Original measured results and GitHub Actions artifact pointers |
 
-**No agent task-completion or subjective productivity metric is used.**
+**This diagnostic suite does not currently measure agent task completion.**
+That gap is addressed by the separate product evaluation protocol, not
+by relabeling the historical relation experiments.
 
 ## Retired one-off experiments
 

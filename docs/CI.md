@@ -1,3 +1,10 @@
+> **Evaluation boundary.** CI and producer checks establish
+> specific implementation and evidence guarantees. The primary
+> product acceptance is independently graded codebase understanding
+> and correctness-preserving refactoring, described in
+> [evaluation](EVALUATION.md) and [verification](VERIFICATION.md).
+> A passing protocol or SCIP acceptance workflow is not that outcome.
+
 # Excession CI execution policy
 
 ## Execution tiers

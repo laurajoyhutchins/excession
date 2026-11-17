@@ -752,31 +752,39 @@ pub(crate) fn search_with_limits(
     search_with_page(
         discovered,
         entries,
-        limit,
         expression,
-        refresh_budget,
         source_path,
-        limits,
-        expression,
-        None,
+        PageRequest {
+            limit,
+            refresh_budget,
+            limits,
+            task_key: expression,
+            after: None,
+        },
     )
 }
 
 /// Enumerate ranked lexical source hits in stable snapshot-bound pages.
 /// A cursor binds the tree, task, index policy and every visible segment's
 /// completion state; it is invalidated rather than mixed after an index change.
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct PageRequest<'a> {
+    pub limit: usize,
+    pub refresh_budget: usize,
+    pub limits: IndexLimits,
+    pub task_key: &'a str,
+    pub after: Option<&'a str>,
+}
+
 pub(crate) fn search_with_page(
     discovered: &discovery::Discovery,
     entries: Vec<git::Entry>,
-    limit: usize,
     expression: &str,
-    refresh_budget: usize,
     source_path: impl Fn(&str) -> bool,
-    limits: IndexLimits,
-    task_key: &str,
-    after: Option<&str>,
+    request: PageRequest<'_>,
 ) -> Result<Search> {
+    let PageRequest {
+        limit, refresh_budget, limits, task_key, after,
+    } = request;
     let limits = limits.validate()?;
     if !(1..=64).contains(&limit) {
         return refuse("agent locate page size must be 1..=64");
@@ -892,7 +900,7 @@ pub(crate) fn search_with_page(
     put_meta(&tx, "source_tree", &discovered.tree)?;
 
     let mut identity = format!(
-        "excession-locate-page-v1\\0{}\\0{}\\0{}\\0{}\\0",
+        "excession-locate-page-v1\0{}\0{}\0{}\0{}\0",
         CACHE_VERSION, discovered.commit, discovered.tree, task_key,
     ).into_bytes();
     identity.extend_from_slice(expression.as_bytes());

@@ -686,8 +686,15 @@ pub(super) fn command() -> Command {
             leaf(
                 "witness",
                 &[
-                    "repo", "db", "id", "expected-revision", "claim-event",
-                    "first-line", "last-line", "kind", "interpretation",
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "claim-event",
+                    "first-line",
+                    "last-line",
+                    "kind",
+                    "interpretation",
                 ],
                 &[],
             )

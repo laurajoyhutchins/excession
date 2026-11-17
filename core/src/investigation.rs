@@ -3,10 +3,10 @@
 //! behavior by source identity, a plan, or an agent-verification report.
 use crate::discovery;
 use crate::evidence::identity::SourceRef;
-use crate::{investigation_witness, investigation_workflow};
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
+use crate::{investigation_witness, investigation_workflow};
 use std::collections::BTreeSet;
 use std::path::Path;
 

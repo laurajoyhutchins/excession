@@ -568,7 +568,6 @@ fn incomplete_index_budgets_remain_visible_in_persisted_explanations() {
     );
 }
 
-
 #[test]
 fn source_behavior_witnesses_bind_control_data_state_to_git_and_preservation_plans() {
     let (_tmp, repo, db, _) = setup();
@@ -579,98 +578,275 @@ fn source_behavior_witnesses_bind_control_data_state_to_git_and_preservation_pla
          \x20\x20  let result = input + 1;\n\
          \x20\x20  *counter += 1;\n\
          \x20\x20  result\n}\n",
-    ).unwrap();
+    )
+    .unwrap();
     let base = commit(&repo, "introduce flow fixture");
     let r = repo.to_str().unwrap();
     let d = db.to_str().unwrap();
-    let first = command(&["investigation", "start", "--repo", r, "--db", d,
-        "--rev", &base, "--question", "Which control, data and state operations must survive?"]);
+    let first = command(&[
+        "investigation",
+        "start",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--rev",
+        &base,
+        "--question",
+        "Which control, data and state operations must survive?",
+    ]);
     let id = first["investigation_id"].as_str().unwrap();
-    let claim = command(&["investigation", "claim", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "1", "--path", "src/flow.rs",
-        "--statement", "The source contains a conditional, a value assignment, and a counter mutation",
-        "--assumption", "Source syntax is not executable behavior verification",
-        "--assessment", "SOURCE_REVIEW_REPORTED"]);
+    let claim = command(&[
+        "investigation",
+        "claim",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "1",
+        "--path",
+        "src/flow.rs",
+        "--statement",
+        "The source contains a conditional, a value assignment, and a counter mutation",
+        "--assumption",
+        "Source syntax is not executable behavior verification",
+        "--assessment",
+        "SOURCE_REVIEW_REPORTED",
+    ]);
     let claim_id = claim["event_id"].as_str().unwrap();
 
     let witnesses = [
-        ("2", "CONTROL_CONDITION", "The source has an early return guard"),
-        ("3", "DATA_TRANSFER", "The source computes result from input"),
+        (
+            "2",
+            "CONTROL_CONDITION",
+            "The source has an early return guard",
+        ),
+        (
+            "3",
+            "DATA_TRANSFER",
+            "The source computes result from input",
+        ),
         ("4", "STATE_MUTATION", "The source updates the counter"),
     ];
     let mut ids = Vec::new();
     for (i, (line, kind, meaning)) in witnesses.iter().enumerate() {
-        let event = command(&["investigation", "witness", "--repo", r, "--db", d,
-            "--id", id, "--expected-revision", &(i + 2).to_string(),
-            "--claim-event", claim_id, "--first-line", line, "--last-line", line,
-            "--kind", kind, "--interpretation", meaning]);
+        let event = command(&[
+            "investigation",
+            "witness",
+            "--repo",
+            r,
+            "--db",
+            d,
+            "--id",
+            id,
+            "--expected-revision",
+            &(i + 2).to_string(),
+            "--claim-event",
+            claim_id,
+            "--first-line",
+            line,
+            "--last-line",
+            line,
+            "--kind",
+            kind,
+            "--interpretation",
+            meaning,
+        ]);
         assert_eq!(event["kind"], "WITNESS");
         assert_eq!(event["payload"]["kind"], *kind);
         assert_eq!(event["payload"]["source"]["commit"], base);
         assert_eq!(event["payload"]["runtime_verified"], false);
-        assert_eq!(event["payload"]["assessment"], "SOURCE_TEXT_VERIFIED_INTERPRETATION_UNVERIFIED");
-        assert!(event["payload"]["source_text"].as_str().unwrap().contains(
-            match *kind {
-                "CONTROL_CONDITION" => "if !ready",
-                "DATA_TRANSFER" => "input + 1",
-                _ => "*counter += 1",
-            }
-        ));
+        assert_eq!(
+            event["payload"]["assessment"],
+            "SOURCE_TEXT_VERIFIED_INTERPRETATION_UNVERIFIED"
+        );
+        assert!(
+            event["payload"]["source_text"]
+                .as_str()
+                .unwrap()
+                .contains(match *kind {
+                    "CONTROL_CONDITION" => "if !ready",
+                    "DATA_TRANSFER" => "input + 1",
+                    _ => "*counter += 1",
+                })
+        );
         ids.push(event["event_id"].as_str().unwrap().to_owned());
     }
 
-    refused(&["investigation", "witness", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "5", "--claim-event", claim_id,
-        "--first-line", "4", "--last-line", "4",
-        "--kind", "OBSERVED_RUNTIME_STATE", "--interpretation", "Not a valid source classification"]);
-    refused(&["investigation", "witness", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "5", "--claim-event", claim_id,
-        "--first-line", "99", "--last-line", "99",
-        "--kind", "STATE_MUTATION", "--interpretation", "A nonexistent source line"]);
-    refused(&["investigation", "witness", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "5",
-        "--claim-event", first["event_id"].as_str().unwrap(),
-        "--first-line", "2", "--last-line", "2",
-        "--kind", "CONTROL_CONDITION", "--interpretation", "Wrong kind of reference"]);
+    refused(&[
+        "investigation",
+        "witness",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "5",
+        "--claim-event",
+        claim_id,
+        "--first-line",
+        "4",
+        "--last-line",
+        "4",
+        "--kind",
+        "OBSERVED_RUNTIME_STATE",
+        "--interpretation",
+        "Not a valid source classification",
+    ]);
+    refused(&[
+        "investigation",
+        "witness",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "5",
+        "--claim-event",
+        claim_id,
+        "--first-line",
+        "99",
+        "--last-line",
+        "99",
+        "--kind",
+        "STATE_MUTATION",
+        "--interpretation",
+        "A nonexistent source line",
+    ]);
+    refused(&[
+        "investigation",
+        "witness",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "5",
+        "--claim-event",
+        first["event_id"].as_str().unwrap(),
+        "--first-line",
+        "2",
+        "--last-line",
+        "2",
+        "--kind",
+        "CONTROL_CONDITION",
+        "--interpretation",
+        "Wrong kind of reference",
+    ]);
 
-    let plan = command(&["investigation", "plan", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "5", "--claim-event", claim_id,
-        "--obligation", "Preserve the early-return guard, computed value, and counter mutation"]);
+    let plan = command(&[
+        "investigation",
+        "plan",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "5",
+        "--claim-event",
+        claim_id,
+        "--obligation",
+        "Preserve the early-return guard, computed value, and counter mutation",
+    ]);
     assert_eq!(plan["kind"], "PLAN");
-    let explanation = command(&["investigation", "explain", "--repo", r, "--db", d, "--id", id]);
+    let explanation = command(&[
+        "investigation",
+        "explain",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+    ]);
     assert_eq!(explanation["revision"], 6);
-    assert_eq!(explanation["behavior_witnesses"].as_array().unwrap().len(), 3);
-    assert_eq!(explanation["preservation_plans"][0]["witness_event_ids"], json!(ids));
+    assert_eq!(
+        explanation["behavior_witnesses"].as_array().unwrap().len(),
+        3
+    );
+    assert_eq!(
+        explanation["preservation_plans"][0]["witness_event_ids"],
+        json!(ids)
+    );
     assert_eq!(explanation["preservation_plans"][0]["state"], "OPEN");
     assert_eq!(explanation["semantic_verification"], "NOT_ESTABLISHED");
     assert_eq!(explanation["ready_to_merge"], false);
 
-    let event_schema: serde_json::Value = serde_json::from_str(
-        include_str!("../../contracts/product/investigation-event.v1.schema.json")
-    ).unwrap();
-    let explanation_schema: serde_json::Value = serde_json::from_str(
-        include_str!("../../contracts/product/investigation-explanation.v1.schema.json")
-    ).unwrap();
+    let event_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-event.v1.schema.json"
+    ))
+    .unwrap();
+    let explanation_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-explanation.v1.schema.json"
+    ))
+    .unwrap();
     let event_validator = jsonschema::draft202012::new(&event_schema).unwrap();
     let explanation_validator = jsonschema::draft202012::new(&explanation_schema).unwrap();
     let history = command(&["investigation", "show", "--repo", r, "--db", d, "--id", id]);
     for event in history["events"].as_array().unwrap() {
-        assert!(event_validator.is_valid(event), "bad persisted event: {event}");
+        assert!(
+            event_validator.is_valid(event),
+            "bad persisted event: {event}"
+        );
     }
-    assert!(explanation_validator.is_valid(&explanation), "bad explanation: {explanation}");
+    assert!(
+        explanation_validator.is_valid(&explanation),
+        "bad explanation: {explanation}"
+    );
 
     fs::write(repo.join("src/flow.rs"), "fn process() -> u32 { 0 }\n").unwrap();
     let candidate = commit(&repo, "change flow implementation");
-    let refresh = command(&["investigation", "refresh", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "6", "--candidate", &candidate]);
-    assert_eq!(refresh["payload"]["claim_assessments"][0]["direct_source"],
-        "DIRECT_SOURCE_CHANGED");
-    assert_eq!(refresh["payload"]["claim_assessments"][0]["semantic_impact"], "UNRESOLVED");
-    assert_eq!(command(&["investigation", "explain", "--repo", r, "--db", d, "--id", id])
-        ["behavior_witnesses"][0]["runtime_verified"], false);
+    let refresh = command(&[
+        "investigation",
+        "refresh",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "6",
+        "--candidate",
+        &candidate,
+    ]);
+    assert_eq!(
+        refresh["payload"]["claim_assessments"][0]["direct_source"],
+        "DIRECT_SOURCE_CHANGED"
+    );
+    assert_eq!(
+        refresh["payload"]["claim_assessments"][0]["semantic_impact"],
+        "UNRESOLVED"
+    );
+    assert_eq!(
+        command(&[
+            "investigation",
+            "explain",
+            "--repo",
+            r,
+            "--db",
+            d,
+            "--id",
+            id
+        ])["behavior_witnesses"][0]["runtime_verified"],
+        false
+    );
 
     let ledger = Db::open(&db).unwrap();
-    ledger.exec("DROP TRIGGER investigation_no_update_v1;").unwrap();
+    ledger
+        .exec("DROP TRIGGER investigation_no_update_v1;")
+        .unwrap();
     ledger.execute(
         "UPDATE investigation_event_v1 SET document = REPLACE(document, 'input + 1', 'input + 9') \
          WHERE investigation_id=? AND revision=4",
@@ -687,18 +863,61 @@ fn source_witness_streams_complete_large_blobs_with_bounded_span_memory() {
     let base = commit(&repo, "introduce large Git source");
     let r = repo.to_str().unwrap();
     let d = db.to_str().unwrap();
-    let first = command(&["investigation", "start", "--repo", r, "--db", d,
-        "--rev", &base, "--question", "What source modifies the state?"]);
+    let first = command(&[
+        "investigation",
+        "start",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--rev",
+        &base,
+        "--question",
+        "What source modifies the state?",
+    ]);
     let id = first["investigation_id"].as_str().unwrap();
-    let claim = command(&["investigation", "claim", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "1",
-        "--path", "src/large.py", "--statement", "State is incremented",
-        "--assumption", "Only source text is authenticated", "--assessment", "HYPOTHESIS"]);
-    let witness = command(&["investigation", "witness", "--repo", r, "--db", d,
-        "--id", id, "--expected-revision", "2",
-        "--claim-event", claim["event_id"].as_str().unwrap(),
-        "--first-line", "160001", "--last-line", "160001",
-        "--kind", "STATE_MUTATION", "--interpretation", "Possible state update"]);
+    let claim = command(&[
+        "investigation",
+        "claim",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "1",
+        "--path",
+        "src/large.py",
+        "--statement",
+        "State is incremented",
+        "--assumption",
+        "Only source text is authenticated",
+        "--assessment",
+        "HYPOTHESIS",
+    ]);
+    let witness = command(&[
+        "investigation",
+        "witness",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "2",
+        "--claim-event",
+        claim["event_id"].as_str().unwrap(),
+        "--first-line",
+        "160001",
+        "--last-line",
+        "160001",
+        "--kind",
+        "STATE_MUTATION",
+        "--interpretation",
+        "Possible state update",
+    ]);
     assert_eq!(witness["payload"]["source_text"], "state = state + 1\n");
     assert_eq!(witness["payload"]["runtime_verified"], false);
     let replay = command(&["investigation", "show", "--repo", r, "--db", d, "--id", id]);

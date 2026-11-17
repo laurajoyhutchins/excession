@@ -15,8 +15,8 @@ use excession::impact_query;
 use excession::improve;
 use excession::improve_edits;
 use excession::investigation;
-use excession::investigation_workflow;
 use excession::investigation_witness;
+use excession::investigation_workflow;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
 use excession::observed_relations::{self, Selection};
@@ -924,7 +924,8 @@ fn execute(args: &[String]) -> Result<Response> {
                 )?)),
                 "witness" => {
                     let parse_line = |flag: &str| -> Result<usize> {
-                        opt.get(flag).parse::<usize>()
+                        opt.get(flag)
+                            .parse::<usize>()
                             .map_err(|_| format!("--{flag} requires a positive integer"))
                     };
                     Ok(json(investigation_witness::record(

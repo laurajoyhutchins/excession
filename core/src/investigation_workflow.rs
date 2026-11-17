@@ -437,20 +437,25 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                 ),
             ])),
             "WITNESS" => {
-                prior_witnesses.entry(payload.get("claim_event_id")?.str()?.to_owned())
-                    .or_default().push(event.get("event_id")?.clone());
+                prior_witnesses
+                    .entry(payload.get("claim_event_id")?.str()?.to_owned())
+                    .or_default()
+                    .push(event.get("event_id")?.clone());
                 behavior_witnesses.push(obj(&[
-                ("event_id", event.get("event_id")?.clone()),
-                ("claim_event_id", payload.get("claim_event_id")?.clone()),
-                ("source", payload.get("source")?.clone()),
-                ("first_line", payload.get("first_line")?.clone()),
-                ("last_line", payload.get("last_line")?.clone()),
-                ("source_text", payload.get("source_text")?.clone()),
-                ("source_text_sha256", payload.get("source_text_sha256")?.clone()),
-                ("kind", payload.get("kind")?.clone()),
-                ("interpretation", payload.get("interpretation")?.clone()),
-                ("assessment", payload.get("assessment")?.clone()),
-                ("runtime_verified", Value::Bool(false)),
+                    ("event_id", event.get("event_id")?.clone()),
+                    ("claim_event_id", payload.get("claim_event_id")?.clone()),
+                    ("source", payload.get("source")?.clone()),
+                    ("first_line", payload.get("first_line")?.clone()),
+                    ("last_line", payload.get("last_line")?.clone()),
+                    ("source_text", payload.get("source_text")?.clone()),
+                    (
+                        "source_text_sha256",
+                        payload.get("source_text_sha256")?.clone(),
+                    ),
+                    ("kind", payload.get("kind")?.clone()),
+                    ("interpretation", payload.get("interpretation")?.clone()),
+                    ("assessment", payload.get("assessment")?.clone()),
+                    ("runtime_verified", Value::Bool(false)),
                 ]));
             }
             "REFRESH" => last_refresh = payload.clone(),
@@ -458,9 +463,15 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                 ("event_id", event.get("event_id")?.clone()),
                 ("claim_event_id", payload.get("claim_event_id")?.clone()),
                 ("obligation", payload.get("obligation")?.clone()),
-                ("witness_event_ids", Value::array(prior_witnesses
-                    .get(payload.get("claim_event_id")?.str()?)
-                    .cloned().unwrap_or_default())),
+                (
+                    "witness_event_ids",
+                    Value::array(
+                        prior_witnesses
+                            .get(payload.get("claim_event_id")?.str()?)
+                            .cloned()
+                            .unwrap_or_default(),
+                    ),
+                ),
                 ("state", Value::string("OPEN")),
             ])),
             "VERIFY" => verification_receipts.push(obj(&[

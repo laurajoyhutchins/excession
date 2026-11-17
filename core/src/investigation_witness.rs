@@ -12,8 +12,13 @@ const MAX_INTERPRETATION: usize = 8192;
 const CHUNK_BYTES: usize = 64 * 1024;
 
 fn kind(name: &str) -> Result<()> {
-    if !matches!(name, "CONTROL_CONDITION" | "DATA_TRANSFER" | "STATE_MUTATION") {
-        return refuse("behavior witness kind must be CONTROL_CONDITION, DATA_TRANSFER, or STATE_MUTATION");
+    if !matches!(
+        name,
+        "CONTROL_CONDITION" | "DATA_TRANSFER" | "STATE_MUTATION"
+    ) {
+        return refuse(
+            "behavior witness kind must be CONTROL_CONDITION, DATA_TRANSFER, or STATE_MUTATION",
+        );
     }
     Ok(())
 }
@@ -48,7 +53,9 @@ fn exact_span(repo: &Path, source: &SourceRef, first: usize, last: usize) -> Res
                 continue;
             }
             if (first..=last).contains(&current) {
-                let new_size = selected.len().checked_add(piece.len())
+                let new_size = selected
+                    .len()
+                    .checked_add(piece.len())
                     .ok_or("behavior witness source span length overflow")?;
                 if new_size > MAX_SPAN_BYTES {
                     return refuse("behavior witness source span exceeds 8192 bytes");
@@ -72,10 +79,15 @@ fn exact_span(repo: &Path, source: &SourceRef, first: usize, last: usize) -> Res
 }
 
 fn prior_claim<'a>(prior: &'a [Value], claim_id: &str) -> Result<&'a Value> {
-    if claim_id.len() != 64 || !claim_id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if claim_id.len() != 64
+        || !claim_id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return refuse("behavior witness claim reference is not an exact event identity");
     }
-    prior.iter()
+    prior
+        .iter()
         .find(|event| {
             event.get("event_id").and_then(Value::str).ok() == Some(claim_id)
                 && event.get("kind").and_then(Value::str).ok() == Some("CLAIM")
@@ -96,7 +108,8 @@ pub(crate) fn validate_event(
     let claim = prior_claim(prior, payload.get("claim_event_id")?.str()?)?;
     let source = investigation::source_from_value(payload.get("source")?)?;
     source.verify_git(repo)?;
-    if source.commit != commit || source.tree != tree
+    if source.commit != commit
+        || source.tree != tree
         || payload.get("source")? != claim.get("payload")?.get("source")?
     {
         return refuse("behavior witness must belong to its source-grounded claim");
@@ -142,17 +155,30 @@ pub fn record(db: &crate::sqlite::Db, repo: &Path, request: Witness<'_>) -> Resu
     let claim = prior_claim(history.get("events")?.array_ref()?, request.claim_event_id)?;
     let source = investigation::source_from_value(claim.get("payload")?.get("source")?)?;
     let text = exact_span(repo, &source, request.first_line, request.last_line)?;
-    investigation::append(db, repo, request.id, request.expected_revision, "WITNESS",
+    investigation::append(
+        db,
+        repo,
+        request.id,
+        request.expected_revision,
+        "WITNESS",
         obj(&[
             ("claim_event_id", Value::string(request.claim_event_id)),
             ("source", investigation::source_value(&source)),
             ("first_line", Value::number(request.first_line)),
             ("last_line", Value::number(request.last_line)),
             ("source_text", Value::string(&text)),
-            ("source_text_sha256", Value::string(digest::sha256(text.as_bytes()))),
+            (
+                "source_text_sha256",
+                Value::string(digest::sha256(text.as_bytes())),
+            ),
             ("kind", Value::string(request.kind)),
             ("interpretation", Value::string(request.interpretation)),
-            ("assessment", Value::string("SOURCE_TEXT_VERIFIED_INTERPRETATION_UNVERIFIED")),
+            (
+                "assessment",
+                Value::string("SOURCE_TEXT_VERIFIED_INTERPRETATION_UNVERIFIED"),
+            ),
             ("runtime_verified", Value::Bool(false)),
-        ]), None)
+        ]),
+        None,
+    )
 }

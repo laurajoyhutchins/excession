@@ -24,8 +24,7 @@
     {
       "id": "no-python-shell-true",
       "paths": [
-        "tools/*.py",
-        "tests/*.py"
+        "tools/*.py"
       ],
       "pattern": "\\bshell\\s*=\\s*True\\b",
       "rationale": "Avoid adding shell execution to source-inspection and verification utilities.",

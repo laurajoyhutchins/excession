@@ -1,112 +1,87 @@
 # Excession
 
-Excession analyzes source code at exact Git revisions. It records observed
-relationships, retains the identity and provenance of their sources, and
-reports what remains unknown. The implementation is a Rust CLI with SQLite
-indexes and integrations with language-native analyzers.
+**Understand software. Refactor it without losing what makes it correct.**
 
-Its first job is to help an engineer understand unfamiliar code: find the
-relevant implementation, work outward to callers and dependencies, inspect
-tests and invariants, and identify what a change might affect. Git identities
-and language-native observations support this investigation; they are not a
-substitute for reading and explaining the source. See the
-[codebase-understanding workflow](docs/CODEBASE_UNDERSTANDING.md).
+Excession is an evidence-driven **codebase understanding and transformation
+system**. An investigation begins with an engineering question, finds the
+governing implementation, explains how the relevant pieces behave together,
+identifies tests and assumptions, and records what remains unknown. A
+transformation uses that understanding to plan a structural change and
+independently check the behavior it must preserve.
 
-It can help locate an implementation, examine change impact, choose code to
-inspect, and audit the evidence behind a report. These are **candidates and
-observations**, not proofs of behavioral correctness.
+Git supplies source authority; SCIP, compilers, language servers, tests,
+builds and runtime traces supply evidence. **The index and graph are not
+the product.** An accurate, reviewable engineering decision is the product.
 
-## Choose how to use it
+Read the [product contract](docs/PRODUCT.md),
+[architecture](docs/ARCHITECTURE.md), and
+[accepted decision](docs/DECISIONS/0001-investigation-first.md).
 
-| Where you work | Entry point | What it produces |
-| --- | --- | --- |
-| ChatGPT with GitHub access | [GitHub analysis request](docs/GITHUB_NATIVE_ANALYSIS.md) | A GitHub Actions artifact containing the native JSON report, pinned Git identities, and receipt |
-| Pull requests and CI | [Reusable GitHub evidence workflow](docs/GITHUB_EVIDENCE.md) | Base/head evidence, coverage, original verification output, and unresolved obligations |
-| Terminal or editor | [Native CLI](docs/QUICKSTART.md) | Source queries and local, replayable reports |
-| Local coding agent | [Stdio MCP server](docs/MCP.md) | Read-only repository-scoped tools launched by the agent host |
+## What works today
 
-The GitHub paths use hosted Actions runners and GitHub artifacts. They do
-**not** require Cloud Run, another service, or a custom ChatGPT MCP connection.
+The Rust CLI operates on exact Git revisions and uses SQLite for derived
+indexes and evidence. It can locate candidate implementations, assemble
+bounded context and reading plans, identify possible change impact,
+inspect source-bound observations, audit report replay, and support
+bounded refactoring proposals and native edit replay.
 
-## Local quick start
+**Important distinction:** a complete persistent investigation/claim
+engine and an end-to-end investigation-driven transformation command
+are **target architecture**, not shipped interfaces. Current reports do
+not themselves certify behavior, semantic equivalence, safe test selection
+or permission to merge.
 
-Install the [appropriate release archive](https://github.com/laurajoyhutchins/excession/releases)
-and verify its adjacent `.sha256` file. Keep the executable and bundled
-`lib/typescript.js` together. See [installation and supported platforms](docs/RELEASE.md).
-Alternatively, build the CLI from the checked-out source using the pinned
-Rust toolchain and [development instructions](docs/DEVELOPMENT.md).
+| Engineering task | Start here |
+| --- | --- |
+| Understand an unfamiliar behavior | [Investigation workflow](docs/CODEBASE_UNDERSTANDING.md) |
+| Evaluate a refactoring | [Transformation workflow](docs/TRANSFORMATIONS.md) and [current refactoring commands](docs/REFACTORING.md) |
+| Understand evidence and uncertainty | [Evidence lifecycle](docs/EVIDENCE_LIFECYCLE.md) and [limits](docs/EVIDENCE_AND_LIMITS.md) |
+| Check what was preserved | [Verification contract](docs/VERIFICATION.md) |
+| Judge whether Excession helps agents | [Evaluation](docs/EVALUATION.md) |
+| Integrate a terminal or coding agent | [Quick start](docs/QUICKSTART.md) and [local MCP](docs/MCP.md) |
+| Request analysis through GitHub | [GitHub-native analysis](docs/GITHUB_NATIVE_ANALYSIS.md) |
 
-From a repository containing supported source:
+## Try a source investigation
+
+Install a [verified release](docs/RELEASE.md) or build using
+[development setup](docs/DEVELOPMENT.md). Git is required; some
+language-native producers are optional.
 
 ```sh
 excession doctor
-excession discover .
-excession analyze . --json
-excession impact . --output /tmp/excession-impact.json
+excession agent locate --repo /path/to/repository --rev HEAD \
+  --task "Find where a transaction becomes durable" --limit 12 --json
 ```
 
-`impact` produces an `excession.impact.v3` report containing
-`candidate_source_impacts`. Select a **real path in that report**, then
-inspect its evidence:
+Read the returned `reading_plan` and the **actual Git-pinned source**.
+It is a navigation aid, not an automatically produced behavioral explanation.
+Use `agent context` for the selected paths, inspect tests and failure modes,
+then record supported claims and unresolved questions. Follow
+[the practical guide](docs/CODEBASE_UNDERSTANDING.md).
+
+For a committed change:
 
 ```sh
-excession explain . --report /tmp/excession-impact.json \
-  --source path/from/report.py --audit
+excession impact /path/to/repository --output /tmp/excession-impact.json
 ```
 
-The `impact` comparison defaults to the committed `HEAD~1..HEAD`
-range. Use `--base` and `--head` to choose another exact comparison.
-These commands do not incorporate uncommitted working-tree edits.
-The [quick-start guide](docs/QUICKSTART.md) explains output interpretation,
-partial coverage, and supported adapter boundaries.
+The result is a bounded source-impact candidate report, not proof that a
+behavior changed. See [quick start](docs/QUICKSTART.md),
+[CLI](docs/CLI.md), and [agent CLI](docs/AGENT_CLI.md) for exact syntax.
 
-## Request an analysis from GitHub
+## Available surfaces
 
-Create an owner-authored issue titled **Excession analysis request** in this
-repository, using the [issue template](.github/ISSUE_TEMPLATE/excession-analysis.md).
-Provide an allowlisted public repository, the full 40-character Git commit SHA,
-and a `locate`, `context`, or `verify` request. The
-[GitHub-native workflow](.github/workflows/github-native-analysis.yml) builds
-and executes the real Rust CLI and uploads the original report and a
-checksum-bearing receipt.
+- **Local CLI:** native analysis and specialist evidence/refactoring commands.
+- **Local stdio MCP:** repository-scoped, read-only `search_code`,
+  `get_context`, `explain_impact`, `verify_change`, `plan_tests` and
+  `check_coverage`. No live `investigate` or `transform` MCP tool yet.
+- **GitHub Actions:** owner-authorized on-demand public-repository source
+  reports and separate PR evidence artifacts. They do not run unspecified
+  target-project tests or authorize merging.
 
-Use the existing GitHub connector to find the matching workflow run and
-download its artifact. Verify the requested commit, Git tree, report schema,
-receipt status, and hash before relying on its contents. See the
-[request and validation contract](docs/GITHUB_NATIVE_ANALYSIS.md).
-
-PR evidence is a separate path. The
-[reusable workflow](.github/workflows/github-evidence.yml) preserves a
-base/head comparison; it does not run independent behavioral tests or
-authorize merging.
-
-## What a report means
-
-- **Git identities** bind the observation to a commit, tree, path, mode,
-  and blob. They establish what source was examined, not what the program does.
-- **Native producer outputs** such as SCIP, compiler declarations, and SARIF
-  remain distinct from Excession's interpretations. A static import or
-  symbol reference is not automatically a runtime dependency.
-- **Coverage and unresolved obligations** are part of the result. A successful
-  command or green workflow does not mean complete analysis, validated test
-  selection, or safe-to-merge status.
-
-See [architecture](docs/ARCHITECTURE.md),
-[evidence and limits](docs/EVIDENCE_AND_LIMITS.md), and
-[source-impact semantics](docs/COMPACT_IMPACT.md).
-
-## Documentation
-
-Start with the [documentation index](docs/README.md). The most useful routes
-are [codebase understanding](docs/CODEBASE_UNDERSTANDING.md),
-[CLI reference](docs/CLI.md), [agent commands](docs/AGENT_CLI.md),
-[GitHub workflows](docs/GITHUB_NATIVE_ANALYSIS.md),
-[local MCP](docs/MCP.md), [CI policy](docs/CI.md), and
-[development setup](docs/DEVELOPMENT.md).
-
-Experimental designs and dated research records remain accessible through
-the [research and reference index](docs/REFERENCE.md). A proposed algorithm
-or schema in those records is not necessarily implemented.
+See [MCP](docs/MCP.md) and [GitHub-native analysis](docs/GITHUB_NATIVE_ANALYSIS.md).
+This GitHub-based path does not require a custom ChatGPT MCP server,
+Cloud Run or another deployment.
 
 ## Development
 
@@ -116,9 +91,10 @@ mise run setup
 mise run check
 ```
 
-See [contributing](CONTRIBUTING.md), [verification policy](docs/CI.md),
-and [releases](docs/RELEASE.md). Git is the authority for source;
-SQLite indexes and CI caches are reproducible accelerators, not substitutes
-for source evidence.
+Review [contributing](CONTRIBUTING.md), [agent instructions](AGENTS.md),
+[CI](docs/CI.md), and the [documentation index](docs/README.md).
+Producer experiments, graphs and historical designs remain available
+through the [technical reference](docs/REFERENCE.md), but they do not
+override the investigation-first direction.
 
 Licensed under the [repository license](LICENSE).

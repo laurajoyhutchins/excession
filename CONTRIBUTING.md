@@ -1,25 +1,65 @@
 # Contributing to Excession
 
-Excession is a Git-grounded, auditable code-intelligence CLI. Contributions should improve demonstrable correctness and usability, not create parallel evidence authorities.
+Excession is an **investigation-driven codebase-understanding and
+transformation system**. Read the [product contract](docs/PRODUCT.md),
+[ADR 0001](docs/DECISIONS/0001-investigation-first.md) and
+[agent instructions](AGENTS.md) before changing product behavior.
 
 ## Start
 
-Read [README](README.md), [documentation index](docs/README.md),
-[development setup](docs/DEVELOPMENT.md), [contracts](contracts/README.md),
-and [CI policy](docs/CI.md).
+Use the [development setup](docs/DEVELOPMENT.md), [CI policy](docs/CI.md),
+[documentation home](docs/README.md), and [contracts](contracts/README.md).
+The pinned toolchain entry point is:
 
-Use `mise install && mise run setup && mise run check`, or invoke the underlying Rust/Python/Node checks directly. Dependencies should be installed from the repo's pinned version/lock files. Ordinary local verification should remain focused; run expensive external fixture, native compiler or cross-platform suites when specifically relevant. See [CI tiers](docs/CI.md) before broadening a workflow trigger.
+```sh
+mise install
+mise run setup
+mise run check
+```
 
-## Pull requests
+Keep local checkpoint checks focused; run deep producer acceptance when
+the relevant boundary changes.
 
-- State the user-visible behavior and exact semantic/evidence claim.
-- Add a failing or explicitly skipped future test before implementation. **Never count skipped tests as passed behavior.**
-- Preserve Git source authority, deterministic receipts, typed coverage gaps and independent replay. Avoid duplicating language-native semantics already provided by SCIP/Clang/native tools.
-- Include independent positive/negative fixtures, measured costs for performance changes and a precise unsupported list.
-- Keep changes small and based on current main. Avoid merging old feature stacks wholesale; see issue #60.
+## What a change must establish
 
-## Experimental work
+- The user question, behavioral problem or structural improvement it serves.
+- Exact Git identities, original source observations, producer/configuration,
+  evidence gaps and the smallest useful explanation.
+- For source changes: which public behavior, errors, ordering, side effects,
+  state and compatibility guarantees must be preserved or intentionally changed.
+- For assertions of correctness: independent tests, negative fixtures and
+  receipts addressing the **specific** claim.
+- For cost claims: total resource cost, including preprocessing, index
+  creation, source reads, execution and verification.
 
-Concept intelligence and ontology work in PRs #88–#95 is currently proposal scaffolding. An ontology concept does not establish an import, function call, runtime dependency, vulnerability or safe rewrite.
+Add a failing test or explicitly identified absent acceptance case before
+implementation where practical. Skipped or unavailable tests are **not**
+passing evidence. A graph edge, passing replay, or schema is not a proof
+of behavioral correctness.
+
+## Architecture contributions
+
+Prefer using Git, SCIP, compilers, language servers, parsers and native
+test tools as evidence providers. Do not create another full language indexer
+or universal source rewriter without a demonstrated investigation benefit.
+Keep derived knowledge and SQLite caches subordinate to Git source and
+producer provenance. Prefer question-scoped work over global graph expansion.
+
+Record proposed interfaces as **not implemented** until live CLI/MCP code,
+versioned contract and independent acceptance exist. For refactoring,
+use isolated worktrees and fail-closed native edit replay, never the original
+dirty checkout.
+
+## Evaluation and documentation
+
+See [evaluation](docs/EVALUATION.md) and
+[benchmarks](benchmarks/README.md): improve actual unfamiliar-repository
+understanding and behavior-preserving refactoring, not primarily edge recall.
+When modifying a public behavior, update the canonical task guide and
+reference documentation, and run [documentation checks](docs/DOCUMENTATION.md).
+
+Historical security, ontology, graph and migration experiments remain
+in [technical reference](docs/REFERENCE.md); their presence does not
+make them the product direction.
 
 See [SECURITY.md](SECURITY.md) for security disclosure.

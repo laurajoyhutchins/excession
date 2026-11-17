@@ -1,64 +1,52 @@
-# Maintaining the documentation
+# Maintaining documentation
 
-The documentation is part of Excession's evidence boundary. A command
-example or supported-feature statement must match a real executable
-and be clear about where its guarantee ends.
+Documentation must tell agents **what to do today**, **what Excession can
+actually establish**, and **what is only proposed**. It is part of the
+source/evidence contract.
 
-## Where content belongs
+## Canonical ownership
 
-| Content | Canonical location |
+| Topic | Canonical location |
 | --- | --- |
-| High-level introduction and supported entry points | [Root README](../README.md) |
-| Task-based navigation | [Documentation home](README.md) |
-| Reproducible first analysis | [Quick start](QUICKSTART.md) |
-| Exact CLI syntax and flags | [CLI reference](CLI.md) and [agent CLI](AGENT_CLI.md) |
-| Source and producer authority | [Architecture](ARCHITECTURE.md), [evidence and limits](EVIDENCE_AND_LIMITS.md) |
-| In-chat and CI execution | [GitHub-native request](GITHUB_NATIVE_ANALYSIS.md), [PR evidence](GITHUB_EVIDENCE.md) |
-| Local agent protocol | [MCP](MCP.md) |
-| Operations | [Development](DEVELOPMENT.md), [CI](CI.md), [release](RELEASE.md) |
-| Detailed producer contracts and research | [Reference index](REFERENCE.md) |
+| Product and scope | [Product](PRODUCT.md) and [ADR 0001](DECISIONS/0001-investigation-first.md) |
+| Task navigation | [Documentation home](README.md) |
+| Current system and target boundaries | [Architecture](ARCHITECTURE.md) |
+| Evidence flow and invalidation | [Evidence lifecycle](EVIDENCE_LIFECYCLE.md), [limits](EVIDENCE_AND_LIMITS.md) |
+| Question-to-explanation | [Investigations](INVESTIGATIONS.md) and [practical workflow](CODEBASE_UNDERSTANDING.md) |
+| Refactoring and change preservation | [Transformations](TRANSFORMATIONS.md), [native commands](REFACTORING.md) |
+| Check interpretation | [Verification](VERIFICATION.md) |
+| End-to-end efficacy | [Evaluation](EVALUATION.md) |
+| Exact command flags | [CLI](CLI.md), [agent CLI](AGENT_CLI.md), [MCP](MCP.md) |
+| Developer operations | [Development](DEVELOPMENT.md), [CI](CI.md), [release](RELEASE.md) |
+| Specialist/historical studies | [Reference](REFERENCE.md) |
 
-Do not expand the README into a second CLI manual. Link to the canonical
-guide rather than copying paragraphs of command flags into another page.
+The README is a concise entry point, not a second command reference.
+Specialist pages may describe SCIP/graphs/ontologies, but must not
+reintroduce indexing as Excession's product goal.
 
-## Status and evidence
+## Implementation honesty
 
-Every description should distinguish:
+- **Implemented:** real code and acceptance at a named revision.
+- **Partial:** supported behavior under stated language, size,
+  configuration, tooling or source limits.
+- **Experimental:** scoped results from a reproducible study.
+- **Proposed:** a contract/ADR/desired interface with no shipped command.
+- **Historical:** notes from a previous branch or research design.
 
-- **Implemented:** a command exists in the repository and its supported
-  behavior has an acceptance test at a pinned revision.
-- **Partial or conditional:** a producer exists but its language,
-  configuration, resource bound, or dependencies limit coverage.
-- **Experimental:** a reproducible experiment has a scoped result but
-  does not establish a general property.
-- **Proposed or historical:** a contract, PR plan, or design sketch.
-  Its presence in `docs/` does not mean it shipped.
+Never write a proposed command as a runnable example. Do not promote a
+claimed verified behavior based only on static edges, source hashes,
+passing syntax checks, or a successful workflow.
 
-A dated benchmark should include its date, exact revision, hardware and
-tool versions where relevant, fixtures, independent baseline and
-unresolved cases. Link to a retained receipt when one exists; avoid
-guessing results from test names or comments.
+## Evidence-aware writing
 
-For a newly supported feature, update both the task guide and its
-emitted schema or native acceptance reference. Do not move a proposal to
-“implemented” without evidence.
+Anchor source-level statements in current implementation and exact paths.
+For performance or behavioral assertions, cite independent receipts,
+fixtures, revisions and conditions. A meaningful refactoring example
+names what must remain unchanged and what verification actually exercised.
 
-## Writing
-
-Use direct technical names. Explain what runs, what Git objects it uses,
-what it produces, and what the caller must verify. Avoid slogans,
-capability adjectives, speculative future tense presented as present
-support, and repeated safety boilerplate.
-
-Use normal Markdown headings, relative repository links, and fenced
-shell/code examples. Use exact file paths and tested command syntax.
-Prefer one complete example with its expected output contract over
-multiple variations that do not specify inputs.
-
-When a feature is superseded, preserve historical material only when it
-has useful design or research provenance. Mark it explicitly as
-historical and link to its current replacement. Do not delete a proof
-obligation merely because newer functionality exists.
+State unknowns and negative outcomes explicitly. Avoid repeated generic
+boilerplate and ungrounded adjectives. Keep one source of truth for each
+contract and link to it rather than copy evolving command flags.
 
 ## Validation
 
@@ -67,21 +55,8 @@ python3 tools/check_docs.py
 python3 -m unittest discover -s tests -p 'test_docs.py' -v
 ```
 
-The local-link checker runs as part of `Verify`, before expensive
-dependency installation. It checks relative Markdown and image targets,
-including references into source, contracts, and workflows. It ignores
-external URLs and fenced code examples. It cannot prove external pages
-are live or that the linked source implements a claimed behavior.
-
-Before merging, inspect README rendering, the [documentation home](README.md),
-the affected source guides, and the GitHub Actions result at the PR's
-actual head. A passing link check proves link targets exist, not that
-technical descriptions are correct.
-
-## What is not required
-
-There is no extra docs server or generated knowledge base. GitHub renders
-the checked-in Markdown. CI and agent workflows use the same repository
-and versioned source, so links and snippets can be reviewed alongside
-implementation changes. A future generated website should reuse this
-content rather than creating another independent documentation authority.
+The link checker tests local link targets, not the correctness of source
+claims or external URLs. Before merging, inspect rendered navigation,
+relative links, examples against actual `--help`, and the **exact PR head**
+checks in GitHub Actions. There is no required docs server: GitHub
+renders checked-in Markdown and Git history preserves revisioned changes.

@@ -151,34 +151,34 @@ pub fn context(
         analyze::run_default(&discovered.root, &discovered.commit, roots, database)?;
     let (relations, total_relations, observed_reference_count) =
         focused_relationships(analysis.get("relationships")?.array_ref()?, &focus, limit)?;
-        if total_relations > relations.len() {
-            truncated = true;
-        }
-        for item in analysis.get("configured_observations")?.array_ref()? {
-            let source_path = item.get("source")?.get("path")?.str()?;
-            let selected_path = item
-                .entries()?
-                .get("subject")
-                .and_then(|subject| subject.get("path").ok())
-                .and_then(|path| path.str().ok());
-            if focus.contains(source_path)
-                || selected_path.is_some_and(|path| focus.contains(path))
-            {
-                total_configured += 1;
-                if configured_observations.len() < limit {
-                    configured_observations.push(item.clone());
-                } else {
-                    truncated = true;
-                }
-            }
-        }
-        for item in analysis.get("coverage")?.get("gaps")?.array_ref()? {
-            if gaps.len() < limit {
-                gaps.push(item.clone());
+    if total_relations > relations.len() {
+        truncated = true;
+    }
+    for item in analysis.get("configured_observations")?.array_ref()? {
+        let source_path = item.get("source")?.get("path")?.str()?;
+        let selected_path = item
+            .entries()?
+            .get("subject")
+            .and_then(|subject| subject.get("path").ok())
+            .and_then(|path| path.str().ok());
+        if focus.contains(source_path)
+            || selected_path.is_some_and(|path| focus.contains(path))
+        {
+            total_configured += 1;
+            if configured_observations.len() < limit {
+                configured_observations.push(item.clone());
             } else {
                 truncated = true;
             }
         }
+    }
+    for item in analysis.get("coverage")?.get("gaps")?.array_ref()? {
+        if gaps.len() < limit {
+            gaps.push(item.clone());
+        } else {
+            truncated = true;
+        }
+    }
 
 
     let mut test_candidates = Vec::new();

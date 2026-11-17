@@ -16,6 +16,9 @@
     "narratives",
     "open_questions",
     "retrievals",
+    "evidence_gaps",
+    "preservation_plans",
+    "verification_receipts",
     "latest_refresh",
     "completeness",
     "semantic_verification",
@@ -252,6 +255,100 @@
     "report_id": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "evidence_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "exploration_event_id",
+          "reason",
+          "state"
+        ],
+        "properties": {
+          "exploration_event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "state": {
+            "const": "UNRESOLVED"
+          }
+        }
+      }
+    },
+    "preservation_plans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "claim_event_id",
+          "obligation",
+          "state"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "claim_event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "obligation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "state": {
+            "const": "OPEN"
+          }
+        }
+      }
+    },
+    "verification_receipts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "plan_event_id",
+          "report_id",
+          "status",
+          "ready_to_merge"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "plan_event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "report_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "status": {
+            "enum": [
+              "OPEN_OBLIGATIONS",
+              "REPORTED_FAILURE"
+            ]
+          },
+          "ready_to_merge": {
+            "const": false
+          }
+        }
+      }
     }
   }
 }

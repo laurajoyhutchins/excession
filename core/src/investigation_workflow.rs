@@ -291,6 +291,9 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
     let mut narratives = Vec::new();
     let mut open_questions = Vec::new();
     let mut retrievals = Vec::new();
+    let mut evidence_gaps = Vec::new();
+    let mut preservation_plans = Vec::new();
+    let mut verification_receipts = Vec::new();
     let mut last_refresh = Value::Null;
     for event in history.get("events")?.array_ref()? {
         let payload = event.get("payload")?;
@@ -315,6 +318,13 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                     ("index_complete", report.get("index")?.get("complete")?.clone()),
                     ("coverage", report.get("coverage")?.clone()),
                 ]));
+                for gap in report.get("coverage")?.get("gaps")?.array_ref()? {
+                    evidence_gaps.push(obj(&[
+                        ("exploration_event_id", event.get("event_id")?.clone()),
+                        ("reason", gap.get("reason")?.clone()),
+                        ("state", Value::string("UNRESOLVED")),
+                    ]));
+                }
             }
             "QUESTION" => open_questions.push(obj(&[
                 ("event_id", event.get("event_id")?.clone()),
@@ -329,6 +339,19 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                 ("authorship", Value::string("REPORTED_NOT_INDEPENDENTLY_VALIDATED")),
             ])),
             "REFRESH" => last_refresh = payload.clone(),
+            "PLAN" => preservation_plans.push(obj(&[
+                ("event_id", event.get("event_id")?.clone()),
+                ("claim_event_id", payload.get("claim_event_id")?.clone()),
+                ("obligation", payload.get("obligation")?.clone()),
+                ("state", Value::string("OPEN")),
+            ])),
+            "VERIFY" => verification_receipts.push(obj(&[
+                ("event_id", event.get("event_id")?.clone()),
+                ("plan_event_id", payload.get("plan_event_id")?.clone()),
+                ("report_id", payload.get("report")?.get("report_id")?.clone()),
+                ("status", payload.get("report")?.get("status")?.clone()),
+                ("ready_to_merge", Value::Bool(false)),
+            ])),
             _ => {}
         }
     }
@@ -344,6 +367,9 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
         ("narratives", Value::array(narratives)),
         ("open_questions", Value::array(open_questions)),
         ("retrievals", Value::array(retrievals)),
+        ("evidence_gaps", Value::array(evidence_gaps)),
+        ("preservation_plans", Value::array(preservation_plans)),
+        ("verification_receipts", Value::array(verification_receipts)),
         ("latest_refresh", last_refresh),
         ("completeness", Value::string("INCOMPLETE_BEHAVIORAL_COVERAGE")),
         ("semantic_verification", Value::string("NOT_ESTABLISHED")),

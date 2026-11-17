@@ -530,43 +530,94 @@ fn reading_plan(
         budget,
     };
 
-    // Preserve room for a test-reading step when one is present, even under
-    // small budgets. Code understanding must not collapse to graph-neighbor
-    // enumeration simply because a producer supplied many observations.
-    let has_tests =
-        context != &Value::Null && !context.get("test_candidates")?.array_ref()?.is_empty();
-    let reserved_test = usize::from(has_tests && budget > 1);
-    // Read likely implementations before chasing edges. Ranking is lexical,
-    // not a measured probability that the task lives in that file.
-    for (i, candidate) in candidates
+    let task_sources = candidates
         .iter()
-        .take(4.min(budget.saturating_sub(reserved_test)))
         .enumerate()
+        .filter(|(_, item)| {
+            item.get("source")
+                .and_then(|source| source.get("path"))
+                .and_then(Value::str)
+                .map(|path| !source_capabilities::test_candidate(path))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    let task_tests = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| {
+            item.get("source")
+                .and_then(|source| source.get("path"))
+                .and_then(Value::str)
+                .map(source_capabilities::test_candidate)
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    let has_tests = !task_tests.is_empty()
+        || (context != &Value::Null
+            && !context.get("test_candidates")?.array_ref()?.is_empty());
+    let reserved_test = usize::from(has_tests && budget > 1);
+
+    // Prioritize the implementation. A literal match in a committed test is
+    // better evidence for inspection than an unrelated graph neighbor.
+    for (i, candidate) in task_sources
+        .iter()
+        .copied()
+        .take(4.min(budget.saturating_sub(reserved_test)))
     {
         steps.push(
             candidate,
             "INSPECT_TASK_MATCH",
             "GIT_BLOB_LEXICAL_MATCH",
-            "Read the matching source to determine inputs, outputs, state changes, and invariants.",
+            "Read inputs, outputs, state changes and the conditions governing this implementation.",
             "candidates",
             i,
         )?;
     }
-    // Show both sides of a potential behavior path. Observed references
-    // remain producer observations; static imports remain candidates.
-    let relation_budget = 4.min(budget.saturating_sub(steps.items.len() + reserved_test));
+    for (i, candidate) in task_tests.iter().copied().take(3) {
+        steps.push(
+            candidate,
+            "INSPECT_RELATED_TEST",
+            "GIT_BLOB_LEXICAL_MATCH",
+            "Read this task-matching test and verify which behavior its assertions cover.",
+            "candidates",
+            i,
+        )?;
+    }
+    if context != &Value::Null {
+        for (i, candidate) in context
+            .get("test_candidates")?
+            .array_ref()?
+            .iter()
+            .take(3)
+            .enumerate()
+        {
+            // Filename-based tests are weaker suggestions and must not evict
+            // matching test source just to maximize graph neighbor count.
+            steps.push(
+                candidate,
+                "INSPECT_RELATED_TEST",
+                "TEST_PATH_HEURISTIC",
+                "Inspect the test assertions; its filename alone does not establish coverage.",
+                "context.test_candidates",
+                i,
+            )?;
+        }
+    }
+    // Related code is useful when it answers the task, but never outranks
+    // original source and test inspection by default.
+    let relation_budget = 3.min(budget.saturating_sub(steps.items.len()));
     for (i, neighbor) in related.iter().take(relation_budget).enumerate() {
         let assessment = neighbor.get("assessment")?.str()?;
         let direction = neighbor.get("direction")?.str()?;
         let (action, why) = if direction == "LEXICAL_SOURCE_TO_NEIGHBOR" {
             (
                 "INSPECT_POSSIBLE_DEPENDENCY",
-                "Check how the focused code uses this source; confirm whether data or control actually flows to it.",
+                "Check how the implementation uses this source; do not infer an executed call.",
             )
         } else if direction == "NEIGHBOR_TO_LEXICAL_SOURCE" {
             (
                 "INSPECT_POSSIBLE_CALLER",
-                "Check whether this source invokes or configures the focused behavior.",
+                "Check whether this source actually invokes or configures the focused behavior.",
             )
         } else {
             return refuse("reading plan received unsupported relationship direction");
@@ -578,23 +629,17 @@ fn reading_plan(
         };
         steps.push(neighbor, action, basis, why, "relationship_candidates", i)?;
     }
-    if context != &Value::Null {
-        for (i, candidate) in context
-            .get("test_candidates")?
-            .array_ref()?
-            .iter()
-            .take(4)
-            .enumerate()
-        {
-            steps.push(
-                candidate,
-                "INSPECT_RELATED_TEST",
-                "TEST_PATH_HEURISTIC",
-                "Read the assertions and fixtures to identify which behavior they actually cover.",
-                "context.test_candidates",
-                i,
-            )?;
-        }
+    // Remaining explicit lexical matches are better fallback reading than
+    // made-up behavioral edges.
+    for (i, candidate) in task_sources.into_iter().skip(4) {
+        steps.push(
+            candidate,
+            "INSPECT_TASK_MATCH",
+            "GIT_BLOB_LEXICAL_MATCH",
+            "Follow up on another independently located task-matching source file.",
+            "candidates",
+            i,
+        )?;
     }
     Ok(obj(&[
         ("schema", Value::string("excession.agent-reading-plan.v1")),

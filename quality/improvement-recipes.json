@@ -1,0 +1,38 @@
+{
+  "schema": "excession.improvement-recipes.v1",
+  "recipes": [
+    {
+      "id": "native-rustfmt",
+      "producer": "cargo-fmt-pinned",
+      "integration": "automatic-after-exact-head-verification",
+      "paths": [
+        "core/**/*.rs"
+      ],
+      "rationale": "Use the compiler ecosystem's native deterministic formatter to simplify and standardize Rust code without hand-authored rewrites.",
+      "evidence": "https://github.com/laurajoyhutchins/technical-notebook/blob/main/content/concepts/quality-ratchets.md",
+      "independent_checks": [
+        "formatter-replay",
+        "quality-ratchet",
+        "cargo-tests",
+        "verify-workflow",
+        "github-evidence-workflow"
+      ]
+    },
+    {
+      "id": "native-clippy",
+      "producer": "cargo-clippy-fix-pinned",
+      "integration": "review-required",
+      "paths": [
+        "core/**/*.rs"
+      ],
+      "rationale": "Compiler-proposed diagnostics can improve code and maintainability but their mechanical applicability does not prove general semantic equivalence.",
+      "evidence": "https://github.com/laurajoyhutchins/technical-notebook/blob/main/content/concepts/independent-oracles.md",
+      "independent_checks": [
+        "quality-ratchet",
+        "cargo-tests",
+        "verify-workflow",
+        "human-review"
+      ]
+    }
+  ]
+}

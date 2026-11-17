@@ -1333,6 +1333,126 @@ mod tests {
     }
 
     #[test]
+    fn git_sufficient_fast_path_does_not_create_index_or_infer_relationships() {
+        use std::fs;
+        use std::process::Command;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_FAST: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-locate-fast-{}-{}",
+            std::process::id(),
+            NEXT_FAST.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("test")).unwrap();
+        let git = |args: &[&str]| {
+            let result = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "git: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join("src/wal.c"), "int checkpoint_lock(void) { return 1; }\n")
+            .unwrap();
+        fs::write(
+            root.join("test/wal.test"),
+            "do_test checkpoint-locks { checkpoint lock release }\n",
+        )
+        .unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "pinned source",
+        ]);
+
+        let budget = LocateBudget {
+            index_segments: 4,
+            index: IndexLimits::default(),
+        };
+        let discovered = discovery::inspect(&root, "HEAD").unwrap();
+        assert!(!discovered.index_path.exists());
+        let fast = locate_with_mode(
+            &root,
+            "HEAD",
+            "checkpoint lock",
+            2,
+            None,
+            None,
+            budget,
+            false,
+        ).unwrap();
+        assert_eq!(
+            fast.get("enrichment").unwrap().str().unwrap(),
+            "NOT_REQUESTED_GIT_SUFFICIENT"
+        );
+        assert_eq!(
+            fast.get("retrieval").unwrap().str().unwrap(),
+            "COMMITTED_GIT_GREP"
+        );
+        assert_eq!(fast.get("index").unwrap(), &Value::Null);
+        assert_eq!(fast.get("cache").unwrap(), &Value::Null);
+        assert_eq!(fast.get("context").unwrap(), &Value::Null);
+        assert!(
+            fast.get("relationship_candidates")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
+        let steps = fast.get("reading_plan").unwrap().get("steps").unwrap()
+            .array_ref().unwrap();
+        let paths = steps.iter().map(|step| {
+            step.get("source").unwrap().get("path").unwrap().str().unwrap()
+        }).collect::<Vec<_>>();
+        assert_eq!(paths, ["src/wal.c", "test/wal.test"]);
+        assert!(fast.get("coverage").unwrap().get("gaps").unwrap().array_ref()
+            .unwrap().iter().any(|gap| gap.get("reason").unwrap().str().unwrap()
+                == "RELATIONSHIP_CONTEXT_NOT_QUERIED"));
+        assert!(!discovered.index_path.exists());
+        fs::write(root.join("src/wal.c"), "int replaced(void) { return 0; }\n").unwrap();
+        let again = locate_with_mode(
+            &root, "HEAD", "checkpoint lock", 2, None, None, budget, false,
+        ).unwrap();
+        assert_eq!(fast.get("report_id").unwrap(), again.get("report_id").unwrap());
+
+        // One more requested source file than Git found must activate
+        // the existing FTS path instead of pretending two results suffice.
+        let fallback = locate_with_mode(
+            &root, "HEAD", "checkpoint lock", 3, None, None, budget, false,
+        ).unwrap();
+        assert_eq!(
+            fallback.get("enrichment").unwrap().str().unwrap(),
+            "PERFORMED"
+        );
+        assert_ne!(fallback.get("index").unwrap(), &Value::Null);
+        assert_ne!(fallback.get("cache").unwrap(), &Value::Null);
+        assert!(discovered.index_path.exists());
+        let deep = locate_with_mode(
+            &root, "HEAD", "checkpoint lock", 2, None, None, budget, true,
+        ).unwrap();
+        assert_eq!(deep.get("enrichment").unwrap().str().unwrap(), "PERFORMED");
+        assert_ne!(deep.get("index").unwrap(), &Value::Null);
+        assert_ne!(deep.get("cache").unwrap(), &Value::Null);
+        assert_eq!(
+            deep.get("candidates").unwrap().array_ref().unwrap()[0]
+                .get("source").unwrap().get("path").unwrap().str().unwrap(),
+            "src/wal.c"
+        );
+        let cache_dir = discovered.index_path.parent().unwrap();
+        if cache_dir.exists() {
+            fs::remove_dir_all(cache_dir).unwrap();
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn locates_pinned_code_without_reading_dirty_checkout() {
         use std::fs;
         use std::process::Command;

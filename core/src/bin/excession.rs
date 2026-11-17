@@ -791,6 +791,14 @@ fn execute(args: &[String]) -> Result<Response> {
                     db,
                     locate_budget(opt)?,
                 )?)),
+                "locate-page" => Ok(json(agent_locate::locate_page_with_limits(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.get("task"),
+                    limit,
+                    locate_budget(opt)?,
+                    opt.0.get("after").map(String::as_str),
+                )?)),
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),
                     opt.get("rev"),

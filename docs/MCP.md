@@ -1,3 +1,11 @@
+> **Current MCP transport is an evidence interface, not yet a
+> persistent investigation engine.** Agents should use its six existing
+> read-only tools to gather source-bound evidence and build their own
+> question-led explanations. The proposed
+> [investigation/transform/verify workflow](PRODUCT.md) does not add
+> unimplemented MCP tool names. See [investigations](INVESTIGATIONS.md)
+> and [verification](VERIFICATION.md).
+
 # Coding-agent integration
 
 This is the **local stdio integration** for an agent that can launch processes

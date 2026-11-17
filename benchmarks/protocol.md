@@ -1,3 +1,9 @@
+> **Provider-diagnostic protocol.** This protocol compares
+> bounded source-relation queries and their independent oracles.
+> It is not the primary Excession product benchmark.
+> See [investigation/refactoring evaluation](../docs/EVALUATION.md)
+> for agent understanding and verified-transformation acceptance.
+
 # Benchmark contract: observable relational information, not agent productivity
 
 The primary question is whether reusable, Git-bound repository relations justify

@@ -1,3 +1,12 @@
+> **Current specialist command reference, not the product workflow.**
+> For an investigation-driven refactoring, start with
+> [understanding](INVESTIGATIONS.md), define the
+> [transformation and preservation contract](TRANSFORMATIONS.md), and
+> collect [independent verification](VERIFICATION.md). The detectors
+> and native edit operations below are evidence providers and bounded
+> execution mechanisms. They do not decide which architecture is correct.
+> The end-to-end transformation workflow is not yet shipped.
+
 # Refactoring intelligence
 
 Excession finds **places to investigate** in an indexed codebase and ties

@@ -1,77 +1,65 @@
 # Documentation
 
-Excession has one Rust executable and several ways to consume its evidence.
-Start with the task you want to perform. Documentation here distinguishes
-**implemented commands** from **experimental designs** and
-**historical proposals**.
+**Start with the engineering question, not an index command.**
 
-## Start here
+The [documentation cutover](CUTOVER.md),
+[product contract](PRODUCT.md) and
+[ADR 0001](DECISIONS/0001-investigation-first.md) define Excession:
+an investigation-driven codebase understanding and transformation system.
+The [architecture](ARCHITECTURE.md) separates current implementation
+from future investigation artifacts. Historical proposals and specialist
+tool documentation are not alternative product definitions.
 
-| Task | Read | Expected result |
+## Main paths
+
+| Goal | Canonical guide | Current executable entry |
 | --- | --- | --- |
-| Understand unfamiliar code from a question | [Codebase understanding](CODEBASE_UNDERSTANDING.md) | Source-first investigation and bounded reading plan |
-| Install and inspect a repository | [Quick start](QUICKSTART.md) | A report pinned to Git source |
-| Ask Excession from ChatGPT | [GitHub-native analysis](GITHUB_NATIVE_ANALYSIS.md) | Workflow artifact with original report and receipt |
-| Ask about a private repository | [Private GitHub analysis](PRIVATE_GITHUB_ANALYSIS.md) | Advisory evidence retained only in the caller's private Actions run |
-| Review a pull request | [GitHub PR evidence](GITHUB_EVIDENCE.md) | Base/head report, provenance, coverage, open obligations |
-| Integrate a local agent | [Stdio MCP](MCP.md) | Tools executed inside the agent's trusted local checkout |
-| Interpret results | [Evidence and limits](EVIDENCE_AND_LIMITS.md) | Clear boundaries between observations and conclusions |
-| Develop Excession | [Development](DEVELOPMENT.md) and [CI policy](CI.md) | Pinned tools and independently checked changes |
+| Understand how a behavior works | [Investigation contract](INVESTIGATIONS.md) and [practical workflow](CODEBASE_UNDERSTANDING.md) | `agent locate`, `agent context`, source inspection |
+| Refactor a repository | [Transformation contract](TRANSFORMATIONS.md) | `refactor` / `improve` specialists, native tools |
+| Establish what a change preserves | [Verification](VERIFICATION.md) | Impact/evidence replay, independent tests and receipts |
+| Follow provenance and invalidation | [Evidence lifecycle](EVIDENCE_LIFECYCLE.md) | Git identities, producers, SQLite and audits |
+| Evaluate actual benefit | [Evaluation](EVALUATION.md) | Held-out study protocol; existing benchmarks are diagnostics |
 
-## Use the CLI
+The first column names **product workflows**. The last column
+names the **presently implemented building blocks**. Do not invent an
+`excession investigate` or `excession transform` command from the
+product architecture.
 
-| Question | Guide |
+## Work with Excession today
+
+| Environment | Reference |
 | --- | --- |
-| What commands exist and what are their options? | [CLI reference](CLI.md) |
-| Where is a behavior implemented? | [Codebase understanding](CODEBASE_UNDERSTANDING.md) and [agent locate/context/verify](AGENT_CLI.md) |
-| What might this change affect? | [Source-impact witnesses](COMPACT_IMPACT.md) |
-| How do I inspect and improve a refactoring? | [Refactoring](REFACTORING.md) |
-| How are independent checks selected and executed? | [Native test selection](NATIVE_TEST_SELECTORS.md) |
-| How can I inspect a smaller view of source? | [Repository views](REPOSITORY_VIEWS.md) and [composable views](COMPOSABLE_VIEWS.md) |
-| How does the tool inspect its own Rust code? | [Self-analysis](SELF_ANALYSIS.md) |
-| How does history planning avoid rewriting Git? | [Git reconstruction](GIT_RECONSTRUCTION.md) and [history safety](HISTORY_REORGANIZATION.md) |
+| Terminal, installation and first repository analysis | [Quick start](QUICKSTART.md) and [CLI](CLI.md) |
+| Existing agent commands | [Agent CLI](AGENT_CLI.md) |
+| Local coding agent | [Stdio MCP](MCP.md) |
+| ChatGPT using GitHub | [GitHub-native analysis](GITHUB_NATIVE_ANALYSIS.md) |
+| Private GitHub analysis | [Private workflow](PRIVATE_GITHUB_ANALYSIS.md) |
+| Pull request evidence | [Reusable workflow](GITHUB_EVIDENCE.md) |
+| Current source-bound refactoring operations | [Refactoring technical reference](REFACTORING.md) |
+| Native test selection | [Test selectors](NATIVE_TEST_SELECTORS.md) |
 
-## Understand the implementation
+## Architecture and source of truth
 
-Read the [architecture](ARCHITECTURE.md) for the complete data flow,
-authority boundaries, runtime surfaces, and supported versus unsupported
-claims. The [evidence model](EVIDENCE_AND_LIMITS.md) explains commit/tree/blob
-identity, producer receipts, partial coverage, replay, and semantic validity.
+- [Current architecture and migration boundary](ARCHITECTURE.md)
+- [Product contract](PRODUCT.md)
+- [Evidence and limits](EVIDENCE_AND_LIMITS.md)
+- [Evidence lifecycle](EVIDENCE_LIFECYCLE.md)
+- [Investigations](INVESTIGATIONS.md)
+- [Transformations](TRANSFORMATIONS.md)
+- [Verification](VERIFICATION.md)
+- [Accepted architecture decision](DECISIONS/0001-investigation-first.md)
 
-More specific implementation documentation is available for
-[SCIP and observed relations](OBSERVED_RELATIONSHIP_ANALYSIS.md),
-[configured build graphs](CONFIGURED_GRAPHS.md),
-[compiler-declared inputs](COMPILER_ANALYSIS.md),
-[Python import names](PYTHON_IMPORT_NAMES.md),
-[syntax parsers](SYNTAX_PARSERS.md), and
-[evidence querying](EVIDENCE_QUERY.md).
-These producers do not share an invented semantic guarantee.
+## Develop and maintain
 
-## Build, test, and release
+[Development](DEVELOPMENT.md) · [CI policy](CI.md) ·
+[Release](RELEASE.md) · [Contributing](../CONTRIBUTING.md) ·
+[Agent instructions](../AGENTS.md) ·
+[Documentation maintenance](DOCUMENTATION.md) ·
+[Benchmark program](../benchmarks/README.md).
 
-[Development setup](DEVELOPMENT.md) defines the pinned toolchains and local
-commands. [CI policy](CI.md) distinguishes fast checkpoint tests, required PR
-checks, scoped native evidence, and deep acceptance. [Release procedure](RELEASE.md)
-and [portability](PORTABILITY.md) describe independently tested distribution
-artifacts. [Contribution guidelines](../CONTRIBUTING.md) describe change
-acceptance; [documentation maintenance](DOCUMENTATION.md) covers the docs.
-
-## Detailed reference and research
-
-The [reference index](REFERENCE.md) groups the rest of the source-producer
-documentation, domain-specific audits, experiments, and historical contract
-plans. Those pages are retained for reproducibility but do not override the
-current CLI, live tests, or versioned schemas.
-
-An old PR plan saying “not implemented” describes the state **at the time
-that plan was written**. Use current implementation and acceptance tests to
-determine present support. Conversely, a schema or proof outline in a
-research page is not execution evidence.
-
-## How to verify a claim
-
-Follow the source identity into the named native report. Read its coverage
-and open obligations. For a behavior or performance claim, locate the
-independent test or benchmark and pin the exact commit and configuration.
-A successful GitHub Actions run is evidence that a workflow executed, not
-that every property claimed by its inputs is true.
+For native producer details, graph queries, research experiments, historical
+plans, and versioned evidence contracts use the
+[reference index](REFERENCE.md). Its contents are retained for
+reproducibility, not promoted to shipped product features. The deprecated
+[architecture-module migration plan](TARGET_ARCHITECTURE.md) is historical
+context, not the current product architecture.

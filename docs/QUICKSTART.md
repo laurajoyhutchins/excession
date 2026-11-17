@@ -1,3 +1,9 @@
+> **Start from a question.** `agent locate` is the current
+> entry point for a source-first investigation; the final behavior
+> explanation is still produced by the engineer or agent after reading
+> source and checking evidence. See [investigation workflow](CODEBASE_UNDERSTANDING.md)
+> and [product contract](PRODUCT.md).
+
 # Quick start
 
 This guide covers the native CLI. For analysis requested through a ChatGPT

@@ -24,7 +24,7 @@ struct ExcessionMcp {
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SearchBudgets {
-    /// Maximum bytes read from a Git blob in one allocation.
+    /// Maximum source text chunk budget; full blobs are streamed and verified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     max_file_bytes: Option<usize>,
     /// Maximum new source bytes indexed per segment refresh.
@@ -52,6 +52,28 @@ struct SearchArgs {
     /// Authorized, caller-selected indexing policy; defaults apply per field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     budgets: Option<SearchBudgets>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchPageArgs {
+    /// Searchable task description.
+    task: String,
+    /// Git revision; defaults to HEAD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision: Option<String>,
+    /// Candidate count per page; defaults to 20 (1..64).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<usize>,
+    /// Number of source index partitions to refresh (1..256).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    index_segments: Option<usize>,
+    /// Authorized indexing policy, independent of Git source input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    budgets: Option<SearchBudgets>,
+    /// Cursor returned by the prior page; invalid on any snapshot change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    after: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -175,11 +197,25 @@ fn call(
     db: Option<&str>,
 ) -> std::result::Result<Value, String> {
     let report = match name {
-        "search_code" => {
-            allowed(
-                args,
-                &["task", "revision", "limit", "index_segments", "budgets"],
-            )?;
+        "search_code" | "search_code_page" => {
+            if name == "search_code_page" {
+                allowed(
+                    args,
+                    &[
+                        "task",
+                        "revision",
+                        "limit",
+                        "index_segments",
+                        "budgets",
+                        "after",
+                    ],
+                )?;
+            } else {
+                allowed(
+                    args,
+                    &["task", "revision", "limit", "index_segments", "budgets"],
+                )?;
+            }
             let defaults = agent_locate::IndexLimits::default();
             let chosen = match args.get("budgets") {
                 Some(value) => serde_json::from_value::<SearchBudgets>(value.clone())
@@ -190,27 +226,43 @@ fn call(
                     max_segment_files: None,
                 },
             };
-            agent_locate::locate_with_limits(
-                repo,
-                optional(args, "revision", "HEAD")?,
-                required(args, "task")?,
-                limit(args, "limit", 20, 64)?,
-                roots,
-                db,
-                agent_locate::LocateBudget {
-                    index_segments: limit(args, "index_segments", 8, 256)?,
-                    index: agent_locate::IndexLimits {
-                        max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
-                        max_bytes_per_segment: chosen
-                            .max_segment_bytes
-                            .unwrap_or(defaults.max_bytes_per_segment),
-                        max_files_per_segment: chosen
-                            .max_segment_files
-                            .unwrap_or(defaults.max_files_per_segment),
-                    }
-                    .validate()?,
-                },
-            )?
+            let budget = agent_locate::LocateBudget {
+                index_segments: limit(args, "index_segments", 8, 256)?,
+                index: agent_locate::IndexLimits {
+                    max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
+                    max_bytes_per_segment: chosen
+                        .max_segment_bytes
+                        .unwrap_or(defaults.max_bytes_per_segment),
+                    max_files_per_segment: chosen
+                        .max_segment_files
+                        .unwrap_or(defaults.max_files_per_segment),
+                }
+                .validate()?,
+            };
+            if name == "search_code_page" {
+                let after = args
+                    .get("after")
+                    .map(|value| value.as_str().ok_or("after must be a cursor string"))
+                    .transpose()?;
+                agent_locate::locate_page_with_limits(
+                    repo,
+                    optional(args, "revision", "HEAD")?,
+                    required(args, "task")?,
+                    limit(args, "limit", 20, 64)?,
+                    budget,
+                    after,
+                )?
+            } else {
+                agent_locate::locate_with_limits(
+                    repo,
+                    optional(args, "revision", "HEAD")?,
+                    required(args, "task")?,
+                    limit(args, "limit", 20, 64)?,
+                    roots,
+                    db,
+                    budget,
+                )?
+            }
         }
         "get_context" => {
             allowed(args, &["focus", "revision", "task", "limit"])?;
@@ -365,6 +417,21 @@ impl ExcessionMcp {
     }
 
     #[tool(
+        description = "Enumerate Git-pinned lexical candidates across snapshot-bound pages; cursors refuse stale source or index state.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn search_code_page(
+        &self,
+        Parameters(args): Parameters<SearchPageArgs>,
+    ) -> std::result::Result<CallToolResult, McpError> {
+        self.invoke("search_code_page", args).await
+    }
+
+    #[tool(
         description = "Explain source identities, possible relationships, and gaps for exact tracked paths.",
         annotations(
             read_only_hint = true,
@@ -494,7 +561,7 @@ mod tests {
     #[test]
     fn tools_have_typed_schemas_and_read_only_annotations() {
         let tools = ExcessionMcp::tool_router();
-        assert_eq!(tools.map.len(), 6);
+        assert_eq!(tools.map.len(), 7);
         for entry in tools.map.values() {
             assert_eq!(
                 entry

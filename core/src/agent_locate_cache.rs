@@ -85,6 +85,9 @@ pub(crate) struct Search {
     pub ready_segments: usize,
     pub pending_segments: usize,
     pub refreshed_segments: usize,
+    pub page_offset: usize,
+    pub next_cursor: Option<String>,
+    pub snapshot_id: String,
 }
 
 fn sql_error(operation: &str, error: impl std::fmt::Display) -> String {
@@ -714,6 +717,55 @@ fn verify_source_window(
     Ok(())
 }
 
+/// Include every cached FTS document's deterministic source ancestry in a
+/// page snapshot. BM25 corpus statistics include staged/inactive chunks even
+/// when the query filters out their paths, so active segment metadata alone is
+/// insufficient to prove that ranking is unchanged.
+fn append_corpus_identity(tx: &Transaction<'_>, identity: &mut Vec<u8>) -> Result<()> {
+    let mut stmt = tx
+        .prepare(
+            "SELECT f.path,f.blob,f.mode,f.status,f.chunk_bytes,COUNT(c.id)
+             FROM locator_files f
+             LEFT JOIN locator_chunks c ON c.file_id=f.id
+             GROUP BY f.id ORDER BY f.path",
+        )
+        .map_err(|e| sql_error("prepare source corpus identity", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })
+        .map_err(|e| sql_error("read source corpus identity", e))?;
+    let mut counted = 0usize;
+    for row in rows {
+        let (path, blob, mode, status, chunk_bytes, chunks) =
+            row.map_err(|e| sql_error("source corpus identity row", e))?;
+        for text in [&path, &blob, &mode, &status] {
+            identity.extend_from_slice(text.as_bytes());
+            identity.push(0);
+        }
+        identity.extend_from_slice(&(nonnegative(chunk_bytes)? as u64).to_le_bytes());
+        let n = nonnegative(chunks)?;
+        identity.extend_from_slice(&(n as u64).to_le_bytes());
+        counted = counted
+            .checked_add(n)
+            .ok_or("source corpus chunk count overflow")?;
+    }
+    let fts_chunks: i64 = tx
+        .query_row("SELECT COUNT(*) FROM source_search", [], |row| row.get(0))
+        .map_err(|e| sql_error("count FTS corpus rows", e))?;
+    if counted != nonnegative(fts_chunks)? {
+        return refuse("source chunk catalog and FTS corpus disagree");
+    }
+    Ok(())
+}
+
 /// Refresh up to refresh_budget changed logical segments. Query results
 /// always exclude any segment not matching the requested Git tree inventory.
 /// A cold repository may need repeated calls or --index-segments 256.
@@ -746,7 +798,53 @@ pub(crate) fn search_with_limits(
     source_path: impl Fn(&str) -> bool,
     limits: IndexLimits,
 ) -> Result<Search> {
+    search_with_page(
+        discovered,
+        entries,
+        expression,
+        source_path,
+        PageRequest {
+            limit,
+            refresh_budget,
+            limits,
+            task_key: expression,
+            after: None,
+            paginate: false,
+        },
+    )
+}
+
+/// Enumerate ranked lexical source hits in stable snapshot-bound pages.
+/// A cursor binds the tree, task, index policy and every visible segment's
+/// completion state; it is invalidated rather than mixed after an index change.
+pub(crate) struct PageRequest<'a> {
+    pub limit: usize,
+    pub refresh_budget: usize,
+    pub limits: IndexLimits,
+    pub task_key: &'a str,
+    pub after: Option<&'a str>,
+    pub paginate: bool,
+}
+
+pub(crate) fn search_with_page(
+    discovered: &discovery::Discovery,
+    entries: Vec<git::Entry>,
+    expression: &str,
+    source_path: impl Fn(&str) -> bool,
+    request: PageRequest<'_>,
+) -> Result<Search> {
+    let PageRequest {
+        limit,
+        refresh_budget,
+        limits,
+        task_key,
+        after,
+        paginate,
+    } = request;
     let limits = limits.validate()?;
+    if !(1..=64).contains(&limit) {
+        return refuse("agent locate page size must be 1..=64");
+    }
     if !(1..=SEGMENT_COUNT).contains(&refresh_budget) {
         return refuse("agent locate --index-segments must be 1..=256");
     }
@@ -857,7 +955,73 @@ pub(crate) fn search_with_limits(
     put_meta(&tx, "source_commit", &discovered.commit)?;
     put_meta(&tx, "source_tree", &discovered.tree)?;
 
+    let snapshot_id = if paginate {
+        let mut identity = format!(
+            "excession-locate-page-v1\0{}\0{}\0{}\0{}\0",
+            CACHE_VERSION, discovered.commit, discovered.tree, task_key,
+        )
+        .into_bytes();
+        identity.extend_from_slice(expression.as_bytes());
+        identity.push(0);
+        for value in [
+            limits.max_file_bytes,
+            limits.max_bytes_per_segment,
+            limits.max_files_per_segment,
+        ] {
+            identity.extend_from_slice(&(value as u64).to_le_bytes());
+        }
+        for id in 0..SEGMENT_COUNT {
+            // Historical metadata for an empty partition must not change a
+            // query snapshot after switching away from and back to this tree.
+            if groups[id].is_empty() {
+                continue;
+            }
+            if let Some(ref segment) = prior[id]
+                && segment.fingerprint == fingerprints[id]
+            {
+                identity.extend_from_slice(
+                    format!(
+                        "{id}:{}:{}:{}:{}:{}\\0",
+                        segment.fingerprint,
+                        segment.indexed_files,
+                        segment.indexed_bytes,
+                        segment.skipped_files,
+                        segment.truncated
+                    )
+                    .as_bytes(),
+                );
+            }
+        }
+        append_corpus_identity(&tx, &mut identity)?;
+        crate::digest::sha256(&identity)
+    } else {
+        String::new()
+    };
+    let page_offset = if paginate && let Some(cursor) = after {
+        let mut parts = cursor.split('.');
+        if parts.next() != Some("v1") || parts.next() != Some(snapshot_id.as_str()) {
+            return refuse(
+                "source page cursor belongs to a different query or indexed Git snapshot",
+            );
+        }
+        let offset = parts.next().ok_or("source page cursor has no offset")?;
+        if parts.next().is_some() || offset.is_empty() || offset.starts_with('0') {
+            return refuse("invalid source page cursor");
+        }
+        let offset = offset
+            .parse::<usize>()
+            .map_err(|_| "invalid source page cursor offset")?;
+        if offset == 0 {
+            return refuse("source page cursor offset must be positive");
+        }
+        offset
+    } else {
+        0
+    };
+
     let mut hits = Vec::new();
+    let mut unique_rank = 0usize;
+    let mut has_more = false;
     let mut returned_paths = BTreeSet::new();
     {
         let mut stmt = tx
@@ -878,6 +1042,14 @@ pub(crate) fn search_with_limits(
             let name: String = row.get(0).map_err(|e| sql_error("ranked path", e))?;
             if !returned_paths.insert(name.clone()) {
                 continue;
+            }
+            unique_rank += 1;
+            if unique_rank <= page_offset {
+                continue;
+            }
+            if hits.len() >= limit {
+                has_more = true;
+                break;
             }
             let blob: String = row.get(1).map_err(|e| sql_error("ranked blob", e))?;
             let mode: String = row.get(2).map_err(|e| sql_error("ranked mode", e))?;
@@ -912,11 +1084,13 @@ pub(crate) fn search_with_limits(
                 body,
                 start_line,
             });
-            if hits.len() == limit {
-                break;
-            }
         }
     }
+    if page_offset > unique_rank {
+        return refuse("source page cursor is beyond available ranked results");
+    }
+    let next_cursor =
+        (paginate && has_more).then(|| format!("v1.{snapshot_id}.{}", page_offset + hits.len()));
     tx.commit().map_err(|e| sql_error("commit", e))?;
     Ok(Search {
         hits,
@@ -932,6 +1106,9 @@ pub(crate) fn search_with_limits(
         ready_segments,
         pending_segments,
         refreshed_segments,
+        page_offset,
+        next_cursor,
+        snapshot_id,
     })
 }
 

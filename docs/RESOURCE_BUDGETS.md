@@ -109,13 +109,13 @@ The locator now stores authenticated text windows as persistent FTS chunks,
 checks every returned window against the full pinned Git blob, and resumes
 incomplete files on subsequent invocations. **The per-invocation time budget is
 not yet resumable across machines or temporary GitHub workers.** Follow-up
-#280 addresses portable continuation receipts and snapshot-bound pagination.
+#280 still tracks portable continuation receipts and paging for non-lexical evidence.
 
 ## Existing boundaries outside source indexing
 
 | Concern | Current behavior | Required next improvement |
 | --- | --- | --- |
-| Query results | `--limit` accepts 1–64; `reading_plan` contains at most 12 entries | Deterministic, snapshot-bound page cursors; no huge single response |
+| Lexical search results | `agent locate-page` returns at most 64 candidates plus a snapshot-bound continuation cursor | Cursor-based pagination for relationship and test context remains separate |
 | Agent context | Up to 16 focus paths and 64 relationships per response | Continuation across pages with exact source and evidence identities |
 | GitHub-native execution | 240-second native process and 8 MiB report caps; 30-day artifact retention | Explicit supported budgets, per-partition artifact checkpoints and continuation |
 | Very large Git blobs | Source chunks are indexed and checkpointed within bounded buffers; complete re-streaming may still be expensive | Add bounded-time incremental verification and avoid replaying the entire blob to resume a chunk |
@@ -123,7 +123,7 @@ not yet resumable across machines or temporary GitHub workers.** Follow-up
 | Repository scale | 256 logical hash groups, with resumable partial refreshes | Dynamic subdivision for pathological group distributions |
 | External receipts | Type/size limits protect ingestion | Bounded, independently authenticated receipt pages |
 
-The next work must implement **pagination and resumable execution** at
+The next work must extend **pagination and resumable execution** across
 the relevant existing APIs, not create another global index, new parser or
 second graph database. Budgets should be visible in every report and
 tunable by the authorized caller or execution environment. Those promises

@@ -736,6 +736,12 @@ pub(super) fn command() -> Command {
                     .help("Emit canonical JSON (also the default for agent locate)"),
             ),
             leaf(
+                "locate-page",
+                &["repo", "task"],
+                &["rev", "limit", "after", "index-segments", "budget-file", "max-file-bytes", "max-segment-bytes", "max-segment-files"],
+            )
+            .about("Page through Git-pinned lexical candidates with a snapshot-bound cursor"),
+            leaf(
                 "context",
                 &["repo", "rev", "focus"],
                 &["task", "limit", "roots", "db"],

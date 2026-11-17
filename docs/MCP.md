@@ -69,6 +69,7 @@ schemas. Debug output must never be written to stdout.
 | MCP tool | Existing computation | Notes |
 | --- | --- | --- |
 | `search_code` | `agent locate` | Git-pinned lexical matches plus bounded context; index coverage may be partial |
+| `search_code_page` | `agent locate-page` | Snapshot-bound lexical pagination with an `after` cursor; no semantic or graph completeness claim |
 | `get_context` | `agent context` | Requires 1–16 exact tracked paths |
 | `explain_impact` | `impact` | Possible impact between two Git revisions |
 | `verify_change` | `agent verify` | Requires two distinct retained commits; never authorizes merge |
@@ -81,7 +82,10 @@ Clients cannot change it through a tool call. `--roots` and `--db`
 may be set at server startup when needed; ordinary agents should not need
 to supply them.
 
-Use `search_code` with the task description, then `get_context` for
+Use `search_code` with the task description, or `search_code_page` with the
+same task and the returned `page.next_cursor` to enumerate candidates. A
+continuation is refused if the Git/index snapshot or budget policy changed.
+Use `get_context` for
 interesting paths. Use `check_coverage` before interpreting absent
 relationships. Once a candidate is committed, call `explain_impact` and
 `verify_change` with base and candidate commit IDs. `plan_tests` can
@@ -96,7 +100,9 @@ Unspecified fields use the native defaults, and incompatible limits are
 refused. The resulting report records the selected effective policy in
 `index.limits`, while the per-invocation segment refresh count is operational
 metadata under `cache.refresh_budget_segments`. MCP's independent 4 MiB
-response ceiling is unchanged; pagination remains to be implemented (#280).
+response ceiling is unchanged. `search_code_page` allows bounded lexical
+pagination; paging of context, impact graphs and independent evidence remains
+tracked under #280.
 
 Example tool arguments:
 

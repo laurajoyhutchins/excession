@@ -128,7 +128,7 @@ fn stdio_agent_discovers_tools_and_authenticates_git_source() {
     assert_eq!(tools["id"], 2);
     assert_eq!(
         tools["result"]["tools"].as_array().map(Vec::len),
-        Some(6),
+        Some(7),
         "{tools}"
     );
     let search = rpc(
@@ -146,6 +146,23 @@ fn stdio_agent_discovers_tools_and_authenticates_git_source() {
     );
     assert_eq!(
         search["result"]["structuredContent"]["candidates"][0]["source"]["path"],
+        "src/lease.py"
+    );
+    let paged = rpc(
+        &mut input,
+        &mut output,
+        json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{
+        "name":"search_code_page","arguments":{
+            "task":"renew lease","revision":"HEAD","index_segments":256,"limit":1
+        }}}),
+    );
+    assert_eq!(paged["result"]["isError"], false, "{paged}");
+    assert_eq!(
+        paged["result"]["structuredContent"]["schema"],
+        "excession.agent-locate-page.v1"
+    );
+    assert_eq!(
+        paged["result"]["structuredContent"]["candidates"][0]["source"]["path"],
         "src/lease.py"
     );
     let refused = rpc(
@@ -197,9 +214,10 @@ fn modern_sdk_discovers_existing_tools_and_reports_refusals() {
     assert_eq!(listed["id"], 2);
     assert_eq!(listed["result"]["resultType"], "complete", "{listed}");
     let tools = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 6);
+    assert_eq!(tools.len(), 7);
     for name in [
         "search_code",
+        "search_code_page",
         "get_context",
         "explain_impact",
         "verify_change",

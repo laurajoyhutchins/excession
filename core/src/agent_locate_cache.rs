@@ -918,6 +918,11 @@ pub(crate) fn search_with_page(
         identity.extend_from_slice(&value.to_le_bytes());
     }
     for id in 0..SEGMENT_COUNT {
+        // Historical metadata for an empty partition must not change a
+        // query snapshot after switching away from and back to this tree.
+        if groups[id].is_empty() {
+            continue;
+        }
         if let Some(ref segment) = prior[id]
             && segment.fingerprint == fingerprints[id]
         {

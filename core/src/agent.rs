@@ -161,9 +161,7 @@ pub fn context(
             .get("subject")
             .and_then(|subject| subject.get("path").ok())
             .and_then(|path| path.str().ok());
-        if focus.contains(source_path)
-            || selected_path.is_some_and(|path| focus.contains(path))
-        {
+        if focus.contains(source_path) || selected_path.is_some_and(|path| focus.contains(path)) {
             total_configured += 1;
             if configured_observations.len() < limit {
                 configured_observations.push(item.clone());

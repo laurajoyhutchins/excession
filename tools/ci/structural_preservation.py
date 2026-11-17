@@ -200,19 +200,25 @@ def evaluate(repo: Path, base: str, candidate: str, doc: dict, sha: str) -> dict
     }
     with tempfile.TemporaryDirectory(prefix="excession-preservation-") as temp:
         root = Path(temp)
-        a, b = root / "base", root / "candidate"
-        attached = []
-        try:
-            for path, rev in ((a, original), (b, amended)):
-                git(repo, "-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", str(path), rev)
-                attached.append(path)
-            (root / "base-home").mkdir()
-            (root / "candidate-home").mkdir()
-            for check in doc["obligations"]:
-                baseline = run_command(a, check, root / "base-home") if check["kind"] == "differential" else None
-                if git(a, "status", "--porcelain", "--untracked-files=no").strip():
+        for index, check in enumerate(doc["obligations"]):
+            # Each obligation gets new worktrees and HOME directories.
+            # Earlier tests cannot seed later tests through untracked files,
+            # caches or generated outputs in the measured checkout.
+            a, b = root / f"base-{index}", root / f"candidate-{index}"
+            base_home, candidate_home = root / f"base-home-{index}", root / f"candidate-home-{index}"
+            attached = []
+            try:
+                if check["kind"] == "differential":
+                    git(repo, "-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", str(a), original)
+                    attached.append(a)
+                git(repo, "-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", str(b), amended)
+                attached.append(b)
+                base_home.mkdir()
+                candidate_home.mkdir()
+                baseline = run_command(a, check, base_home) if check["kind"] == "differential" else None
+                if baseline and git(a, "status", "--porcelain", "--untracked-files=no").strip():
                     raise Refused("baseline command modified tracked Git source")
-                proposed = run_command(b, check, root / "candidate-home")
+                proposed = run_command(b, check, candidate_home)
                 if git(b, "status", "--porcelain", "--untracked-files=no").strip():
                     raise Refused("candidate command modified tracked Git source")
                 outcome = "PASS"
@@ -226,13 +232,13 @@ def evaluate(repo: Path, base: str, candidate: str, doc: dict, sha: str) -> dict
                     "id": check["id"], "kind": check["kind"], "result": outcome,
                     "base": baseline, "candidate": proposed,
                 })
-            statuses = {o["result"] for o in report["obligations"]}
-            report["status"] = ("FAILED" if "FAIL" in statuses else
-                                "INCONCLUSIVE" if "INCONCLUSIVE" in statuses else
-                                "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
-        finally:
-            for path in reversed(attached):
-                git(repo, "worktree", "remove", "--force", str(path))
+            finally:
+                for path in reversed(attached):
+                    git(repo, "worktree", "remove", "--force", str(path))
+        statuses = {o["result"] for o in report["obligations"]}
+        report["status"] = ("FAILED" if "FAIL" in statuses else
+                            "INCONCLUSIVE" if "INCONCLUSIVE" in statuses else
+                            "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
     return report
 
 

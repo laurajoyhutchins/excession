@@ -16,14 +16,14 @@ import cargo_patch_audit as audit
 import improvement_cycle as common
 
 
-def lock(version="1.2.3", checksum="abc", dep=None, source=audit.REGISTRY):
+def lock(version="1.2.3", checksum="a" * 64, dep=None, source=audit.REGISTRY):
     if dep is None:
         dep = ["bar"]
     return {
         "version": 4,
         "package": [
             {"name": "bar", "version": "0.3.0", "source": audit.REGISTRY,
-             "checksum": "fixed"},
+             "checksum": "c" * 64},
             {"name": "foo", "version": version, "source": source,
              "checksum": checksum, "dependencies": dep},
             {"name": "workspace", "version": "0.1.0",
@@ -73,17 +73,17 @@ def catalog():
 
 class CargoPatchAcceptance(unittest.TestCase):
     def test_unchanged_graph_same_minor_patch_is_candidate(self):
-        changes = audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "def")))
+        changes = audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "b" * 64)))
         self.assertEqual(changes, [{"name": "foo", "source": audit.REGISTRY,
                                     "from": "1.2.3", "to": "1.2.4"}])
 
     def test_minor_update_refused(self):
         with self.assertRaises(audit.common.Refused):
-            audit.patch_changes(encoded(lock()), encoded(lock("1.3.0", "def")))
+            audit.patch_changes(encoded(lock()), encoded(lock("1.3.0", "b" * 64)))
 
     def test_version_downgrade_refused(self):
         with self.assertRaises(audit.common.Refused):
-            audit.patch_changes(encoded(lock()), encoded(lock("1.2.2", "def")))
+            audit.patch_changes(encoded(lock()), encoded(lock("1.2.2", "b" * 64)))
 
     def test_changed_dependencies_refused(self):
         with self.assertRaises(audit.common.Refused):
@@ -95,7 +95,7 @@ class CargoPatchAcceptance(unittest.TestCase):
 
     def test_missing_checksum_change_refused(self):
         with self.assertRaises(audit.common.Refused):
-            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "abc")))
+            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "a" * 64)))
 
     def test_source_switch_refused(self):
         with self.assertRaises(audit.common.Refused):
@@ -103,7 +103,7 @@ class CargoPatchAcceptance(unittest.TestCase):
 
     def test_prerelease_update_refused(self):
         with self.assertRaises(audit.common.Refused):
-            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4-alpha.1", "def")))
+            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4-alpha.1", "b" * 64)))
 
     def test_new_package_refused(self):
         candidate = lock("1.2.4", "def")
@@ -155,7 +155,7 @@ class CargoGitCandidates(unittest.TestCase):
         git(self.repo, "reset", "--hard", self.base)
         self.write("core/src/lib.rs", b"fn extra() {}\n")
         extra = self.commit()
-        with self.assertRaises(audit.common.Refused):
+        with self.assertRaisesRegex(audit.common.Refused, "only the existing core/Cargo.lock"):
             audit.verify(self.repo, self.base, extra)
 
     def test_rule_edit_in_candidate_is_refused(self):
@@ -163,7 +163,7 @@ class CargoGitCandidates(unittest.TestCase):
         p = self.repo / "quality/improvement-recipes.json"
         p.write_bytes(p.read_bytes() + b"\n")
         extra = self.commit()
-        with self.assertRaises(audit.common.Refused):
+        with self.assertRaisesRegex(audit.common.Refused, "own improvement authority"):
             audit.verify(self.repo, self.base, extra)
 
 

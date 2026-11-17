@@ -18,6 +18,7 @@ RECEIPT_SCHEMA = "excession.github-analysis-receipt.v1"
 OWNER_ID = 219002713
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SCHEMAS = {
     "locate": "excession.agent-locate.v1",
     "context": "excession.agent-context.v1",
@@ -278,9 +279,9 @@ def restore_checkpoint(request, archive_root, run_metadata, tool_commit, cache_r
             or not isinstance(manifest["source_tree"], str)
             or not SHA.fullmatch(manifest["source_tree"])
             or not isinstance(manifest["report_sha256"], str)
-            or not SHA.fullmatch(manifest["report_sha256"])
+            or not SHA256.fullmatch(manifest["report_sha256"])
             or not isinstance(manifest["sqlite_sha256"], str)
-            or not SHA.fullmatch(manifest["sqlite_sha256"])
+            or not SHA256.fullmatch(manifest["sqlite_sha256"])
             or type(manifest["sqlite_bytes"]) is not int
             or not 0 < manifest["sqlite_bytes"] <= CHECKPOINT_MAX_BYTES
             or type(manifest["ready_segments"]) is not int

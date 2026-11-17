@@ -22,7 +22,10 @@ parts of the flow, including an append-only
 [`investigation` ledger](INVESTIGATIONS.md) with candidate source discovery,
 attributed synthesis, open questions, direct-source refresh and
 independently replayed Git source-line witnesses for proposed control,
-data and state operations. Witness interpretation is not behavior proof.
+data and state operations. A trusted-local differential runner now records
+one-invocation exit/output observations under exact base/candidate source
+identities and a witness-backed plan. Witness interpretation, runtime
+attestation and all-input equivalence remain unproved.
 Full dependency-aware invalidation and autonomously verified behavioral
 models remain targets, not implemented guarantees.
 

@@ -6,7 +6,7 @@ use crate::evidence::identity::SourceRef;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
-use crate::{investigation_witness, investigation_workflow};
+use crate::{investigation_execution, investigation_witness, investigation_workflow};
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -231,6 +231,9 @@ fn records(db: &Db, repo: &Path, id: &str) -> Result<Vec<Value>> {
                     return refuse("verification must reference an earlier preservation plan");
                 }
                 verify_agent_report(repo, c, t, payload.get("report")?)?;
+            }
+            "EXECUTION" if i > 0 => {
+                investigation_execution::validate_event(repo, c, t, payload, &result)?;
             }
             "WITNESS" if i > 0 => {
                 investigation_witness::validate_event(repo, c, t, payload, &result)?;

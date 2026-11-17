@@ -60,6 +60,8 @@ Git-pinned source. Record claims, questions and preservation obligations.
 spans against a recorded claim without claiming runtime proof;
 `investigation synthesize` links an authored explanation to claims;
 `investigation refresh` checks direct source changes at a candidate commit;
+`investigation execute` can compare bounded actual outputs in explicitly trusted
+local Git worktrees for a witness-backed plan, without a sandbox or equivalence claim;
 `investigation explain` produces a navigable, incomplete evidence view.
 
 Use

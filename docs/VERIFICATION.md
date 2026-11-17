@@ -29,6 +29,23 @@ No identity, static index or generic green workflow proves behavioral
 equivalence. No Excession report by itself authorizes merging, deleting code
 or skipping tests.
 
+## Directly observed differential executions
+
+`excession investigation execute` is an explicit trusted-local runner
+for the same host command against temporary base and candidate Git
+worktrees. It records actual exit codes and output digests for a
+witness-backed preservation plan. `AGREEMENT_OBSERVED` means only that
+these observable results matched for **one configured invocation**.
+`DIFFERENCE_OBSERVED` is concrete counterevidence for that invocation;
+`INCONCLUSIVE` preserves timeout, output-budget or abnormal-termination
+uncertainty.
+
+The command has **no sandbox**, records the executable identity but not
+a signed independent attestation, and cannot prove internal control/data
+flow or all-input equivalence. It therefore never clears a plan's
+preservation obligations or grants merge approval. See the
+[execution contract and example](INVESTIGATIONS.md).
+
 ## Negative evidence
 
 Record counterexamples, contradictory traces, failing tests, unsupported

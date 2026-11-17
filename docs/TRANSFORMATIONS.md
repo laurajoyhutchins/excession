@@ -64,6 +64,17 @@ candidate revision, then require independent executions or proofs for
 material preservation claims. Neither a matching witness text nor a
 successful syntax check establishes behavioral equivalence.
 
+## Observed behavior comparison
+
+After recording source witnesses and a preservation plan,
+`investigation execute` can run the same explicitly trusted local
+command on detached worktrees for the base and candidate commits.
+The comparison is tied to the plan and pre-existing witness identities.
+Matching stdout, stderr and exit status is useful test evidence,
+but **not** proof that the cited internal control/data/state operations
+are preserved. Differences and inconclusive runs remain visible.
+See [investigation execution](INVESTIGATIONS.md).
+
 ## Verification ladder
 
 | Evidence | What it can establish | What remains open |

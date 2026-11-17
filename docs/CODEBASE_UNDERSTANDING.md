@@ -15,7 +15,12 @@ non-language extensions such as SQLite's `.test` and `.tcl`, then fills
 remaining results from its FTS5 index. The reading plan inspects likely
 implementation and task-matching test source **before** graph neighbors.
 Each Git excerpt is verified against its original Git blob identity, with
-explicit truncation and unreadable-source gaps. Neither a matching test name
+explicit truncation and unreadable-source gaps. When Git already fills the
+requested source budget, Excession **does not build an index or load
+relationship context** merely to return the same reading candidates. The
+fast result explicitly says those sources were not queried. Use
+`excession agent locate --enrich` or `excession agent context` when an
+investigation actually requires symbol or relationship evidence. Neither a matching test name
 nor a graph reference proves the behavior is covered. This reuse of ordinary
 Git search is intentional; Excession should not maintain a competing
 language index just to identify source files.

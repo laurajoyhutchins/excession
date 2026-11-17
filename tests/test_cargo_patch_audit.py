@@ -152,12 +152,14 @@ class CargoGitCandidates(unittest.TestCase):
         self.assertFalse(receipt["dependency_safety_proved"])
 
     def test_candidate_with_extra_source_change_is_refused(self):
+        git(self.repo, "reset", "--hard", self.base)
         self.write("core/src/lib.rs", b"fn extra() {}\n")
         extra = self.commit()
         with self.assertRaises(audit.common.Refused):
             audit.verify(self.repo, self.base, extra)
 
     def test_rule_edit_in_candidate_is_refused(self):
+        git(self.repo, "reset", "--hard", self.base)
         p = self.repo / "quality/improvement-recipes.json"
         p.write_bytes(p.read_bytes() + b"\n")
         extra = self.commit()

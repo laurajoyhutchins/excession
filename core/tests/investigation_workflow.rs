@@ -550,8 +550,7 @@ fn incomplete_index_budgets_remain_visible_in_persisted_explanations() {
             .unwrap()
             .iter()
             .any(|gap| {
-                gap["reason"] == "SOURCE_CONTENT_NOT_FULLY_INDEXED"
-                    && gap["state"] == "UNRESOLVED"
+                gap["reason"] == "SOURCE_CONTENT_NOT_FULLY_INDEXED" && gap["state"] == "UNRESOLVED"
             })
     );
     assert_eq!(

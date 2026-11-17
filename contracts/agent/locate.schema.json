@@ -139,8 +139,7 @@
     },
     "indexed_source_count": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 1536000
+      "minimum": 0
     },
     "skipped_source_count": {
       "type": "integer",
@@ -148,8 +147,7 @@
     },
     "indexed_bytes": {
       "type": "integer",
-      "minimum": 0,
-      "maximum": 8589934592
+      "minimum": 0
     },
     "context": {
       "oneOf": [
@@ -280,6 +278,35 @@
         },
         "complete": {
           "type": "boolean"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_files_per_segment",
+            "max_file_bytes",
+            "max_bytes_per_segment",
+            "refresh_segments"
+          ],
+          "properties": {
+            "max_files_per_segment": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_file_bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_bytes_per_segment": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "refresh_segments": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            }
+          }
         }
       }
     },

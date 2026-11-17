@@ -55,6 +55,16 @@ The policy file must be explicitly selected by the caller. Excession does not
 trust a policy discovered in an untrusted target repository; unknown JSON
 properties, non-positive values and inconsistent budgets are refused.
 
+## Remote GitHub-native requests
+
+The owner-originated `Excession analysis request` issue body can include
+an optional `budgets` object for a `locate` operation, with
+`max_file_bytes`, `max_segment_bytes`, `max_segment_files` and
+`refresh_segments`. The workflow passes these as validated CLI arguments,
+and verifies that the returned report lists the same values. See the
+[GitHub-native request example](GITHUB_NATIVE_ANALYSIS.md#configurable-indexing-budgets-for-locate-requests).
+This does not relax the worker's separate execution/response safety envelope.
+
 ## How to interpret coverage
 
 - `index.total_source_files`: eligible source inventory for this locator.

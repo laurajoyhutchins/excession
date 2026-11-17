@@ -2,6 +2,7 @@
   "schema": "excession.github-analysis-targets.v1",
   "repositories": [
     "laurajoyhutchins/excession",
+    "nodejs/node",
     "python-hyper/h11",
     "sqlite/sqlite"
   ]

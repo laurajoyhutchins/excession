@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import sqlite3
 import subprocess
 from pathlib import Path
 import tempfile
@@ -163,15 +164,146 @@ class RequestTests(unittest.TestCase):
         with self.assertRaises(module.Refusal):
             module.check_report(value, {**bare, "enrichment": "PERFORMED"}, BASE)
 
-    def test_github_locate_cache_transport_uses_authorized_identity(self):
+    def test_github_checkpoint_transport_is_artifact_based_not_issue_cache(self):
         workflow = (ROOT / ".github/workflows/github-native-analysis.yml").read_text()
         self.assertIn("tools/github_analysis.py cache-identity", workflow)
-        self.assertIn("actions/cache/restore@v4", workflow)
-        self.assertIn("actions/cache/save@v4", workflow)
+        self.assertIn("actions/download-artifact@v4", workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn("tools/github_analysis.py restore-checkpoint", workflow)
+        self.assertIn("tools/github_analysis.py publish-checkpoint", workflow)
+        self.assertIn("actions: read", workflow)
         self.assertIn("EXCESSION_CACHE_DIR:", workflow)
-        self.assertLess(workflow.index("cache-identity \\"), workflow.index("actions/cache/restore@v4"))
-        self.assertLess(workflow.index("actions/cache/restore@v4"), workflow.index("tools/github_analysis.py execute"))
-        self.assertLess(workflow.index("tools/github_analysis.py execute"), workflow.index("actions/cache/save@v4"))
+        self.assertNotIn("actions/cache/save@v4", workflow)
+        self.assertNotIn("actions/cache/restore@v4", workflow)
+        self.assertLess(workflow.index("restore-checkpoint"), workflow.index("tools/github_analysis.py execute"))
+        self.assertLess(workflow.index("tools/github_analysis.py execute"), workflow.index("publish-checkpoint"))
+
+    def test_resume_must_be_pinned_and_explicitly_enriched(self):
+        targets = TARGETS | {"nodejs/node"}
+        value = module.validate(request(
+            repository="nodejs/node", enrich=True, resume_run_id=12345
+        ), targets)
+        self.assertEqual(value["resume_run_id"], 12345)
+        tool = "d" * 40
+        self.assertEqual(
+            module.cache_identity(value, tool),
+            module.cache_identity({k: v for k, v in value.items() if k != "resume_run_id"}, tool),
+        )
+        for bad in (0, -1, "123", True, None, 2**63):
+            with self.subTest(bad=bad), self.assertRaises(module.Refusal):
+                module.validate(request(enrich=True, resume_run_id=bad), TARGETS)
+        with self.assertRaises(module.Refusal):
+            module.validate(request(resume_run_id=12345), TARGETS)
+        with self.assertRaises(module.Refusal):
+            module.validate(request("context", resume_run_id=12345), TARGETS)
+
+    def test_checkpoint_artifact_is_identity_checked_and_tamper_evident(self):
+        tool_commit = "d" * 40
+        request_value = module.validate(request(enrich=True), TARGETS)
+        run_id = 123456789
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            cache_root = root / "cache"
+            cache_root.mkdir()
+            native = cache_root / "a-prefix"
+            native.mkdir()
+            native_db = native / "agent-locate-chunks.sqlite"
+            with sqlite3.connect(native_db) as db:
+                db.execute("CREATE TABLE locator_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
+                db.execute("INSERT INTO locator_meta VALUES('version', 'agent-locate-segments-v3')")
+                db.execute("CREATE TABLE locator_segments(segment INTEGER PRIMARY KEY, fingerprint TEXT)")
+                db.execute("INSERT INTO locator_segments VALUES(12, 'fingerprint')")
+
+            report_root = root / "evidence"
+            report_root.mkdir()
+            report = {
+                "schema": "excession.agent-locate.v1",
+                "source_commit": SHA,
+                "source_tree": BASE,
+                "enrichment": "PERFORMED",
+                "report_id": "fixed-report",
+                "index": {
+                    "limits": {
+                        "max_file_bytes": 1024 * 1024,
+                        "max_files_per_segment": 6000,
+                        "max_bytes_per_segment": 32 * 1024 * 1024,
+                    },
+                    "ready_segments": 1,
+                    "pending_segments": 255,
+                },
+                "cache": {
+                    "kind": "PERSISTENT_SQLITE_FTS5",
+                    "path": str(native_db),
+                    "refresh_budget_segments": 256,
+                },
+            }
+            report_file = report_root / "report.json"
+            report_file.write_text(json.dumps(report))
+            receipt = {
+                "status": "COMPLETED",
+                "request": request_value,
+                "tool_commit": tool_commit,
+                "source_tree": BASE,
+                "report_id": report["report_id"],
+                "report_sha256": module.file_digest(report_file),
+            }
+            (report_root / "receipt.json").write_text(json.dumps(receipt))
+            artifact = root / "artifact"
+            self.assertTrue(module.publish_checkpoint(
+                request_value, report_root, artifact, tool_commit, run_id, cache_root,
+            ))
+            metadata = {
+                "id": run_id,
+                "event": "issues",
+                "conclusion": "success",
+                "name": "Excession analysis request 123456789",
+                "path": ".github/workflows/github-native-analysis.yml",
+                "head_sha": tool_commit,
+                "head_branch": "main",
+                "actor": {"id": module.OWNER_ID},
+                "repository": {"full_name": "laurajoyhutchins/excession"},
+            }
+            restored_root = root / "fresh-cache"
+            destination = module.restore_checkpoint(
+                {**request_value, "resume_run_id": run_id}, artifact, metadata,
+                tool_commit, restored_root, report_root,
+            )
+            self.assertTrue(destination.is_file())
+            self.assertEqual(module.file_digest(destination), module.file_digest(
+                artifact / "locator.sqlite"))
+            self.assertEqual(sqlite3.connect(destination).execute(
+                "SELECT COUNT(*) FROM locator_segments").fetchone(), (1,))
+            with self.assertRaises(module.Refusal):
+                module.restore_checkpoint(
+                    {**request_value, "resume_run_id": run_id + 1}, artifact,
+                    metadata, tool_commit, root / "wrong-cache", report_root,
+                )
+            with self.assertRaises(module.Refusal):
+                module.restore_checkpoint(
+                    {**request_value, "resume_run_id": run_id}, artifact,
+                    {**metadata, "actor": {"id": 1234}}, tool_commit,
+                    root / "forged-cache", report_root,
+                )
+            with self.assertRaises(module.Refusal):
+                module.restore_checkpoint(
+                    {**request_value, "resume_run_id": run_id}, artifact,
+                    {**metadata, "path": ".github/workflows/untrusted.yml"}, tool_commit,
+                    root / "wrong-workflow-cache", report_root,
+                )
+
+            with self.assertRaises(module.Refusal):
+                module.restore_checkpoint(
+                    {**request_value, "resume_run_id": run_id}, artifact,
+                    metadata, "e" * 40, root / "stale-cache", report_root,
+                )
+            with (artifact / "locator.sqlite").open("ab") as f:
+                f.write(b"tamper")
+            with self.assertRaises(module.Refusal):
+                module.restore_checkpoint(
+                    {**request_value, "resume_run_id": run_id}, artifact,
+                    metadata, tool_commit, root / "tampered-cache", report_root,
+                )
+
 
     def test_malformed_or_cross_operation_budgets_refused(self):
         bad = (

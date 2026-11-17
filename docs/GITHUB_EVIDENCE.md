@@ -36,7 +36,12 @@ retains a GitHub Actions artifact named
 revision**, separate from the base and candidate SHA being evaluated.
 
 Excession's own repository also exposes the workflow on pull requests and
-manual dispatch. Manual runs accept optional base/head commit SHAs; the
+manual dispatch. For a self-repository pull request, the tool is pinned to
+the **trusted base commit SHA**, not to PR head or an older unrelated
+workflow-file revision; that preserves a current evidence contract without
+executing untrusted PR code. External reusable calls continue using their
+reviewed, immutable `job.workflow_sha` tool revision. Manual runs accept
+optional base/head commit SHAs; the
 defaults are HEAD^ and the workflow commit. A full-history checkout is
 intentional: both revisions and their trees must actually be available.
 There is no token with write permission or execution of target-repository

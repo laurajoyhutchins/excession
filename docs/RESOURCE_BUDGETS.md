@@ -66,20 +66,22 @@ properties, non-positive values and inconsistent budgets are refused.
 
 ## Remote GitHub-native continuation
 
-A successful, index-producing owner-originated `locate` job publishes a
-derived SQLite index to GitHub Actions cache. A later **sequential** request
-at the same source and Excession tool commit and identical indexing budgets
-can restore that data and continue pending partitions; use `"enrich": true`
-to require indexing when Git-only retrieval would otherwise suffice.
-The indexer independently checks Git object and partition fingerprints.
-The cache is never a proof of semantic completeness and may be evicted or
-fork under parallel calls. Each report remains explicitly partial when any
-source partition is pending.
+A successful index-producing owner-originated `locate` job publishes a
+derived SQLite index to an **immutable GitHub workflow artifact** with
+a source-bound manifest and SHA-256 checksum. GitHub intentionally prevents
+issue-triggered jobs from writing shared Actions caches. To resume, set
+`"enrich": true` and `"resume_run_id": <previous successful workflow run ID>`.
+The next worker obtains the artifact with `actions: read`, verifies
+prior workflow provenance, tool/source/budget identity, SQLite integrity and
+manifest digest, then lets the native indexer independently authenticate Git
+objects and partition fingerprints. It refuses missing or incompatible
+artifacts rather than inventing progress. No write-scoped token or bypass of
+GitHub's low-trust cache policy is required.
 
-This is reusable **best-effort continuation**, not durable artifact retention
-with a guaranteed lease or cross-tool-version migration. CI and native process
-timeouts are still enforced; missing checkpoints cannot be reported as
-complete.
+This remains **explicit, resource-bounded continuation**, not indefinite
+retention or cross-tool-version migration. Workflow artifacts expire after
+30 days. Per-report `PARTIAL` and `pending_segments` remain authoritative;
+a successfully downloaded SQLite file does not prove semantic completeness.
 
 ## Remote GitHub-native requests
 

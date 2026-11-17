@@ -84,15 +84,22 @@ FTS5/index and optional source-context path even when the read-only Git grep
 already supplies enough lexical candidates. This is deliberately opt-in:
 ordinary Git-sufficient requests need not build the whole index.
 
-GitHub-native `locate` saves a **derived, disposable** SQLite checkpoint
-after a completed, source-validated run that actually produced an index. Its
-GitHub Actions cache identity commits to the exact target repository and
-commit, exact trusted Excession tool commit, native segment schema version,
-and effective source-processing budgets. A later sequential request with the
-same identities restores the latest compatible checkpoint and refreshes the
-next pending segments. Git object fingerprints and selected source windows
-are checked by the native locator after restoration; **cache restoration is
-not evidence of program semantics, source correctness or complete coverage**.
+Issue-triggered GitHub workers cannot write to GitHub Actions' shared caches:
+GitHub intentionally treats this event as low-trust. Excession instead stores
+a **derived, disposable SQLite checkpoint as an immutable workflow artifact**
+after a successful, source-validated run. Its manifest records the exact target
+repository/commit/tree, trusted tool commit, native segment schema version,
+effective work budgets, report digest and SQLite file digest.
+
+For the next sequential request, explicitly set `"resume_run_id"` to the
+successful preceding **analysis workflow run ID**, and keep `"enrich": true`.
+The workflow uses read-only `actions: read` permission to download the
+named artifact. Before copying the SQLite snapshot, it checks the prior
+workflow's success, owner/issue provenance and exact tool SHA, then validates
+the manifest, budgets, length, SHA-256 and SQLite integrity. The Rust native
+locator **independently checks Git source and partition fingerprints** before
+using restored evidence. An unrelated or expired artifact refuses rather
+than silently starting from zero.
 
 For example, reissue this request *after the prior run completes*, with the
 same source and tool revision:
@@ -106,6 +113,7 @@ same source and tool revision:
   "task": "Locate CommonJS require cache and circular dependency tests",
   "limit": 24,
   "enrich": true,
+  "resume_run_id": 123456789,
   "budgets": {
     "refresh_segments": 8
   }
@@ -113,11 +121,12 @@ same source and tool revision:
 ```
 
 Compare `index.ready_segments`, `index.pending_segments` and
-`cache.reused_blobs` in the next actual reports. Cached progress is
-**best effort**: a new tool commit, changed budget, expired/evicted cache,
-different filesystem layout, or concurrent requests can reset or fork the
-available checkpoint. A partial result always says `PARTIAL`; never
-treat a prior cache as authority or assume that retries increase coverage.
+`cache.reused_blobs` in the next actual reports. With an authenticated
+checkpoint, the next run should progress by the selected refresh budget;
+without a matching checkpoint the explicit resume request **refuses**.
+Artifacts are retained for 30 days, and a new tool commit or changed
+index policy requires a new initial request. A partial result always says
+`PARTIAL`; never treat retained artifact bytes as source authority.
 For operations where Git grep suffices without enrichment, `index: null`
 and `cache: null` are valid *only* with
 `enrichment: NOT_REQUESTED_GIT_SUFFICIENT`.

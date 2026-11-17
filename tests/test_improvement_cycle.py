@@ -34,6 +34,13 @@ def catalog():
              "rationale": "Compiler transformations require review",
              "evidence": "https://example.invalid/independent-oracles",
              "independent_checks": ["cargo-tests", "human-review"]},
+            {"id": "native-cargo-lock-refresh", "producer": "cargo-update-locked",
+             "integration": "automatic-after-exact-head-verification",
+             "paths": ["core/Cargo.lock"], "rationale": "Patch-only graph-preserving updates",
+             "evidence": "https://example.invalid/graph-audit",
+             "independent_checks": ["cargo-lock-graph-audit", "cargo-tests",
+                                    "quality-ratchet", "verify-workflow",
+                                    "github-evidence-workflow"]},
         ],
     }
 
@@ -143,7 +150,7 @@ class NativeImprovementCycle(unittest.TestCase):
              "rationale": "New reviewed finding", "evidence": "link",
              "independent_checks": ["human-review"]}
         )
-        self.assertEqual(len(cycle.validated_catalog(json.dumps(obj).encode())["recipes"]), 3)
+        self.assertEqual(len(cycle.validated_catalog(json.dumps(obj).encode())["recipes"]), 4)
 
     def test_catalog_refuses_new_automatic_authority(self):
         obj = catalog()

@@ -133,3 +133,43 @@ overall dependency precision, transitive or runtime recall, independent
 human-adjudicated correctness, statistical generalization or safe test
 omission. The prior negative graph-first BM25 ranking result remains
 unchanged; this study did not rerank lexical search.
+
+## Conservative direct-call and type-reference extension
+
+The `--semantic` mode extends the **same** pinned four-repository, 16-slot
+comparison without regenerating a second set of SCIP indexes. It introduces
+`semantic_symbol_oracle.py` for Python and `ts_symbol_oracle.cjs` for
+JavaScript/TypeScript. Both read the original Git checkout, independent of
+Excession's Rust graph and its native SCIP index.
+
+Python's CPython AST oracle only labels direct calls to unshadowed imported
+top-level functions/classes and imported class names in type annotations or
+class bases. A name stored or redefined anywhere in its source file is
+excluded. Attribute calls on instances, re-exports, alias flow, monkey
+patching, dynamic imports and reflection are not considered resolved.
+
+The TypeScript 5.8.3 compiler oracle identifies direct identifiers,
+constructors, namespace-imported properties, and type-reference declarations,
+only when the source declaration resolves into the pinned tracked checkout.
+It refuses general receiver-method dispatch. **The TS compiler family is also
+used by the SCIP indexer**, so this is an independently implemented
+*extraction and source-site comparison*, not an independent semantic engine
+or separate runtime witness. Axios is JavaScript, so it may have zero
+TypeScript type-reference labels.
+
+For a labeled source-only call/type site, native evidence must match its
+**source file, target declaration file and one-based source line**. A mere
+file-pair coincidence on another line is not counted. This is still not an
+identity proof for the specific symbol when two expressions share a line:
+`source_target_line` is a bounded, conservative surrogate. We report three
+distinct measures per kind: fraction found anywhere in the *full native
+graph*, fraction retained in the previous bounded context, and fraction
+retained in the revised bounded context. Missing or unresolvable sites
+remain visible as unsupported.
+
+A zero-label kind is **not** assigned perfect recall. Cross-language symbol
+resolution, dynamic dispatch and behavioral call targets remain entirely
+unsupported by this experiment. No claims of cross-language or dynamic-call
+precision or recall should be derived from its green checks. The eventual
+acceptance test for those domains needs independently held-out, reviewed
+source/runtime observations.

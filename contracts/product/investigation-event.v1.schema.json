@@ -57,7 +57,11 @@
         "CREATE",
         "CLAIM",
         "PLAN",
-        "VERIFY"
+        "VERIFY",
+        "EXPLORE",
+        "QUESTION",
+        "SYNTHESIS",
+        "REFRESH"
       ]
     },
     "event_id": {
@@ -261,6 +265,220 @@
                   "minItems": 1
                 }
               }
+            }
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "payload"
+      ]
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "EXPLORE"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "report"
+          ],
+          "properties": {
+            "report": {
+              "type": "object",
+              "required": [
+                "schema",
+                "report_id",
+                "source_commit",
+                "source_tree",
+                "task",
+                "reading_plan",
+                "index",
+                "coverage",
+                "candidates",
+                "relationship_candidates",
+                "safe_to_skip_unlisted_tests"
+              ],
+              "properties": {
+                "schema": {
+                  "const": "excession.agent-locate.v1"
+                },
+                "report_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "source_commit": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "source_tree": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "task": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8192
+                },
+                "safe_to_skip_unlisted_tests": {
+                  "const": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "payload"
+      ]
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "QUESTION"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "question",
+            "reason"
+          ],
+          "properties": {
+            "question": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            }
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "payload"
+      ]
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "SYNTHESIS"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "narrative",
+            "claim_event_ids"
+          ],
+          "properties": {
+            "narrative": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            "claim_event_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "payload"
+      ]
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "REFRESH"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidate_commit",
+            "candidate_tree",
+            "change_inventory_id",
+            "changed_path_count",
+            "claim_assessments",
+            "dependency_completeness",
+            "semantic_verification",
+            "refresh_id"
+          ],
+          "properties": {
+            "candidate_commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "candidate_tree": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "change_inventory_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "changed_path_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "refresh_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "claim_assessments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "claim_event_id",
+                  "path",
+                  "direct_source",
+                  "semantic_impact"
+                ],
+                "properties": {
+                  "claim_event_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "direct_source": {
+                    "enum": [
+                      "DIRECT_SOURCE_UNCHANGED",
+                      "DIRECT_SOURCE_CHANGED",
+                      "DIRECT_SOURCE_UNAVAILABLE"
+                    ]
+                  },
+                  "semantic_impact": {
+                    "const": "UNRESOLVED"
+                  }
+                }
+              }
+            },
+            "dependency_completeness": {
+              "const": "NOT_ESTABLISHED"
+            },
+            "semantic_verification": {
+              "const": "NOT_ESTABLISHED"
             }
           }
         }

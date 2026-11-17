@@ -29,7 +29,7 @@ bounded refactoring proposals and native edit replay.
 **Important distinction:** a first persistent investigation ledger is now
 available through `excession investigation`. It records claims, behavior-
 preservation obligations and existing `agent verify` outputs, but **does not
-write behavioral explanations or certify equivalence**. A fully automated
+automatically prove behavioral explanations or certify equivalence**. A fully automated
 investigation engine and transformation command remain target architecture. Current reports do
 not themselves certify behavior, semantic equivalence, safe test selection,
 or permission to merge.
@@ -53,6 +53,14 @@ excession investigation start --repo /path/to/repository \
 ```
 
 This returns an `investigation_id` and first event. Use
+`excession investigation explore --repo /path/to/repository --db /tmp/excession-investigations.sqlite --id INVESTIGATION_ID --expected-revision 1 --limit 12`
+to persist source candidates and a reading plan; then inspect the actual
+Git-pinned source. Record claims, questions and preservation obligations.
+`investigation synthesize` links an authored explanation to claims;
+`investigation refresh` checks direct source changes at a candidate commit;
+`investigation explain` produces a navigable, incomplete evidence view.
+
+Use
 [`investigation claim`, `plan`, `verify`, and `show`](docs/INVESTIGATIONS.md)
 to record source-grounded findings, preservation obligations and scoped
 verification. The ledger stores reports outside the source checkout;

@@ -27,10 +27,11 @@ native commands or historical experiments and must remain readable.
 Do not rename, remove or pretend to have replaced existing CLI/MCP or
 versioned JSON contracts as a side effect of documentation. Today, `agent locate` and `agent context` remain evidence-gathering tools;
 `refactor` and `improve` remain bounded and advisory/native-edit tools.
-The first `excession investigation` append-only ledger persists claims,
-preservation plans and `agent verify` results, but automated explanations,
-cross-revision invalidation and the proposed `investigate` / `transform`
-agent APIs still require implementation and acceptance.
+The `excession investigation` append-only ledger now persists source
+candidates, claims, open questions, attributed synthesis, preservation plans,
+direct-source refresh and `agent verify` reports. Fully automated semantic
+explanations, transitive impact re-establishment and the proposed autonomous
+`investigate` / `transform` agent APIs still require implementation.
 
 ## Product/runtime follow-through (not shipped by this docs change)
 

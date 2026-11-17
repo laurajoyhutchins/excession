@@ -1,0 +1,141 @@
+name: Native dependency discovery acceptance
+
+# A deep, non-required external-source check. The producer index is real
+# scip-python; Git objects and native observations are independently bound.
+on:
+  pull_request:
+    paths:
+      - 'core/src/agent.rs'
+      - 'tools/benchmark_dependency_retention.py'
+      - '.github/workflows/native-dependency-discovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-dependency-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  h11-scip:
+    name: Real h11 SCIP reference retention
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+      H11_SHA: 62c5068c971579d61fa1b55373390e12f25fd856
+      SCIP_CLI_VERSION: v0.10.0
+      SCIP_PYTHON_VERSION: 0.6.6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+
+      - name: Validate independent retention scorer first
+        run: python3 tools/benchmark_dependency_retention.py fixture
+
+      - name: Build source-pinned Excession Rust executable
+        run: |
+          set -euo pipefail
+          bash tools/ci/prepare-excession.sh . release
+
+      - name: Retrieve original, immutable h11 Git sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/h11-source"
+          git init -q "$SRC"
+          git -C "$SRC" remote add origin https://github.com/python-hyper/h11.git
+          git -C "$SRC" fetch -q --depth 1 origin "$H11_SHA"
+          git -C "$SRC" checkout --quiet --detach "$H11_SHA"
+          test "$(git -C "$SRC" rev-parse HEAD)" = "$H11_SHA"
+          test "$(git -C "$SRC" rev-parse HEAD:h11/_connection.py)" = e37d82a82a882c072cb938a90eb4486b51cdad99
+          git -C "$SRC" rev-parse HEAD^{tree} > "$RUNNER_TEMP/h11-tree.txt"
+
+      - name: Install version-identified native SCIP observation producer
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$RUNNER_TEMP/scip-tools"
+          mkdir -p "$TOOLS"
+          npm install --prefix "$TOOLS" --save-exact --package-lock=true \
+            "@sourcegraph/scip-python@$SCIP_PYTHON_VERSION"
+          curl -fLsS --retry 3 \
+            "https://github.com/scip-code/scip/releases/download/$SCIP_CLI_VERSION/scip-linux-amd64.tar.gz" \
+            -o "$RUNNER_TEMP/scip-cli.tar.gz"
+          tar xzf "$RUNNER_TEMP/scip-cli.tar.gz" -C "$TOOLS" scip
+          chmod +x "$TOOLS/scip"
+          "$TOOLS/scip" --version
+          sha256sum "$RUNNER_TEMP/scip-cli.tar.gz" "$TOOLS/scip" "$TOOLS/package-lock.json" \
+            > "$RUNNER_TEMP/scip-tool-digests.txt"
+
+      - name: Ingest genuine cross-file SCIP observations and replay source
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/h11-source"
+          TOOLS="$RUNNER_TEMP/scip-tools"
+          CLI="$GITHUB_WORKSPACE/core/target/release/excession"
+          cd "$SRC"
+          "$TOOLS/node_modules/.bin/scip-python" index . --project-name h11
+          test -s index.scip
+          "$TOOLS/scip" print --json index.scip > "$RUNNER_TEMP/h11-scip.json"
+          test "$(wc -c < "$RUNNER_TEMP/h11-scip.json")" -lt 4194304
+          sha256sum index.scip "$RUNNER_TEMP/h11-scip.json" \
+            > "$RUNNER_TEMP/scip-index-digests.txt"
+          "$CLI" refactor scip-ingest --repo "$SRC" --rev "$H11_SHA" \
+            --index "$RUNNER_TEMP/h11-scip.json" --db "$RUNNER_TEMP/evidence.sqlite" \
+            > "$RUNNER_TEMP/scip-import.json"
+          python3 - "$RUNNER_TEMP/scip-import.json" <<'PY'
+          import json,sys
+          report=json.load(open(sys.argv[1]))
+          assert report["matched_cross_file_references"] > 0, report
+          assert report["source_commit"] == "62c5068c971579d61fa1b55373390e12f25fd856"
+          PY
+
+      - name: Capture native full relation ledger and compare equal budgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="$RUNNER_TEMP/h11-source"
+          CLI="$GITHUB_WORKSPACE/core/target/release/excession"
+          "$CLI" analyze "$SRC" --rev "$H11_SHA" --roots h11 \
+            --db "$RUNNER_TEMP/evidence.sqlite" --json > "$RUNNER_TEMP/full-analysis.json"
+          /usr/bin/time -v -o "$RUNNER_TEMP/reference-retention.time" \
+            python3 tools/benchmark_dependency_retention.py evaluate \
+              --repo "$SRC" --revision "$H11_SHA" \
+              --analysis "$RUNNER_TEMP/full-analysis.json" \
+              --db "$RUNNER_TEMP/evidence.sqlite" \
+              --excession "$CLI" \
+              --out "$RUNNER_TEMP/reference-retention.json"
+          python3 - "$RUNNER_TEMP/reference-retention.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r["schema"]=="excession.native-reference-retention-benchmark.v1"
+          assert r["new_distinct_pair_retention"] > r["old_distinct_pair_retention"]
+          print("old observed-reference retention:",r["old_observed_retention"])
+          print("new observed-reference retention:",r["new_observed_retention"])
+          print("old distinct-source-pair retention:",r["old_distinct_pair_retention"])
+          print("new distinct-source-pair retention:",r["new_distinct_pair_retention"])
+          print("Do not interpret these as validated semantic dependency recall")
+          PY
+
+      - name: Retain independent Git/source/SCIP evidence and exact comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-dependency-discovery-h11
+          path: |
+            ${{ runner.temp }}/h11-tree.txt
+            ${{ runner.temp }}/scip-tool-digests.txt
+            ${{ runner.temp }}/scip-index-digests.txt
+            ${{ runner.temp }}/scip-import.json
+            ${{ runner.temp }}/reference-retention.json
+            ${{ runner.temp }}/reference-retention.time
+          if-no-files-found: warn
+          retention-days: 14

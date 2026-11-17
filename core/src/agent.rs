@@ -55,6 +55,57 @@ fn matches_focus(test: &str, focus: &BTreeSet<String>) -> bool {
     })
 }
 
+/// Keep producer-observed references before weaker candidates when context is
+/// bounded. `analyze` emits static candidates before imported SCIP evidence,
+/// so a first-N policy can hide every observed cross-file reference.
+fn focused_relationships(
+    all: &[Value],
+    focus: &BTreeSet<String>,
+    limit: usize,
+) -> Result<(Vec<Value>, usize, usize)> {
+    let mut distinct_native = Vec::new();
+    let mut repeated_native = Vec::new();
+    let mut seen_native_pairs = BTreeSet::new();
+    let mut candidates = Vec::new();
+    let mut total = 0usize;
+    let mut observed = 0usize;
+    for relation in all {
+        let from = relation.get("source")?.get("path")?.str()?;
+        let to = relation.get("target")?.get("path")?.str()?;
+        if !focus.contains(from) && !focus.contains(to) {
+            continue;
+        }
+        total += 1;
+        if relation.get("kind")?.str()? == "SCIP_REFERENCE" {
+            let evidence = relation.get("evidence")?.array_ref()?;
+            if evidence.is_empty()
+                || evidence
+                    .iter()
+                    .any(|row| row.get("assessment").and_then(Value::str).ok() != Some("OBSERVED"))
+            {
+                return refuse("native SCIP reference has missing or incompatible evidence");
+            }
+            observed += 1;
+            if seen_native_pairs.insert((from.to_owned(), to.to_owned())) {
+                if distinct_native.len() < limit {
+                    distinct_native.push(relation.clone());
+                }
+            } else if repeated_native.len() < limit {
+                repeated_native.push(relation.clone());
+            }
+        } else if candidates.len() < limit {
+            candidates.push(relation.clone());
+        }
+    }
+    // Preserve one real, source-bound reference per file pair before spending
+    // scarce result slots on repeated references from the same pair.
+    let available = limit.saturating_sub(distinct_native.len());
+    distinct_native.extend(repeated_native.into_iter().take(available));
+    let available = limit.saturating_sub(distinct_native.len());
+    distinct_native.extend(candidates.into_iter().take(available));
+    Ok((distinct_native, total, observed))
+}
+
 /// The task description is metadata only; lexical matching uses explicit Git
 /// paths, not an invented semantic similarity score.
 pub fn context(
@@ -99,56 +150,42 @@ pub fn context(
     }
 
     let mut gaps = Vec::new();
-    let mut relations = Vec::new();
     let mut configured_observations = Vec::new();
     let mut total_configured = 0usize;
-    let mut total_relations = 0usize;
     let mut truncated = false;
     // Include revision-authenticated SCIP and configured-graph observations
     // already present in the evidence store, alongside static import candidates.
     // The default plan only selects producer evidence compatible with the
     // requested exact Git revision. No inferred edge becomes a verified fact.
-    match analyze::run_default(&discovered.root, &discovered.commit, roots, database) {
-        Ok((analysis, _)) => {
-            for relationship in analysis.get("relationships")?.array_ref()? {
-                let from = relationship.get("source")?.get("path")?.str()?;
-                let to = relationship.get("target")?.get("path")?.str()?;
-                if focus.contains(from) || focus.contains(to) {
-                    total_relations += 1;
-                    if relations.len() < limit {
-                        relations.push(relationship.clone());
-                    } else {
-                        truncated = true;
-                    }
-                }
-            }
-            for item in analysis.get("configured_observations")?.array_ref()? {
-                let source_path = item.get("source")?.get("path")?.str()?;
-                let selected_path = item
-                    .entries()?
-                    .get("subject")
-                    .and_then(|subject| subject.get("path").ok())
-                    .and_then(|path| path.str().ok());
-                if focus.contains(source_path)
-                    || selected_path.is_some_and(|path| focus.contains(path))
-                {
-                    total_configured += 1;
-                    if configured_observations.len() < limit {
-                        configured_observations.push(item.clone());
-                    } else {
-                        truncated = true;
-                    }
-                }
-            }
-            for item in analysis.get("coverage")?.get("gaps")?.array_ref()? {
-                if gaps.len() < limit {
-                    gaps.push(item.clone());
-                } else {
-                    truncated = true;
-                }
+    let (analysis, _) =
+        analyze::run_default(&discovered.root, &discovered.commit, roots, database)?;
+    let (relations, total_relations, observed_reference_count) =
+        focused_relationships(analysis.get("relationships")?.array_ref()?, &focus, limit)?;
+    if total_relations > relations.len() {
+        truncated = true;
+    }
+    for item in analysis.get("configured_observations")?.array_ref()? {
+        let source_path = item.get("source")?.get("path")?.str()?;
+        let selected_path = item
+            .entries()?
+            .get("subject")
+            .and_then(|subject| subject.get("path").ok())
+            .and_then(|path| path.str().ok());
+        if focus.contains(source_path) || selected_path.is_some_and(|path| focus.contains(path)) {
+            total_configured += 1;
+            if configured_observations.len() < limit {
+                configured_observations.push(item.clone());
+            } else {
+                truncated = true;
             }
         }
-        Err(error) => return Err(error),
+    }
+    for item in analysis.get("coverage")?.get("gaps")?.array_ref()? {
+        if gaps.len() < limit {
+            gaps.push(item.clone());
+        } else {
+            truncated = true;
+        }
     }
 
     let mut test_candidates = Vec::new();
@@ -180,6 +217,10 @@ pub fn context(
     if truncated {
         gaps.push(gap("TRUNCATED"));
     }
+    let returned_observed_reference_count = relations
+        .iter()
+        .filter(|relation| relation.get("kind").and_then(Value::str).ok() == Some("SCIP_REFERENCE"))
+        .count();
     report_id(obj(&[
         ("schema", Value::string("excession.agent-context.v1")),
         ("source_commit", Value::string(&discovered.commit)),
@@ -188,6 +229,14 @@ pub fn context(
         ("sources", Value::array(sources)),
         ("relationships", Value::array(relations)),
         ("relationship_count", Value::number(total_relations)),
+        (
+            "observed_reference_count",
+            Value::number(observed_reference_count),
+        ),
+        (
+            "returned_observed_reference_count",
+            Value::number(returned_observed_reference_count),
+        ),
         (
             "configured_observations",
             Value::array(configured_observations),
@@ -473,6 +522,130 @@ pub fn verify(
         ("ready_to_merge", Value::Bool(false)),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]))
+}
+
+#[cfg(test)]
+mod native_dependency_selection_tests {
+    use super::*;
+
+    fn edge(kind: &str, from: &str, to: &str, assessment: &str) -> Value {
+        obj(&[
+            ("kind", Value::string(kind)),
+            ("source", obj(&[("path", Value::string(from))])),
+            ("target", obj(&[("path", Value::string(to))])),
+            (
+                "evidence",
+                Value::array([obj(&[("assessment", Value::string(assessment))])]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn observed_reference_survives_static_first_budget_and_direction() {
+        let focus = BTreeSet::from(["src/entry.py".to_owned()]);
+        let candidates = [
+            edge("STATIC_IMPORT", "src/entry.py", "src/a.py", "CANDIDATE"),
+            edge("STATIC_IMPORT", "src/entry.py", "src/b.py", "CANDIDATE"),
+            edge("SCIP_REFERENCE", "src/c.py", "src/entry.py", "OBSERVED"),
+        ];
+        // Original first-N selection returned one static candidate and no
+        // observed source reference. The revised selector preserves the native
+        // relation without changing its direction, kind, or producer receipt.
+        assert_eq!(
+            candidates[0].get("kind").unwrap().str().unwrap(),
+            "STATIC_IMPORT"
+        );
+        let (selected, total, observed) = focused_relationships(&candidates, &focus, 1).unwrap();
+        assert_eq!((total, observed, selected.len()), (3, 1, 1));
+        assert_eq!(
+            selected[0].get("kind").unwrap().str().unwrap(),
+            "SCIP_REFERENCE"
+        );
+        assert_eq!(
+            selected[0]
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/c.py"
+        );
+        assert_eq!(
+            selected[0]
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/entry.py"
+        );
+    }
+
+    #[test]
+    fn one_reference_per_distinct_source_pair_precedes_repeated_symbols() {
+        let focus = BTreeSet::from(["src/a.py".to_owned()]);
+        let records = [
+            edge("STATIC_IMPORT", "src/a.py", "src/z.py", "CANDIDATE"),
+            edge("SCIP_REFERENCE", "src/a.py", "src/b.py", "OBSERVED"),
+            edge("SCIP_REFERENCE", "src/a.py", "src/b.py", "OBSERVED"),
+            edge("SCIP_REFERENCE", "src/a.py", "src/c.py", "OBSERVED"),
+        ];
+        let (selected, total, observed) = focused_relationships(&records, &focus, 2).unwrap();
+        assert_eq!((total, observed, selected.len()), (4, 3, 2));
+        let paths = selected
+            .iter()
+            .map(|row| {
+                row.get("target")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(paths, ["src/b.py", "src/c.py"]);
+        let (large, _, _) = focused_relationships(&records, &focus, 4).unwrap();
+        let order = large
+            .iter()
+            .map(|row| {
+                row.get("target")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(order, ["src/b.py", "src/c.py", "src/b.py", "src/z.py"]);
+    }
+
+    #[test]
+    fn context_keeps_candidates_when_no_native_evidence_and_fails_closed() {
+        let focus = BTreeSet::from(["src/a.py".to_owned()]);
+        let source = [
+            edge("STATIC_IMPORT", "src/a.py", "src/b.py", "CANDIDATE"),
+            edge("STATIC_IMPORT", "src/a.py", "src/c.py", "CANDIDATE"),
+            edge("SCIP_REFERENCE", "src/d.py", "src/e.py", "OBSERVED"),
+        ];
+        let (selected, total, observed) = focused_relationships(&source, &focus, 1).unwrap();
+        assert_eq!((total, observed), (2, 0));
+        assert_eq!(
+            selected[0]
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/b.py"
+        );
+        let forged = [edge("SCIP_REFERENCE", "src/a.py", "src/b.py", "CANDIDATE")];
+        assert!(focused_relationships(&forged, &focus, 1).is_err());
+        let (selected, total, observed) = focused_relationships(&source, &focus, 2).unwrap();
+        assert_eq!((total, observed, selected.len()), (2, 0, 2));
+    }
 }
 
 #[cfg(test)]

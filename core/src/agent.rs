@@ -94,6 +94,40 @@ fn matches_focus(test: &str, focus: &BTreeSet<String>) -> bool {
     })
 }
 
+/// Common task words do not make every test file relevant. Include a few
+/// transparent inflection variants for *navigation only*, never as evidence
+/// of actual coverage or a semantic relationship.
+fn salient_test_terms(task: Option<&str>) -> BTreeSet<String> {
+    const STOP: &[&str] = &[
+        "test", "tests", "source", "sources", "file", "files", "code", "find", "explain",
+        "identify", "relevant", "evidence", "behavior", "which", "where", "this", "that", "with",
+        "from", "into", "after", "before", "when", "what", "their", "there", "about",
+    ];
+    let mut terms = BTreeSet::new();
+    for raw in task
+        .unwrap_or("")
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+    {
+        let word = raw.to_ascii_lowercase();
+        if word.len() < 4 || STOP.contains(&word.as_str()) {
+            continue;
+        }
+        terms.insert(word.clone());
+        if word.ends_with("ing") && word.len() >= 7 {
+            terms.insert(word[..word.len() - 3].to_owned());
+        } else if word.ends_with("ies") && word.len() >= 7 {
+            terms.insert(format!("{}y", &word[..word.len() - 3]));
+        } else if word.ends_with('s')
+            && !word.ends_with("js")
+            && !word.ends_with("ss")
+            && word.len() >= 5
+        {
+            terms.insert(word[..word.len() - 1].to_owned());
+        }
+    }
+    terms
+}
+
 /// Rank test *navigation suggestions*, not established test ownership. Direct
 /// focus paths are always first; source-native tests precede vendored fixtures.
 fn ranked_test_candidates<'a>(
@@ -101,12 +135,7 @@ fn ranked_test_candidates<'a>(
     focus: &BTreeSet<String>,
     task: Option<&str>,
 ) -> Vec<&'a git::Entry> {
-    let terms = task
-        .unwrap_or("")
-        .split(|ch: char| !ch.is_ascii_alphanumeric())
-        .filter(|word| word.len() >= 4)
-        .map(str::to_ascii_lowercase)
-        .collect::<BTreeSet<_>>();
+    let terms = salient_test_terms(task);
     let mut ranked = Vec::new();
     for entry in entries {
         if entry.kind != "blob"
@@ -753,6 +782,47 @@ mod tests {
         assert!(matches_focus("core/tests/test_impact_query.rs", &focus));
         assert!(!matches_focus("core/tests/test_security.rs", &focus));
         assert!(!is_test("core/src/impact_query.rs"));
+    }
+
+    #[test]
+    fn task_stop_words_and_inflections_keep_test_discovery_discriminating() {
+        let terms = salient_test_terms(Some(
+            "Explain relevant source and test evidence for CommonJS require caching, circular dependencies and failed loads",
+        ));
+        for noise in ["test", "source", "explain", "relevant", "evidence"] {
+            assert!(!terms.contains(noise), "unselective task term: {noise}");
+        }
+        assert!(terms.contains("cach"));
+        assert!(terms.contains("dependency"));
+        let focus = BTreeSet::from(["lib/internal/modules/cjs/loader.js".into()]);
+        let paths = [
+            "test/parallel/test-unrelated.js",
+            "test/parallel/test-module-circular-dependency-warning.js",
+            "test/es-module/test-esm-in-require-cache-2.mjs",
+        ];
+        let entries = paths
+            .iter()
+            .map(|path| git::Entry {
+                path: (*path).to_owned(),
+                mode: "100644".into(),
+                kind: "blob".into(),
+                oid: "a".repeat(40),
+            })
+            .collect::<Vec<_>>();
+        let candidates = ranked_test_candidates(
+            &entries,
+            &focus,
+            Some(
+                "Explain relevant source and test evidence for CommonJS require caching, circular dependencies",
+            ),
+        );
+        let chosen = candidates
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        assert!(!chosen.contains(&"test/parallel/test-unrelated.js"));
+        assert!(chosen.contains(&"test/parallel/test-module-circular-dependency-warning.js"));
+        assert!(chosen.contains(&"test/es-module/test-esm-in-require-cache-2.mjs"));
     }
 
     #[test]

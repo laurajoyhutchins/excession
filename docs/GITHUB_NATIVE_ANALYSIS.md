@@ -121,11 +121,12 @@ same source and tool revision:
 ```
 
 Compare `index.ready_segments`, `index.pending_segments` and
-`cache.reused_blobs` in the next actual reports. Cached progress is
-**best effort**: a new tool commit, changed budget, expired/evicted cache,
-different filesystem layout, or concurrent requests can reset or fork the
-available checkpoint. A partial result always says `PARTIAL`; never
-treat a prior cache as authority or assume that retries increase coverage.
+`cache.reused_blobs` in the next actual reports. With an authenticated
+checkpoint, the next run should progress by the selected refresh budget;
+without a matching checkpoint the explicit resume request **refuses**.
+Artifacts are retained for 30 days, and a new tool commit or changed
+index policy requires a new initial request. A partial result always says
+`PARTIAL`; never treat retained artifact bytes as source authority.
 For operations where Git grep suffices without enrichment, `index: null`
 and `cache: null` are valid *only* with
 `enrichment: NOT_REQUESTED_GIT_SUFFICIENT`.

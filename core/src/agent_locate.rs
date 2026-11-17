@@ -359,9 +359,19 @@ fn reading_plan(
         Ok(())
     };
 
+    // Preserve room for a test-reading step when one is present, even under
+    // small budgets. Code understanding must not collapse to graph-neighbor
+    // enumeration simply because a producer supplied many observations.
+    let has_tests = context != &Value::Null
+        && !context.get("test_candidates")?.array_ref()?.is_empty();
+    let reserved_test = usize::from(has_tests && budget > 1);
     // Read likely implementations before chasing edges. Ranking is lexical,
     // not a measured probability that the task lives in that file.
-    for (i, candidate) in candidates.iter().take(4).enumerate() {
+    for (i, candidate) in candidates
+        .iter()
+        .take(4.min(budget.saturating_sub(reserved_test)))
+        .enumerate()
+    {
         add(
             candidate,
             "source",
@@ -374,7 +384,8 @@ fn reading_plan(
     }
     // Show both sides of a potential behavior path. Observed references
     // remain producer observations; static imports remain candidates.
-    for (i, neighbor) in related.iter().take(8).enumerate() {
+    let relation_budget = 4.min(budget.saturating_sub(steps.len() + reserved_test));
+    for (i, neighbor) in related.iter().take(relation_budget).enumerate() {
         let assessment = neighbor.get("assessment")?.str()?;
         let direction = neighbor.get("direction")?.str()?;
         let (action, why) = if direction == "LEXICAL_SOURCE_TO_NEIGHBOR" {
@@ -410,7 +421,7 @@ fn reading_plan(
             .get("test_candidates")?
             .array_ref()?
             .iter()
-            .take(8)
+            .take(4)
             .enumerate()
         {
             add(
@@ -718,6 +729,36 @@ mod tests {
                 .all(|item| { !item.get("behavior_verified").unwrap().bool().unwrap() })
         );
         assert!(!plan.get("complete_behavior_trace").unwrap().bool().unwrap());
+    }
+
+    #[test]
+    fn reading_plan_reserves_tests_in_small_bounded_investigations() {
+        let source = |path: &str| obj(&[("path", Value::string(path))]);
+        let lexical = (0..4)
+            .map(|i| obj(&[("source", source(&format!("src/feature{i}.rs")))]))
+            .collect::<Vec<_>>();
+        let related = (0..8)
+            .map(|i| obj(&[
+                ("source", source(&format!("src/dependency{i}.rs"))),
+                ("assessment", Value::string("OBSERVED")),
+                ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+            ]))
+            .collect::<Vec<_>>();
+        let context = obj(&[(
+            "test_candidates",
+            Value::array([obj(&[("source", source("tests/test_feature.rs"))])]),
+        )]);
+        let plan = reading_plan(&lexical, &related, &context, 8).unwrap();
+        let steps = plan.get("steps").unwrap().array_ref().unwrap();
+        assert_eq!(steps.len(), 8);
+        assert_eq!(
+            steps[7].get("action").unwrap().str().unwrap(),
+            "INSPECT_RELATED_TEST"
+        );
+        assert_eq!(
+            steps[7].get("basis").unwrap().str().unwrap(),
+            "TEST_PATH_HEURISTIC"
+        );
     }
 
     #[test]

@@ -152,9 +152,9 @@ fn stdio_agent_discovers_tools_and_authenticates_git_source() {
         &mut input,
         &mut output,
         json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{
-            "name":"search_code_page","arguments":{
-                "task":"renew lease","revision":"HEAD","index_segments":256,"limit":1
-            }}}),
+        "name":"search_code_page","arguments":{
+            "task":"renew lease","revision":"HEAD","index_segments":256,"limit":1
+        }}}),
     );
     assert_eq!(paged["result"]["isError"], false, "{paged}");
     assert_eq!(

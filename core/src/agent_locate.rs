@@ -745,7 +745,10 @@ pub fn locate_page_with_limits(
     let mut candidates = Vec::new();
     for hit in &index.hits {
         candidates.push(obj(&[
-            ("rank", Value::number(index.page_offset + candidates.len() + 1)),
+            (
+                "rank",
+                Value::number(index.page_offset + candidates.len() + 1),
+            ),
             (
                 "source",
                 source(&discovered.commit, &discovered.tree, &hit.entry),
@@ -773,7 +776,10 @@ pub fn locate_page_with_limits(
     if candidates.is_empty() && index.page_offset == 0 {
         gaps.push(gap("NO_LEXICAL_MATCH_DOES_NOT_PROVE_ABSENCE"));
     }
-    let next = index.next_cursor.as_ref().map_or(Value::Null, |value| Value::string(value));
+    let next = index
+        .next_cursor
+        .as_ref()
+        .map_or(Value::Null, |value| Value::string(value));
     let mut output = obj(&[
         ("schema", Value::string("excession.agent-locate-page.v1")),
         ("source_commit", Value::string(&discovered.commit)),
@@ -782,40 +788,72 @@ pub fn locate_page_with_limits(
         ("retrieval", Value::string("GIT_BLOB_FTS5_BM25")),
         ("candidates", Value::array(candidates)),
         ("candidate_count", Value::number(index.hits.len())),
-        ("page", obj(&[
-            ("snapshot_id", Value::string(&index.snapshot_id)),
-            ("offset", Value::number(index.page_offset)),
-            ("page_size", Value::number(limit)),
-            ("has_more", Value::Bool(index.next_cursor.is_some())),
-            ("next_cursor", next),
-        ])),
-        ("index", obj(&[
-            ("total_source_files", Value::number(index.total_source_files)),
-            ("indexed_source_count", Value::number(index.indexed_files)),
-            ("skipped_source_count", Value::number(index.skipped_files)),
-            ("pending_segments", Value::number(index.pending_segments)),
-            ("complete", Value::Bool(complete)),
-            ("limits", obj(&[
-                ("max_file_bytes", Value::number(budget.index.max_file_bytes)),
-                ("max_bytes_per_segment", Value::number(budget.index.max_bytes_per_segment)),
-                ("max_files_per_segment", Value::number(budget.index.max_files_per_segment)),
-            ])),
-        ])),
-        ("coverage", obj(&[
-            ("status", Value::string("PARTIAL")),
-            ("truncated", Value::Bool(index.truncated)),
-            ("gaps", Value::array(gaps)),
-        ])),
+        (
+            "page",
+            obj(&[
+                ("snapshot_id", Value::string(&index.snapshot_id)),
+                ("offset", Value::number(index.page_offset)),
+                ("page_size", Value::number(limit)),
+                ("has_more", Value::Bool(index.next_cursor.is_some())),
+                ("next_cursor", next),
+            ]),
+        ),
+        (
+            "index",
+            obj(&[
+                (
+                    "total_source_files",
+                    Value::number(index.total_source_files),
+                ),
+                ("indexed_source_count", Value::number(index.indexed_files)),
+                ("skipped_source_count", Value::number(index.skipped_files)),
+                ("pending_segments", Value::number(index.pending_segments)),
+                ("complete", Value::Bool(complete)),
+                (
+                    "limits",
+                    obj(&[
+                        ("max_file_bytes", Value::number(budget.index.max_file_bytes)),
+                        (
+                            "max_bytes_per_segment",
+                            Value::number(budget.index.max_bytes_per_segment),
+                        ),
+                        (
+                            "max_files_per_segment",
+                            Value::number(budget.index.max_files_per_segment),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "coverage",
+            obj(&[
+                ("status", Value::string("PARTIAL")),
+                ("truncated", Value::Bool(index.truncated)),
+                ("gaps", Value::array(gaps)),
+            ]),
+        ),
         ("safe_to_skip_unlisted_tests", Value::Bool(false)),
     ]);
     let report_id = output.sha256();
-    output.entries_mut()?.insert("report_id".into(), Value::string(report_id));
-    output.entries_mut()?.insert("cache".into(), obj(&[
-        ("reused_blobs", Value::number(index.reused_blobs)),
-        ("read_blobs", Value::number(index.read_blobs)),
-        ("refreshed_segments", Value::number(index.refreshed_segments)),
-        ("refresh_budget_segments", Value::number(budget.index_segments)),
-    ]));
+    output
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(report_id));
+    output.entries_mut()?.insert(
+        "cache".into(),
+        obj(&[
+            ("reused_blobs", Value::number(index.reused_blobs)),
+            ("read_blobs", Value::number(index.read_blobs)),
+            (
+                "refreshed_segments",
+                Value::number(index.refreshed_segments),
+            ),
+            (
+                "refresh_budget_segments",
+                Value::number(budget.index_segments),
+            ),
+        ]),
+    );
     Ok(output)
 }
 

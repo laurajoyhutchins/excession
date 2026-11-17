@@ -811,8 +811,7 @@ pub fn locate_with_mode(
     // supplies as many authenticated source suggestions as the caller
     // requested. Indexing would add cost but no candidate in this report.
     // A separate explicit --enrich request retains the full graph workflow.
-    let needs_enrichment =
-        force_enrichment || candidates.len() < limit || committed.incomplete;
+    let needs_enrichment = force_enrichment || candidates.len() < limit || committed.incomplete;
     let index = if needs_enrichment {
         Some(agent_locate_cache::search_with_limits(
             &discovered,
@@ -983,8 +982,14 @@ pub fn locate_with_mode(
             index.as_ref().map_or(Value::Null, |found| {
                 obj(&[
                     ("segmentation", Value::string("PATH_SHA256_PREFIX_BYTE")),
-                    ("total_source_files", Value::number(found.total_source_files)),
-                    ("populated_segments", Value::number(found.populated_segments)),
+                    (
+                        "total_source_files",
+                        Value::number(found.total_source_files),
+                    ),
+                    (
+                        "populated_segments",
+                        Value::number(found.populated_segments),
+                    ),
                     ("ready_segments", Value::number(found.ready_segments)),
                     ("pending_segments", Value::number(found.pending_segments)),
                     (
@@ -994,9 +999,15 @@ pub fn locate_with_mode(
                     (
                         "limits",
                         obj(&[
-                            ("max_files_per_segment", Value::number(limits.max_files_per_segment)),
+                            (
+                                "max_files_per_segment",
+                                Value::number(limits.max_files_per_segment),
+                            ),
                             ("max_file_bytes", Value::number(limits.max_file_bytes)),
-                            ("max_bytes_per_segment", Value::number(limits.max_bytes_per_segment)),
+                            (
+                                "max_bytes_per_segment",
+                                Value::number(limits.max_bytes_per_segment),
+                            ),
                         ]),
                     ),
                 ])
@@ -1025,7 +1036,10 @@ pub fn locate_with_mode(
             ("path", Value::string(found.cache_path.to_string_lossy())),
             ("reused_blobs", Value::number(found.reused_blobs)),
             ("read_blobs", Value::number(found.read_blobs)),
-            ("refreshed_segments", Value::number(found.refreshed_segments)),
+            (
+                "refreshed_segments",
+                Value::number(found.refreshed_segments),
+            ),
             ("refresh_budget_segments", Value::number(index_segments)),
         ])
     });
@@ -1359,8 +1373,11 @@ mod tests {
             );
         };
         git(&["init", "-q"]);
-        fs::write(root.join("src/wal.c"), "int checkpoint_lock(void) { return 1; }\n")
-            .unwrap();
+        fs::write(
+            root.join("src/wal.c"),
+            "int checkpoint_lock(void) { return 1; }\n",
+        )
+        .unwrap();
         fs::write(
             root.join("test/wal.test"),
             "do_test checkpoint-locks { checkpoint lock release }\n",
@@ -1368,8 +1385,13 @@ mod tests {
         .unwrap();
         git(&["add", "."]);
         git(&[
-            "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-            "commit", "-qm", "pinned source",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "pinned source",
         ]);
 
         let budget = LocateBudget {
@@ -1377,7 +1399,9 @@ mod tests {
             index: IndexLimits::default(),
         };
         let discovered = discovery::inspect(&root, "HEAD").unwrap();
-        let index_file = discovered.index_path.with_file_name("agent-locate-chunks.sqlite");
+        let index_file = discovered
+            .index_path
+            .with_file_name("agent-locate-chunks.sqlite");
         assert!(!index_file.exists());
         let fast = locate_with_mode(
             &root,
@@ -1388,7 +1412,8 @@ mod tests {
             None,
             budget,
             false,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(
             fast.get("enrichment").unwrap().str().unwrap(),
             "NOT_REQUESTED_GIT_SUFFICIENT"
@@ -1407,27 +1432,67 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        let steps = fast.get("reading_plan").unwrap().get("steps").unwrap()
-            .array_ref().unwrap();
-        let paths = steps.iter().map(|step| {
-            step.get("source").unwrap().get("path").unwrap().str().unwrap()
-        }).collect::<Vec<_>>();
+        let steps = fast
+            .get("reading_plan")
+            .unwrap()
+            .get("steps")
+            .unwrap()
+            .array_ref()
+            .unwrap();
+        let paths = steps
+            .iter()
+            .map(|step| {
+                step.get("source")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
         assert_eq!(paths, ["src/wal.c", "test/wal.test"]);
-        assert!(fast.get("coverage").unwrap().get("gaps").unwrap().array_ref()
-            .unwrap().iter().any(|gap| gap.get("reason").unwrap().str().unwrap()
-                == "RELATIONSHIP_CONTEXT_NOT_QUERIED"));
+        assert!(
+            fast.get("coverage")
+                .unwrap()
+                .get("gaps")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .iter()
+                .any(|gap| gap.get("reason").unwrap().str().unwrap()
+                    == "RELATIONSHIP_CONTEXT_NOT_QUERIED")
+        );
         assert!(!index_file.exists());
         fs::write(root.join("src/wal.c"), "int replaced(void) { return 0; }\n").unwrap();
         let again = locate_with_mode(
-            &root, "HEAD", "checkpoint lock", 2, None, None, budget, false,
-        ).unwrap();
-        assert_eq!(fast.get("report_id").unwrap(), again.get("report_id").unwrap());
+            &root,
+            "HEAD",
+            "checkpoint lock",
+            2,
+            None,
+            None,
+            budget,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            fast.get("report_id").unwrap(),
+            again.get("report_id").unwrap()
+        );
 
         // One more requested source file than Git found must activate
         // the existing FTS path instead of pretending two results suffice.
         let fallback = locate_with_mode(
-            &root, "HEAD", "checkpoint lock", 3, None, None, budget, false,
-        ).unwrap();
+            &root,
+            "HEAD",
+            "checkpoint lock",
+            3,
+            None,
+            None,
+            budget,
+            false,
+        )
+        .unwrap();
         assert_eq!(
             fallback.get("enrichment").unwrap().str().unwrap(),
             "PERFORMED"
@@ -1436,14 +1501,27 @@ mod tests {
         assert_ne!(fallback.get("cache").unwrap(), &Value::Null);
         assert!(index_file.exists());
         let deep = locate_with_mode(
-            &root, "HEAD", "checkpoint lock", 2, None, None, budget, true,
-        ).unwrap();
+            &root,
+            "HEAD",
+            "checkpoint lock",
+            2,
+            None,
+            None,
+            budget,
+            true,
+        )
+        .unwrap();
         assert_eq!(deep.get("enrichment").unwrap().str().unwrap(), "PERFORMED");
         assert_ne!(deep.get("index").unwrap(), &Value::Null);
         assert_ne!(deep.get("cache").unwrap(), &Value::Null);
         assert_eq!(
             deep.get("candidates").unwrap().array_ref().unwrap()[0]
-                .get("source").unwrap().get("path").unwrap().str().unwrap(),
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "src/wal.c"
         );
         let cache_dir = index_file.parent().unwrap();

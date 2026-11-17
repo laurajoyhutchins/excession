@@ -43,7 +43,8 @@ See [CI](CI.md), [evidence and limits](EVIDENCE_AND_LIMITS.md),
 [agent CLI](AGENT_CLI.md) and [refactoring](REFACTORING.md).
 
 The implemented ledger persists a question-scoped `agent verify` report and
-its open obligations. The **remaining target** is independent, claim-by-claim
+its open obligations. `investigation refresh` independently checks direct
+Git source differences, always leaving transitive semantic impact unresolved. The **remaining target** is independent, claim-by-claim
 behavioral verification joined to transformation obligations. It is **not** an
 already-shipped `excession verify-investigation` command or schema.
 

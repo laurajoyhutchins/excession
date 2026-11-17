@@ -34,10 +34,13 @@ not the correctness or completeness of an external analyzer. The
 ## Persistent investigation ledger
 
 Use `excession investigation start` to pin a question to an exact Git
-revision; `claim` records an authenticated source-bound assessment;
-`plan` binds preservation obligations to a claim; `verify` executes
-the existing `agent verify` against a committed candidate and stores
-its unresolved report; `show` replays the ledger and checks identities.
+revision; `explore` stores Git-bound candidate evidence; `claim` records
+an authenticated source-bound assessment; `question` records an unresolved
+gap; `synthesize` links an authored narrative to claim events; `explain`
+composes a reviewable evidence view; `refresh` checks claim source identity
+at a different committed revision. `plan` binds preservation obligations;
+`verify` executes `agent verify` on a committed candidate and stores its
+unresolved report; `show` replays the ledger and checks identities.
 See the [complete command workflow](INVESTIGATIONS.md). A ledger cannot
 promote a hypothesis to verified behavior or authorize merge.
 

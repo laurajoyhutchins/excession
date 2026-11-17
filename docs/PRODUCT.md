@@ -64,15 +64,16 @@ and Matt Housley, not a mandate to build a warehouse or orchestrator.
 
 | Capability | Current main-line support | Target |
 | --- | --- | --- |
-| Source discovery | `agent locate` ranks Git-bound candidates and a bounded reading plan; `investigation start/claim/show` persists source-bound notes | Question-led implementation discovery with follow-up decisions |
+| Source discovery | `investigation explore` stores Git-bound ranked candidates and gaps; `start/claim/question/synthesize/explain` retain a reviewable explanation | Question-led implementation discovery with follow-up decisions |
 | Context | `agent context` exposes bounded source/evidence/test candidates | Behavior-centered, traceable explanation |
 | Impact | `impact` and `agent verify` report candidates and obligations | Impact scoped to specific preservation claims |
-| Refactoring | `refactor`/`improve` provide native-edit paths; `investigation plan` records preservation obligations | Investigation-driven, cross-module transformation |
-| Verification | Evidence replay and native receipts; `investigation verify` persists `agent verify` with open obligations | Claim-by-claim behavioral preservation report |
+| Refactoring | `refactor`/`improve` provide native-edit paths; `investigation plan` records preservation obligations; `refresh` checks direct source changes | Investigation-driven, cross-module transformation |
+| Verification | Evidence replay and native receipts; `investigation verify` retains open obligations and `explain` exposes them | Claim-by-claim behavioral preservation report |
 | Serving | CLI, local stdio MCP, GitHub Actions artifacts | First-class investigation/transform/verify agent interface |
 
-The ledger is a first implemented artifact, **not** the target automated
-investigation engine or behavioral equivalence checker. Do not advertise
+The ledger implements one-step question-led retrieval, open questions, and
+an attributed explanation projection, **not** autonomous behavioral reasoning
+or a behavioral-equivalence checker. Do not advertise
 the target column as shipped. Existing commands and
 wire schemas are documented in [CLI](CLI.md), [agent CLI](AGENT_CLI.md),
 [refactoring technical reference](REFACTORING.md), and [MCP](MCP.md).

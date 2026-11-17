@@ -7,7 +7,9 @@ to a source-bound claim. It already exposes bounded `refactor` and
 native-edit replay, but **does not implement this complete end-to-end
 transformation contract**. See [refactoring technical reference](REFACTORING.md)
 and [improvement loop](IMPROVEMENT_LOOP.md) for exact shipped commands.
-See [investigation ledger](INVESTIGATIONS.md) for persisting the obligation.
+See [investigation ledger](INVESTIGATIONS.md) for persisting the obligation
+and `investigation refresh` for conservative direct-source reassessment after
+a candidate edit. An unchanged source blob does not discharge an obligation.
 
 A transformation changes structure while preserving specified behavior or
 explicitly documenting an intentional behavior change. It starts from a

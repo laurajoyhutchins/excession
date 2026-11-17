@@ -1,10 +1,10 @@
 # Investigations: the unit of understanding
 
-**Status:** the first persistent Git-bound investigation ledger is implemented
-(`excession investigation`). It retains claims, preservation obligations and
-verification reports, but does **not** automatically derive an explanation,
-infer behavior or validate refactoring equivalence. See [agent CLI](AGENT_CLI.md)
-for evidence-gathering building blocks.
+**Status:** a Git-bound investigation ledger now has demand-driven source
+discovery, source-linked claim synthesis, recorded unresolved questions, and
+direct-source refresh across revisions. `excession investigation explain`
+builds a compact evidence-backed *projection*, not an independent proof of
+behavior. See [agent CLI](AGENT_CLI.md) for the underlying discovery tools.
 
 An investigation answers a **question at an exact repository revision**,
 not a request for a complete graph. It ends with a reviewable explanation,
@@ -58,11 +58,82 @@ free-form `VERIFIED` state. `plan` must reference an earlier claim and
 The same expected revision cannot be written twice; event rows refuse SQL
 update/delete, and `show` replays the chain and authenticates Git source.
 
-The ledger does not yet select relevant source itself, infer call paths,
-automatically expand open questions, invalidate claims across revisions,
-or provide native source edits. Its event and report wire contracts are
+The ledger can now select candidate source and record direct-source refresh,
+but cannot infer verified call paths, automatically resolve questions,
+re-establish transitive behavior, or provide native source edits. Its event and report wire contracts are
 [`investigation-event.v1`](../contracts/product/investigation-event.v1.schema.json)
 and [`investigation.v1`](../contracts/product/investigation.v1.schema.json).
+
+## Active investigation workflow
+
+Existing investigations can select source evidence, retain questions, assemble
+a cited explanatory draft and reassess direct source identities:
+
+\`\`\`sh
+# Persist the existing agent-locate candidate report and incomplete reading plan
+excession investigation explore \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision 1 \
+  --limit 12 --index-segments 8
+
+# Record what still needs to be determined
+excession investigation question \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision 2 \
+  --question "What happens when recovery fails?" \
+  --reason "No failure-path execution or test receipt has been inspected"
+
+# Once source has actually been read, record a CLAIM and reference its event ID
+excession investigation synthesize \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision REVISION \
+  --narrative "The recovery path delegates to the retry handler under the inspected guard" \
+  --claim-events CLAIM_EVENT_ID
+
+# Compare direct claim-source identity against a separately committed revision
+excession investigation refresh \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision REVISION \
+  --candidate CANDIDATE_COMMIT
+
+# Compose the source map, hypotheses, narrative, gaps and open obligations
+excession investigation explain \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID
+\`\`\`
+
+Every mutating command requires the current \`--expected-revision\`. Replace
+\`REVISION\` with the actual current ledger revision, which increments on
+each successful append. \`explore\` reuses the existing \`agent locate\`
+retrieval model and index budgets. Its reading plan is **not** a program
+trace; missing matches and incomplete index segments are reported as gaps.
+The stored report omits volatile local cache paths but retains its stable
+report digest and Git-bound candidate identities.
+
+\`synthesize\` requires existing, individually source-bound \`CLAIM\` events.
+The narrative is **author-provided**, with claim IDs and assumptions exposed;
+the code does not manufacture behavioral conclusions. \`question\` keeps
+unresolved questions open. \`explain\` returns source identities, claims,
+narratives, retrieval gaps, preservation plans and independent verification
+receipts in \`excession.investigation-explanation.v1\`.
+
+\`refresh\` recomputes the exact Git change inventory and classifies each
+claim's source path as \`DIRECT_SOURCE_UNCHANGED\`,
+\`DIRECT_SOURCE_CHANGED\`, or \`DIRECT_SOURCE_UNAVAILABLE\`. **Every class
+still has \`semantic_impact: UNRESOLVED\`**, including unchanged blobs:
+callers, build flags and dependencies may change elsewhere. It retains
+the complete count of changed paths and never claims transitive
+behavioral equivalence. An absent source is not silently treated as an
+unchanged implementation.
+
+The current implementation is a **single-step exploration plus human/agent
+source review loop**, not autonomous semantic analysis or a whole-program
+correctness verifier. It does not execute repository code, invent call
+relationships, or mark a change safe to merge.
+
+The [explanation projection schema](../contracts/product/investigation-explanation.v1.schema.json)
+and [event schema](../contracts/product/investigation-event.v1.schema.json)
+describe the current wire representations.
 
 ## Required content
 

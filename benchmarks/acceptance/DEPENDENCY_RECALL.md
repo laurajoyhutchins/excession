@@ -89,3 +89,47 @@ Do not promote a local or tiny-fixture improvement to general dependency
 accuracy. The next step, if these results are useful, is a separately
 preregistered held-out cohort with independent reviewer adjudication of
 non-import cross-file relationships.
+
+## First independently parsed source result
+
+[GitHub Actions run 44001137658](https://github.com/laurajoyhutchins/excession/actions/runs/44001137658)
+passed at source commit `fcd59d54aaf6ab5f96be12c4b0430a0eccf91363`.
+Retained artifact: `independent-dependency-recall-v1` (GitHub artifact
+`14292193299`, ZIP SHA-256
+`ceadf79570827b86bbe5067d6113df1e4eb653374c999f00451870c594bfec45`).
+All four decoded SCIP index SHA-256 values match their source-bound result
+records; the exact commit/tree identities and observed edge receipts passed.
+The independent CPython and TypeScript oracle unit tests and full Rust
+verification also passed.
+
+| Source | Previous static import hits | Distinct-native-first hits | Opportunities |
+|---|---:|---:|---:|
+| h11 | 13 | 22 | 23 |
+| Click | 0 | 28 | 30 |
+| Requests | 2 | 39 | 45 |
+| Axios | 3 | 44 | 67 |
+| **Total** | **18** | **133** | **165** |
+
+Static import-pair recall across **12 preregistered source contexts**, with
+16 emitted relationships per context: **10.91% → 80.61%**. These are
+per-focus opportunities; paths counted in multiple focus contexts are not
+globally deduplicated.
+
+The language-native SCIP indexers produced 485, 892, 820 and 909 matched
+cross-file observations respectively. They also reported **692, 4,493,
+2,003 and 1,850 unresolved reference occurrences**, respectively, which
+remain unresolved. The independent Python import oracle also recorded
+external or unresolvable targets, and Axios's JavaScript oracle intentionally
+excluded nonliteral and package-resolution semantics. The scorer's execution
+excluding the initial release build took **1:18.82 wall-clock** with peak
+resident memory reported as **377,056 KiB**; no comparison against a
+controlled latency baseline was made.
+
+**Supported conclusion:** the policy from Excession PR #268 returns more
+*independently confirmed direct static import source pairs* at fixed context
+budget in all four pinned fixtures. The graph includes many non-import
+observations that are unclassified by this test. This does **not** establish
+overall dependency precision, transitive or runtime recall, independent
+human-adjudicated correctness, statistical generalization or safe test
+omission. The prior negative graph-first BM25 ranking result remains
+unchanged; this study did not rerank lexical search.

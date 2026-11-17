@@ -7,10 +7,8 @@ The integration authority lives in the workflow after independent CI receipts.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import subprocess
@@ -128,6 +126,7 @@ def changed_entries(repo: Path, base: str, head: str) -> list[str]:
             segment in (".", "..", "") for segment in path.split("/")
         ):
             raise Refused(f"formatter changed unapproved path: {path}")
+        source_modes = []
         for rev in (base, head):
             entries = [p for p in git(repo, "ls-tree", "-z", "--full-tree", rev, "--", path).split(b"\0") if p]
             if len(entries) != 1:
@@ -136,6 +135,9 @@ def changed_entries(repo: Path, base: str, head: str) -> list[str]:
             mode, kind, _oid = header.decode("ascii").split()
             if found.decode("utf-8") != path or mode not in ("100644", "100755") or kind != "blob":
                 raise Refused(f"nonregular or mismatched source: {path}")
+            source_modes.append(mode)
+        if source_modes[0] != source_modes[1]:
+            raise Refused(f"native formatter changed executable mode: {path}")
         paths.append(path)
     if not 1 <= len(paths) <= MAX_CHANGED_PATHS or len(set(paths)) != len(paths):
         raise Refused("formatter must change 1-128 distinct Rust source files")

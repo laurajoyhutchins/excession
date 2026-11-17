@@ -1377,7 +1377,8 @@ mod tests {
             index: IndexLimits::default(),
         };
         let discovered = discovery::inspect(&root, "HEAD").unwrap();
-        assert!(!discovered.index_path.exists());
+        let index_file = discovered.index_path.with_file_name("agent-locate-chunks.sqlite");
+        assert!(!index_file.exists());
         let fast = locate_with_mode(
             &root,
             "HEAD",
@@ -1415,7 +1416,7 @@ mod tests {
         assert!(fast.get("coverage").unwrap().get("gaps").unwrap().array_ref()
             .unwrap().iter().any(|gap| gap.get("reason").unwrap().str().unwrap()
                 == "RELATIONSHIP_CONTEXT_NOT_QUERIED"));
-        assert!(!discovered.index_path.exists());
+        assert!(!index_file.exists());
         fs::write(root.join("src/wal.c"), "int replaced(void) { return 0; }\n").unwrap();
         let again = locate_with_mode(
             &root, "HEAD", "checkpoint lock", 2, None, None, budget, false,
@@ -1433,7 +1434,7 @@ mod tests {
         );
         assert_ne!(fallback.get("index").unwrap(), &Value::Null);
         assert_ne!(fallback.get("cache").unwrap(), &Value::Null);
-        assert!(discovered.index_path.exists());
+        assert!(index_file.exists());
         let deep = locate_with_mode(
             &root, "HEAD", "checkpoint lock", 2, None, None, budget, true,
         ).unwrap();
@@ -1445,7 +1446,7 @@ mod tests {
                 .get("source").unwrap().get("path").unwrap().str().unwrap(),
             "src/wal.c"
         );
-        let cache_dir = discovered.index_path.parent().unwrap();
+        let cache_dir = index_file.parent().unwrap();
         if cache_dir.exists() {
             fs::remove_dir_all(cache_dir).unwrap();
         }

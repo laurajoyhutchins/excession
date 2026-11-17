@@ -162,9 +162,7 @@ class CiTopology(unittest.TestCase):
             "  workflow_dispatch:", "permissions:\n  contents: read",
             "github.actor_id == '219002713'",
             "github.ref == 'refs/heads/main'",
-            "persist-credentials: false",
-            'if ! gh pr create', "Open a PR from the already-pushed",
-            "Settings > Actions > General > Workflow permissions", "--trusted-local true",
+            "persist-credentials: false", "--trusted-local true",
             "structural_preservation.py",
             "core/target/debug/excession agent verify",
             "actions/upload-artifact@v4",
@@ -215,6 +213,11 @@ class CiTopology(unittest.TestCase):
             "persist-credentials: false",
         ):
             self.assertIn(required, cargo)
+        for required in (
+            'if ! gh pr create', "Open a PR from the already-pushed",
+            "Settings > Actions > General > Workflow permissions",
+        ):
+            self.assertIn(required, cargo, required)
         for required in (
             "  issues:", "    types: [opened]",
             "github.event.issue.user.id == 219002713",

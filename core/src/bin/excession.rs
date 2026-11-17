@@ -785,8 +785,10 @@ fn execute(args: &[String]) -> Result<Response> {
                         limit,
                         roots,
                         db,
-                        budget,
-                        limits,
+                        agent_locate::LocateBudget {
+                            index_segments: budget,
+                            index: limits,
+                        },
                     )?))
                 }
                 "context" => Ok(json(agent::context(

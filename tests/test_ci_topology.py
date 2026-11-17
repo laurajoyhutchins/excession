@@ -163,6 +163,7 @@ class CiTopology(unittest.TestCase):
             "github.ref == 'refs/heads/main'",
             "persist-credentials: false", "--trusted-local true",
             "structural_preservation.py",
+            "core/target/debug/excession agent verify",
             "actions/upload-artifact@v4",
         ):
             self.assertIn(required, manual)

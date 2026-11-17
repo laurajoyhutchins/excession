@@ -150,7 +150,7 @@ class CiTopology(unittest.TestCase):
             self.assertIn(required, fixes)
         self.assertNotIn("pull_request_target:", fixes)
         self.assertNotIn("gh pr merge", fixes)
-        self.assertNotIn("pull_request:\\n", fixes)
+        self.assertNotIn("  pull_request:", fixes)
 
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):

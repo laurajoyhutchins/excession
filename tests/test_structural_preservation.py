@@ -82,8 +82,6 @@ class StructuralPreservation(unittest.TestCase):
         self.assertEqual(report["obligations"][1]["result"], "FAIL")
 
     def test_relative_executable_runs_in_each_checked_out_tree(self):
-        self.write("runner.sh", "#!/bin/sh\\npython3 -B -c \"import runpy; print(runpy.run_path('module.py')['answer']())\"\\n")
-        (self.repo / "runner.sh").chmod(0o755)
         # Rebuild baseline and candidate commits so the executable belongs
         # to each pinned tree instead of the CI runner's current checkout.
         git(self.repo, "reset", "--hard", self.base)

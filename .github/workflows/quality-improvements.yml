@@ -1,0 +1,89 @@
+name: Quality improvements (native fixes, review required)
+
+# Only code trusted on main is allowed to run with a write-enabled token.
+on:
+  schedule:
+    - cron: '15 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: quality-ratchet-main
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    if: github.ref == 'refs/heads/main' && github.repository == 'laurajoyhutchins/excession'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+      - name: Resolve exact locked dependencies
+        run: cargo fetch --locked --manifest-path core/Cargo.toml
+      - name: Apply native machine-applicable Rust fixes
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path core/Cargo.toml
+          cargo clippy --fix --allow-dirty --allow-staged --offline --locked --manifest-path core/Cargo.toml --all-targets
+          cargo fmt --manifest-path core/Cargo.toml
+      - name: Restrict changes and independently check candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 - <<'PY'
+          import subprocess
+          changed = [p.decode() for p in subprocess.check_output(
+              ["git", "diff", "--name-only", "-z"]).split(b"\0") if p]
+          unexpected = [p for p in changed if not (p.startswith("core/") and p.endswith(".rs"))]
+          if unexpected:
+              raise SystemExit(f"REFUSED: native fixer modified unapproved paths: {unexpected}")
+          print(f"Native Rust changed files: {len(changed)}")
+          PY
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cargo fmt --manifest-path core/Cargo.toml -- --check
+          cargo clippy --offline --locked --manifest-path core/Cargo.toml --all-targets -- -D warnings
+          cargo test --offline --locked --manifest-path core/Cargo.toml --lib
+          python3 -m unittest discover -s tests -p test_quality_ratchet.py -v
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Commit source-bound candidate and enforce ratchet
+        if: steps.candidate.outputs.changed == 'true'
+        id: prepared
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="automation/quality-ratchet-${GITHUB_RUN_ID}"
+          git switch -c "$BRANCH"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' add -u
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "style: apply native Rust quality improvements"
+          BASE="$(git rev-parse HEAD^1)"
+          python3 tools/ci/quality_ratchet.py check --base "$BASE" --candidate HEAD
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+      - name: Open reviewable PR (never merge unattended)
+        if: steps.candidate.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.prepared.outputs.branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:refs/heads/$BRANCH"
+          gh pr create --draft --base main --head "$BRANCH" \
+            --title "style: native Rust quality ratchet" \
+            --body "Generated from the default branch by pinned rustfmt and machine-applicable Clippy edits. Only tracked Rust files are eligible. Local Cargo checks and the quality ratchet passed before publication; full PR CI and human review remain required. No equivalence or readiness-to-merge claim."

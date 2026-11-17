@@ -291,7 +291,7 @@ def restore_checkpoint(request, archive_root, run_metadata, tool_commit, cache_r
             or run_metadata.get("id") != request["resume_run_id"]
             or run_metadata.get("event") != "issues"
             or run_metadata.get("conclusion") != "success"
-            or run_metadata.get("name") != "Excession agent analysis (GitHub-native)"
+            or run_metadata.get("path") != ".github/workflows/github-native-analysis.yml"
             or run_metadata.get("head_sha") != tool_commit
             or run_metadata.get("head_branch") != "main"
             or run_metadata.get("actor", {}).get("id") != OWNER_ID

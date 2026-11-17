@@ -59,6 +59,8 @@ fn source_path(path: &str) -> bool {
             | "sql"
             | "proto"
             | "lean"
+            | "y"
+            | "l"
     )
 }
 
@@ -926,6 +928,8 @@ mod tests {
         assert!(!source_path("docs/readme.md"));
         assert!(source_path("src/agent.rs"));
         assert!(source_path("pkg/controller/main.go"));
+        assert!(source_path("src/parse.y"));
+        assert!(source_path("src/tokenizer.l"));
     }
 
     #[test]

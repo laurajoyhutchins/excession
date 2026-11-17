@@ -740,6 +740,7 @@ pub fn locate_page_with_limits(
             limits: budget.index,
             task_key: task,
             after,
+            paginate: true,
         },
     )?;
     let mut candidates = Vec::new();

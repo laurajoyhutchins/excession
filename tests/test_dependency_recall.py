@@ -137,7 +137,7 @@ class TestIndependentSymbolSiteOracle(SourceFixture):
                     for s in result["sites"]}
         self.assertIn(("src/pkg/main.py", "src/pkg/functions.py", 3, "call"), observed)
         self.assertIn(("src/pkg/main.py", "src/pkg/functions.py", 2, "type"), observed)
-        self.assertGreater(result["unsupported"].get("dynamic_call", 0), 0)
+        self.assertGreater(result["unsupported"].get("unresolved_or_dynamic_call", 0), 0)
         self.assertFalse(result["runtime_dispatch_proven"])
 
     def test_python_lexical_shadowing_fails_closed(self):

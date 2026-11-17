@@ -85,9 +85,14 @@ def main() -> None:
             if event not in ("call", "line", "return", "exception"):
                 return trace
             code = frame.f_code
+            # Frozen/internal CPython code objects use symbolic names such
+            # as "<frozen runpy>". realpath() would incorrectly turn those
+            # into fake paths inside our current working tree.
+            if not os.path.isabs(code.co_filename):
+                return None
             filename = os.path.realpath(code.co_filename)
-            if not filename.startswith(source_prefix):
-                return trace
+            if not filename.startswith(source_prefix) or not filename.endswith(".py"):
+                return None
             path = os.path.relpath(filename, str(root)).replace(os.sep, "/")
             fid = id(frame)
             previous, prev_line = snapshots.get(fid, ({}, 0))

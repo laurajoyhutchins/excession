@@ -6,6 +6,7 @@
 
 use crate::json::{Value, obj};
 use crate::{Result, agent, agent_locate_cache, discovery, git, refuse};
+pub use agent_locate_cache::IndexLimits;
 #[cfg(test)]
 use rusqlite::{Connection, params};
 use std::collections::{BTreeMap, BTreeSet};
@@ -492,6 +493,22 @@ pub fn locate_with_budget(
     db: Option<&str>,
     index_segments: usize,
 ) -> Result<Value> {
+    locate_with_limits(repo, rev, task, limit, roots, db, index_segments, IndexLimits::default())
+}
+
+/// Run source discovery using explicitly selected index processing budgets.
+/// All three budgets are included in the cache fingerprint and in the report.
+pub fn locate_with_limits(
+    repo: &Path,
+    rev: &str,
+    task: &str,
+    limit: usize,
+    roots: Option<&str>,
+    db: Option<&str>,
+    index_segments: usize,
+    limits: IndexLimits,
+) -> Result<Value> {
+    let limits = limits.validate()?;
     if !(1..=64).contains(&limit) {
         return refuse("agent locate --limit must be 1..=64");
     }
@@ -503,13 +520,14 @@ pub fn locate_with_budget(
         .filter(|entry| entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755"))
         .map(|entry| (entry.path.clone(), entry.clone()))
         .collect::<BTreeMap<_, _>>();
-    let index = agent_locate_cache::search(
+    let index = agent_locate_cache::search_with_limits(
         &discovered,
         entries,
         limit,
         &match_expression(&words),
         index_segments,
         source_path,
+        limits,
     )?;
     let mut candidates = Vec::new();
     let mut selected_paths = Vec::new();
@@ -628,6 +646,15 @@ pub fn locate_with_budget(
                 (
                     "complete",
                     Value::Bool(index.pending_segments == 0 && skipped == 0 && !truncated),
+                ),
+                (
+                    "limits",
+                    obj(&[
+                        ("max_files_per_segment", Value::number(limits.max_files_per_segment)),
+                        ("max_file_bytes", Value::number(limits.max_file_bytes)),
+                        ("max_bytes_per_segment", Value::number(limits.max_bytes_per_segment)),
+                        ("refresh_segments", Value::number(index_segments)),
+                    ]),
                 ),
             ]),
         ),

@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/product/investigation.v1.schema.json",
+  "title": "Excession investigation audit report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "investigation_id",
+    "source_commit",
+    "source_tree",
+    "question",
+    "revision",
+    "events",
+    "semantic_verification",
+    "ready_to_merge",
+    "report_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.investigation.v1"
+    },
+    "investigation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "source_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://github.com/laurajoyhutchins/excession/contracts/product/investigation-event.v1.schema.json",
+        "title": "Excession append-only investigation event v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "investigation_id",
+          "revision",
+          "previous_event_id",
+          "question",
+          "source_commit",
+          "source_tree",
+          "kind",
+          "payload",
+          "event_id"
+        ],
+        "properties": {
+          "schema": {
+            "const": "excession.investigation-event.v1"
+          },
+          "investigation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "previous_event_id": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "source_commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "source_tree": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "kind": {
+            "enum": [
+              "CREATE",
+              "CLAIM",
+              "PLAN",
+              "VERIFY"
+            ]
+          },
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "payload": {
+            "type": "object"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "CREATE"
+              },
+              "payload": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            },
+            "required": [
+              "kind",
+              "payload"
+            ]
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "CLAIM"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "source",
+                  "statement",
+                  "assumption",
+                  "assessment"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "commit",
+                      "tree",
+                      "path",
+                      "blob",
+                      "mode"
+                    ],
+                    "properties": {
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "tree": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192
+                      },
+                      "blob": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "mode": {
+                        "enum": [
+                          "100644",
+                          "100755"
+                        ]
+                      }
+                    }
+                  },
+                  "statement": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "assumption": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "assessment": {
+                    "enum": [
+                      "HYPOTHESIS",
+                      "SOURCE_REVIEW_REPORTED"
+                    ]
+                  }
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "payload"
+            ]
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "PLAN"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "claim_event_id",
+                  "obligation"
+                ],
+                "properties": {
+                  "claim_event_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "obligation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  }
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "payload"
+            ]
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "VERIFY"
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "plan_event_id",
+                  "report"
+                ],
+                "properties": {
+                  "plan_event_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "report": {
+                    "type": "object",
+                    "required": [
+                      "schema",
+                      "report_id",
+                      "base_commit",
+                      "base_tree",
+                      "candidate_commit",
+                      "candidate_tree",
+                      "status",
+                      "ready_to_merge",
+                      "safe_to_skip_unlisted_tests",
+                      "obligations"
+                    ],
+                    "properties": {
+                      "schema": {
+                        "const": "excession.agent-verification.v1"
+                      },
+                      "report_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "base_commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "base_tree": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "candidate_commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "candidate_tree": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{40}$"
+                      },
+                      "status": {
+                        "enum": [
+                          "OPEN_OBLIGATIONS",
+                          "REPORTED_FAILURE"
+                        ]
+                      },
+                      "ready_to_merge": {
+                        "const": false
+                      },
+                      "safe_to_skip_unlisted_tests": {
+                        "const": false
+                      },
+                      "obligations": {
+                        "type": "array",
+                        "minItems": 1
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "payload"
+            ]
+          }
+        ]
+      }
+    },
+    "semantic_verification": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "ready_to_merge": {
+      "const": false
+    },
+    "report_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

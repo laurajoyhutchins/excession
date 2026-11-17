@@ -173,3 +173,56 @@ unsupported by this experiment. No claims of cross-language or dynamic-call
 precision or recall should be derived from its green checks. The eventual
 acceptance test for those domains needs independently held-out, reviewed
 source/runtime observations.
+
+## Direct-call/type results on pinned source, November 16, 2026
+
+[Successful full run 44004799557](https://github.com/laurajoyhutchins/excession/actions/runs/44004799557)
+at exact Excession head `2fe2bd79e82cdb524a0b04f6b22803570d0942b1`,
+artifact `independent-dependency-recall-v1` (ID `14293343500`),
+ZIP SHA-256 `2e464c15268e4defbf2308593565a11f71ba59f23d510cbb5b877db6b41706f3`.
+Each of the four original decoded SCIP index SHA-256 values was independently
+matched to its retained source report; commit and tree identities are pinned.
+All eight independent oracle unit tests passed at this head.
+
+| Independently labeled site kind | Full native SCIP hits | Previous first-16 hits | New distinct-pair-first hits |
+|---|---:|---:|---:|
+| Direct imported function/class calls, and TS direct constructors | 262 / 267 (98.13%) | 4 / 267 (1.50%) | 25 / 267 (9.36%) |
+| Imported class type and TS type-reference sites | 115 / 115 (100%) | 6 / 115 (5.22%) | 17 / 115 (14.78%) |
+
+The denominator is a **per-focus static symbol-site opportunity** among
+12 preregistered source files. Every hit must match the independent
+**source path, target declaration path and one-based line**, not merely
+the two file names. Source-only oracle labels were collected without reading
+SCIP or Excession. TypeScript's compiler family is shared with the upstream
+SCIP producer, and no dynamic method dispatch is claimed.
+
+The source-reported per-repository oracle populations were:
+h11 73 call / 86 type sites, Click 123 / 56, Requests 129 / 47,
+and Axios 147 / 1. The measured per-focus populations differ because the
+12 selected contexts cover only a subset of each repository. Unsupported
+calls and types remain explicit. No true-negative universe was established,
+so **precision, F1 and false-positive rate are not computed**.
+
+The full graph contains nearly all the conservatively labeled static
+call/type observations. The much lower bounded result means the current
+agent context is **losing discoverability**, rather than predominantly
+failing to index these known sites. This is an actionable negative result:
+one source-pair representative per relationship budget does not retain the
+large number of distinct callsite lines within a heavily connected pair.
+A dedicated symbol/line query or explicit pagination is preferable to
+claiming that a 16-slot graph-neighbor list is complete.
+
+The original import test in this run scored **18/165 → 132/165**, against
+**18/165 → 133/165** in the earlier accepted run. We independently compared
+the original decoded SCIP JSON from both runs: after normalizing only the
+checkout-specific `metadata.project_root` URI, the decoded indexes were
+otherwise identical across all four repositories. The one Axios
+`lib/adapters/http.js` difference therefore indicates a
+**source-root/receipt-order-sensitive bounded selection**. This does not
+change any labeled source or external SCIP occurrence, but it is an
+unresolved reproducibility defect. Do not report the bounded import result
+as bit-for-bit stable across independent executions.
+
+Measured scorer execution excluding the release build: **1:25.92** wall time,
+peak RSS **370,976 KiB**. No exact runtime-call semantics, cross-language
+link equivalence or dispatch target correctness was established.

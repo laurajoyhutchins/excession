@@ -273,12 +273,21 @@ fn partial_index_paging_never_claims_missing_sources_are_absent() {
     )));
     fs::create_dir_all(root.0.join("src")).unwrap();
     git(&root.0, &["init", "-q"]);
-    for index in 0..60 {
-        fs::write(
-            root.0.join(format!("src/file_{index:03}.rs")),
-            format!("pub fn f_{index}() {{ let needle = 5; }}\n"),
-        )
-        .unwrap();
+    let mut buckets = std::collections::BTreeMap::<u8, Vec<String>>::new();
+    for index in 0..1500 {
+        let path = format!("src/file_{index:05}.rs");
+        let digest = excession::digest::sha256(path.as_bytes());
+        let bucket = u8::from_str_radix(&digest[..2], 16).unwrap();
+        buckets.entry(bucket).or_default().push(path);
+    }
+    // Give the first ready partition three hits, and leave a second partition
+    // pending. That guarantees a continuation cursor before index completion.
+    let (&first_bucket, first_paths) = buckets.iter()
+        .find(|(bucket, paths)| paths.len() >= 3 && buckets.range((**bucket + 1)..).next().is_some())
+        .expect("three files in first partition and one later partition");
+    let later = buckets.range((first_bucket + 1)..).next().unwrap().1[0].clone();
+    for path in first_paths.iter().take(3).chain(std::iter::once(&later)) {
+        fs::write(root.0.join(path), "pub fn worker() { let needle = 5; }\n").unwrap();
     }
     let rev = commit(&root.0);
     let first = page(
@@ -303,26 +312,11 @@ fn partial_index_paging_never_claims_missing_sources_are_absent() {
             .iter()
             .any(|gap| gap["reason"] == "SEGMENT_INDEX_INCOMPLETE")
     );
-    if let Some(cursor) = first["page"]["next_cursor"].as_str() {
-        let after = output(
-            &root.0,
-            &[
-                "--rev",
-                &rev,
-                "--task",
-                "needle",
-                "--limit",
-                "2",
-                "--after",
-                cursor,
-                "--index-segments",
-                "1",
-            ],
-        );
-        assert_eq!(
-            after.status.code(),
-            Some(2),
-            "a new completed partition must invalidate the old cursor"
-        );
-    }
+    let cursor = first["page"]["next_cursor"].as_str().expect("partial snapshot continuation");
+    let after = output(&root.0, &[
+        "--rev", &rev, "--task", "needle", "--limit", "2",
+        "--after", cursor, "--index-segments", "1",
+    ]);
+    assert_eq!(after.status.code(), Some(2),
+        "a newly completed partition must invalidate the old cursor");
 }

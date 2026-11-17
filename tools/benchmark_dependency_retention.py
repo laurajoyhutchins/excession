@@ -41,12 +41,37 @@ def scoped(relationships, focus):
     )]
 
 
+def observed_pairs(rows):
+    return {
+        (relation["source"]["path"], relation["target"]["path"])
+        for relation in rows if observed_id(relation) is not None
+    }
+
+
 def retention(full, selected):
     expected = {key for relation in full if (key := observed_id(relation)) is not None}
     returned = {key for relation in selected if (key := observed_id(relation)) is not None}
     if not returned.issubset(expected):
         raise ValueError("context invented a native observation")
     return len(returned), len(expected)
+
+
+def expected_priority(eligible, k):
+    distinct = []
+    repeated = []
+    candidates = []
+    pairs = set()
+    for relation in eligible:
+        if observed_id(relation) is not None:
+            pair = (relation["source"]["path"], relation["target"]["path"])
+            if pair not in pairs:
+                distinct.append(relation)
+                pairs.add(pair)
+            else:
+                repeated.append(relation)
+        else:
+            candidates.append(relation)
+    return (distinct + repeated + candidates)[:k]
 
 
 def verify_git_source(repo, commit, tree, relations):
@@ -76,22 +101,27 @@ def measure(full, returned, focus, k):
     assert new_total == total
     if len(returned) != min(k, len(eligible)):
         raise ValueError("context budget or relationship-count mismatch")
-    if total:
-        expected_new = {key for relation in eligible if
-                        (key := observed_id(relation)) is not None}
-        first_k_native = [
-            key for relation in eligible
-            if (key := observed_id(relation)) is not None
-        ][:k]
-        expected_first = set(first_k_native)
-        if {key for relation in returned if (key := observed_id(relation)) is not None} != expected_first:
-            raise ValueError("priority policy did not retain first k native references")
+    expected = expected_priority(eligible, k)
+    expected_ids = [observed_id(row) for row in expected]
+    returned_ids = [observed_id(row) for row in returned]
+    if expected_ids != returned_ids:
+        raise ValueError("priority policy did not preserve distinct source pairs first")
+    old_pairs = observed_pairs(before)
+    new_pairs = observed_pairs(returned)
+    all_pairs = observed_pairs(eligible)
+    if not new_pairs.issubset(all_pairs):
+        raise ValueError("selected a non-existent source pair")
     return {"focus": focus, "all_scoped_relations": len(eligible),
             "observed_reference_ids": total,
             "old_first_n_retained": old_hit,
             "new_priority_retained": new_hit,
+            "observed_source_pairs": len(all_pairs),
+            "old_distinct_pairs_retained": len(old_pairs),
+            "new_distinct_pairs_retained": len(new_pairs),
             "old_recall": (old_hit / total if total else None),
             "new_recall": (new_hit / total if total else None),
+            "old_pair_recall": (len(old_pairs) / len(all_pairs) if all_pairs else None),
+            "new_pair_recall": (len(new_pairs) / len(all_pairs) if all_pairs else None),
             "returned_relation_count": len(returned)}
 
 
@@ -113,6 +143,16 @@ def fixture():
     result = measure(rows, new, "a.py", 2)
     assert (result["old_first_n_retained"], result["new_priority_retained"]) == (0, 1)
     assert (result["old_recall"], result["new_recall"]) == (0, 1)
+    assert (result["old_distinct_pairs_retained"], result["new_distinct_pairs_retained"]) == (0, 1)
+    repeated = [
+        edge("SCIP_REFERENCE", "a.py", "b.py", 5),
+        edge("SCIP_REFERENCE", "a.py", "b.py", 6),
+        edge("SCIP_REFERENCE", "a.py", "c.py", 7),
+    ]
+    diversified = [repeated[0], repeated[2]]
+    pair_result = measure(repeated, diversified, "a.py", 2)
+    assert (pair_result["old_distinct_pairs_retained"],
+            pair_result["new_distinct_pairs_retained"]) == (1, 2)
     try:
         retention(rows, [edge("SCIP_REFERENCE", "a.py", "ghost.py", 100)])
         raise AssertionError("forged native reference was not rejected")
@@ -140,6 +180,9 @@ def evaluate(args):
     native_total = 0
     old_hits = 0
     new_hits = 0
+    all_pair_occurrences = 0
+    old_pair_hits = 0
+    new_pair_hits = 0
     for focus in FOCUS:
         context = subprocess.run(
             [str(args.excession), "agent", "context", "--repo", str(repo),
@@ -165,8 +208,11 @@ def evaluate(args):
         native_total += case["observed_reference_ids"]
         old_hits += case["old_first_n_retained"]
         new_hits += case["new_priority_retained"]
-    if native_total == 0:
-        raise ValueError("pinned external corpus contains no eligible native references")
+        all_pair_occurrences += case["observed_source_pairs"]
+        old_pair_hits += case["old_distinct_pairs_retained"]
+        new_pair_hits += case["new_distinct_pairs_retained"]
+    if native_total == 0 or all_pair_occurrences == 0:
+        raise ValueError("pinned external corpus contains no eligible native dependency pairs")
     result = {
         "schema": "excession.native-reference-retention-benchmark.v1",
         "scope": "ALREADY_OBSERVED_SCIP_EDGES_NOT_SEMANTIC_DEPENDENCY_GROUND_TRUTH",
@@ -178,13 +224,16 @@ def evaluate(args):
         "old_first_n_retained": old_hits, "new_priority_retained": new_hits,
         "old_observed_retention": old_hits / native_total,
         "new_observed_retention": new_hits / native_total,
+        "observed_pair_opportunities": all_pair_occurrences,
+        "old_distinct_pair_retention": old_pair_hits / all_pair_occurrences,
+        "new_distinct_pair_retention": new_pair_hits / all_pair_occurrences,
         "native_semantics_verified": False,
         "source_graph_complete": False,
     }
     output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     print(json.dumps(result, indent=2))
-    if new_hits <= old_hits:
-        print("No demonstrated gain on preregistered focus paths", file=sys.stderr)
+    if new_pair_hits <= old_pair_hits:
+        print("No increase in distinct dependency pairs on preregistered paths", file=sys.stderr)
         return 3
     return 0
 

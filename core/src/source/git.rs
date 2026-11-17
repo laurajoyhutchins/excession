@@ -232,11 +232,22 @@ impl BlobReader {
                 }
                 let valid = std::str::from_utf8(&pending[..valid_end])
                     .map_err(|_| "invalid UTF-8 source prefix")?;
-                let end = valid
+                let at_newline = valid
                     .rfind('\n')
                     .map(|index| index + 1)
-                    .filter(|&index| index >= max_chunk_bytes / 2)
-                    .unwrap_or(valid_end);
+                    .filter(|&index| index >= max_chunk_bytes / 2);
+                // Keep ordinary identifier tokens together, including in
+                // long one-line / minified sources without newline markers.
+                let at_separator = valid
+                    .char_indices()
+                    .rev()
+                    .find(|(index, ch)| {
+                        *index >= max_chunk_bytes / 2
+                            && !ch.is_alphanumeric()
+                            && *ch != '_'
+                    })
+                    .map(|(index, ch)| index + ch.len_utf8());
+                let end = at_newline.or(at_separator).unwrap_or(valid_end);
                 let text = std::str::from_utf8(&pending[..end])
                     .map_err(|_| "invalid UTF-8 source chunk")?;
                 if text.contains('\0') {

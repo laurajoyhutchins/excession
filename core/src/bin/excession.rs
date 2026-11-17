@@ -762,14 +762,21 @@ fn execute(args: &[String]) -> Result<Response> {
                     };
                     let parse_budget = |name: &str, default: usize| -> Result<usize> {
                         opt.0.get(name).map_or(Ok(default), |raw| {
-                            raw.parse::<usize>()
-                                .map_err(|_| format!("--{name} must be a positive integer in bytes or files"))
+                            raw.parse::<usize>().map_err(|_| {
+                                format!("--{name} must be a positive integer in bytes or files")
+                            })
                         })
                     };
                     let limits = agent_locate::IndexLimits {
                         max_file_bytes: parse_budget("max-file-bytes", defaults.max_file_bytes)?,
-                        max_bytes_per_segment: parse_budget("max-segment-bytes", defaults.max_bytes_per_segment)?,
-                        max_files_per_segment: parse_budget("max-segment-files", defaults.max_files_per_segment)?,
+                        max_bytes_per_segment: parse_budget(
+                            "max-segment-bytes",
+                            defaults.max_bytes_per_segment,
+                        )?,
+                        max_files_per_segment: parse_budget(
+                            "max-segment-files",
+                            defaults.max_files_per_segment,
+                        )?,
                     };
                     Ok(json(agent_locate::locate_with_limits(
                         opt.path("repo"),

@@ -167,7 +167,7 @@ fn committed_matches(
     tests.sort_by(|a, b| {
         let hint = |entry: &git::Entry| {
             let stem = filename_stem(&entry.path).to_ascii_lowercase();
-            usize::from(stems.iter().any(|base| stem.starts_with(base)))
+            usize::from(stems.iter().any(|base| stem.starts_with(base.as_str())))
         };
         hint(&b.0)
             .cmp(&hint(&a.0))

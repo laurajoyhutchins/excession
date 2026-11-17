@@ -79,13 +79,11 @@ def measure(full, returned, focus, k):
     if total:
         expected_new = {key for relation in eligible if
                         (key := observed_id(relation)) is not None}
-        expected_first = set()
-        for relation in eligible:
-            key = observed_id(relation)
-            if key is not None:
-                expected_first.add(key)
-            if len(expected_first) >= k:
-                break
+        first_k_native = [
+            key for relation in eligible
+            if (key := observed_id(relation)) is not None
+        ][:k]
+        expected_first = set(first_k_native)
         if {key for relation in returned if (key := observed_id(relation)) is not None} != expected_first:
             raise ValueError("priority policy did not retain first k native references")
     return {"focus": focus, "all_scoped_relations": len(eligible),

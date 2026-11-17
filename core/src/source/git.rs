@@ -242,9 +242,7 @@ impl BlobReader {
                     .char_indices()
                     .rev()
                     .find(|(index, ch)| {
-                        *index >= max_chunk_bytes / 2
-                            && !ch.is_alphanumeric()
-                            && *ch != '_'
+                        *index >= max_chunk_bytes / 2 && !ch.is_alphanumeric() && *ch != '_'
                     })
                     .map(|(index, ch)| index + ch.len_utf8());
                 let end = at_newline.or(at_separator).unwrap_or(valid_end);

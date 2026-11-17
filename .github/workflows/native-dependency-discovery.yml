@@ -117,9 +117,11 @@ jobs:
           import json,sys
           r=json.load(open(sys.argv[1]))
           assert r["schema"]=="excession.native-reference-retention-benchmark.v1"
-          assert r["new_priority_retained"] > r["old_first_n_retained"]
+          assert r["new_distinct_pair_retention"] > r["old_distinct_pair_retention"]
           print("old observed-reference retention:",r["old_observed_retention"])
           print("new observed-reference retention:",r["new_observed_retention"])
+          print("old distinct-source-pair retention:",r["old_distinct_pair_retention"])
+          print("new distinct-source-pair retention:",r["new_distinct_pair_retention"])
           print("Do not interpret these as validated semantic dependency recall")
           PY
 

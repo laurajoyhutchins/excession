@@ -52,7 +52,10 @@ fn optional_static_context(
         {
             let diagnosis = error.lines().last().unwrap_or(&error);
             let gap = obj(&[
-                ("reason", Value::string("OPTIONAL_STATIC_CONTEXT_UNAVAILABLE")),
+                (
+                    "reason",
+                    Value::string("OPTIONAL_STATIC_CONTEXT_UNAVAILABLE"),
+                ),
                 (
                     "detail",
                     Value::string(diagnosis.chars().take(512).collect::<String>()),
@@ -706,24 +709,34 @@ mod tests {
     fn optional_python_adapter_failure_keeps_no_fabricated_semantic_evidence() {
         let message = "python3 adapter failed: Traceback\\nValueError: ambiguous importable Python module: jinja2";
         let (report, gap) = optional_static_context(Err(message.to_owned())).unwrap();
-        assert!(report.get("relationships").unwrap().array_ref().unwrap().is_empty());
-        assert!(report
-            .get("configured_observations")
-            .unwrap()
-            .array_ref()
-            .unwrap()
-            .is_empty());
+        assert!(
+            report
+                .get("relationships")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            report
+                .get("configured_observations")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
         let gap = gap.expect("adapter failure must leave an explicit gap");
         assert_eq!(
             gap.get("reason").unwrap().str().unwrap(),
             "OPTIONAL_STATIC_CONTEXT_UNAVAILABLE"
         );
-        assert!(gap
-            .get("detail")
-            .unwrap()
-            .str()
-            .unwrap()
-            .contains("ambiguous importable Python module: jinja2"));
+        assert!(
+            gap.get("detail")
+                .unwrap()
+                .str()
+                .unwrap()
+                .contains("ambiguous importable Python module: jinja2")
+        );
         // Never demote Git/source-authentication and other unknown failures
         // into a successful-looking context document.
         assert!(optional_static_context(Err("Git/SQLite tree mismatch".into())).is_err());

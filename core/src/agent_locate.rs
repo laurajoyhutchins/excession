@@ -362,8 +362,8 @@ fn reading_plan(
     // Preserve room for a test-reading step when one is present, even under
     // small budgets. Code understanding must not collapse to graph-neighbor
     // enumeration simply because a producer supplied many observations.
-    let has_tests = context != &Value::Null
-        && !context.get("test_candidates")?.array_ref()?.is_empty();
+    let has_tests =
+        context != &Value::Null && !context.get("test_candidates")?.array_ref()?.is_empty();
     let reserved_test = usize::from(has_tests && budget > 1);
     // Read likely implementations before chasing edges. Ranking is lexical,
     // not a measured probability that the task lives in that file.
@@ -738,11 +738,13 @@ mod tests {
             .map(|i| obj(&[("source", source(&format!("src/feature{i}.rs")))]))
             .collect::<Vec<_>>();
         let related = (0..8)
-            .map(|i| obj(&[
-                ("source", source(&format!("src/dependency{i}.rs"))),
-                ("assessment", Value::string("OBSERVED")),
-                ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
-            ]))
+            .map(|i| {
+                obj(&[
+                    ("source", source(&format!("src/dependency{i}.rs"))),
+                    ("assessment", Value::string("OBSERVED")),
+                    ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+                ])
+            })
             .collect::<Vec<_>>();
         let context = obj(&[(
             "test_candidates",

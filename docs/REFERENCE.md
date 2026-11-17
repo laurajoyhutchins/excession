@@ -7,6 +7,7 @@ not evidence that a feature is present in the current release.**
 
 ## Current user and agent interfaces
 
+- [Codebase understanding](CODEBASE_UNDERSTANDING.md)
 - [Quick start](QUICKSTART.md)
 - [CLI options and command families](CLI.md)
 - [Agent locate, context, and verify](AGENT_CLI.md)

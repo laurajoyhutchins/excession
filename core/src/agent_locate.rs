@@ -162,7 +162,9 @@ fn committed_matches(
         }
     }
     implementations.sort_by(|a, b| {
-        b.1.cmp(&a.1)
+        (!source_capabilities::third_party_source_path(&b.0.path))
+            .cmp(&(!source_capabilities::third_party_source_path(&a.0.path)))
+            .then_with(|| b.1.cmp(&a.1))
             .then_with(|| b.2.cmp(&a.2))
             .then_with(|| a.0.path.cmp(&b.0.path))
     });
@@ -179,7 +181,7 @@ fn committed_matches(
         let rank = |entry: &git::Entry| {
             let stem = filename_stem(&entry.path).to_ascii_lowercase();
             (
-                !source_capabilities::third_party_test_path(&entry.path),
+                !source_capabilities::third_party_source_path(&entry.path),
                 !source_capabilities::fixture_test_path(&entry.path),
                 usize::from(stems.iter().any(|base| stem.starts_with(base.as_str()))),
             )

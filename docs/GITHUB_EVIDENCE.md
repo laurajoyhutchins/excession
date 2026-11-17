@@ -57,7 +57,8 @@ Check `schema` before consuming; major changes use a new schema and artifact
 name. The top-level report contains repository identity; exact base/head
 commit and tree OIDs; up to 16 Git-authenticated source witnesses; separate
 verification and context coverage; suggested tests marked
-`selection_verified: false`; producer source commit; Excession's
+`selection_verified: false` (with `PATH_NAME_HEURISTIC` or `EXPLICIT_FOCUS_TEST`
+provenance; explicit focus is not proof of selection completeness); producer source commit; Excession's
 original report IDs; the GitHub workflow run ID; and sorted unresolved
 obligations. The entire bounded `agent verify` report is embedded so that
 impact candidates, native/source witnesses, receipts, and original coverage

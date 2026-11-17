@@ -3,6 +3,8 @@ name: Native Cargo dependency improvement
 # This is a trusted-main source producer. No pull-request code runs with
 # a write token. Changes outside the exact Cargo lockfile fail closed.
 on:
+  issues:
+    types: [opened]
   schedule:
     - cron: '15 11 * * 3'
   workflow_dispatch:
@@ -18,7 +20,14 @@ concurrency:
 
 jobs:
   update:
-    if: github.repository == 'laurajoyhutchins/excession' && github.ref == 'refs/heads/main'
+    # Only the repository owner can invoke an issue-triggered maintenance run.
+    # The event supplies no commands or file paths to the native producer.
+    if: >-
+      github.repository == 'laurajoyhutchins/excession' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'issues' ||
+        (github.event.issue.user.id == 219002713 &&
+         github.event.issue.title == '[Excession] Run Cargo improvement'))
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:

@@ -779,7 +779,7 @@ pub fn locate_page_with_limits(
     let next = index
         .next_cursor
         .as_ref()
-        .map_or(Value::Null, |value| Value::string(value));
+        .map_or(Value::Null, Value::string);
     let mut output = obj(&[
         ("schema", Value::string("excession.agent-locate-page.v1")),
         ("source_commit", Value::string(&discovered.commit)),

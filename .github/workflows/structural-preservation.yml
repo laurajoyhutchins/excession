@@ -1,0 +1,70 @@
+name: Structural preservation (trusted manual evidence)
+
+# Executes repository code from two Git commits. This is NOT a sandbox and
+# must never run for arbitrary pull_request or issue content.
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Exact trusted base commit (40 lowercase hex digits)"
+        required: true
+        type: string
+      candidate:
+        description: "Exact reviewed candidate commit (40 lowercase hex digits)"
+        required: true
+        type: string
+      contract:
+        description: "Reviewed contract under quality/structural-contracts/"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  receipts:
+    if: github.repository == 'laurajoyhutchins/excession' && github.ref == 'refs/heads/main' && github.actor_id == '219002713'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate exact source identities and trusted contract path
+        env:
+          SOURCE_BASE: ${{ inputs.base }}
+          SOURCE_CANDIDATE: ${{ inputs.candidate }}
+          SOURCE_CONTRACT: ${{ inputs.contract }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_BASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_CANDIDATE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_CONTRACT" =~ ^quality/structural-contracts/[A-Za-z0-9_.-]+\.json$ ]]
+          test -f "$SOURCE_CONTRACT"
+          git cat-file -e "$SOURCE_BASE^{commit}"
+          git cat-file -e "$SOURCE_CANDIDATE^{commit}"
+      - name: Run reviewed commands in independent source worktrees
+        env:
+          SOURCE_BASE: ${{ inputs.base }}
+          SOURCE_CANDIDATE: ${{ inputs.candidate }}
+          SOURCE_CONTRACT: ${{ inputs.contract }}
+        run: |
+          set -euo pipefail
+          python3 tools/ci/structural_preservation.py \
+            --repo . --base "$SOURCE_BASE" --candidate "$SOURCE_CANDIDATE" \
+            --contract "$SOURCE_CONTRACT" \
+            --out "$RUNNER_TEMP/structural-preservation.json" --trusted-local true
+      - name: Preserve positive and negative execution observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: structural-preservation-${{ github.run_id }}
+          path: ${{ runner.temp }}/structural-preservation.json
+          retention-days: 30
+          if-no-files-found: warn

@@ -38,6 +38,43 @@ fn report_id(value: Value) -> Result<Value> {
     value.stamp_id("report_id")
 }
 
+/// A language producer is optional for a Git-authenticated source-reading plan.
+/// Only a *known producer failure* may degrade to an explicit coverage gap.
+/// Git identity, evidence-store integrity, and unrelated errors still refuse.
+fn optional_static_context(
+    result: Result<(Value, std::path::PathBuf)>,
+) -> Result<(Value, Option<Value>)> {
+    match result {
+        Ok((report, _)) => Ok((report, None)),
+        Err(error)
+            if error.starts_with("python3 adapter failed:")
+                || error.starts_with("node adapter failed:") =>
+        {
+            let diagnosis = error.lines().last().unwrap_or(&error);
+            let gap = obj(&[
+                (
+                    "reason",
+                    Value::string("OPTIONAL_STATIC_CONTEXT_UNAVAILABLE"),
+                ),
+                (
+                    "detail",
+                    Value::string(diagnosis.chars().take(512).collect::<String>()),
+                ),
+            ]);
+            // Do not manufacture relationships. The authenticated focus paths
+            // and test-name candidates remain usable, but no static producer
+            // evidence may be inferred from this empty result.
+            let unavailable = obj(&[
+                ("relationships", Value::array([])),
+                ("configured_observations", Value::array([])),
+                ("coverage", obj(&[("gaps", Value::array([]))])),
+            ]);
+            Ok((unavailable, Some(gap)))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn is_test(path: &str) -> bool {
     crate::source_capabilities::test_candidate(path)
 }
@@ -157,8 +194,15 @@ pub fn context(
     // already present in the evidence store, alongside static import candidates.
     // The default plan only selects producer evidence compatible with the
     // requested exact Git revision. No inferred edge becomes a verified fact.
-    let (analysis, _) =
-        analyze::run_default(&discovered.root, &discovered.commit, roots, database)?;
+    let (analysis, static_gap) = optional_static_context(analyze::run_default(
+        &discovered.root,
+        &discovered.commit,
+        roots,
+        database,
+    ))?;
+    if let Some(gap) = static_gap {
+        gaps.push(gap);
+    }
     let (relations, total_relations, observed_reference_count) =
         focused_relationships(analysis.get("relationships")?.array_ref()?, &focus, limit)?;
     if total_relations > relations.len() {
@@ -659,6 +703,44 @@ mod tests {
         assert!(matches_focus("core/tests/test_impact_query.rs", &focus));
         assert!(!matches_focus("core/tests/test_security.rs", &focus));
         assert!(!is_test("core/src/impact_query.rs"));
+    }
+
+    #[test]
+    fn optional_python_adapter_failure_keeps_no_fabricated_semantic_evidence() {
+        let message = "python3 adapter failed: Traceback\\nValueError: ambiguous importable Python module: jinja2";
+        let (report, gap) = optional_static_context(Err(message.to_owned())).unwrap();
+        assert!(
+            report
+                .get("relationships")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            report
+                .get("configured_observations")
+                .unwrap()
+                .array_ref()
+                .unwrap()
+                .is_empty()
+        );
+        let gap = gap.expect("adapter failure must leave an explicit gap");
+        assert_eq!(
+            gap.get("reason").unwrap().str().unwrap(),
+            "OPTIONAL_STATIC_CONTEXT_UNAVAILABLE"
+        );
+        assert!(
+            gap.get("detail")
+                .unwrap()
+                .str()
+                .unwrap()
+                .contains("ambiguous importable Python module: jinja2")
+        );
+        // Never demote Git/source-authentication and other unknown failures
+        // into a successful-looking context document.
+        assert!(optional_static_context(Err("Git/SQLite tree mismatch".into())).is_err());
+        assert!(optional_static_context(Err("source identity mismatch".into())).is_err());
     }
 
     #[test]

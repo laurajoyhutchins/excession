@@ -40,6 +40,14 @@ committed-source coverage from FTS index coverage. Its original references separ
 lexical matches, native-producer observations and test-name suggestions.
 It does not inspect arbitrary dirty working-tree edits or certify behavior.
 
+If an unrelated Python or Node static-language adapter refuses during the
+optional context step, source location remains available: Excession returns
+Git-authenticated lexical candidates and focus identities, but **no invented
+static relationships**. It records `OPTIONAL_STATIC_CONTEXT_UNAVAILABLE`
+with the adapter diagnosis under `context.coverage.gaps`. Authentication
+failures, corrupt evidence, and other errors still refuse. This is not
+full semantic understanding; inspect the named source and tests directly.
+
 The segmented FTS5 index may be partial. Check the `index` status and
 `SEGMENT_INDEX_INCOMPLETE` before interpreting no matches. See
 [agent CLI](AGENT_CLI.md) for refresh controls and limits.

@@ -161,8 +161,13 @@ fn observation(
     timeout: Duration,
     max_output: u64,
 ) -> Result<Value> {
-    let stdout = worktree.join(".excession-observed-stdout");
-    let stderr = worktree.join(".excession-observed-stderr");
+    // Captures are siblings, not children, of the checked-out Git tree.
+    // The observing machinery must never change inputs visible to the program.
+    let workspace = worktree.parent().ok_or("execution worktree has no parent")?;
+    let label = worktree.file_name().and_then(|s| s.to_str())
+        .ok_or("invalid execution worktree name")?;
+    let stdout = workspace.join(format!(".{label}.stdout"));
+    let stderr = workspace.join(format!(".{label}.stderr"));
     let output = (|| -> Result<Value> {
         let out = File::create(&stdout).map_err(|e| format!("execution stdout capture: {e}"))?;
         let err = File::create(&stderr).map_err(|e| format!("execution stderr capture: {e}"))?;

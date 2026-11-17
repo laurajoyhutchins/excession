@@ -47,6 +47,12 @@ jobs:
           [[ "$SOURCE_CANDIDATE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$SOURCE_CONTRACT" =~ ^quality/structural-contracts/[A-Za-z0-9_.-]+\.json$ ]]
           test -f "$SOURCE_CONTRACT"
+          if ! git cat-file -e "$SOURCE_BASE^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$SOURCE_BASE"
+          fi
+          if ! git cat-file -e "$SOURCE_CANDIDATE^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$SOURCE_CANDIDATE"
+          fi
           git cat-file -e "$SOURCE_BASE^{commit}"
           git cat-file -e "$SOURCE_CANDIDATE^{commit}"
       - name: Run reviewed commands in independent source worktrees

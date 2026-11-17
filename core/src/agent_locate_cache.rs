@@ -459,6 +459,10 @@ fn update_segment(
     let mut refreshed_bytes = 0usize;
     let mut skipped = 0usize;
     let mut truncated = false;
+    let chunk_bytes = limits.max_file_bytes
+        .min(limits.max_bytes_per_segment)
+        .min(64 * 1024);
+
     for entry in entries {
         seen.insert(entry.path.as_str());
         let old = previous(tx, &entry.path)?;
@@ -467,10 +471,10 @@ fn update_segment(
             && cached.mode == entry.mode
         {
             match cached.status.as_str() {
-                "OK" if cached.size <= limits.max_file_bytes => {
-                    // Reusing a fully authenticated Git blob costs no new
-                    // source-read budget. The budget limits *this refresh*,
-                    // not the size of the persistent index.
+                "OK" => {
+                    // This complete cache was verified against the entire
+                    // original Git blob. A smaller invocation budget does
+                    // not revoke evidence already authenticated.
                     files += 1;
                     bytes += cached.size;
                     state.reused_blobs += 1;
@@ -484,62 +488,99 @@ fn update_segment(
             }
         }
 
-        // A budget-exhausted source remains pending for a subsequent call.
-        // We checkpoint each segment separately; no source disappears
-        // permanently merely because its siblings consumed this work unit.
+        let can_resume = old.as_ref().is_some_and(|cached| {
+            cached.blob == entry.oid
+                && cached.mode == entry.mode
+                && cached.status == "BUDGET"
+                && cached.chunk_bytes == chunk_bytes
+        });
         if refreshed_files >= limits.max_files_per_segment
             || refreshed_bytes >= limits.max_bytes_per_segment
         {
-            if let Some(cached) = old {
-                delete_file(tx, cached.id)?;
+            if !can_resume {
+                if let Some(ref cached) = old {
+                    delete_file(tx, cached.id)?;
+                }
+                insert_file(tx, segment, entry, None, "BUDGET", chunk_bytes)?;
             }
             skipped += 1;
             truncated = true;
-            insert_file(tx, segment, entry, None, "BUDGET")?;
             continue;
         }
-        if let Some(cached) = old {
-            delete_file(tx, cached.id)?;
-        }
+
+        let file_id = if can_resume {
+            old.as_ref().ok_or("missing resumable file")?.id
+        } else {
+            if let Some(ref cached) = old {
+                delete_file(tx, cached.id)?;
+            }
+            insert_file(tx, segment, entry, None, "BUDGET", chunk_bytes)?
+        };
+        let resumed_chunks = if can_resume {
+            existing_chunks(tx, file_id)?
+        } else {
+            0
+        };
         if state.reader.is_none() {
             state.reader = Some(git::BlobReader::open(state.repo)?);
         }
-        let data = match state
-            .reader
-            .as_mut()
+        let mut ordinal = 0usize;
+        let mut added_bytes = 0usize;
+        let mut deferred = false;
+        let result = state.reader.as_mut()
             .ok_or("missing Git blob reader")?
-            .read_capped(&entry.oid, limits.max_file_bytes)
-        {
-            Ok(data) => data,
-            Err(err) if err == "Git source blob exceeds byte limit" => {
+            .stream_text_chunks_verified(&entry.oid, chunk_bytes, |start_byte, start_line, body| {
+                if ordinal < resumed_chunks {
+                    verify_cached_chunk(tx, file_id, ordinal, start_byte, start_line, body)?;
+                } else if deferred || body.len() >
+                    limits.max_bytes_per_segment.saturating_sub(refreshed_bytes + added_bytes)
+                {
+                    deferred = true;
+                } else {
+                    insert_chunk(tx, file_id, entry, ordinal, start_byte, start_line, body)?;
+                    added_bytes += body.len();
+                }
+                ordinal += 1;
+                Ok(())
+            });
+        let total_bytes = match result {
+            Ok(size) => size,
+            Err(error) if error.contains("invalid UTF-8")
+                || error.contains("incomplete or invalid UTF-8")
+                || error.contains("source contains a NUL byte") =>
+            {
+                // No claim of valid source content is made from a rejected
+                // text blob. Discard any staged chunks, including old ones.
+                state.reader.take();
+                delete_file(tx, file_id)?;
+                insert_file(tx, segment, entry, None, "NON_UTF8", 0)?;
+                refreshed_files += 1;
                 skipped += 1;
-                insert_file(tx, segment, entry, None, "LARGE")?;
                 continue;
             }
-            Err(err) => return Err(err),
+            Err(error) => return Err(error),
         };
-        state.read_blobs += 1;
-        let Ok(body) = String::from_utf8(data) else {
-            skipped += 1;
-            insert_file(tx, segment, entry, None, "NON_UTF8")?;
-            continue;
-        };
-        if body.contains('\0') {
-            skipped += 1;
-            insert_file(tx, segment, entry, None, "NON_UTF8")?;
-            continue;
+        if ordinal < resumed_chunks {
+            return refuse("checkpointed chunk count exceeds authenticated Git source");
         }
-        if body.len() > limits.max_bytes_per_segment - refreshed_bytes {
+        state.read_blobs += 1;
+        refreshed_files += 1;
+        refreshed_bytes += added_bytes;
+        if deferred {
+            tx.execute(
+                "UPDATE locator_files SET status='BUDGET' WHERE id=?1",
+                params![file_id],
+            ).map_err(|e| sql_error("checkpoint partial source", e))?;
             skipped += 1;
             truncated = true;
-            insert_file(tx, segment, entry, None, "BUDGET")?;
-            continue;
+        } else {
+            tx.execute(
+                "UPDATE locator_files SET status='OK', bytes=?2 WHERE id=?1",
+                params![file_id, total_bytes as i64],
+            ).map_err(|e| sql_error("complete source", e))?;
+            files += 1;
+            bytes += total_bytes as usize;
         }
-        files += 1;
-        bytes += body.len();
-        refreshed_files += 1;
-        refreshed_bytes += body.len();
-        insert_file(tx, segment, entry, Some(&body), "OK")?;
     }
 
     let mut stale_ids = Vec::new();

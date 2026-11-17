@@ -53,7 +53,9 @@ pub fn grep_committed_paths(
     oid(commit)?;
     if term.is_empty()
         || term.len() > 64
-        || !term.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        || !term
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
         || max_paths == 0
     {
         return refuse("committed Git grep requires a bounded literal identifier term");
@@ -111,7 +113,9 @@ pub fn grep_committed_paths(
         paths.push(path.to_owned());
     }
     drop(reader);
-    let code = child.wait().map_err(|err| format!("git grep wait: {err}"))?;
+    let code = child
+        .wait()
+        .map_err(|err| format!("git grep wait: {err}"))?;
     // Git grep uses 1 for a valid search with no matching paths.
     if code.code() != Some(0) && code.code() != Some(1) {
         return refuse(format!("git grep failed on pinned commit: {code}"));
@@ -585,7 +589,11 @@ mod tests {
                 .args(args)
                 .output()
                 .unwrap();
-            assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
             String::from_utf8(result.stdout).unwrap().trim().to_owned()
         };
         run(&["init", "-q"]);
@@ -594,11 +602,20 @@ mod tests {
         std::fs::write(root.join("worker.py"), "def recover(): return 1\n").unwrap();
         run(&["add", "."]);
         run(&[
-            "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
-            "commit", "-qm", "pinned source",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "pinned source",
         ]);
         let head = run(&["rev-parse", "HEAD"]);
-        std::fs::write(root.join("test/wal.test"), "dirty worktree has no checkpoint\n").unwrap();
+        std::fs::write(
+            root.join("test/wal.test"),
+            "dirty worktree has no checkpoint\n",
+        )
+        .unwrap();
         let (hits, truncated) = grep_committed_paths(&root, &head, "WAL", 10).unwrap();
         assert_eq!(hits, ["test/wal.test"]);
         assert!(!truncated);

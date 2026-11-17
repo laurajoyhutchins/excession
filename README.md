@@ -13,7 +13,8 @@ Git supplies source authority; SCIP, compilers, language servers, tests,
 builds and runtime traces supply evidence. **The index and graph are not
 the product.** An accurate, reviewable engineering decision is the product.
 
-Read the [product contract](docs/PRODUCT.md),
+Read the [documentation cutover](docs/CUTOVER.md) and
+[product contract](docs/PRODUCT.md),
 [architecture](docs/ARCHITECTURE.md), and
 [accepted decision](docs/DECISIONS/0001-investigation-first.md).
 

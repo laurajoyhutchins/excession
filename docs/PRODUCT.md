@@ -93,6 +93,7 @@ definitions.
 Product success is measured by independently graded answers and successful
 behavior-preserving refactorings on unfamiliar repositories, including
 negative cases. Coverage, index size, and retrieval speed are diagnostics.
-See [evaluation](EVALUATION.md), [investigation contract](INVESTIGATIONS.md),
+See [cutover inventory](CUTOVER.md), [evaluation](EVALUATION.md),
+[investigation contract](INVESTIGATIONS.md),
 [transformation contract](TRANSFORMATIONS.md), and
 [verification](VERIFICATION.md).

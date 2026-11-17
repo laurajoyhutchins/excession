@@ -2,7 +2,8 @@
 
 **Start with the engineering question, not an index command.**
 
-The [product contract](PRODUCT.md) and
+The [documentation cutover](CUTOVER.md),
+[product contract](PRODUCT.md) and
 [ADR 0001](DECISIONS/0001-investigation-first.md) define Excession:
 an investigation-driven codebase understanding and transformation system.
 The [architecture](ARCHITECTURE.md) separates current implementation

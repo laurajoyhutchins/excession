@@ -8,7 +8,7 @@ source/evidence contract.
 
 | Topic | Canonical location |
 | --- | --- |
-| Product and scope | [Product](PRODUCT.md) and [ADR 0001](DECISIONS/0001-investigation-first.md) |
+| Product and scope | [Product](PRODUCT.md), [ADR 0001](DECISIONS/0001-investigation-first.md), [cutover](CUTOVER.md) |
 | Task navigation | [Documentation home](README.md) |
 | Current system and target boundaries | [Architecture](ARCHITECTURE.md) |
 | Evidence flow and invalidation | [Evidence lifecycle](EVIDENCE_LIFECYCLE.md), [limits](EVIDENCE_AND_LIMITS.md) |

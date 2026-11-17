@@ -4,7 +4,8 @@
 [investigation-first understanding and transformation](PRODUCT.md),
 with [architecture](ARCHITECTURE.md),
 [evidence lifecycle](EVIDENCE_LIFECYCLE.md) and
-[ADR 0001](DECISIONS/0001-investigation-first.md).
+[ADR 0001](DECISIONS/0001-investigation-first.md), and
+[documentation cutover](CUTOVER.md).
 The documents below remain valuable producer details, command references,
 specialized evidence studies and historical experiments. Their existence
 does not imply a shipped capability or change Excession's primary unit

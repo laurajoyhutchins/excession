@@ -41,6 +41,11 @@ See [CLI](docs/CLI.md), [MCP](docs/MCP.md), and
 - Experimental acceptance: [docs/EVALUATION.md](docs/EVALUATION.md).
 - Historical/producer detail: [docs/REFERENCE.md](docs/REFERENCE.md).
 
+Use the [investigation](docs/templates/INVESTIGATION.md),
+[transformation](docs/templates/TRANSFORMATION.md) and
+[verification](docs/templates/VERIFICATION.md) note templates until
+machine-readable reports are implemented.
+
 Follow [contribution guidelines](CONTRIBUTING.md) and [CI](docs/CI.md).
 Changes must pass repository checks and must never relabel proposed
 designs as implemented behavior.

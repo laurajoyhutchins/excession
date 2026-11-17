@@ -139,6 +139,51 @@ The [explanation projection schema](../contracts/product/investigation-explanati
 and [event schema](../contracts/product/investigation-event.v1.schema.json)
 describe the current wire representations.
 
+## Source-level behavioral witnesses
+
+An investigation can now attach **exact, independently replayed Git text** to
+a source-grounded claim. It classifies the relevant line span as a control
+condition, data transfer, or state mutation, while leaving its semantic
+interpretation explicitly **unverified**.
+
+```sh
+# Record after a CLAIM has been accepted and note its returned event ID
+excession investigation witness \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision REVISION \
+  --claim-event CLAIM_EVENT_ID \
+  --first-line 12 --last-line 15 --kind STATE_MUTATION \
+  --interpretation "These lines appear to update the retry counter"
+```
+
+Allowed kinds: `CONTROL_CONDITION`, `DATA_TRANSFER`,
+`STATE_MUTATION`. A witness must refer to an earlier claim whose exact
+Git file and blob are authenticated. The Rust implementation streams and
+SHA-1-verifies the **entire** Git blob using bounded memory, and captures
+only the selected 1–32 source lines (at most 8,192 bytes). It computes
+the source-text SHA-256 and independently replays the same source span
+during every ledger audit. It refuses nonexistent lines, oversized spans,
+unsupported source encodings and forged or mismatched claim references.
+
+A witness proves **what text existed at that source revision**, not that a
+particular branch was executed, data flowed at runtime, or state changed.
+Its status remains `SOURCE_TEXT_VERIFIED_INTERPRETATION_UNVERIFIED`;
+`runtime_verified` is always false. Claim interpretations remain
+attributed to the author. No code is executed during witness capture.
+
+`investigation explain` exposes these under `behavior_witnesses`.
+When a subsequent `investigation plan` references that claim, the
+plan includes the **witness event IDs already present at plan creation**
+as a reviewable preservation checklist, not as evidence of successful
+verification. The existing `investigation verify` retains independent
+test/build obligations and does not upgrade witness status. Source changes
+must still be re-examined at the candidate revision.
+
+Actual control-flow reachability, runtime dataflow and verified state
+transitions require independent compiler or execution evidence that
+corresponds to these source spans. This remains the next acceptance
+boundary, not a capability inferred from syntax.
+
 ## Required content
 
 | Field / concept | Meaning |

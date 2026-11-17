@@ -115,5 +115,96 @@ class TestIndependentImportOracle(SourceFixture):
         self.assertFalse(report["semantic_runtime_dependencies_proven"])
 
 
+class TestIndependentSymbolSiteOracle(SourceFixture):
+    def test_python_imported_functions_and_class_types_without_dynamic_guessing(self):
+        from semantic_symbol_oracle import independent_python_sites
+        self.add("src/pkg/__init__.py", "")
+        self.add("src/pkg/functions.py", (
+            "def compute():\n    return 1\n"
+            "class Model:\n    pass\n"
+        ))
+        self.add("src/pkg/main.py", (
+            "from .functions import compute, Model\n"
+            "def run(value: Model) -> Model:\n"
+            "    return compute()\n"
+            "def unsafe(obj):\n"
+            "    return obj.method()\n"
+        ))
+        _, inv = self.commit()
+        source = {p for p in inv if p.endswith(".py")}
+        result = independent_python_sites(self.repo, source, inv, oracle.checked_source)
+        observed = {(s["source"], s["target"], s["line"], s["kind"])
+                    for s in result["sites"]}
+        self.assertIn(("src/pkg/main.py", "src/pkg/functions.py", 3, "call"), observed)
+        self.assertIn(("src/pkg/main.py", "src/pkg/functions.py", 2, "type"), observed)
+        self.assertGreater(result["unsupported"].get("dynamic_call", 0), 0)
+        self.assertFalse(result["runtime_dispatch_proven"])
+
+    def test_python_lexical_shadowing_fails_closed(self):
+        from semantic_symbol_oracle import independent_python_sites
+        self.add("src/pkg/__init__.py", "")
+        self.add("src/pkg/functions.py", "def compute():\n    return 1\n")
+        self.add("src/pkg/main.py", (
+            "from .functions import compute\n"
+            "def test(compute):\n    return compute()\n"
+        ))
+        _, inv = self.commit()
+        result = independent_python_sites(
+            self.repo, {p for p in inv if p.endswith(".py")}, inv,
+            oracle.checked_source
+        )
+        self.assertFalse(result["sites"])
+        self.assertGreater(result["unsupported"].get("shadowed_import_aliases", 0), 0)
+
+    def test_exact_native_source_line_and_target_not_just_file_pair(self):
+        from semantic_symbol_oracle import score_sites
+        anchor = {"source": "a.py", "target": "b.py", "line": 7,
+                  "kind": "call", "symbol": "run"}
+        oracle_report = {"sites": [anchor]}
+        def observed(line, target="b.py"):
+            return {"kind": "SCIP_REFERENCE", "source": {"path": "a.py"},
+                    "target": {"path": target},
+                    "native_observation": {"line": line}}
+        miss = score_sites(oracle_report, [observed(8)], [observed(8)], [observed(8)],
+                           "a.py")["kinds"]["call"]
+        self.assertEqual(miss["full_native_hits"], 0)
+        hit = score_sites(oracle_report, [observed(7)], [],
+                          [observed(7)], "a.py")["kinds"]["call"]
+        self.assertEqual((hit["oracle_sites"], hit["old_bounded_hits"],
+                          hit["new_bounded_hits"]), (1, 0, 1))
+        with self.assertRaisesRegex(ValueError, "absent"):
+            score_sites(oracle_report, [observed(8)], [], [observed(7)], "a.py")
+
+    def test_typescript_symbol_resolution_excludes_instance_method_dispatch(self):
+        if not (ROOT / "node_modules/typescript/package.json").is_file():
+            self.skipTest("pinned TS compiler unavailable")
+        self.add("lib/main.js", (
+            "import {doWork, Model} from './work.js';\n"
+            "const result = doWork();\n"
+            "const model = new Model();\n"
+            "model.dynamic();\n"
+        ))
+        self.add("lib/work.js", (
+            "export function doWork() {return 1;}\n"
+            "export class Model { dynamic() { return 1; } }\n"
+        ))
+        _, inv = self.commit()
+        for p in inv:
+            oracle.checked_source(self.repo, p, inv)
+        import json
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "files.json"
+            source.write_text(json.dumps(sorted(inv)))
+            result = json.loads(oracle.command([
+                "node", ROOT / "benchmarks/experiments/ts_symbol_oracle.cjs",
+                self.repo, source
+            ]))
+        symbols = {(x["line"], x["kind"], x["target"]) for x in result["sites"]}
+        self.assertIn((2, "call", "lib/work.js"), symbols)
+        self.assertIn((3, "call", "lib/work.js"), symbols)
+        self.assertNotIn((4, "call", "lib/work.js"), symbols)
+        self.assertGreater(result["unsupported"]["instance_methods_excluded"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

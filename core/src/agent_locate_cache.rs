@@ -529,6 +529,7 @@ fn put_meta(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
 /// Refresh up to refresh_budget changed logical segments. Query results
 /// always exclude any segment not matching the requested Git tree inventory.
 /// A cold repository may need repeated calls or --index-segments 256.
+#[cfg(test)]
 pub(crate) fn search(
     discovered: &discovery::Discovery,
     entries: Vec<git::Entry>,

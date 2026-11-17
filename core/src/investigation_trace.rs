@@ -510,10 +510,14 @@ pub fn run(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
         args: &arguments,
         request: &request,
     };
-    let (base_execution, base_trace) =
-        observed(repo, &base_root, base, tree, &invocation)?;
-    let (candidate_execution, candidate_trace) =
-        observed(repo, &candidate_root, &candidate, &candidate_tree, &invocation)?;
+    let (base_execution, base_trace) = observed(repo, &base_root, base, tree, &invocation)?;
+    let (candidate_execution, candidate_trace) = observed(
+        repo,
+        &candidate_root,
+        &candidate,
+        &candidate_tree,
+        &invocation,
+    )?;
     temp.cleanup()?;
     let report = obj(&[
         ("schema", Value::string(FORMAT)),

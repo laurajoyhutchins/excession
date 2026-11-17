@@ -199,9 +199,22 @@ fn call(
     let report = match name {
         "search_code" | "search_code_page" => {
             if name == "search_code_page" {
-                allowed(args, &["task", "revision", "limit", "index_segments", "budgets", "after"])?;
+                allowed(
+                    args,
+                    &[
+                        "task",
+                        "revision",
+                        "limit",
+                        "index_segments",
+                        "budgets",
+                        "after",
+                    ],
+                )?;
             } else {
-                allowed(args, &["task", "revision", "limit", "index_segments", "budgets"])?;
+                allowed(
+                    args,
+                    &["task", "revision", "limit", "index_segments", "budgets"],
+                )?;
             }
             let defaults = agent_locate::IndexLimits::default();
             let chosen = match args.get("budgets") {
@@ -214,20 +227,21 @@ fn call(
                 },
             };
             let budget = agent_locate::LocateBudget {
-                    index_segments: limit(args, "index_segments", 8, 256)?,
-                    index: agent_locate::IndexLimits {
-                        max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
-                        max_bytes_per_segment: chosen
-                            .max_segment_bytes
-                            .unwrap_or(defaults.max_bytes_per_segment),
-                        max_files_per_segment: chosen
-                            .max_segment_files
-                            .unwrap_or(defaults.max_files_per_segment),
-                    }
-                    .validate()?,
-                };
+                index_segments: limit(args, "index_segments", 8, 256)?,
+                index: agent_locate::IndexLimits {
+                    max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
+                    max_bytes_per_segment: chosen
+                        .max_segment_bytes
+                        .unwrap_or(defaults.max_bytes_per_segment),
+                    max_files_per_segment: chosen
+                        .max_segment_files
+                        .unwrap_or(defaults.max_files_per_segment),
+                }
+                .validate()?,
+            };
             if name == "search_code_page" {
-                let after = args.get("after")
+                let after = args
+                    .get("after")
                     .map(|value| value.as_str().ok_or("after must be a cursor string"))
                     .transpose()?;
                 agent_locate::locate_page_with_limits(

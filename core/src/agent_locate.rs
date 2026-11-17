@@ -668,7 +668,6 @@ pub fn locate_with_limits(
                             "max_bytes_per_segment",
                             Value::number(limits.max_bytes_per_segment),
                         ),
-                        ("refresh_segments", Value::number(index_segments)),
                     ]),
                 ),
             ]),
@@ -701,6 +700,7 @@ pub fn locate_with_limits(
                 "refreshed_segments",
                 Value::number(index.refreshed_segments),
             ),
+            ("refresh_budget_segments", Value::number(index_segments)),
         ]),
     );
     Ok(output)

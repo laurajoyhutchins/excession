@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 concurrency:
   group: quality-ratchet-main
@@ -86,4 +87,7 @@ jobs:
           git push origin "HEAD:refs/heads/$BRANCH"
           gh pr create --draft --base main --head "$BRANCH" \
             --title "style: native Rust quality ratchet" \
-            --body "Generated from the default branch by pinned rustfmt and machine-applicable Clippy edits. Only tracked Rust files are eligible. Local Cargo checks and the quality ratchet passed before publication; full PR CI and human review remain required. No equivalence or readiness-to-merge claim."
+            --body "Generated from the default branch by pinned rustfmt and machine-applicable Clippy edits. Only tracked Rust files are eligible. Local Cargo checks and the quality ratchet passed before publication; independent dispatched Verify and human review remain required. No equivalence or readiness-to-merge claim."
+          # GitHub-token-created PR events may not immediately run Verify.
+          # workflow_dispatch is an explicitly supported trigger for this token.
+          gh workflow run verify.yml --ref "$BRANCH"

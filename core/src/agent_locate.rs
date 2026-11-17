@@ -773,7 +773,7 @@ pub fn locate_page_with_limits(
     if candidates.is_empty() && index.page_offset == 0 {
         gaps.push(gap("NO_LEXICAL_MATCH_DOES_NOT_PROVE_ABSENCE"));
     }
-    let next = index.next_cursor.as_ref().map_or(Value::Null, Value::string);
+    let next = index.next_cursor.as_ref().map_or(Value::Null, |value| Value::string(value));
     let mut output = obj(&[
         ("schema", Value::string("excession.agent-locate-page.v1")),
         ("source_commit", Value::string(&discovered.commit)),

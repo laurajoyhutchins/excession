@@ -93,6 +93,14 @@ def main() -> None:
             filename = os.path.realpath(code.co_filename)
             if not filename.startswith(source_prefix) or not filename.endswith(".py"):
                 return None
+            # A module CALL can precede its first executable line and
+            # report f_lineno=0. Attribute only the entry marker to the
+            # declaration start. Never turn a zero LINE into a line visit.
+            line = frame.f_lineno
+            if line <= 0:
+                if event != "call" or code.co_firstlineno <= 0:
+                    return trace
+                line = code.co_firstlineno
             path = os.path.relpath(filename, str(root)).replace(os.sep, "/")
             fid = id(frame)
             previous, prev_line = snapshots.get(fid, ({}, 0))
@@ -114,7 +122,7 @@ def main() -> None:
             record = {
                 "kind": event.upper(),
                 "path": path,
-                "line": frame.f_lineno,
+                "line": line,
                 "function": code.co_name[:256],
                 "values": now,
                 "changes": changes,
@@ -128,7 +136,7 @@ def main() -> None:
             if event == "return":
                 snapshots.pop(fid, None)
             else:
-                snapshots[fid] = (now, frame.f_lineno)
+                snapshots[fid] = (now, line)
             return trace
 
         sys.dont_write_bytecode = True

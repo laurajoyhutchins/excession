@@ -1,4 +1,4 @@
-name: Quality improvements (native fixes, review required)
+name: Quality improvements (Clippy fixes, review required)
 
 # Only code trusted on main is allowed to run with a write-enabled token.
 on:
@@ -36,9 +36,12 @@ jobs:
       - name: Apply native machine-applicable Rust fixes
         run: |
           set -euo pipefail
-          cargo fmt --manifest-path core/Cargo.toml
           cargo clippy --fix --allow-dirty --allow-staged --offline --locked --manifest-path core/Cargo.toml --all-targets
-          cargo fmt --manifest-path core/Cargo.toml
+          # Formatting-only changes use the separately verified auto-integration
+          # recipe, not this review-required compiler-diagnostic workflow.
+          if ! git diff --quiet; then
+            cargo fmt --manifest-path core/Cargo.toml
+          fi
       - name: Restrict changes and independently check candidate
         id: candidate
         shell: bash

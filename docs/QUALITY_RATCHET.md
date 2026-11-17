@@ -104,3 +104,14 @@ The fast line gate and fixture tests run before dependency installation on
 every PR. Native autofix is weekly/on-demand, **not per commit**. Deep
 self-analysis and large source sweeps remain advisory. Do not convert
 timeouts, missing tools, or partial evidence into passing reports.
+
+## Automatic integration of bounded native improvements
+
+The [versioned improvement recipes](../quality/improvement-recipes.json)
+and [autonomous improvement loop](AUTONOMOUS_IMPROVEMENTS.md) turn
+explicitly documented lessons into native edit generation. Unlike merely
+rejecting regressions, the loop can propose or integrate concrete source
+changes. Auto-integration is available only to hard-allowlisted, narrowly
+checked Rustfmt transformations and graph-preserving Cargo patch updates.
+Every candidate still needs independent exact-head Verify and GitHub source
+evidence, and GitHub's ordinary merge restrictions remain authoritative.

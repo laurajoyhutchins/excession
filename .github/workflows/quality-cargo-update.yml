@@ -1,0 +1,138 @@
+name: Native Cargo dependency improvement
+
+# This is a trusted-main source producer. No pull-request code runs with
+# a write token. Changes outside the exact Cargo lockfile fail closed.
+on:
+  schedule:
+    - cron: '15 11 * * 3'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: native-cargo-refresh-main
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'laurajoyhutchins/excession' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+      - name: Admit only versioned and tested native update recipes
+        run: |
+          set -euo pipefail
+          python3 tools/ci/improvement_cycle.py catalog
+          python3 -m unittest discover -s tests -p 'test_cargo_patch_audit.py' -v
+      - name: Propose actual dependency resolution improvements
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          BASE="$(git rev-parse HEAD)"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          cargo update --manifest-path core/Cargo.toml
+          git diff --check
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No native compatible dependency updates available." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import subprocess
+          changed = sorted(x.decode() for x in subprocess.check_output(
+              ["git", "diff", "--name-only", "-z"]).split(b"\0") if x)
+          if changed != ["core/Cargo.lock"]:
+              raise SystemExit("REFUSED: cargo update touched non-lockfile paths: " + str(changed))
+          PY
+          BRANCH="automation/cargo-refresh-${GITHUB_RUN_ID}"
+          git switch -c "$BRANCH"
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            add -- core/Cargo.lock
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m 'chore(deps): refresh compatible Cargo dependencies'
+          HEAD="$(git rev-parse HEAD)"
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Classify native Cargo update without executing third-party code
+        id: classify
+        if: steps.candidate.outputs.changed == 'true'
+        shell: bash
+        env:
+          BASE: ${{ steps.candidate.outputs.base }}
+          HEAD: ${{ steps.candidate.outputs.head }}
+        run: |
+          set -euo pipefail
+          python3 tools/ci/quality_ratchet.py check --base "$BASE" --candidate "$HEAD"
+          if python3 tools/ci/cargo_patch_audit.py \
+            --base "$BASE" --candidate "$HEAD" \
+            --report "$RUNNER_TEMP/cargo-patch.json" \
+            2>"$RUNNER_TEMP/cargo-audit-refusal.txt"; then
+            echo "automatic=true" >> "$GITHUB_OUTPUT"
+            echo "Patch-only lock graph audit passed. Independent CI still required." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "automatic=false" >> "$GITHUB_OUTPUT"
+            echo "Native update requires human review:" >> "$GITHUB_STEP_SUMMARY"
+            cat "$RUNNER_TEMP/cargo-audit-refusal.txt" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Publish real native code-maintenance candidate
+        id: publish
+        if: steps.candidate.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.candidate.outputs.branch }}
+          HEAD: ${{ steps.candidate.outputs.head }}
+          BASE: ${{ steps.candidate.outputs.base }}
+          AUTOMATIC: ${{ steps.classify.outputs.automatic }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git push origin "HEAD:refs/heads/$BRANCH"
+          DRAFT=()
+          if [ "$AUTOMATIC" != true ]; then
+            DRAFT=(--draft)
+          fi
+          gh pr create "${DRAFT[@]}" --base main --head "$BRANCH" \
+            --title "chore(deps): native Cargo lockfile improvements" \
+            --body "Generated with pinned Cargo on accepted main at $BASE. Only core/Cargo.lock changed at $HEAD. Patch-only, graph-preserving candidates may be integrated automatically only after both independent exact-head workflows pass. Other changes are draft-review only. No dependency security or behavioral-equivalence proof."
+          PR="$(gh pr view "$BRANCH" --json number --jq .number)"
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          gh workflow run verify.yml --ref "$BRANCH"
+          gh workflow run github-evidence.yml --ref "$BRANCH" \
+            -f base="$BASE" -f head="$HEAD"
+      - name: Integrate only strictly audited patch updates
+        if: steps.candidate.outputs.changed == 'true' && steps.classify.outputs.automatic == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.candidate.outputs.branch }}
+          HEAD: ${{ steps.candidate.outputs.head }}
+          BASE: ${{ steps.candidate.outputs.base }}
+          PR: ${{ steps.publish.outputs.pr }}
+        run: bash tools/ci/await_verified_merge.sh
+      - name: Retain explicit patch evidence or refusal reason
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-improvement-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cargo-patch.json
+            ${{ runner.temp }}/cargo-audit-refusal.txt
+          retention-days: 30
+          if-no-files-found: warn

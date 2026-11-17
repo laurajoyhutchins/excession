@@ -115,6 +115,44 @@ class GithubEvidence(unittest.TestCase):
         self.assertEqual(len(report["report_sha256"]), 64)
         self.assertIn("not a correctness or merge approval", evidence.summary(report))
 
+    def test_explicitly_focused_test_is_an_unverified_suggestion(self):
+        # The Rust agent distinguishes a test file explicitly in the focus
+        # from a path-name-heuristic match, without verifying test ownership.
+        direct = self.context()
+        direct["test_candidates"][0]["reason"] = "EXPLICIT_FOCUS_TEST"
+        with patch.object(evidence, "run_excession",
+                          side_effect=[self.verification(), direct]):
+            result = evidence.make_report(
+                self.repo, Path("/excession"), self.base, self.head,
+                "example/project", "c" * 40,
+            )
+        self.assertEqual(result["suggested_checks"][0]["reason"], "EXPLICIT_FOCUS_TEST")
+        self.assertFalse(result["suggested_checks"][0]["selection_verified"])
+        self.assertFalse(result["ready_to_merge"])
+
+    def test_rejects_test_suggestion_that_claims_verification(self):
+        direct = self.context()
+        direct["test_candidates"][0]["reason"] = "EXPLICIT_FOCUS_TEST"
+        direct["test_candidates"][0]["selection_verified"] = True
+        with patch.object(evidence, "run_excession",
+                          side_effect=[self.verification(), direct]):
+            with self.assertRaisesRegex(evidence.EvidenceError, "asserted as verified"):
+                evidence.make_report(
+                    self.repo, Path("/excession"), self.base, self.head,
+                    "example/project", "c" * 40,
+                )
+
+    def test_rejects_unknown_test_suggestion_reason(self):
+        direct = self.context()
+        direct["test_candidates"][0]["reason"] = "UNSUPPORTED_CERTIFIED_TEST"
+        with patch.object(evidence, "run_excession",
+                          side_effect=[self.verification(), direct]):
+            with self.assertRaisesRegex(evidence.EvidenceError, "asserted as verified"):
+                evidence.make_report(
+                    self.repo, Path("/excession"), self.base, self.head,
+                    "example/project", "c" * 40,
+                )
+
     def test_rejects_mismatched_excession_tree(self):
         wrong = self.verification()
         wrong["candidate_tree"] = "0" * 40

@@ -172,6 +172,54 @@ class CiTopology(unittest.TestCase):
         self.assertNotIn("contents: write", manual)
         self.assertNotIn("gh pr merge", manual)
 
+    def test_auto_integration_requires_replay_and_two_exact_head_gates(self):
+        verify = read("verify.yml")
+        self.assertIn("test_improvement_cycle.py", verify)
+        auto = read("quality-auto-integrate.yml")
+        for required in (
+            "  schedule:", "  workflow_dispatch:",
+            "github.repository == 'laurajoyhutchins/excession'",
+            "github.ref == 'refs/heads/main'",
+            "permissions:\n  contents: write\n  pull-requests: write\n  actions: write",
+            "improvement_cycle.py verify", "quality_ratchet.py check",
+            "cargo fmt --manifest-path", "cargo test --offline --locked",
+            "gh workflow run verify.yml --ref", "gh workflow run github-evidence.yml --ref",
+            "bash tools/ci/await_verified_merge.sh", "native-improvement.json",
+        ):
+            self.assertIn(required, auto, required)
+        self.assertNotIn("  pull_request:", auto)
+        self.assertNotIn("pull_request_target:", auto)
+        self.assertNotIn("  workflow_run:", auto)
+        self.assertNotIn(" --admin", auto)
+        self.assertNotIn(" --auto", auto)
+        cargo = read("quality-cargo-update.yml")
+        for required in (
+            "  schedule:", "  workflow_dispatch:",
+            "cargo update --manifest-path core/Cargo.toml",
+            "cargo_patch_audit.py", "quality_ratchet.py check",
+            "core/Cargo.lock", 'DRAFT=(--draft)',
+            "gh workflow run verify.yml --ref",
+            "gh workflow run github-evidence.yml --ref",
+            "bash tools/ci/await_verified_merge.sh",
+            "persist-credentials: false",
+        ):
+            self.assertIn(required, cargo)
+        self.assertNotIn("  pull_request:", cargo)
+        self.assertNotIn("pull_request_target:", cargo)
+        self.assertNotIn(" --admin", cargo)
+        shared = (Path(__file__).resolve().parents[1] / "tools/ci/await_verified_merge.sh").read_text()
+        for required in (
+            "--event workflow_dispatch", "select(.headSha == $sha)",
+            'test "$REMOTE_BASE" = "$BASE"', 'gh pr merge "$PR" --squash',
+            "if [ \"$VERIFY\" = success ] && [ \"$EVIDENCE\" = success ]",
+        ):
+            self.assertIn(required, shared)
+        self.assertNotIn(" --admin", shared)
+        review = read("quality-improvements.yml")
+        self.assertIn("cargo clippy --fix", review)
+        self.assertIn("gh pr create --draft", review)
+        self.assertNotIn("gh pr merge", review)
+
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):
             with self.subTest(name=name):

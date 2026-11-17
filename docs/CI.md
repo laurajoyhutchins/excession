@@ -95,3 +95,14 @@ receipt, but the actual candidate code
 **never** runs from an arbitrary PR trigger. It records differential output
 and candidate test results with immutable source identities, while always
 leaving merge readiness and all-input semantic equivalence unproved.
+
+## Autonomous native improvement integration
+
+The [autonomous improvement loop](AUTONOMOUS_IMPROVEMENTS.md) maintains
+versioned native recipes and two trusted-main producers. Formatting-only
+Rust changes receive byte-exact native replay before GitHub's separate
+Verify/evidence gate. Native Cargo dependency updates create real candidate
+lockfiles; only patch-level, unchanged-graph registry updates can be merged
+after those same independent gates. Other changes become draft PRs for review.
+Both fail closed if main advances, evidence is absent or branch protection
+blocks a bot merge. No untrusted PR runs with a write-enabled token.

@@ -144,7 +144,7 @@ def validate_context(repo: Path, report: dict, head: str, tree: str, focus: list
     require(isinstance(checks, list) and len(checks) <= 64, "Context test suggestions missing or unbounded")
     for check in checks:
         require(isinstance(check, dict), "Invalid check suggestion")
-        require(check.get("selection_verified") is False and check.get("reason") == "PATH_NAME_HEURISTIC", "Test suggestions asserted as verified")
+        require(check.get("selection_verified") is False and check.get("reason") in ("PATH_NAME_HEURISTIC", "EXPLICIT_FOCUS_TEST"), "Test suggestions asserted as verified")
         check_git_source(check.get("source"))
 
 

@@ -493,7 +493,16 @@ pub fn locate_with_budget(
     db: Option<&str>,
     index_segments: usize,
 ) -> Result<Value> {
-    locate_with_limits(repo, rev, task, limit, roots, db, index_segments, IndexLimits::default())
+    locate_with_limits(
+        repo,
+        rev,
+        task,
+        limit,
+        roots,
+        db,
+        index_segments,
+        IndexLimits::default(),
+    )
 }
 
 /// Run source discovery using explicitly selected index processing budgets.
@@ -650,9 +659,15 @@ pub fn locate_with_limits(
                 (
                     "limits",
                     obj(&[
-                        ("max_files_per_segment", Value::number(limits.max_files_per_segment)),
+                        (
+                            "max_files_per_segment",
+                            Value::number(limits.max_files_per_segment),
+                        ),
                         ("max_file_bytes", Value::number(limits.max_file_bytes)),
-                        ("max_bytes_per_segment", Value::number(limits.max_bytes_per_segment)),
+                        (
+                            "max_bytes_per_segment",
+                            Value::number(limits.max_bytes_per_segment),
+                        ),
                         ("refresh_segments", Value::number(index_segments)),
                     ]),
                 ),

@@ -121,7 +121,7 @@ jobs:
               directory = Path(os.environ["EXCESSION_CACHE_DIR"]).resolve(strict=True)
               exists = location.is_file() and location.is_relative_to(directory)
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write("save=" + ("true" if exists else "false") + "\\n")
+              output.write("save=" + ("true" if exists else "false") + "\n")
           PY
       - name: Save source-verified partial index for later owner requests
         if: success() && steps.locate-checkpoint.outputs.save == 'true'

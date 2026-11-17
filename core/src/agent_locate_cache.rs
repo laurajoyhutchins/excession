@@ -642,6 +642,42 @@ fn put_meta(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Independently authenticate an indexed excerpt against the full Git blob.
+fn verify_source_window(
+    repo: &std::path::Path,
+    oid: &str,
+    start_byte: u64,
+    body: &str,
+) -> Result<()> {
+    let expected = body.as_bytes();
+    let end = start_byte.checked_add(expected.len() as u64)
+        .ok_or("cached source chunk offset overflow")?;
+    let mut checked = 0usize;
+    let mut reader = git::BlobReader::open(repo)?;
+    let total = reader.stream_verified(oid, 64 * 1024, |offset, bytes| {
+        let upper = offset + bytes.len() as u64;
+        let a = offset.max(start_byte);
+        let b = upper.min(end);
+        if a < b {
+            let chunk_start = (a - offset) as usize;
+            let body_start = (a - start_byte) as usize;
+            let count = (b - a) as usize;
+            if bytes[chunk_start..chunk_start + count]
+                != expected[body_start..body_start + count]
+            {
+                return refuse("cached source chunk disagrees with pinned Git blob");
+            }
+            checked += count;
+        }
+        Ok(())
+    })?;
+    reader.finish()?;
+    if end > total || checked != expected.len() {
+        return refuse("cached chunk lies outside authenticated Git blob");
+    }
+    Ok(())
+}
+
 /// Refresh up to refresh_budget changed logical segments. Query results
 /// always exclude any segment not matching the requested Git tree inventory.
 /// A cold repository may need repeated calls or --index-segments 256.
@@ -786,30 +822,31 @@ pub(crate) fn search_with_limits(
     put_meta(&tx, "source_tree", &discovered.tree)?;
 
     let mut hits = Vec::new();
+    let mut returned_paths = BTreeSet::new();
     {
         let mut stmt = tx
             .prepare(
-                "SELECT f.path,f.blob,f.mode,source_search.body
-             FROM source_search
-             JOIN locator_files f ON f.id=source_search.rowid
-             JOIN locator_active a ON a.segment=f.segment
-             WHERE source_search MATCH ?1
-             ORDER BY bm25(source_search,4.0,1.0), source_search.rowid
-             LIMIT ?2",
+                "SELECT f.path,f.blob,f.mode,c.start_byte,c.start_line,source_search.body
+                 FROM source_search
+                 JOIN locator_chunks c ON c.id=source_search.rowid
+                 JOIN locator_files f ON f.id=c.file_id
+                 JOIN locator_active a ON a.segment=f.segment
+                 WHERE source_search MATCH ?1 AND f.status='OK'
+                 ORDER BY bm25(source_search,4.0,1.0), source_search.rowid",
             )
             .map_err(|e| sql_error("ranking prepare", e))?;
-        let rows = stmt
-            .query_map(params![expression, limit as i64], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })
+        let mut rows = stmt.query(params![expression])
             .map_err(|e| sql_error("ranking query", e))?;
-        for row in rows {
-            let (name, blob, mode, body) = row.map_err(|e| sql_error("ranked row", e))?;
+        while let Some(row) = rows.next().map_err(|e| sql_error("ranked row", e))? {
+            let name: String = row.get(0).map_err(|e| sql_error("ranked path", e))?;
+            if !returned_paths.insert(name.clone()) {
+                continue;
+            }
+            let blob: String = row.get(1).map_err(|e| sql_error("ranked blob", e))?;
+            let mode: String = row.get(2).map_err(|e| sql_error("ranked mode", e))?;
+            let start_byte = nonnegative(row.get(3).map_err(|e| sql_error("chunk offset", e))?)?;
+            let start_line = nonnegative(row.get(4).map_err(|e| sql_error("chunk line", e))?)?;
+            let body: String = row.get(5).map_err(|e| sql_error("ranked body", e))?;
             let segment = segment_for(&name);
             let pinned = groups[segment]
                 .binary_search_by(|entry| entry.path.as_str().cmp(name.as_str()))
@@ -818,9 +855,10 @@ pub(crate) fn search_with_limits(
             if pinned.oid != blob || pinned.mode != mode {
                 return refuse("cached FTS path/blob/mode differs from pinned Git tree");
             }
-            if crate::digest::git_blob(body.as_bytes()) != blob {
-                return refuse("cached FTS source failed Git blob identity verification");
-            }
+            // A chunk is not itself a Git blob. Re-stream the entire original
+            // object to independently verify both its hash and the exact
+            // cached byte window before exposing source text to a caller.
+            verify_source_window(&discovered.root, &blob, start_byte as u64, &body)?;
             hits.push(Hit {
                 entry: git::Entry {
                     path: name,
@@ -829,7 +867,11 @@ pub(crate) fn search_with_limits(
                     kind: "blob".into(),
                 },
                 body,
+                start_line,
             });
+            if hits.len() == limit {
+                break;
+            }
         }
     }
     tx.commit().map_err(|e| sql_error("commit", e))?;

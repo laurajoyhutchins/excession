@@ -573,7 +573,7 @@ pub fn locate_with_limits(
         gap("TEST_SELECTION_NOT_PROVEN"),
     ];
     if skipped > 0 {
-        gaps.push(gap("UNINDEXED_OVERSIZE_OR_NON_UTF8_SOURCE"));
+        gaps.push(gap("SOURCE_CONTENT_NOT_FULLY_INDEXED"));
     }
     if truncated {
         gaps.push(gap("INDEX_BUDGET_EXHAUSTED"));
@@ -1078,7 +1078,7 @@ mod tests {
                 .unwrap()
                 .integer()
                 .unwrap(),
-            1
+            0
         );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
         let plan = first.get("reading_plan").unwrap();

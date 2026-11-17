@@ -11,7 +11,8 @@ The caller supplies two full Git commit IDs (base and candidate), plus a
 small JSON contract containing the **exact changed Git paths** and explicit
 behavioral obligations. Excession independently verifies the commit/tree IDs,
 that the base precedes the candidate, and that the actual Git diff paths equal
-the declared set. It refuses to run if those checks differ.
+the declared set. Changed entries must be ordinary tracked Git blobs,
+never symlinks or submodules. It refuses to run if those checks differ.
 
 For each `differential` obligation it runs the same argv in **two independent
 detached worktrees**, requires successful exit on both sides, and compares

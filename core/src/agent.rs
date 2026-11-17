@@ -63,7 +63,9 @@ fn focused_relationships(
     focus: &BTreeSet<String>,
     limit: usize,
 ) -> Result<(Vec<Value>, usize, usize)> {
-    let mut native = Vec::new();
+    let mut distinct_native = Vec::new();
+    let mut repeated_native = Vec::new();
+    let mut seen_native_pairs = BTreeSet::new();
     let mut candidates = Vec::new();
     let mut total = 0usize;
     let mut observed = 0usize;
@@ -84,16 +86,24 @@ fn focused_relationships(
                 return refuse("native SCIP reference has missing or incompatible evidence");
             }
             observed += 1;
-            if native.len() < limit {
-                native.push(relation.clone());
+            if seen_native_pairs.insert((from.to_owned(), to.to_owned())) {
+                if distinct_native.len() < limit {
+                    distinct_native.push(relation.clone());
+                }
+            } else if repeated_native.len() < limit {
+                repeated_native.push(relation.clone());
             }
         } else if candidates.len() < limit {
             candidates.push(relation.clone());
         }
     }
-    let available = limit.saturating_sub(native.len());
-    native.extend(candidates.into_iter().take(available));
-    Ok((native, total, observed))
+    // Preserve one real, source-bound reference per file pair before spending
+    // scarce result slots on repeated references from the same pair.
+    let available = limit.saturating_sub(distinct_native.len());
+    distinct_native.extend(repeated_native.into_iter().take(available));
+    let available = limit.saturating_sub(distinct_native.len());
+    distinct_native.extend(candidates.into_iter().take(available));
+    Ok((distinct_native, total, observed))
 }
 
 /// The task description is metadata only; lexical matching uses explicit Git
@@ -571,6 +581,30 @@ mod native_dependency_selection_tests {
                 .unwrap(),
             "src/entry.py"
         );
+    }
+
+    #[test]
+    fn one_reference_per_distinct_source_pair_precedes_repeated_symbols() {
+        let focus = BTreeSet::from(["src/a.py".to_owned()]);
+        let records = [
+            edge("STATIC_IMPORT", "src/a.py", "src/z.py", "CANDIDATE"),
+            edge("SCIP_REFERENCE", "src/a.py", "src/b.py", "OBSERVED"),
+            edge("SCIP_REFERENCE", "src/a.py", "src/b.py", "OBSERVED"),
+            edge("SCIP_REFERENCE", "src/a.py", "src/c.py", "OBSERVED"),
+        ];
+        let (selected, total, observed) = focused_relationships(&records, &focus, 2).unwrap();
+        assert_eq!((total, observed, selected.len()), (4, 3, 2));
+        let paths = selected
+            .iter()
+            .map(|row| row.get("target").unwrap().get("path").unwrap().str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(paths, ["src/b.py", "src/c.py"]);
+        let (large, _, _) = focused_relationships(&records, &focus, 4).unwrap();
+        let order = large
+            .iter()
+            .map(|row| row.get("target").unwrap().get("path").unwrap().str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(order, ["src/b.py", "src/c.py", "src/b.py", "src/z.py"]);
     }
 
     #[test]

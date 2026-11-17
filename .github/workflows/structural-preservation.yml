@@ -47,6 +47,8 @@ jobs:
           [[ "$SOURCE_CANDIDATE" =~ ^[0-9a-f]{40}$ ]]
           [[ "$SOURCE_CONTRACT" =~ ^quality/structural-contracts/[A-Za-z0-9_.-]+\.json$ ]]
           test -f "$SOURCE_CONTRACT"
+          cp "$SOURCE_CONTRACT" "$RUNNER_TEMP/structural-contract.json"
+          git rev-parse HEAD > "$RUNNER_TEMP/verifier-source-commit.txt"
           if ! git cat-file -e "$SOURCE_BASE^{commit}" 2>/dev/null; then
             git fetch --no-tags origin "$SOURCE_BASE"
           fi
@@ -106,5 +108,7 @@ jobs:
           path: |
             ${{ runner.temp }}/structural-preservation.json
             ${{ runner.temp }}/excession-agent-verification.json
+            ${{ runner.temp }}/structural-contract.json
+            ${{ runner.temp }}/verifier-source-commit.txt
           retention-days: 30
           if-no-files-found: warn

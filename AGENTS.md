@@ -23,6 +23,7 @@ graph density, or novel parser coverage.
    authorization for mutation; do not overwrite dirty user work.
 6. Re-run relevant checks and preserve failing or unsupported evidence.
 7. Report only capabilities that exist at the inspected source revision.
+8. When a defect teaches a reusable invariant, add a negative regression test and consider an evidence-backed rule in [the quality ratchet](docs/QUALITY_RATCHET.md). A green gate is not a semantic proof.
 
 **Current interface:** `excession agent locate`, `agent context`,
 `agent verify`, `excession investigation start/explore/claim/witness/question/synthesize/explain/refresh/plan/verify/execute/show`,

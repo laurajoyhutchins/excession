@@ -32,7 +32,9 @@ buffer ceiling**, not a maximum source-file length. Large Git blobs are now
 read in bounded, verified UTF-8 windows and stored as FTS5 chunks. The effective
 chunk size is at most 64 KiB, the configured `--max-file-bytes` (default
 1 MiB), and the per-refresh segment budget. Source sizes do not determine
-index eligibility. Byte budgets must allow at least one UTF-8 scalar (4 bytes).
+index eligibility. Text-index byte budgets must be at least 256 bytes, allowing the
+indexer to preserve all supported search identifier tokens across chunk
+boundaries even for long one-line sources.
 A source remains unavailable to search until all its chunks are authenticated
 and indexed. That avoids presenting a partial source as the complete file.
 

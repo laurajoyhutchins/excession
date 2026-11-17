@@ -321,8 +321,14 @@ pub fn context(
                 "source",
                 source(&discovered.commit, &discovered.tree, entry),
             ),
-            ("reason", Value::string("PATH_NAME_HEURISTIC")),
-            ("explicit_focus", Value::Bool(focus.contains(&entry.path))),
+            (
+                "reason",
+                Value::string(if focus.contains(&entry.path) {
+                    "EXPLICIT_FOCUS_TEST"
+                } else {
+                    "PATH_NAME_HEURISTIC"
+                }),
+            ),
             ("selection_verified", Value::Bool(false)),
         ]));
     }

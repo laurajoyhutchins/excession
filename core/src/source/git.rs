@@ -1,9 +1,9 @@
 //! Git subprocess adapter. No writes to source repositories; only reads.
 use crate::{Result, refuse};
+use sha1::{Digest, Sha1};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use sha1::{Digest, Sha1};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -142,20 +142,31 @@ impl BlobReader {
         if chunk_bytes == 0 {
             return refuse("Git blob stream chunk size must be positive");
         }
-        let stdin = self.stdin.as_mut().ok_or("Git blob reader already closed")?;
+        let stdin = self
+            .stdin
+            .as_mut()
+            .ok_or("Git blob reader already closed")?;
         writeln!(stdin, "{expected_oid}").map_err(|e| format!("Git batch request: {e}"))?;
         stdin.flush().map_err(|e| format!("Git batch flush: {e}"))?;
 
         let mut header = String::new();
-        if self.stdout.read_line(&mut header).map_err(|e| e.to_string())? == 0 {
+        if self
+            .stdout
+            .read_line(&mut header)
+            .map_err(|e| e.to_string())?
+            == 0
+        {
             return refuse("Git batch ended before blob response");
         }
         let mut fields = header.trim_end_matches('\n').split_ascii_whitespace();
         if fields.next() != Some(expected_oid) || fields.next() != Some("blob") {
             return refuse("Git batch returned a missing or non-blob object");
         }
-        let size = fields.next().ok_or("Git batch missing blob length")?
-            .parse::<usize>().map_err(|_| "invalid Git batch blob length")?;
+        let size = fields
+            .next()
+            .ok_or("Git batch missing blob length")?
+            .parse::<usize>()
+            .map_err(|_| "invalid Git batch blob length")?;
         if fields.next().is_some() {
             return refuse("unexpected Git batch header fields");
         }
@@ -165,7 +176,8 @@ impl BlobReader {
         let mut offset = 0usize;
         while offset < size {
             let len = (size - offset).min(buffer.len());
-            self.stdout.read_exact(&mut buffer[..len])
+            self.stdout
+                .read_exact(&mut buffer[..len])
                 .map_err(|e| format!("truncated Git batch blob: {e}"))?;
             hasher.update(&buffer[..len]);
             if let Err(error) = emit(offset as u64, &buffer[..len]) {
@@ -175,7 +187,8 @@ impl BlobReader {
             offset += len;
         }
         let mut terminator = [0u8; 1];
-        self.stdout.read_exact(&mut terminator)
+        self.stdout
+            .read_exact(&mut terminator)
             .map_err(|e| format!("missing Git batch blob separator: {e}"))?;
         if terminator != *b"\n" || crate::digest::hex(&hasher.finalize()) != expected_oid {
             return refuse("Git batch blob identity or framing mismatch");
@@ -413,7 +426,14 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         std::fs::create_dir(&root).unwrap();
-        assert!(Command::new("git").args(["init", "-q"]).arg(&root).status().unwrap().success());
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .arg(&root)
+                .status()
+                .unwrap()
+                .success()
+        );
         let source = "α🚀 planner query\n".repeat(100_000);
         std::fs::write(root.join("large.rs"), &source).unwrap();
         std::fs::write(root.join("empty.rs"), "").unwrap();
@@ -422,23 +442,33 @@ mod tests {
         let mut reader = BlobReader::open(&root).unwrap();
         let mut reconstructed = Vec::new();
         let mut last = 0;
-        let size = reader.stream_verified(&blob, 137, |offset, bytes| {
-            assert!(bytes.len() <= 137);
-            assert_eq!(offset, last);
-            last += bytes.len() as u64;
-            reconstructed.extend_from_slice(bytes);
-            Ok(())
-        }).unwrap();
+        let size = reader
+            .stream_verified(&blob, 137, |offset, bytes| {
+                assert!(bytes.len() <= 137);
+                assert_eq!(offset, last);
+                last += bytes.len() as u64;
+                reconstructed.extend_from_slice(bytes);
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(size, source.len() as u64);
         assert_eq!(reconstructed, source.as_bytes());
-        assert_eq!(reader.stream_verified(&empty, 4, |_, _| {
-            panic!("empty Git blob must have no payload chunks")
-        }).unwrap(), 0);
+        assert_eq!(
+            reader
+                .stream_verified(&empty, 4, |_, _| {
+                    panic!("empty Git blob must have no payload chunks")
+                })
+                .unwrap(),
+            0
+        );
         assert_eq!(reader.read(&blob).unwrap(), source.as_bytes());
         assert!(reader.stream_verified(&blob, 0, |_, _| Ok(())).is_err());
         reader.finish().unwrap();
         let mut aborted = BlobReader::open(&root).unwrap();
-        assert_eq!(aborted.stream_verified(&blob, 128, |_, _| Err("cancelled".into())), Err("cancelled".into()));
+        assert_eq!(
+            aborted.stream_verified(&blob, 128, |_, _| Err("cancelled".into())),
+            Err("cancelled".into())
+        );
         assert!(aborted.read(&blob).is_err());
         drop(aborted);
         std::fs::remove_dir_all(root).unwrap();

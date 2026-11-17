@@ -102,6 +102,31 @@ class StructuralPreservation(unittest.TestCase):
         with self.assertRaises(runner.Refused):
             self.evaluate(base=self.candidate, candidate=self.base)
 
+    def test_candidate_mutating_tracked_source_refuses_and_cleans_worktrees(self):
+        self.doc["obligations"][1]["argv"] = [
+            "python3", "-B", "-c",
+            "from pathlib import Path; Path('module.py').write_text('corrupted')",
+        ]
+        with self.assertRaisesRegex(runner.Refused, "modified tracked Git source"):
+            self.evaluate()
+        self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
+        self.assertEqual((self.repo / "module.py").read_text(),
+                         "def answer():\n    return 40 + 2\n")
+
+    def test_separate_home_environments_do_not_share_hidden_state(self):
+        self.doc["obligations"][0]["argv"] = [
+            "python3", "-B", "-c",
+            "from pathlib import Path; import os; home = Path(os.environ['HOME']); "
+            "print(home.exists()); (home / 'marker').write_text('state')",
+        ]
+        self.doc["obligations"][1]["argv"] = [
+            "python3", "-B", "-c",
+            "from pathlib import Path; import os; assert not (Path(os.environ['HOME']) / 'marker').exists()",
+        ]
+        # The base writes only into base-home; candidate does not inherit it.
+        self.assertEqual(self.evaluate()["status"],
+                         "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
+
     def test_missing_cwd_refuses(self):
         self.doc["obligations"][0]["cwd"] = "not-a-directory"
         with self.assertRaises(runner.Refused):

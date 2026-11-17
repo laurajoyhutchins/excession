@@ -28,7 +28,7 @@ pub struct Request<'a> {
     pub trusted_local: bool,
 }
 
-fn sha256_file(path: &Path) -> Result<(String, u64)> {
+pub(crate) fn sha256_file(path: &Path) -> Result<(String, u64)> {
     let mut f = File::open(path).map_err(|e| format!("execution artifact read: {e}"))?;
     let mut sha = Sha256::new();
     let mut bytes = 0u64;
@@ -60,7 +60,7 @@ fn argv(raw: &str) -> Result<Vec<String>> {
     Ok(args)
 }
 
-fn verified_revision(repo: &Path, commit: &str) -> Result<String> {
+pub(crate) fn verified_revision(repo: &Path, commit: &str) -> Result<String> {
     git::oid(commit)?;
     if git::rev(repo, &format!("{commit}^{{commit}}"))? != commit {
         return refuse("execution commit is not a direct Git commit identity");
@@ -68,7 +68,7 @@ fn verified_revision(repo: &Path, commit: &str) -> Result<String> {
     git::rev(repo, &format!("{commit}^{{tree}}"))
 }
 
-fn planned_witnesses(events: &[Value], plan_id: &str) -> Result<Vec<Value>> {
+pub(crate) fn planned_witnesses(events: &[Value], plan_id: &str) -> Result<Vec<Value>> {
     let mut matching = None;
     let mut witnesses = Vec::new();
     for event in events {
@@ -106,14 +106,14 @@ fn planned_witnesses(events: &[Value], plan_id: &str) -> Result<Vec<Value>> {
     matching.ok_or_else(|| "execution requires an earlier witness-backed plan".to_owned())
 }
 
-struct Worktrees<'a> {
+pub(crate) struct Worktrees<'a> {
     repo: &'a Path,
     root: PathBuf,
     registered: Vec<PathBuf>,
 }
 
 impl<'a> Worktrees<'a> {
-    fn new(repo: &'a Path) -> Result<Self> {
+    pub(crate) fn new(repo: &'a Path) -> Result<Self> {
         let canonical = repo
             .canonicalize()
             .map_err(|e| format!("source checkout: {e}"))?;
@@ -144,7 +144,7 @@ impl<'a> Worktrees<'a> {
         refuse("cannot allocate unique temporary execution workspace")
     }
 
-    fn add(&mut self, label: &str, commit: &str) -> Result<PathBuf> {
+    pub(crate) fn add(&mut self, label: &str, commit: &str) -> Result<PathBuf> {
         let path = self.root.join(label);
         let string = path.to_str().ok_or("non-UTF8 temporary execution path")?;
         git::command(self.repo, &["worktree", "add", "--detach", string, commit])?;
@@ -156,7 +156,7 @@ impl<'a> Worktrees<'a> {
         Ok(path)
     }
 
-    fn cleanup(mut self) -> Result<()> {
+    pub(crate) fn cleanup(mut self) -> Result<()> {
         for path in self.registered.iter().rev() {
             let string = path.to_str().ok_or("non-UTF8 temporary execution path")?;
             git::command(self.repo, &["worktree", "remove", "--force", string])?;
@@ -179,7 +179,7 @@ impl Drop for Worktrees<'_> {
     }
 }
 
-fn observation(
+pub(crate) fn observation(
     worktree: &Path,
     revision: &str,
     tree: &str,
@@ -273,7 +273,7 @@ fn observation(
     output
 }
 
-fn comparison(base: &Value, candidate: &Value) -> Result<&'static str> {
+pub(crate) fn comparison(base: &Value, candidate: &Value) -> Result<&'static str> {
     if base.get("status")?.str()? != "EXITED" || candidate.get("status")?.str()? != "EXITED" {
         return Ok("INCONCLUSIVE");
     }

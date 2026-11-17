@@ -181,7 +181,14 @@ fn call(
         "search_code" => {
             allowed(
                 args,
-                &["task", "revision", "limit", "index_segments", "budgets", "enrich"],
+                &[
+                    "task",
+                    "revision",
+                    "limit",
+                    "index_segments",
+                    "budgets",
+                    "enrich",
+                ],
             )?;
             let defaults = agent_locate::IndexLimits::default();
             let chosen = match args.get("budgets") {
@@ -209,7 +216,9 @@ fn call(
                     budget: agent_locate::LocateBudget {
                         index_segments: limit(args, "index_segments", 8, 256)?,
                         index: agent_locate::IndexLimits {
-                            max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
+                            max_file_bytes: chosen
+                                .max_file_bytes
+                                .unwrap_or(defaults.max_file_bytes),
                             max_bytes_per_segment: chosen
                                 .max_segment_bytes
                                 .unwrap_or(defaults.max_bytes_per_segment),
@@ -509,14 +518,14 @@ mod tests {
         let deep: SearchArgs =
             serde_json::from_str(r#"{"task":"find lease recovery","enrich":true}"#).unwrap();
         assert_eq!(deep.enrich, Some(true));
-        assert!(serde_json::from_str::<SearchArgs>(
-            r#"{"task":"find lease recovery","enrich":"true"}"#
-        )
-        .is_err());
-        assert!(serde_json::from_str::<SearchArgs>(
-            r#"{"task":"find lease recovery","unused":true}"#
-        )
-        .is_err());
+        assert!(
+            serde_json::from_str::<SearchArgs>(r#"{"task":"find lease recovery","enrich":"true"}"#)
+                .is_err()
+        );
+        assert!(
+            serde_json::from_str::<SearchArgs>(r#"{"task":"find lease recovery","unused":true}"#)
+                .is_err()
+        );
     }
 
     #[test]

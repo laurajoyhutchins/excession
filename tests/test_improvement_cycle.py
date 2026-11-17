@@ -73,6 +73,9 @@ class NativeImprovementCycle(unittest.TestCase):
         git(self.repo, "commit", "-qm", "fixture")
         return git(self.repo, "rev-parse", "HEAD")
 
+    def fork_from_base(self):
+        git(self.repo, "reset", "--hard", self.base)
+
     def verify(self, candidate=None, formatter=None):
         return cycle.verify(self.repo, self.base, candidate or self.candidate,
                             formatter=formatter or self.formatter)
@@ -88,6 +91,7 @@ class NativeImprovementCycle(unittest.TestCase):
         self.assertEqual(len(git(self.repo, "worktree", "list").splitlines()), 1)
 
     def test_proposed_change_different_from_native_replay_fails(self):
+        self.fork_from_base()
         self.write("core/src/lib.rs", "pub fn answer() -> u32 { 43 }\n")
         bad = self.commit()
         with self.assertRaisesRegex(cycle.Refused, "differs from candidate"):
@@ -99,18 +103,21 @@ class NativeImprovementCycle(unittest.TestCase):
             self.verify(formatter=["unavailable-format-producer-nothing"])
 
     def test_candidate_changes_unapproved_path_refuses(self):
+        self.fork_from_base()
         self.write("docs/INTRO.md", "unreviewed changes\n")
         bad = self.commit()
         with self.assertRaisesRegex(cycle.Refused, "must not add"):
             self.verify(candidate=bad)
 
     def test_candidate_changes_a_python_file_refuses(self):
+        self.fork_from_base()
         self.write("tools/example.py", "print('not native rustfmt')\n")
         bad = self.commit()
         with self.assertRaisesRegex(cycle.Refused, "must not add"):
             self.verify(candidate=bad)
 
     def test_candidate_changes_own_recipe_authority_refuses(self):
+        self.fork_from_base()
         obj = catalog()
         obj["recipes"][0]["rationale"] = "Changed in a generated commit"
         self.write("quality/improvement-recipes.json", json.dumps(obj))
@@ -131,6 +138,7 @@ class NativeImprovementCycle(unittest.TestCase):
             cycle.verify(self.repo, self.candidate, empty, formatter=self.formatter)
 
     def test_path_mode_changes_refuse(self):
+        self.fork_from_base()
         (self.repo / "core/src/lib.rs").chmod(0o755)
         bad = self.commit()
         with self.assertRaises(cycle.Refused):

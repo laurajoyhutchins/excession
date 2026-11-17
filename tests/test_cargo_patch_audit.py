@@ -97,14 +97,14 @@ class CargoPatchAcceptance(unittest.TestCase):
 
     def test_source_switch_refused(self):
         with self.assertRaises(audit.common.Refused):
-            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "def", source="git+https://example.invalid/x")))
+            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "b" * 64, source="git+https://example.invalid/x")))
 
     def test_prerelease_update_refused(self):
         with self.assertRaises(audit.common.Refused):
             audit.patch_changes(encoded(lock()), encoded(lock("1.2.4-alpha.1", "b" * 64)))
 
     def test_new_package_refused(self):
-        candidate = lock("1.2.4", "def")
+        candidate = lock("1.2.4", "b" * 64)
         candidate["package"].append({"name": "extra", "version": "1.0.0",
                                      "source": audit.REGISTRY, "checksum": "new"})
         with self.assertRaises(audit.common.Refused):
@@ -112,7 +112,7 @@ class CargoPatchAcceptance(unittest.TestCase):
 
     def test_global_metadata_change_refused(self):
         original = encoded(lock())
-        modified = encoded(lock("1.2.4", "def")).replace(b"version = 4", b"version = 3", 1)
+        modified = encoded(lock("1.2.4", "b" * 64)).replace(b"version = 4", b"version = 3", 1)
         with self.assertRaises(audit.common.Refused):
             audit.patch_changes(original, modified)
 
@@ -129,7 +129,7 @@ class CargoGitCandidates(unittest.TestCase):
         self.write("quality/improvement-recipes.json", json.dumps(catalog()).encode())
         self.write("core/Cargo.lock", encoded(lock()))
         self.base = self.commit()
-        self.write("core/Cargo.lock", encoded(lock("1.2.4", "def")))
+        self.write("core/Cargo.lock", encoded(lock("1.2.4", "b" * 64)))
         self.head = self.commit()
 
     def write(self, filename, data):

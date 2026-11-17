@@ -361,10 +361,10 @@ fn insert_file(
     )
     .map_err(|e| sql_error("insert cached file", e))?;
     let id = tx.last_insert_rowid();
-    if let Some(text) = body {
-        if !text.is_empty() {
-            insert_chunk(tx, id, entry, 0, 0, 1, text)?;
-        }
+    if let Some(text) = body
+        && !text.is_empty()
+    {
+        insert_chunk(tx, id, entry, 0, 0, 1, text)?;
     }
     Ok(id)
 }

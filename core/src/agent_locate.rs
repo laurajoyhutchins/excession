@@ -13,6 +13,14 @@ pub struct LocateBudget {
     pub index_segments: usize,
     pub index: IndexLimits,
 }
+
+/// Operational discovery choices share one argument so callers cannot
+/// accidentally confuse index processing budgets with enrichment policy.
+#[derive(Clone, Copy, Debug)]
+pub struct LocateExecution {
+    pub budget: LocateBudget,
+    pub force_enrichment: bool,
+}
 #[cfg(test)]
 use rusqlite::{Connection, params};
 use std::collections::{BTreeMap, BTreeSet};
@@ -721,7 +729,18 @@ pub fn locate_with_limits(
     db: Option<&str>,
     budget: LocateBudget,
 ) -> Result<Value> {
-    locate_with_mode(repo, rev, task, limit, roots, db, budget, true)
+    locate_with_mode(
+        repo,
+        rev,
+        task,
+        limit,
+        roots,
+        db,
+        LocateExecution {
+            budget,
+            force_enrichment: true,
+        },
+    )
 }
 
 /// Default CLI discovery is source-first: query the pinned tree and only
@@ -737,9 +756,10 @@ pub fn locate_with_mode(
     limit: usize,
     roots: Option<&str>,
     db: Option<&str>,
-    budget: LocateBudget,
-    force_enrichment: bool,
+    execution: LocateExecution,
 ) -> Result<Value> {
+    let budget = execution.budget;
+    let force_enrichment = execution.force_enrichment;
     let limits = budget.index.validate()?;
     let index_segments = budget.index_segments;
     if !(1..=64).contains(&limit) {
@@ -1410,8 +1430,10 @@ mod tests {
             2,
             None,
             None,
-            budget,
-            false,
+            LocateExecution {
+                budget,
+                force_enrichment: false,
+            },
         )
         .unwrap();
         assert_eq!(
@@ -1471,8 +1493,10 @@ mod tests {
             2,
             None,
             None,
-            budget,
-            false,
+            LocateExecution {
+                budget,
+                force_enrichment: false,
+            },
         )
         .unwrap();
         assert_eq!(
@@ -1489,8 +1513,10 @@ mod tests {
             3,
             None,
             None,
-            budget,
-            false,
+            LocateExecution {
+                budget,
+                force_enrichment: false,
+            },
         )
         .unwrap();
         assert_eq!(
@@ -1507,8 +1533,10 @@ mod tests {
             2,
             None,
             None,
-            budget,
-            true,
+            LocateExecution {
+                budget,
+                force_enrichment: true,
+            },
         )
         .unwrap();
         assert_eq!(deep.get("enrichment").unwrap().str().unwrap(), "PERFORMED");

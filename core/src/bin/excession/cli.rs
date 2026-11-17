@@ -601,7 +601,7 @@ pub(super) fn command() -> Command {
             leaf(
                 "locate",
                 &["repo", "task"],
-                &["rev", "limit", "roots", "db", "index-segments"],
+                &["rev", "limit", "roots", "db", "index-segments", "max-file-bytes", "max-segment-bytes", "max-segment-files"],
             )
             .about("Find ranked Git-pinned source candidates for a natural-language task")
             .arg(

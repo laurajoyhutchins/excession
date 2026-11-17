@@ -108,6 +108,26 @@
     },
     "report_id": {
       "$ref": "#/$defs/sha256"
+    },
+    "observed_reference_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "returned_observed_reference_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 64
+    },
+    "configured_observations": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object"
+      }
+    },
+    "configured_observation_count": {
+      "type": "integer",
+      "minimum": 0
     }
   },
   "$defs": {

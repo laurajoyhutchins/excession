@@ -52,6 +52,9 @@ struct SearchArgs {
     /// Authorized, caller-selected indexing policy; defaults apply per field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     budgets: Option<SearchBudgets>,
+    /// Force FTS and source-bound relationship context even when Git found enough files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enrich: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -178,7 +181,14 @@ fn call(
         "search_code" => {
             allowed(
                 args,
-                &["task", "revision", "limit", "index_segments", "budgets"],
+                &[
+                    "task",
+                    "revision",
+                    "limit",
+                    "index_segments",
+                    "budgets",
+                    "enrich",
+                ],
             )?;
             let defaults = agent_locate::IndexLimits::default();
             let chosen = match args.get("budgets") {
@@ -190,25 +200,35 @@ fn call(
                     max_segment_files: None,
                 },
             };
-            agent_locate::locate_with_limits(
+            let force_enrichment = match args.get("enrich") {
+                None | Some(Value::Bool(false)) => false,
+                Some(Value::Bool(true)) => true,
+                Some(_) => return Err("enrich must be boolean".into()),
+            };
+            agent_locate::locate_with_mode(
                 repo,
                 optional(args, "revision", "HEAD")?,
                 required(args, "task")?,
                 limit(args, "limit", 20, 64)?,
                 roots,
                 db,
-                agent_locate::LocateBudget {
-                    index_segments: limit(args, "index_segments", 8, 256)?,
-                    index: agent_locate::IndexLimits {
-                        max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
-                        max_bytes_per_segment: chosen
-                            .max_segment_bytes
-                            .unwrap_or(defaults.max_bytes_per_segment),
-                        max_files_per_segment: chosen
-                            .max_segment_files
-                            .unwrap_or(defaults.max_files_per_segment),
-                    }
-                    .validate()?,
+                agent_locate::LocateExecution {
+                    budget: agent_locate::LocateBudget {
+                        index_segments: limit(args, "index_segments", 8, 256)?,
+                        index: agent_locate::IndexLimits {
+                            max_file_bytes: chosen
+                                .max_file_bytes
+                                .unwrap_or(defaults.max_file_bytes),
+                            max_bytes_per_segment: chosen
+                                .max_segment_bytes
+                                .unwrap_or(defaults.max_bytes_per_segment),
+                            max_files_per_segment: chosen
+                                .max_segment_files
+                                .unwrap_or(defaults.max_files_per_segment),
+                        }
+                        .validate()?,
+                    },
+                    force_enrichment,
                 },
             )?
         }
@@ -489,6 +509,23 @@ mod tests {
         assert!(serde_json::from_str::<SearchBudgets>(r#"{"unknown":12}"#).is_err());
         assert!(serde_json::from_str::<SearchBudgets>(r#"{"max_file_bytes":-1}"#).is_err());
         assert!(serde_json::from_str::<SearchBudgets>(r#"{"max_segment_files":"3"}"#).is_err());
+    }
+
+    #[test]
+    fn search_args_default_to_fast_discovery_and_require_boolean_enrichment() {
+        let fast: SearchArgs = serde_json::from_str(r#"{"task":"find lease recovery"}"#).unwrap();
+        assert_eq!(fast.enrich, None);
+        let deep: SearchArgs =
+            serde_json::from_str(r#"{"task":"find lease recovery","enrich":true}"#).unwrap();
+        assert_eq!(deep.enrich, Some(true));
+        assert!(
+            serde_json::from_str::<SearchArgs>(r#"{"task":"find lease recovery","enrich":"true"}"#)
+                .is_err()
+        );
+        assert!(
+            serde_json::from_str::<SearchArgs>(r#"{"task":"find lease recovery","unused":true}"#)
+                .is_err()
+        );
     }
 
     #[test]

@@ -170,7 +170,8 @@ def excession_locate(case: dict, directory: Path, binary: Path) -> dict:
             "calls": 1, "elapsed_seconds": round(time.monotonic()-started, 6),
             "returned_source_count": len(paths),
             "original_output_bytes": len(output),
-            "operational_cache": report.get("cache", {}).get("kind")}
+            "enrichment": report.get("enrichment"),
+            "operational_cache": (report.get("cache") or {}).get("kind")}
 
 
 def discovery_proxy(paths: list[str], case: dict) -> dict:

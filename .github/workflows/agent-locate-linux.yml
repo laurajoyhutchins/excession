@@ -55,11 +55,11 @@ jobs:
           QUERY="do_sys_openat2 file descriptor"
           /usr/bin/time -v -o "$RUNNER_TEMP/linux-locate-cold.time" \
             "$CLI" agent locate --repo "$SRC" --rev "$LINUX_SHA" \
-            --task "$QUERY" --roots fs --index-segments 256 --limit 16 --json \
+            --task "$QUERY" --roots fs --index-segments 256 --limit 16 --enrich --json \
             > "$RUNNER_TEMP/linux-locate-cold.json"
           /usr/bin/time -v -o "$RUNNER_TEMP/linux-locate-warm.time" \
             "$CLI" agent locate --repo "$SRC" --rev "$LINUX_SHA" \
-            --task "$QUERY" --roots fs --index-segments 8 --limit 16 --json \
+            --task "$QUERY" --roots fs --index-segments 8 --limit 16 --enrich --json \
             > "$RUNNER_TEMP/linux-locate-warm.json"
           python3 - "$RUNNER_TEMP" "$LINUX_SHA" <<'PY'
           import json, pathlib, subprocess, sys

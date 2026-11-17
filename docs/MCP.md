@@ -68,7 +68,7 @@ schemas. Debug output must never be written to stdout.
 
 | MCP tool | Existing computation | Notes |
 | --- | --- | --- |
-| `search_code` | `agent locate` | Git-pinned lexical matches plus bounded context; index coverage may be partial |
+| `search_code` | `agent locate` | Fast committed-Git source and test search by default; opt-in FTS and context with `enrich: true` |
 | `get_context` | `agent context` | Requires 1–16 exact tracked paths |
 | `explain_impact` | `impact` | Possible impact between two Git revisions |
 | `verify_change` | `agent verify` | Requires two distinct retained commits; never authorizes merge |
@@ -82,7 +82,12 @@ may be set at server startup when needed; ordinary agents should not need
 to supply them.
 
 Use `search_code` with the task description, then `get_context` for
-interesting paths. Use `check_coverage` before interpreting absent
+interesting paths. If the search already provides enough authenticated source
+files, it skips FTS indexing and relationship-context work. The result then
+contains `enrichment: NOT_REQUESTED_GIT_SUFFICIENT`, null `index`,
+`cache`, and `context`, and explicit unqueried-evidence gaps. Set
+`enrich: true` on `search_code` to force the full index and context
+workflow when needed to inspect relationships. Use `check_coverage` before interpreting absent
 relationships. Once a candidate is committed, call `explain_impact` and
 `verify_change` with base and candidate commit IDs. `plan_tests` can
 provide a no-execution plan beforehand.
@@ -93,9 +98,10 @@ The local `search_code` MCP tool accepts an optional `budgets` object with
 `max_file_bytes`, `max_segment_bytes` and `max_segment_files` as positive
 integers, plus the existing `index_segments` per-invocation work budget.
 Unspecified fields use the native defaults, and incompatible limits are
-refused. The resulting report records the selected effective policy in
-`index.limits`, while the per-invocation segment refresh count is operational
-metadata under `cache.refresh_budget_segments`. MCP's independent 4 MiB
+refused even when the index is skipped. The report records the effective
+policy in `index.limits` when enrichment is performed, and the
+per-invocation refresh count in `cache.refresh_budget_segments`. On the
+Git-only fast path both fields are null, not evidence of a complete index. MCP's independent 4 MiB
 response ceiling is unchanged; pagination remains to be implemented (#280).
 
 Example tool arguments:
@@ -103,6 +109,7 @@ Example tool arguments:
 ```json
 {
   "task": "Locate the SQLite query planner",
+  "enrich": true,
   "index_segments": 8,
   "budgets": {
     "max_file_bytes": 8388608,

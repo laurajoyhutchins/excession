@@ -23,7 +23,8 @@
     "index",
     "relationship_candidates",
     "reading_plan",
-    "git_search"
+    "git_search",
+    "enrichment"
   ],
   "properties": {
     "schema": {
@@ -44,7 +45,10 @@
       "maxLength": 4096
     },
     "retrieval": {
-      "const": "COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"
+      "enum": [
+        "COMMITTED_GIT_GREP",
+        "COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"
+      ]
     },
     "candidates": {
       "type": "array",
@@ -210,109 +214,125 @@
       }
     },
     "cache": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "kind",
-        "path",
-        "reused_blobs",
-        "read_blobs",
-        "refreshed_segments"
-      ],
-      "properties": {
-        "kind": {
-          "const": "PERSISTENT_SQLITE_FTS5"
+      "oneOf": [
+        {
+          "type": "null",
+          "description": "No FTS cache opened or modified for this request."
         },
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "reused_blobs": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "read_blobs": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "refreshed_segments": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 256
-        },
-        "refresh_budget_segments": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 256,
-          "description": "Operational invocation limit excluded from report_id."
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "path",
+            "reused_blobs",
+            "read_blobs",
+            "refreshed_segments"
+          ],
+          "properties": {
+            "kind": {
+              "const": "PERSISTENT_SQLITE_FTS5"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reused_blobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "read_blobs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "refreshed_segments": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 256
+            },
+            "refresh_budget_segments": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Operational invocation limit excluded from report_id."
+            }
+          },
+          "description": "Operational diagnostic, excluded from the deterministic report_id."
         }
-      },
-      "description": "Operational diagnostic, excluded from the deterministic report_id."
+      ]
     },
     "safe_to_skip_unlisted_tests": {
       "const": false
     },
     "index": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "segmentation",
-        "total_source_files",
-        "populated_segments",
-        "ready_segments",
-        "pending_segments",
-        "complete"
-      ],
-      "properties": {
-        "segmentation": {
-          "const": "PATH_SHA256_PREFIX_BYTE"
+      "oneOf": [
+        {
+          "type": "null",
+          "description": "Index not queried, not a claim of empty or complete indexing."
         },
-        "total_source_files": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "populated_segments": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 256
-        },
-        "ready_segments": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 256
-        },
-        "pending_segments": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 256
-        },
-        "complete": {
-          "type": "boolean"
-        },
-        "limits": {
+        {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "max_files_per_segment",
-            "max_file_bytes",
-            "max_bytes_per_segment"
+            "segmentation",
+            "total_source_files",
+            "populated_segments",
+            "ready_segments",
+            "pending_segments",
+            "complete"
           ],
           "properties": {
-            "max_files_per_segment": {
-              "type": "integer",
-              "minimum": 1
+            "segmentation": {
+              "const": "PATH_SHA256_PREFIX_BYTE"
             },
-            "max_file_bytes": {
+            "total_source_files": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 0
             },
-            "max_bytes_per_segment": {
+            "populated_segments": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 0,
+              "maximum": 256
+            },
+            "ready_segments": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 256
+            },
+            "pending_segments": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 256
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "max_files_per_segment",
+                "max_file_bytes",
+                "max_bytes_per_segment"
+              ],
+              "properties": {
+                "max_files_per_segment": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_file_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "max_bytes_per_segment": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
             }
           }
         }
-      }
+      ]
     },
     "relationship_candidates": {
       "type": "array",
@@ -528,6 +548,13 @@
           "type": "boolean"
         }
       }
+    },
+    "enrichment": {
+      "enum": [
+        "PERFORMED",
+        "NOT_REQUESTED_GIT_SUFFICIENT"
+      ],
+      "description": "Explicitly distinguishes index/context evidence actually queried from the fast committed-Git-only navigation path. The fast path makes no claim about missing relationships."
     }
   },
   "$defs": {

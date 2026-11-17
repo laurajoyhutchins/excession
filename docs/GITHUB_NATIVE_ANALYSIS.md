@@ -113,6 +113,7 @@ same source and tool revision:
   "task": "Locate CommonJS require cache and circular dependency tests",
   "limit": 24,
   "enrich": true,
+  "resume_run_id": 123456789,
   "budgets": {
     "refresh_segments": 8
   }

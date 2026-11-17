@@ -17,6 +17,7 @@
     "open_questions",
     "retrievals",
     "evidence_gaps",
+    "behavior_witnesses",
     "preservation_plans",
     "verification_receipts",
     "latest_refresh",
@@ -291,7 +292,8 @@
           "event_id",
           "claim_event_id",
           "obligation",
-          "state"
+          "state",
+          "witness_event_ids"
         ],
         "properties": {
           "event_id": {
@@ -309,6 +311,14 @@
           },
           "state": {
             "const": "OPEN"
+          },
+          "witness_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "uniqueItems": true
           }
         }
       }
@@ -345,6 +355,107 @@
             ]
           },
           "ready_to_merge": {
+            "const": false
+          }
+        }
+      }
+    },
+    "behavior_witnesses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "claim_event_id",
+          "source",
+          "first_line",
+          "last_line",
+          "source_text",
+          "source_text_sha256",
+          "kind",
+          "interpretation",
+          "assessment",
+          "runtime_verified"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "claim_event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "commit",
+              "tree",
+              "path",
+              "blob",
+              "mode"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "tree": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "blob": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "mode": {
+                "enum": [
+                  "100644",
+                  "100755"
+                ]
+              }
+            }
+          },
+          "first_line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "last_line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source_text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "source_text_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "enum": [
+              "CONTROL_CONDITION",
+              "DATA_TRANSFER",
+              "STATE_MUTATION"
+            ]
+          },
+          "interpretation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "assessment": {
+            "const": "SOURCE_TEXT_VERIFIED_INTERPRETATION_UNVERIFIED"
+          },
+          "runtime_verified": {
             "const": false
           }
         }

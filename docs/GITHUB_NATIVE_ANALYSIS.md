@@ -77,6 +77,51 @@ build script, or shell fragment from the requested checkout is executed.
 The analysis worker itself is compiled from the trusted Excession workflow
 checkout at the Actions revision.
 
+## Continuation of pinned source indexing across GitHub workers
+
+The owner may set `"enrich": true` on a `locate` request to request the
+FTS5/index and optional source-context path even when the read-only Git grep
+already supplies enough lexical candidates. This is deliberately opt-in:
+ordinary Git-sufficient requests need not build the whole index.
+
+GitHub-native `locate` saves a **derived, disposable** SQLite checkpoint
+after a completed, source-validated run that actually produced an index. Its
+GitHub Actions cache identity commits to the exact target repository and
+commit, exact trusted Excession tool commit, native segment schema version,
+and effective source-processing budgets. A later sequential request with the
+same identities restores the latest compatible checkpoint and refreshes the
+next pending segments. Git object fingerprints and selected source windows
+are checked by the native locator after restoration; **cache restoration is
+not evidence of program semantics, source correctness or complete coverage**.
+
+For example, reissue this request *after the prior run completes*, with the
+same source and tool revision:
+
+```json
+{
+  "schema": "excession.github-analysis-request.v1",
+  "repository": "nodejs/node",
+  "revision": "1969a5e5818f2318c9ee053a562d146701dda4a0",
+  "operation": "locate",
+  "task": "Locate CommonJS require cache and circular dependency tests",
+  "limit": 24,
+  "enrich": true,
+  "budgets": {
+    "refresh_segments": 8
+  }
+}
+```
+
+Compare `index.ready_segments`, `index.pending_segments` and
+`cache.reused_blobs` in the next actual reports. Cached progress is
+**best effort**: a new tool commit, changed budget, expired/evicted cache,
+different filesystem layout, or concurrent requests can reset or fork the
+available checkpoint. A partial result always says `PARTIAL`; never
+treat a prior cache as authority or assume that retries increase coverage.
+For operations where Git grep suffices without enrichment, `index: null`
+and `cache: null` are valid *only* with
+`enrichment: NOT_REQUESTED_GIT_SUFFICIENT`.
+
 ## Configurable indexing budgets for locate requests
 
 An owner-authored `locate` request may supply an optional `budgets` object.

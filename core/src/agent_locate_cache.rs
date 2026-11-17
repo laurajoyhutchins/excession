@@ -1342,6 +1342,11 @@ mod tests {
             git::blob(&root, "HEAD", "src/huge.rs").unwrap(),
         );
         assert!(!complete.truncated);
+        let position = source.find("fn needle").unwrap() as u64;
+        let oid = &complete.hits[0].entry.oid;
+        assert!(verify_source_window(&root, oid, position, 1001, "fn needle").is_ok());
+        assert!(verify_source_window(&root, oid, position, 1000, "fn needle").is_err());
+        assert!(verify_source_window(&root, oid, position, 1001, "fn forged").is_err());
 
         // A tampered chunk must never be returned as an authenticated source.
         let db = Connection::open(&complete.cache_path).unwrap();

@@ -166,6 +166,20 @@ class RequestTests(unittest.TestCase):
                             {"schema": module.SCHEMAS["verify"], "base_commit": BASE,
                              "candidate_commit": SHA, "candidate_tree": BASE}, BASE)
 
+    def test_nodejs_core_public_analysis_target(self):
+        # An unfamiliar, large public repository must be admitted explicitly.
+        # This tests authorization only; it does not assert indexing completeness.
+        targets = module.load_targets(ROOT / "config/github-analysis-targets.json")
+        self.assertIn("nodejs/node", targets)
+        value = request(
+            repository="nodejs/node",
+            task="Trace CommonJS require caching, cycles, and their tests",
+        )
+        validated = module.validate(value, targets)
+        self.assertEqual(validated["repository"], "nodejs/node")
+        with self.assertRaises(module.Refusal):
+            module.validate(request(repository="unknown/project"), targets)
+
     def test_allowlist_validation(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "targets.json"

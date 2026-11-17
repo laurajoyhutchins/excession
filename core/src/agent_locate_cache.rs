@@ -717,6 +717,53 @@ fn verify_source_window(
     Ok(())
 }
 
+/// Include every cached FTS document's deterministic source ancestry in a
+/// page snapshot. BM25 corpus statistics include staged/inactive chunks even
+/// when the query filters out their paths, so active segment metadata alone is
+/// insufficient to prove that ranking is unchanged.
+fn append_corpus_identity(tx: &Transaction<'_>, identity: &mut Vec<u8>) -> Result<()> {
+    let mut stmt = tx
+        .prepare(
+            "SELECT f.path,f.blob,f.mode,f.status,f.chunk_bytes,COUNT(c.id)
+             FROM locator_files f
+             LEFT JOIN locator_chunks c ON c.file_id=f.id
+             GROUP BY f.id ORDER BY f.path",
+        )
+        .map_err(|e| sql_error("prepare source corpus identity", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })
+        .map_err(|e| sql_error("read source corpus identity", e))?;
+    let mut counted = 0usize;
+    for row in rows {
+        let (path, blob, mode, status, chunk_bytes, chunks) =
+            row.map_err(|e| sql_error("source corpus identity row", e))?;
+        for text in [&path, &blob, &mode, &status] {
+            identity.extend_from_slice(text.as_bytes());
+            identity.push(0);
+        }
+        identity.extend_from_slice(&nonnegative(chunk_bytes)?.to_le_bytes());
+        let n = nonnegative(chunks)?;
+        identity.extend_from_slice(&n.to_le_bytes());
+        counted = counted.checked_add(n).ok_or("source corpus chunk count overflow")?;
+    }
+    let fts_chunks: i64 = tx
+        .query_row("SELECT COUNT(*) FROM source_search", [], |row| row.get(0))
+        .map_err(|e| sql_error("count FTS corpus rows", e))?;
+    if counted != nonnegative(fts_chunks)? {
+        return refuse("source chunk catalog and FTS corpus disagree");
+    }
+    Ok(())
+}
+
 /// Refresh up to refresh_budget changed logical segments. Query results
 /// always exclude any segment not matching the requested Git tree inventory.
 /// A cold repository may need repeated calls or --index-segments 256.
@@ -939,6 +986,7 @@ pub(crate) fn search_with_page(
             );
         }
     }
+    append_corpus_identity(&tx, &mut identity)?;
     let snapshot_id = crate::digest::sha256(&identity);
     let page_offset = if let Some(cursor) = after {
         let mut parts = cursor.split('.');

@@ -721,6 +721,25 @@ pub fn locate_with_limits(
     db: Option<&str>,
     budget: LocateBudget,
 ) -> Result<Value> {
+    locate_with_mode(repo, rev, task, limit, roots, db, budget, true)
+}
+
+/// Default CLI discovery is source-first: query the pinned tree and only
+/// create FTS/relationship evidence when the Git results cannot fill the
+/// request, or when the caller explicitly asks for enrichment.
+///
+/// The existing locate_with_limits API remains fully enriched for callers
+/// that depend on the native context and index receipts.
+pub fn locate_with_mode(
+    repo: &Path,
+    rev: &str,
+    task: &str,
+    limit: usize,
+    roots: Option<&str>,
+    db: Option<&str>,
+    budget: LocateBudget,
+    force_enrichment: bool,
+) -> Result<Value> {
     let limits = budget.index.validate()?;
     let index_segments = budget.index_segments;
     if !(1..=64).contains(&limit) {
@@ -734,15 +753,6 @@ pub fn locate_with_limits(
         .filter(|entry| entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755"))
         .map(|entry| (entry.path.clone(), entry.clone()))
         .collect::<BTreeMap<_, _>>();
-    let index = agent_locate_cache::search_with_limits(
-        &discovered,
-        entries,
-        limit,
-        &match_expression(&words),
-        index_segments,
-        source_path,
-        limits,
-    )?;
     // Git is authoritative for *text presence* in this committed tree. It
     // can find real test files that have no installed language indexer.
     // FTS remains a useful, independently ranked fallback, not the product
@@ -797,7 +807,30 @@ pub fn locate_with_limits(
         }
         reader.finish()?;
     }
-    for hit in &index.hits {
+    // A full, readable and nontruncated committed-tree result already
+    // supplies as many authenticated source suggestions as the caller
+    // requested. Indexing would add cost but no candidate in this report.
+    // A separate explicit --enrich request retains the full graph workflow.
+    let needs_enrichment =
+        force_enrichment || candidates.len() < limit || committed.incomplete;
+    let index = if needs_enrichment {
+        Some(agent_locate_cache::search_with_limits(
+            &discovered,
+            entries,
+            limit,
+            &match_expression(&words),
+            index_segments,
+            source_path,
+            limits,
+        )?)
+    } else {
+        None
+    };
+    let indexed_hits = index
+        .as_ref()
+        .map(|found| found.hits.as_slice())
+        .unwrap_or(&[]);
+    for hit in indexed_hits {
         if candidates.len() == limit {
             break;
         }
@@ -816,10 +849,10 @@ pub fn locate_with_limits(
             ("semantic_correctness", Value::string("UNVERIFIED")),
         ]));
     }
-    let skipped = index.skipped_files;
-    let truncated = index.truncated;
-    let bytes = index.indexed_bytes;
-    let indexed_files = index.indexed_files;
+    let skipped = index.as_ref().map_or(0, |found| found.skipped_files);
+    let truncated = index.as_ref().is_some_and(|found| found.truncated);
+    let bytes = index.as_ref().map_or(0, |found| found.indexed_bytes);
+    let indexed_files = index.as_ref().map_or(0, |found| found.indexed_files);
 
     let mut gaps = vec![
         gap("TASK_SEMANTICS_NOT_VERIFIED"),
@@ -839,8 +872,15 @@ pub fn locate_with_limits(
     if truncated {
         gaps.push(gap("INDEX_BUDGET_EXHAUSTED"));
     }
-    if index.pending_segments > 0 {
+    if index
+        .as_ref()
+        .is_some_and(|found| found.pending_segments > 0)
+    {
         gaps.push(gap("SEGMENT_INDEX_INCOMPLETE"));
+    }
+    if index.is_none() {
+        gaps.push(gap("FTS_NOT_QUERIED_GIT_RESULTS_SUFFICIENT"));
+        gaps.push(gap("RELATIONSHIP_CONTEXT_NOT_QUERIED"));
     }
     if candidates.is_empty() {
         gaps.push(gap("NO_LEXICAL_MATCH_DOES_NOT_PROVE_ABSENCE"));
@@ -863,7 +903,7 @@ pub fn locate_with_limits(
     if selected_paths.len() > MAX_CONTEXT_FOCUS {
         gaps.push(gap("CONTEXT_FOCUS_TRUNCATED_TO_16"));
     }
-    let context = if context_paths.is_empty() {
+    let context = if index.is_none() || context_paths.is_empty() {
         Value::Null
     } else {
         agent::context(
@@ -901,7 +941,19 @@ pub fn locate_with_limits(
         ("task", Value::string(task)),
         (
             "retrieval",
-            Value::string("COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"),
+            Value::string(if index.is_none() {
+                "COMMITTED_GIT_GREP"
+            } else {
+                "COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"
+            }),
+        ),
+        (
+            "enrichment",
+            Value::string(if index.is_some() {
+                "PERFORMED"
+            } else {
+                "NOT_REQUESTED_GIT_SUFFICIENT"
+            }),
         ),
         (
             "git_search",
@@ -928,37 +980,27 @@ pub fn locate_with_limits(
         ("indexed_bytes", Value::number(bytes)),
         (
             "index",
-            obj(&[
-                ("segmentation", Value::string("PATH_SHA256_PREFIX_BYTE")),
-                (
-                    "total_source_files",
-                    Value::number(index.total_source_files),
-                ),
-                (
-                    "populated_segments",
-                    Value::number(index.populated_segments),
-                ),
-                ("ready_segments", Value::number(index.ready_segments)),
-                ("pending_segments", Value::number(index.pending_segments)),
-                (
-                    "complete",
-                    Value::Bool(index.pending_segments == 0 && skipped == 0 && !truncated),
-                ),
-                (
-                    "limits",
-                    obj(&[
-                        (
-                            "max_files_per_segment",
-                            Value::number(limits.max_files_per_segment),
-                        ),
-                        ("max_file_bytes", Value::number(limits.max_file_bytes)),
-                        (
-                            "max_bytes_per_segment",
-                            Value::number(limits.max_bytes_per_segment),
-                        ),
-                    ]),
-                ),
-            ]),
+            index.as_ref().map_or(Value::Null, |found| {
+                obj(&[
+                    ("segmentation", Value::string("PATH_SHA256_PREFIX_BYTE")),
+                    ("total_source_files", Value::number(found.total_source_files)),
+                    ("populated_segments", Value::number(found.populated_segments)),
+                    ("ready_segments", Value::number(found.ready_segments)),
+                    ("pending_segments", Value::number(found.pending_segments)),
+                    (
+                        "complete",
+                        Value::Bool(found.pending_segments == 0 && skipped == 0 && !truncated),
+                    ),
+                    (
+                        "limits",
+                        obj(&[
+                            ("max_files_per_segment", Value::number(limits.max_files_per_segment)),
+                            ("max_file_bytes", Value::number(limits.max_file_bytes)),
+                            ("max_bytes_per_segment", Value::number(limits.max_bytes_per_segment)),
+                        ]),
+                    ),
+                ])
+            }),
         ),
         ("context", context),
         (
@@ -977,20 +1019,17 @@ pub fn locate_with_limits(
     output
         .entries_mut()?
         .insert("report_id".into(), Value::string(report_id));
-    output.entries_mut()?.insert(
-        "cache".into(),
+    let cache = index.as_ref().map_or(Value::Null, |found| {
         obj(&[
             ("kind", Value::string("PERSISTENT_SQLITE_FTS5")),
-            ("path", Value::string(index.cache_path.to_string_lossy())),
-            ("reused_blobs", Value::number(index.reused_blobs)),
-            ("read_blobs", Value::number(index.read_blobs)),
-            (
-                "refreshed_segments",
-                Value::number(index.refreshed_segments),
-            ),
+            ("path", Value::string(found.cache_path.to_string_lossy())),
+            ("reused_blobs", Value::number(found.reused_blobs)),
+            ("read_blobs", Value::number(found.read_blobs)),
+            ("refreshed_segments", Value::number(found.refreshed_segments)),
             ("refresh_budget_segments", Value::number(index_segments)),
-        ]),
-    );
+        ])
+    });
+    output.entries_mut()?.insert("cache".into(), cache);
     Ok(output)
 }
 

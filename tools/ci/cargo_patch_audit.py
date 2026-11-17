@@ -73,7 +73,11 @@ def patch_changes(old_bytes: bytes, new_bytes: bytes) -> list[dict]:
                 k: v for k, v in after.items() if k not in ("version", "checksum")
             }:
                 raise common.Refused(f"package dependency edges or metadata changed: {key}")
-            if not before.get("checksum") or not after.get("checksum") or before["checksum"] == after["checksum"]:
+            if not all(isinstance(package.get("checksum"), str)
+                       and re.fullmatch(r"[0-9a-f]{64}", package["checksum"])
+                       for package in (before, after)):
+                raise common.Refused(f"registry packages need explicit SHA-256 digests: {key}")
+            if before["checksum"] == after["checksum"]:
                 raise common.Refused(f"changed package requires a different registry checksum: {key}")
             updated.append({"name": key[0], "source": key[1],
                             "from": before["version"], "to": after["version"]})

@@ -84,15 +84,22 @@ FTS5/index and optional source-context path even when the read-only Git grep
 already supplies enough lexical candidates. This is deliberately opt-in:
 ordinary Git-sufficient requests need not build the whole index.
 
-GitHub-native `locate` saves a **derived, disposable** SQLite checkpoint
-after a completed, source-validated run that actually produced an index. Its
-GitHub Actions cache identity commits to the exact target repository and
-commit, exact trusted Excession tool commit, native segment schema version,
-and effective source-processing budgets. A later sequential request with the
-same identities restores the latest compatible checkpoint and refreshes the
-next pending segments. Git object fingerprints and selected source windows
-are checked by the native locator after restoration; **cache restoration is
-not evidence of program semantics, source correctness or complete coverage**.
+Issue-triggered GitHub workers cannot write to GitHub Actions' shared caches:
+GitHub intentionally treats this event as low-trust. Excession instead stores
+a **derived, disposable SQLite checkpoint as an immutable workflow artifact**
+after a successful, source-validated run. Its manifest records the exact target
+repository/commit/tree, trusted tool commit, native segment schema version,
+effective work budgets, report digest and SQLite file digest.
+
+For the next sequential request, explicitly set `"resume_run_id"` to the
+successful preceding **analysis workflow run ID**, and keep `"enrich": true`.
+The workflow uses read-only `actions: read` permission to download the
+named artifact. Before copying the SQLite snapshot, it checks the prior
+workflow's success, owner/issue provenance and exact tool SHA, then validates
+the manifest, budgets, length, SHA-256 and SQLite integrity. The Rust native
+locator **independently checks Git source and partition fingerprints** before
+using restored evidence. An unrelated or expired artifact refuses rather
+than silently starting from zero.
 
 For example, reissue this request *after the prior run completes*, with the
 same source and tool revision:

@@ -639,8 +639,16 @@ pub(super) fn command() -> Command {
             leaf(
                 "explore",
                 &["repo", "db", "id", "expected-revision"],
-                &["limit", "index-segments", "roots", "evidence-db",
-                  "budget-file", "max-file-bytes", "max-segment-bytes", "max-segment-files"],
+                &[
+                    "limit",
+                    "index-segments",
+                    "roots",
+                    "evidence-db",
+                    "budget-file",
+                    "max-file-bytes",
+                    "max-segment-bytes",
+                    "max-segment-files",
+                ],
             )
             .about("Persist Git-pinned candidate source and an incomplete reading plan"),
             leaf(

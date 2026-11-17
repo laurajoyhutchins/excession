@@ -483,8 +483,10 @@ fn clang_command(opt: &Options) -> Result<Response> {
 /// Use one set of source-index processing limits for discovery and persisted
 /// investigations. They are budgets, not evidence of repository completeness.
 fn locate_budget(opt: &Options) -> Result<agent_locate::LocateBudget> {
-    let index_segments = opt.get_or("index-segments", "8")
-        .parse::<usize>().map_err(|_| "--index-segments must be an integer from 1 to 256")?;
+    let index_segments = opt
+        .get_or("index-segments", "8")
+        .parse::<usize>()
+        .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
     let defaults = if let Some(path) = opt.0.get("budget-file") {
         let content = std::fs::read_to_string(path)
             .map_err(|err| format!("--budget-file could not be read: {err}"))?;
@@ -495,9 +497,8 @@ fn locate_budget(opt: &Options) -> Result<agent_locate::LocateBudget> {
     };
     let parse_budget = |name: &str, default: usize| -> Result<usize> {
         opt.0.get(name).map_or(Ok(default), |raw| {
-            raw.parse::<usize>().map_err(|_| {
-                format!("--{name} must be a positive integer in bytes or files")
-            })
+            raw.parse::<usize>()
+                .map_err(|_| format!("--{name} must be a positive integer in bytes or files"))
         })
     };
     let limits = agent_locate::IndexLimits {
@@ -880,7 +881,8 @@ fn execute(args: &[String]) -> Result<Response> {
                     )?))
                 }
                 "explore" => {
-                    let limit = opt.get_or("limit", "12")
+                    let limit = opt
+                        .get_or("limit", "12")
                         .parse::<usize>()
                         .map_err(|_| "--limit must be an integer from 1 to 64".to_owned())?;
                     Ok(json(investigation_workflow::explore(

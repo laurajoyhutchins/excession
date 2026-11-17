@@ -64,6 +64,21 @@ jobs:
             --event "$GITHUB_EVENT_PATH" \
             --actor-id "$REQUEST_ACTOR_ID" \
             --out "$RUNNER_TEMP/excession-request.json"
+      - name: Derive an exact source/tool/budget index cache identity
+        id: cache-identity
+        run: |
+          python3 tools/github_analysis.py cache-identity \
+            --request "$RUNNER_TEMP/excession-request.json" \
+            --out "$GITHUB_OUTPUT"
+      - name: Restore verified-locator progress from earlier owner request
+        id: restore-locate
+        if: steps.cache-identity.outputs.prefix != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/excession-index-cache
+          key: excession-locate-v1-${{ steps.cache-identity.outputs.prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            excession-locate-v1-${{ steps.cache-identity.outputs.prefix }}-
       - name: Set up pinned Node for the native parser
         uses: actions/setup-node@v4
         with:
@@ -75,11 +90,45 @@ jobs:
       - name: Prepare the actual Rust CLI and locked TypeScript parser
         run: bash tools/ci/prepare-excession.sh . release
       - name: Run pinned, read-only source analysis
+        env:
+          EXCESSION_CACHE_DIR: ${{ runner.temp }}/excession-index-cache
         run: |
           python3 tools/github_analysis.py execute \
             --request "$RUNNER_TEMP/excession-request.json" \
             --binary "$GITHUB_WORKSPACE/core/target/release/excession" \
             --out "$RUNNER_TEMP/excession-evidence"
+      - name: Check whether the completed report has a local verified source checkpoint
+        id: locate-checkpoint
+        if: success() && steps.cache-identity.outputs.prefix != ''
+        env:
+          EXCESSION_CACHE_DIR: ${{ runner.temp }}/excession-index-cache
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "excession-evidence"
+          receipt = json.loads((root / "receipt.json").read_text())
+          report = json.loads((root / "report.json").read_text())
+          cache = report.get("cache")
+          exists = (
+              receipt.get("status") == "COMPLETED"
+              and isinstance(cache, dict)
+              and isinstance(report.get("index"), dict)
+              and isinstance(cache.get("path"), str)
+          )
+          if exists:
+              location = Path(cache["path"]).resolve(strict=True)
+              directory = Path(os.environ["EXCESSION_CACHE_DIR"]).resolve(strict=True)
+              exists = location.is_file() and location.is_relative_to(directory)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("save=" + ("true" if exists else "false") + "\n")
+          PY
+      - name: Save source-verified partial index for later owner requests
+        if: success() && steps.locate-checkpoint.outputs.save == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/excession-index-cache
+          key: excession-locate-v1-${{ steps.cache-identity.outputs.prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Report status and explicit unknowns
         if: always()
         shell: bash

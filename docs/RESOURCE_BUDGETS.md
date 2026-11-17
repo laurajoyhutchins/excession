@@ -64,6 +64,23 @@ The policy file must be explicitly selected by the caller. Excession does not
 trust a policy discovered in an untrusted target repository; unknown JSON
 properties, non-positive values and inconsistent budgets are refused.
 
+## Remote GitHub-native continuation
+
+A successful, index-producing owner-originated `locate` job publishes a
+derived SQLite index to GitHub Actions cache. A later **sequential** request
+at the same source and Excession tool commit and identical indexing budgets
+can restore that data and continue pending partitions; use `"enrich": true`
+to require indexing when Git-only retrieval would otherwise suffice.
+The indexer independently checks Git object and partition fingerprints.
+The cache is never a proof of semantic completeness and may be evicted or
+fork under parallel calls. Each report remains explicitly partial when any
+source partition is pending.
+
+This is reusable **best-effort continuation**, not durable artifact retention
+with a guaranteed lease or cross-tool-version migration. CI and native process
+timeouts are still enforced; missing checkpoints cannot be reported as
+complete.
+
 ## Remote GitHub-native requests
 
 The owner-originated `Excession analysis request` issue body can include

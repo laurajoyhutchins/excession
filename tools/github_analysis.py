@@ -98,7 +98,7 @@ def validate(value, targets):
     if not isinstance(value, dict):
         raise Refusal("request must be an object")
     kind = value.get("operation")
-    permitted = {"schema", "repository", "revision", "operation", "task", "focus", "base", "limit", "budgets"}
+    permitted = {"schema", "repository", "revision", "operation", "task", "focus", "base", "limit", "budgets", "enrich"}
     if set(value) - permitted or kind not in SCHEMAS:
         raise Refusal("unknown request field or operation")
     if value.get("schema") != REQUEST_SCHEMA:
@@ -111,12 +111,14 @@ def validate(value, targets):
     if type(limit) is not int or not 1 <= limit <= 64:
         raise Refusal("limit outside 1..64")
     if kind == "locate":
-        if set(value) - {"schema", "repository", "revision", "operation", "task", "limit", "budgets"}:
+        if set(value) - {"schema", "repository", "revision", "operation", "task", "limit", "budgets", "enrich"}:
             raise Refusal("unexpected locate field")
         if not isinstance(value.get("task"), str) or not 3 <= len(value["task"]) <= 4000 or "\x00" in value["task"]:
             raise Refusal("locate task missing or invalid")
         if "budgets" in value:
             validate_budgets(value["budgets"])
+        if "enrich" in value and type(value["enrich"]) is not bool:
+            raise Refusal("locate enrich must be a boolean")
     elif kind == "context":
         if set(value) - {"schema", "repository", "revision", "operation", "focus", "task", "limit"}:
             raise Refusal("unexpected context field")
@@ -131,6 +133,28 @@ def validate(value, targets):
         if not isinstance(value.get("base"), str) or not SHA.fullmatch(value["base"]):
             raise Refusal("verification base must be an exact commit")
     return {**value, "limit": limit}
+
+
+def cache_identity(request, tool_commit):
+    """Deterministic source/tool/budget identity for untrusted *advisory* index caches.
+
+    Deliberately exclude the natural-language question. All index rows are
+    still revalidated against the current Git tree by the native locator.
+    """
+    if request["operation"] != "locate":
+        return None
+    if not SHA.fullmatch(tool_commit):
+        raise Refusal("invalid trusted tool commit for cache identity")
+    budgets = {**LOCATE_INDEX_DEFAULTS, **request.get("budgets", {})}
+    identity = {
+        "cache_protocol": "excession.github-locate-cache.v1",
+        "producer_version": "agent-locate-segments-v3",
+        "tool_commit": tool_commit,
+        "repository": request["repository"],
+        "revision": request["revision"],
+        "budgets": budgets,
+    }
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def from_event(event, actor_id, targets):
@@ -212,6 +236,8 @@ def command(request, source, binary):
                  "--max-file-bytes", str(budgets["max_file_bytes"]),
                  "--max-segment-bytes", str(budgets["max_segment_bytes"]),
                  "--max-segment-files", str(budgets["max_segment_files"]), "--json"]
+        if request.get("enrich", False):
+            argv.append("--enrich")
     elif kind == "context":
         argv += ["--rev", request["revision"], "--focus", ",".join(request["focus"]),
                  "--limit", str(request["limit"])]
@@ -234,8 +260,24 @@ def check_report(request, report, tree):
     elif report.get("source_commit") != request["revision"] or report.get("source_tree") != tree:
         raise Refusal("source identities disagree with Git")
     if request["operation"] == "locate":
+        # Git-only discovery legitimately omits FTS evidence. Accept *only*
+        # the native explicit fast-path statement, never a missing index
+        # masquerading as completed enrichment.
+        index = report.get("index")
+        cache = report.get("cache")
+        if index is None:
+            if (request.get("enrich", False)
+                    or report.get("enrichment") != "NOT_REQUESTED_GIT_SUFFICIENT"
+                    or report.get("retrieval") != "COMMITTED_GIT_GREP"
+                    or cache is not None):
+                raise Refusal("native locate report omitted required index evidence")
+            return
+        if (not isinstance(index, dict)
+                or not isinstance(cache, dict)
+                or report.get("enrichment") != "PERFORMED"):
+            raise Refusal("native locate index/cache evidence invalid")
         expected = {**LOCATE_INDEX_DEFAULTS, **request.get("budgets", {})}
-        observed = report.get("index", {}).get("limits", {})
+        observed = index.get("limits", {})
         for key, field in (
             ("max_file_bytes", "max_file_bytes"),
             ("max_segment_bytes", "max_bytes_per_segment"),
@@ -243,7 +285,7 @@ def check_report(request, report, tree):
         ):
             if observed.get(field) != expected[key]:
                 raise Refusal("native report indexing budgets differ from request")
-        if report.get("cache", {}).get("refresh_budget_segments") != expected["refresh_segments"]:
+        if cache.get("refresh_budget_segments") != expected["refresh_segments"]:
             raise Refusal("native report refresh budget differs from request")
 
 
@@ -306,7 +348,7 @@ def execute(request, binary, output, source_checkout=None, tool_checkout=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("validate", "execute"))
+    parser.add_argument("mode", choices=("validate", "execute", "cache-identity"))
     parser.add_argument("--event", type=Path)
     parser.add_argument("--actor-id", type=int, default=0)
     parser.add_argument("--targets", type=Path, default=Path("config/github-analysis-targets.json"))
@@ -337,6 +379,14 @@ def main():
                                  args.actor_id, targets)
             args.out.parent.mkdir(parents=True, exist_ok=True)
             args.out.write_text(json.dumps(request, sort_keys=True) + "\n")
+        elif args.mode == "cache-identity":
+            if args.request is None:
+                raise Refusal("cache identity request missing")
+            request = validate(json.loads(args.request.read_text(encoding="utf-8")), targets)
+            identity = cache_identity(request, git("rev-parse", "HEAD"))
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            with args.out.open("a", encoding="utf-8") as output:
+                output.write("prefix=" + (identity or "") + "\n")
         else:
             if args.request is None or args.binary is None:
                 raise Refusal("request and binary required")

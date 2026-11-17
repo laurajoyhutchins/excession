@@ -1,3 +1,9 @@
+> This page explains the **implemented evidence guarantees**.
+> The planned claim/investigation lineage is specified separately in
+> [evidence lifecycle](EVIDENCE_LIFECYCLE.md) and
+> [investigations](INVESTIGATIONS.md). No new verification state should
+> be inferred from a static source relationship.
+
 # Evidence and limits
 
 Excession is a way to inspect evidence about source code. Its reports are

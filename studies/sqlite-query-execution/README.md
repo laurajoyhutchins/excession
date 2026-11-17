@@ -42,6 +42,27 @@ Excession's existing owner-authored GitHub-native workflow was enabled for this 
 
 Inspect the **original** GitHub artifacts `report.json` and `receipt.json`; confirm `COMPLETED`, exact commit and tree, and Excession's declared coverage before drawing conclusions. No Excession output is represented by this baseline.
 
+## Measured Excession results (original pilot)
+
+Both GitHub-native runs completed successfully, and the artifact `receipt.json` files declare the exact Git commit/tree and `COMPLETED`. The `report.json` SHA-256 digests were independently recomputed and matched the receipts.
+
+- **Locate:** [run 44009760787](https://github.com/laurajoyhutchins/excession/actions/runs/44009760787), report SHA-256 `63dce81e1df6b89a2e9629110166c6aa761b21ed204204c5dae4d558ffb65513`. Excession indexed **481 of 494** eligible source files (12,102,161 bytes) and skipped **13**. It returned 24 candidates and found **4 of the 9** independently selected reference files in the first 24: `prepare.c` (#1), `vdbeaux.c` (#3), `build.c` (#7), and `vdbeapi.c` (#16). It additionally located the important `wherecode.c` (#12). The index reported `complete=false` even with zero pending segments because of skipped files; candidate excerpts were lexical heuristics.
+- **Context:** [run 44009846141](https://github.com/laurajoyhutchins/excession/actions/runs/44009846141), report SHA-256 `4de81fdae46cf6a54e0c3e3a44bcda26e3a840e800e5b62276c2ab3900cb8eb8`. All 9 requested source paths were authenticated to Git, but the report had **zero** source relationships, zero compiler reference observations, and zero configured observations. It explicitly reports **359 C source files without a supported static-module producer**, plus additional unrelated language gaps. Its 60 test suggestions are path-name heuristics, not validated test choices.
+
+The critical retrieval failure has a concrete mechanical cause. The original locator capped a single source at 256 KiB, excluding:
+
+| Essential source | Bytes | Stage |
+| --- | ---: | --- |
+| `src/select.c` | 347,619 | SELECT compilation |
+| `src/where.c` | 306,736 | Plan selection and loop generation |
+| `src/vdbe.c` | 328,620 | VM execution |
+
+The source `src/wherecode.c` (125,043 bytes) contains `sqlite3WhereCodeOneLoopStart` ([line 1649](https://github.com/sqlite/sqlite/blob/3d0c703e3d18b05099d90163189bca51e6820526/src/wherecode.c#L1649)) and is therefore part of the independent execution-path baseline even though it was outside the original nine-file focus list.
+
+**Conclusion:** source identity and reproducibility succeeded. Unconstrained architectural discovery did not: the first run missed essential implementation files and the second supplied no resolved C-source graph. This is a negative, reproducible result, not evidence that SQLite lacks those relationships.
+
+A targeted improvement is tracked in [PR #277](https://github.com/laurajoyhutchins/excession/pull/277): enlarge bounded lexical indexing and invalidate stale exclusion decisions as part of segment identity. Even after that correction, **native C symbol and configured-build observations remain an independent obligation**. Do not equate improved keyword retrieval with a verified execution path.
+
 ## Evaluation
 
 For the `locate` report, measure where the nine reference paths rank, relevant source windows returned, misses, false leads, and index completeness.

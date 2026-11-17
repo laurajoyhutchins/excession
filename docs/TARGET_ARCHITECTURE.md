@@ -1,4 +1,17 @@
-# Excession target architecture
+> **Historical implementation plan, not canonical product architecture.**
+> This page records an earlier architecture-branch consolidation and
+> history-reorganization effort. The current product decision is
+> [investigation-first Excession](PRODUCT.md), with
+> [canonical architecture](ARCHITECTURE.md),
+> [evidence lifecycle](EVIDENCE_LIFECYCLE.md), and
+> [ADR 0001](DECISIONS/0001-investigation-first.md).
+> Any "target" or "implemented" language below is scoped to that historical
+> branch and must be independently checked at today's revision.
+>
+> Retained below for provenance. It does **not** authorize a new
+> graph-first roadmap or repository history rewrite.
+
+# Historical module-ownership and history-reorganization plan
 
 Status: executable target branch in progress. The source, evidence, and action module ownership moves below are implemented, while broader root-module consolidation and historical rewriting remain unfinished.
 

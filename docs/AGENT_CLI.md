@@ -1,3 +1,10 @@
+> **Implemented building blocks for investigations.** The
+> [investigation contract](INVESTIGATIONS.md) describes the target
+> product artifact; these current commands return bounded source
+> candidates, reading plans, context, and revision evidence, not an
+> automatically generated behavioral explanation. See the
+> [practical workflow](CODEBASE_UNDERSTANDING.md).
+
 # Agent-facing CLI v1
 
 ## Locate source from a task (Git-pinned, heuristic)

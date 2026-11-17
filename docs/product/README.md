@@ -1,3 +1,12 @@
+> **Historical product-contract plans.** Canonical product
+> semantics now live in [product](../PRODUCT.md),
+> [investigations](../INVESTIGATIONS.md),
+> [transformations](../TRANSFORMATIONS.md) and
+> [verification](../VERIFICATION.md). The pages here document prior
+> design and scoped implementation work. Their names and schema drafts
+> must not be presented as current or planned primary UI without
+> checking the actual Rust CLI and accepted ADR.
+
 # Product contracts and executable acceptance
 
 > **Status:** These pages combine current contract notes with historical,

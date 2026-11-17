@@ -318,6 +318,46 @@ fn related_sources(
     Ok(neighbors)
 }
 
+/// One bounded, Git-backed source inspection list. This only reorganizes
+/// references already present in locate/context; it never infers dependencies.
+struct ReadingSteps {
+    seen: BTreeSet<String>,
+    items: Vec<Value>,
+    budget: usize,
+}
+
+impl ReadingSteps {
+    fn push(
+        &mut self,
+        item: &Value,
+        action: &str,
+        basis: &str,
+        why: &str,
+        collection: &str,
+        index: usize,
+    ) -> Result<()> {
+        if self.items.len() >= self.budget {
+            return Ok(());
+        }
+        let source = item.get("source")?;
+        let path = source.get("path")?.str()?;
+        if !self.seen.insert(path.to_owned()) {
+            return Ok(());
+        }
+        self.items.push(obj(&[
+            ("sequence", Value::number(self.items.len() + 1)),
+            ("action", Value::string(action)),
+            ("source", source.clone()),
+            ("basis", Value::string(basis)),
+            ("why_read", Value::string(why)),
+            ("reference_collection", Value::string(collection)),
+            ("reference_index", Value::number(index)),
+            ("behavior_verified", Value::Bool(false)),
+        ]));
+        Ok(())
+    }
+}
+
 /// Turn existing task search, source relationships, and test candidates into
 /// a short inspection sequence. It does not infer program behavior, synthesize
 /// missing relations, or ask an indexer to produce additional facts.
@@ -327,36 +367,11 @@ fn reading_plan(
     context: &Value,
     limit: usize,
 ) -> Result<Value> {
-    let mut seen = BTreeSet::new();
-    let mut steps = Vec::new();
     let budget = limit.min(12);
-    let mut add = |item: &Value,
-                   source_key: &str,
-                   action: &str,
-                   basis: &str,
-                   why: &str,
-                   reference_collection: &str,
-                   reference_index: usize|
-     -> Result<()> {
-        if steps.len() >= budget {
-            return Ok(());
-        }
-        let source = item.get(source_key)?;
-        let path = source.get("path")?.str()?;
-        if !seen.insert(path.to_owned()) {
-            return Ok(());
-        }
-        steps.push(obj(&[
-            ("sequence", Value::number(steps.len() + 1)),
-            ("action", Value::string(action)),
-            ("source", source.clone()),
-            ("basis", Value::string(basis)),
-            ("why_read", Value::string(why)),
-            ("reference_collection", Value::string(reference_collection)),
-            ("reference_index", Value::number(reference_index)),
-            ("behavior_verified", Value::Bool(false)),
-        ]));
-        Ok(())
+    let mut steps = ReadingSteps {
+        seen: BTreeSet::new(),
+        items: Vec::new(),
+        budget,
     };
 
     // Preserve room for a test-reading step when one is present, even under
@@ -372,9 +387,8 @@ fn reading_plan(
         .take(4.min(budget.saturating_sub(reserved_test)))
         .enumerate()
     {
-        add(
+        steps.push(
             candidate,
-            "source",
             "INSPECT_TASK_MATCH",
             "GIT_BLOB_LEXICAL_MATCH",
             "Read the matching source to determine inputs, outputs, state changes, and invariants.",
@@ -384,7 +398,7 @@ fn reading_plan(
     }
     // Show both sides of a potential behavior path. Observed references
     // remain producer observations; static imports remain candidates.
-    let relation_budget = 4.min(budget.saturating_sub(steps.len() + reserved_test));
+    let relation_budget = 4.min(budget.saturating_sub(steps.items.len() + reserved_test));
     for (i, neighbor) in related.iter().take(relation_budget).enumerate() {
         let assessment = neighbor.get("assessment")?.str()?;
         let direction = neighbor.get("direction")?.str()?;
@@ -406,9 +420,8 @@ fn reading_plan(
             "CANDIDATE" => "STATIC_RELATIONSHIP_CANDIDATE",
             _ => return refuse("reading plan received unsupported relationship assessment"),
         };
-        add(
+        steps.push(
             neighbor,
-            "source",
             action,
             basis,
             why,
@@ -424,9 +437,8 @@ fn reading_plan(
             .take(4)
             .enumerate()
         {
-            add(
+            steps.push(
                 candidate,
-                "source",
                 "INSPECT_RELATED_TEST",
                 "TEST_PATH_HEURISTIC",
                 "Read the assertions and fixtures to identify which behavior they actually cover.",
@@ -441,7 +453,7 @@ fn reading_plan(
             "goal",
             Value::string("SOURCE_GUIDED_CODEBASE_UNDERSTANDING"),
         ),
-        ("steps", Value::array(steps)),
+        ("steps", Value::array(steps.items)),
         (
             "interpretation",
             Value::string("ORDERED_INSPECTION_SUGGESTIONS_NOT_VERIFIED_BEHAVIOR"),

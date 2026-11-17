@@ -1,0 +1,132 @@
+name: Independent import dependency recall
+
+# Deep acceptance only for this oracle or manual investigation.
+# This intentionally does not run for every commit to Excession.
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/experiments/dependency_recall.py'
+      - 'benchmarks/experiments/ts_import_oracle.cjs'
+      - 'tests/test_dependency_recall.py'
+      - '.github/workflows/independent-dependency-recall.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: independent-dependency-recall-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  independent-imports:
+    name: Pinned Python and TypeScript import oracles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      MISE_ENABLE_TOOLS: rust,node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core -> target
+
+      - name: Restore independently pinned TypeScript compiler parser
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Unit-test independent import oracles and adversarial source identities
+        run: python3 -m unittest discover -s tests -p test_dependency_recall.py -v
+
+      - name: Build pinned Rust Excession with locked source dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tools/ci/prepare-excession.sh . release
+
+      - name: Install genuine upstream SCIP producers, not Excession projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$RUNNER_TEMP/scip-tools"
+          mkdir -p "$TOOLS"
+          npm install --prefix "$TOOLS" --ignore-scripts \
+            --no-audit --no-fund --no-save \
+            @sourcegraph/scip-python@0.6.6 \
+            @sourcegraph/scip-typescript@0.4.0
+          curl -fLsS --retry 3 \
+            https://github.com/scip-code/scip/releases/download/v0.10.0/scip-linux-amd64.tar.gz \
+            -o "$TOOLS/scip.tar.gz"
+          echo "eeb28ebbff443c01609fb1691809958f3f0c7a8651af689a5bc8560061cd8ab0  $TOOLS/scip.tar.gz" \
+            | sha256sum --check --status
+          tar xzf "$TOOLS/scip.tar.gz" -C "$TOOLS" scip
+          chmod +x "$TOOLS/scip"
+          "$TOOLS/scip" --version
+          sha256sum "$TOOLS/scip.tar.gz" "$TOOLS/scip" \
+            "$GITHUB_WORKSPACE/package-lock.json" \
+            > "$RUNNER_TEMP/oracle-tool-digests.txt"
+
+      - name: Score real pinned h11, Click, Requests and Axios sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/time -v -o "$RUNNER_TEMP/dependency-recall.time" \
+            python3 benchmarks/experiments/dependency_recall.py \
+              --bin "$GITHUB_WORKSPACE/core/target/release/excession" \
+              --scip "$RUNNER_TEMP/scip-tools/scip" \
+              --python-indexer "$RUNNER_TEMP/scip-tools/node_modules/.bin/scip-python" \
+              --typescript-indexer "$RUNNER_TEMP/scip-tools/node_modules/.bin/scip-typescript" \
+              --out "$RUNNER_TEMP/dependency-recall.json" \
+              --evidence-dir "$RUNNER_TEMP/independent-dependency-oracles"
+
+      - name: Verify supported-scope sample and show both outcomes
+        shell: bash
+        run: |
+          python3 - "$RUNNER_TEMP/dependency-recall.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r["schema"] == "excession.independent-import-discovery.v1"
+          assert r["repositories"] == 4, r
+          assert r["evaluated_focus_files"] == 12, r
+          assert r["languages"] == ["python", "typescript"], r
+          assert r["per_focus_import_opportunities"] > 0, r
+          print("old import recall:",r["old_static_import_pair_recall"])
+          print("new import recall:",r["new_static_import_pair_recall"])
+          print("independent source-oracle import opportunities:",r["per_focus_import_opportunities"])
+          print("Other SCIP cross-file references are outside the import-only gold scope.")
+          print("Negative results are retained; a gain is NOT a prerequisite for a valid measurement.")
+          PY
+
+      - name: Publish descriptive result into workflow summary
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/dependency-recall.json"; then
+            python3 - "$RUNNER_TEMP/dependency-recall.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          print("### Independent static import oracle")
+          print()
+          print("| Metric | Previous first-N | Current distinct-native-first |")
+          print("|---|---:|---:|")
+          print(f"| Import-pair recall (supported scope) | {x['old_static_import_pair_recall']:.1%} | {x['new_static_import_pair_recall']:.1%} |")
+          print(f"| Confirmed import pair opportunities | {x['old_import_confirmed']}/{x['per_focus_import_opportunities']} | {x['new_import_confirmed']}/{x['per_focus_import_opportunities']} |")
+          print()
+          print("Ground truth is independently parsed static imports only. Nonimport SCIP references are unclassified, not false positives.")
+          PY
+          fi
+
+      - name: Preserve original native producer and independent scorer receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: independent-dependency-recall-v1
+          path: |
+            ${{ runner.temp }}/dependency-recall.json
+            ${{ runner.temp }}/dependency-recall.time
+            ${{ runner.temp }}/oracle-tool-digests.txt
+            ${{ runner.temp }}/independent-dependency-oracles/
+          if-no-files-found: warn
+          retention-days: 14

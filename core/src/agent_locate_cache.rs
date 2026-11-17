@@ -1168,24 +1168,38 @@ mod tests {
         fs::write(
             root.join("src/planner.rs"),
             format!("{}needle planner\n", "long identifier \n".repeat(500)),
-        ).unwrap();
+        )
+        .unwrap();
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com",
-            "-c", "user.name=Test", "commit", "-qm", "indexed",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "indexed",
+            ],
+        );
         let query = |size| {
             let discovered = discovery::inspect(&root, "HEAD").unwrap();
             let entries = git::entries(&root, &discovered.commit).unwrap();
             search_with_limits(
-                &discovered, entries, 8, "\"needle\"", SEGMENT_COUNT,
+                &discovered,
+                entries,
+                8,
+                "\"needle\"",
+                SEGMENT_COUNT,
                 |path| path.ends_with(".rs"),
                 IndexLimits {
                     max_file_bytes: size,
                     max_bytes_per_segment: 65536,
                     max_files_per_segment: 16,
                 },
-            ).unwrap()
+            )
+            .unwrap()
         };
         let small = query(256);
         assert_eq!(small.indexed_files, 1);
@@ -1214,21 +1228,34 @@ mod tests {
         let source = format!("{} needle {} \n", "q".repeat(220), "z".repeat(2000));
         fs::write(root.join("src/minified.rs"), &source).unwrap();
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com",
-            "-c", "user.name=Test", "commit", "-qm", "minified",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "minified",
+            ],
+        );
         let discovered = discovery::inspect(&root, "HEAD").unwrap();
         let entries = git::entries(&root, &discovered.commit).unwrap();
         let found = search_with_limits(
-            &discovered, entries, 4, "\"needle\"", SEGMENT_COUNT,
+            &discovered,
+            entries,
+            4,
+            "\"needle\"",
+            SEGMENT_COUNT,
             |path| path.ends_with(".rs"),
             IndexLimits {
                 max_file_bytes: 256,
                 max_files_per_segment: 10,
                 max_bytes_per_segment: 4096,
             },
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(found.indexed_files, 1);
         assert_eq!(found.skipped_files, 0);
         assert_eq!(found.hits.len(), 1);

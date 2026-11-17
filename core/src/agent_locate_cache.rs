@@ -19,6 +19,45 @@ pub(crate) const MAX_FILES: usize = 6000;
 pub(crate) const MAX_FILE_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_TOTAL_BYTES: usize = 32 * 1024 * 1024;
 
+/// Caller-selected processing budgets. The defaults preserve existing behavior;
+/// changing a budget invalidates the corresponding Git-bound cache partition.
+/// These are *per index refresh* limits, not claims about repository coverage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndexLimits {
+    pub max_files_per_segment: usize,
+    pub max_file_bytes: usize,
+    pub max_bytes_per_segment: usize,
+}
+
+impl Default for IndexLimits {
+    fn default() -> Self {
+        Self {
+            max_files_per_segment: MAX_FILES,
+            max_file_bytes: MAX_FILE_BYTES,
+            max_bytes_per_segment: MAX_TOTAL_BYTES,
+        }
+    }
+}
+
+impl IndexLimits {
+    pub fn validate(self) -> Result<Self> {
+        if self.max_files_per_segment == 0 || self.max_file_bytes == 0
+            || self.max_bytes_per_segment == 0
+        {
+            return refuse("agent locate indexing budgets must be positive");
+        }
+        if self.max_file_bytes > self.max_bytes_per_segment {
+            return refuse("agent locate max-file-bytes must not exceed max-segment-bytes");
+        }
+        if [self.max_files_per_segment, self.max_file_bytes, self.max_bytes_per_segment]
+            .iter().any(|&n| i64::try_from(n).is_err())
+        {
+            return refuse("agent locate budget exceeds SQLite integer range");
+        }
+        Ok(self)
+    }
+}
+
 pub(crate) struct Hit {
     pub entry: git::Entry,
     pub body: String,
@@ -296,11 +335,11 @@ fn path_priority(entries: &[git::Entry], query: &str) -> usize {
         .sum()
 }
 
-fn fingerprint(entries: &[git::Entry]) -> String {
+fn fingerprint(entries: &[git::Entry], limits: IndexLimits) -> String {
     // Index eligibility is part of the cache identity. If size limits change,
     // unchanged Git trees must refresh previously skipped source blobs.
     let mut data = b"agent-locate-eligibility-v1\0".to_vec();
-    for limit in [MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES] {
+    for limit in [limits.max_files_per_segment, limits.max_file_bytes, limits.max_bytes_per_segment] {
         data.extend_from_slice(&(limit as u64).to_le_bytes());
     }
     for entry in entries {
@@ -325,6 +364,7 @@ fn update_segment(
     entries: &[git::Entry],
     expected: &str,
     state: &mut RefreshState<'_>,
+    limits: IndexLimits,
 ) -> Result<SegmentMeta> {
     let mut seen = BTreeSet::new();
     let mut files = 0usize;
@@ -333,7 +373,7 @@ fn update_segment(
     let mut truncated = false;
     for entry in entries {
         seen.insert(entry.path.as_str());
-        if files + skipped >= MAX_FILES || bytes >= MAX_TOTAL_BYTES {
+        if files + skipped >= limits.max_files_per_segment || bytes >= limits.max_bytes_per_segment {
             skipped += 1;
             truncated = true;
             if let Some(old) = previous(tx, &entry.path)? {
@@ -347,7 +387,7 @@ fn update_segment(
             && cached.mode == entry.mode
         {
             match cached.status.as_str() {
-                "OK" if cached.size <= MAX_TOTAL_BYTES - bytes => {
+                "OK" if cached.size <= limits.max_bytes_per_segment - bytes => {
                     files += 1;
                     bytes += cached.size;
                     state.reused_blobs += 1;
@@ -373,7 +413,7 @@ fn update_segment(
             .reader
             .as_mut()
             .ok_or("missing Git blob reader")?
-            .read_capped(&entry.oid, MAX_FILE_BYTES)
+            .read_capped(&entry.oid, limits.max_file_bytes)
         {
             Ok(data) => data,
             Err(err) if err == "Git source blob exceeds byte limit" => {
@@ -394,7 +434,7 @@ fn update_segment(
             insert_file(tx, segment, entry, None, "NON_UTF8")?;
             continue;
         }
-        if body.len() > MAX_TOTAL_BYTES - bytes {
+        if body.len() > limits.max_bytes_per_segment - bytes {
             skipped += 1;
             truncated = true;
             insert_file(tx, segment, entry, None, "BUDGET")?;
@@ -475,6 +515,19 @@ pub(crate) fn search(
     refresh_budget: usize,
     source_path: impl Fn(&str) -> bool,
 ) -> Result<Search> {
+    search_with_limits(discovered, entries, limit, expression, refresh_budget, source_path, IndexLimits::default())
+}
+
+pub(crate) fn search_with_limits(
+    discovered: &discovery::Discovery,
+    entries: Vec<git::Entry>,
+    limit: usize,
+    expression: &str,
+    refresh_budget: usize,
+    source_path: impl Fn(&str) -> bool,
+    limits: IndexLimits,
+) -> Result<Search> {
+    let limits = limits.validate()?;
     if !(1..=SEGMENT_COUNT).contains(&refresh_budget) {
         return refuse("agent locate --index-segments must be 1..=256");
     }
@@ -495,7 +548,7 @@ pub(crate) fn search(
     let populated_segments = groups.iter().filter(|x| !x.is_empty()).count();
     let fingerprints = groups
         .iter()
-        .map(|group| fingerprint(group))
+        .map(|group| fingerprint(group, limits))
         .collect::<Vec<_>>();
 
     let path = external_cache(discovered)?;
@@ -530,7 +583,7 @@ pub(crate) fn search(
     };
     let mut refreshed_segments = 0usize;
     for id in pending.iter().take(refresh_budget).copied() {
-        let updated = update_segment(&tx, id, &groups[id], &fingerprints[id], &mut state)?;
+        let updated = update_segment(&tx, id, &groups[id], &fingerprints[id], &mut state, limits)?;
         prior[id] = Some(updated);
         refreshed_segments += 1;
     }
@@ -738,6 +791,64 @@ mod tests {
 
         fs::remove_dir_all(found.cache_path.parent().unwrap()).unwrap();
         fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[test]
+    fn changed_budget_rechecks_large_blob_at_the_same_git_revision() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-configured-source-locate-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        fs::write(root.join("src/planner.rs"), format!(
+            "{}pub fn planner() {{ let needle = 42; }}\n",
+            "// source text\n".repeat(25_000)
+        )).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com",
+            "-c", "user.name=Test", "commit", "-qm", "large blob"
+        ]);
+        let query = |max_file_bytes| {
+            let discovered = discovery::inspect(&root, "HEAD").unwrap();
+            let entries = git::entries(&root, &discovered.commit).unwrap();
+            search_with_limits(
+                &discovered, entries, 8, "\"needle\"", SEGMENT_COUNT,
+                |p| p.ends_with(".rs"),
+                IndexLimits {
+                    max_file_bytes,
+                    max_files_per_segment: 6000,
+                    max_bytes_per_segment: 1024 * 1024,
+                },
+            ).unwrap()
+        };
+        let small = query(128 * 1024);
+        assert_eq!(small.indexed_files, 0);
+        assert_eq!(small.skipped_files, 1);
+        assert!(small.hits.is_empty());
+        let large = query(512 * 1024);
+        assert_eq!(large.indexed_files, 1);
+        assert_eq!(large.skipped_files, 0);
+        assert_eq!(large.hits[0].entry.path, "src/planner.rs");
+        assert_eq!(large.hits[0].entry.oid, git::blob(&root, "HEAD", "src/planner.rs").unwrap());
+        let smaller_again = query(128 * 1024);
+        assert_eq!(smaller_again.indexed_files, 0);
+        assert_eq!(smaller_again.skipped_files, 1);
+        fs::remove_dir_all(large.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_invalid_indexing_budgets() {
+        let base = IndexLimits::default();
+        assert!(IndexLimits { max_file_bytes: 0, ..base }.validate().is_err());
+        assert!(IndexLimits { max_file_bytes: base.max_bytes_per_segment + 1, ..base }.validate().is_err());
+        assert!(IndexLimits { max_files_per_segment: 0, ..base }.validate().is_err());
+        assert!(IndexLimits { max_bytes_per_segment: 0, ..base }.validate().is_err());
+        assert!(base.validate().is_ok());
     }
 
     #[test]

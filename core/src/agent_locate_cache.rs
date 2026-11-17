@@ -753,7 +753,9 @@ fn append_corpus_identity(tx: &Transaction<'_>, identity: &mut Vec<u8>) -> Resul
         identity.extend_from_slice(&(nonnegative(chunk_bytes)? as u64).to_le_bytes());
         let n = nonnegative(chunks)?;
         identity.extend_from_slice(&(n as u64).to_le_bytes());
-        counted = counted.checked_add(n).ok_or("source corpus chunk count overflow")?;
+        counted = counted
+            .checked_add(n)
+            .ok_or("source corpus chunk count overflow")?;
     }
     let fts_chunks: i64 = tx
         .query_row("SELECT COUNT(*) FROM source_search", [], |row| row.get(0))
@@ -1087,8 +1089,8 @@ pub(crate) fn search_with_page(
     if page_offset > unique_rank {
         return refuse("source page cursor is beyond available ranked results");
     }
-    let next_cursor = (paginate && has_more)
-        .then(|| format!("v1.{snapshot_id}.{}", page_offset + hits.len()));
+    let next_cursor =
+        (paginate && has_more).then(|| format!("v1.{snapshot_id}.{}", page_offset + hits.len()));
     tx.commit().map_err(|e| sql_error("commit", e))?;
     Ok(Search {
         hits,

@@ -53,6 +53,23 @@ pub fn detected_language(path: &str) -> Option<String> {
         .or_else(|| static_module_producer(path).map(|producer| producer.name.to_owned()))
 }
 
+/// Toolchain/vendor fixtures remain searchable but should not displace tests
+/// owned by the investigated project in a bounded reading plan.
+pub fn third_party_source_path(path: &str) -> bool {
+    path.starts_with("deps/")
+        || path.split('/').any(|component| {
+            matches!(
+                component,
+                "vendor" | "node_modules" | "third_party" | "third-party" | ".venv"
+            )
+        })
+}
+
+pub fn fixture_test_path(path: &str) -> bool {
+    path.split('/')
+        .any(|component| matches!(component, "fixtures" | "fixture" | "testdata"))
+}
+
 /// Best-effort test *candidate* for agent context, never proof of test coverage.
 pub fn test_candidate(path: &str) -> bool {
     let file = path.rsplit('/').next().unwrap_or(path);

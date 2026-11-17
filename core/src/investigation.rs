@@ -22,7 +22,11 @@ fn bounded(value: &str, what: &str) -> Result<()> {
 }
 
 fn digest_id(id: &str) -> Result<()> {
-    if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if id.len() != 64
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return refuse("investigation expects lowercase SHA-256 ID");
     }
     Ok(())
@@ -64,7 +68,8 @@ fn source_from_value(value: &Value) -> Result<SourceRef> {
 }
 
 fn field(row: &[Option<String>], index: usize) -> Result<&str> {
-    row.get(index).and_then(|v| v.as_deref())
+    row.get(index)
+        .and_then(|v| v.as_deref())
         .ok_or_else(|| "missing investigation SQL column".to_owned())
 }
 
@@ -251,7 +256,9 @@ pub fn audit(db: &Db, repo: &Path, id: &str) -> Result<Value> {
             ("ready_to_merge", Value::Bool(false)),
         ]);
         let hash = report.sha256();
-        report.entries_mut()?.insert("report_id".into(), Value::string(hash));
+        report
+            .entries_mut()?
+            .insert("report_id".into(), Value::string(hash));
         Ok(report)
     })
 }
@@ -278,7 +285,12 @@ fn append(
             if !existing.is_empty() || investigation_id(commit, tree, question)? != id {
                 return refuse("investigation already exists or identity differs");
             }
-            (None, question.to_owned(), commit.to_owned(), tree.to_owned())
+            (
+                None,
+                question.to_owned(),
+                commit.to_owned(),
+                tree.to_owned(),
+            )
         } else {
             let history = records(db, repo, id)?;
             if history.len() != expected_revision {
@@ -296,13 +308,17 @@ fn append(
             ("schema", Value::string(SCHEMA)),
             ("investigation_id", Value::string(id)),
             ("revision", Value::number(expected_revision + 1)),
-            ("previous_event_id", prior.as_deref().map(Value::string).unwrap_or(Value::Null)),
+            (
+                "previous_event_id",
+                prior.as_deref().map(Value::string).unwrap_or(Value::Null),
+            ),
             ("question", Value::string(question)),
             ("source_commit", Value::string(commit)),
             ("source_tree", Value::string(tree)),
             ("kind", Value::string(kind)),
             ("payload", payload),
-        ]).stamp_id("event_id")?;
+        ])
+        .stamp_id("event_id")?;
         let bytes = event.canonical();
         if bytes.len() > MAX_EVENT_BYTES {
             return refuse("investigation event exceeds 4 MiB");
@@ -330,8 +346,15 @@ pub fn start(db: &Db, repo: &Path, rev: &str, question: &str) -> Result<Value> {
     bounded(question, "question")?;
     let source = discovery::inspect(repo, rev)?;
     let id = investigation_id(&source.commit, &source.tree, question)?;
-    append(db, &source.root, &id, 0, "CREATE", obj(&[]),
-        Some((question, &source.commit, &source.tree)))
+    append(
+        db,
+        &source.root,
+        &id,
+        0,
+        "CREATE",
+        obj(&[]),
+        Some((question, &source.commit, &source.tree)),
+    )
 }
 
 pub fn claim(
@@ -353,12 +376,20 @@ pub fn claim(
     let history = audit(db, repo, id)?;
     let commit = history.get("source_commit")?.str()?;
     let source = SourceRef::from_git(repo, commit, path)?;
-    append(db, repo, id, expected_revision, "CLAIM", obj(&[
-        ("source", source_value(&source)),
-        ("statement", Value::string(statement)),
-        ("assumption", Value::string(assumption)),
-        ("assessment", Value::string(assessment)),
-    ]), None)
+    append(
+        db,
+        repo,
+        id,
+        expected_revision,
+        "CLAIM",
+        obj(&[
+            ("source", source_value(&source)),
+            ("statement", Value::string(statement)),
+            ("assumption", Value::string(assumption)),
+            ("assessment", Value::string(assessment)),
+        ]),
+        None,
+    )
 }
 
 pub fn plan(
@@ -370,10 +401,18 @@ pub fn plan(
     obligation: &str,
 ) -> Result<Value> {
     bounded(obligation, "preservation obligation")?;
-    append(db, repo, id, expected_revision, "PLAN", obj(&[
-        ("claim_event_id", Value::string(claim_event_id)),
-        ("obligation", Value::string(obligation)),
-    ]), None)
+    append(
+        db,
+        repo,
+        id,
+        expected_revision,
+        "PLAN",
+        obj(&[
+            ("claim_event_id", Value::string(claim_event_id)),
+            ("obligation", Value::string(obligation)),
+        ]),
+        None,
+    )
 }
 
 pub fn verify(
@@ -395,8 +434,16 @@ pub fn verify(
     let base = history.get("source_commit")?.str()?;
     let report = crate::agent::verify(repo, base, candidate, limit, roots, evidence_db, receipts)?;
     verify_agent_report(repo, base, history.get("source_tree")?.str()?, &report)?;
-    append(db, repo, id, expected_revision, "VERIFY", obj(&[
-        ("plan_event_id", Value::string(plan_event_id)),
-        ("report", report),
-    ]), None)
+    append(
+        db,
+        repo,
+        id,
+        expected_revision,
+        "VERIFY",
+        obj(&[
+            ("plan_event_id", Value::string(plan_event_id)),
+            ("report", report),
+        ]),
+        None,
+    )
 }

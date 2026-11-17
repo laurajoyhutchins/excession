@@ -598,24 +598,44 @@ pub(super) fn command() -> Command {
             leaf(
                 "claim",
                 &[
-                    "repo", "db", "id", "expected-revision", "path",
-                    "statement", "assumption", "assessment",
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "path",
+                    "statement",
+                    "assumption",
+                    "assessment",
                 ],
                 &[],
-            ).about("Record a Git-bound hypothesis or reported source review"),
+            )
+            .about("Record a Git-bound hypothesis or reported source review"),
             leaf(
                 "plan",
-                &["repo", "db", "id", "expected-revision", "claim-event", "obligation"],
+                &[
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "claim-event",
+                    "obligation",
+                ],
                 &[],
-            ).about("Attach a behavior-preservation obligation to an earlier claim"),
+            )
+            .about("Attach a behavior-preservation obligation to an earlier claim"),
             leaf(
                 "verify",
                 &[
-                    "repo", "db", "id", "expected-revision",
-                    "plan-event", "candidate",
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "plan-event",
+                    "candidate",
                 ],
                 &["limit", "roots", "evidence-db", "receipts"],
-            ).about("Run existing agent verification and retain its unresolved obligations"),
+            )
+            .about("Run existing agent verification and retain its unresolved obligations"),
             leaf("show", &["repo", "db", "id"], &[])
                 .about("Audit and replay an entire persistent investigation"),
         ],
@@ -947,7 +967,16 @@ pub(super) struct Parsed {
 /// Render names and descriptions from the same clap grammar used for execution.
 pub(super) fn catalog() -> String {
     const EVERYDAY: &[&str] = &[
-        "analyze", "impact", "explain", "changes", "discover", "tests", "agent", "investigation", "mcp", "doctor",
+        "analyze",
+        "impact",
+        "explain",
+        "changes",
+        "discover",
+        "tests",
+        "agent",
+        "investigation",
+        "mcp",
+        "doctor",
     ];
     let mut everyday = Vec::new();
     let mut specialist = Vec::new();

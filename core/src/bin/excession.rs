@@ -12,9 +12,9 @@ use excession::explain;
 use excession::history;
 use excession::history_rewrite;
 use excession::impact_query;
-use excession::investigation;
 use excession::improve;
 use excession::improve_edits;
+use excession::investigation;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
 use excession::observed_relations::{self, Selection};
@@ -808,7 +808,10 @@ fn execute(args: &[String]) -> Result<Response> {
             };
             match sub.as_str() {
                 "start" => Ok(json(investigation::start(
-                    &ledger, repo, opt.get("rev"), opt.get("question"),
+                    &ledger,
+                    repo,
+                    opt.get("rev"),
+                    opt.get("question"),
                 )?)),
                 "claim" => Ok(json(investigation::claim(
                     &ledger,
@@ -829,7 +832,8 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.get("obligation"),
                 )?)),
                 "verify" => {
-                    let limit = opt.get_or("limit", "32")
+                    let limit = opt
+                        .get_or("limit", "32")
                         .parse::<usize>()
                         .map_err(|_| "--limit must be a bounded integer".to_owned())?;
                     Ok(json(investigation::verify(
@@ -845,9 +849,7 @@ fn execute(args: &[String]) -> Result<Response> {
                         opt.0.get("receipts").map(|s| Path::new(s.as_str())),
                     )?))
                 }
-                "show" => Ok(json(investigation::audit(
-                    &ledger, repo, opt.get("id"),
-                )?)),
+                "show" => Ok(json(investigation::audit(&ledger, repo, opt.get("id"))?)),
                 _ => refuse(format!("unknown investigation command: {sub}")),
             }
         }

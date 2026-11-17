@@ -87,6 +87,31 @@ relationships. Once a candidate is committed, call `explain_impact` and
 `verify_change` with base and candidate commit IDs. `plan_tests` can
 provide a no-execution plan beforehand.
 
+## Configurable source indexing budgets
+
+The local `search_code` MCP tool accepts an optional `budgets` object with
+`max_file_bytes`, `max_segment_bytes` and `max_segment_files` as positive
+integers, plus the existing `index_segments` per-invocation work budget.
+Unspecified fields use the native defaults, and incompatible limits are
+refused. The resulting report records the selected effective policy in
+`index.limits`, while the per-invocation segment refresh count is operational
+metadata under `cache.refresh_budget_segments`. MCP's independent 4 MiB
+response ceiling is unchanged; pagination remains to be implemented (#280).
+
+Example tool arguments:
+
+```json
+{
+  "task": "Locate the SQLite query planner",
+  "index_segments": 8,
+  "budgets": {
+    "max_file_bytes": 8388608,
+    "max_segment_bytes": 33554432,
+    "max_segment_files": 1000
+  }
+}
+```
+
 ## Safety and limitations
 
 - MCP never edits source, runs compilers, starts tests, or approves merges.

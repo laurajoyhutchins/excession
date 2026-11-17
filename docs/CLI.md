@@ -2,8 +2,8 @@
 > [investigation-first understanding and transformation](PRODUCT.md).
 > This reference documents source, evidence and edit-building operations
 > that support those workflows, not a separate graph-query product.
-> There is no shipped `excession investigate` or `excession transform`
-> command yet. See [current practical workflow](CODEBASE_UNDERSTANDING.md).
+> The shipped `excession investigation` family is a persisted evidence
+> ledger, **not** an automated `investigate` or `transform` agent workflow. See [current practical workflow](CODEBASE_UNDERSTANDING.md).
 
 # Excession CLI
 
@@ -30,6 +30,16 @@ The command families correspond to different evidence layers:
 A successful audit establishes the reproducibility specified by its contract,
 not the correctness or completeness of an external analyzer. The
 [architecture](ARCHITECTURE.md) explains these boundaries.
+
+## Persistent investigation ledger
+
+Use `excession investigation start` to pin a question to an exact Git
+revision; `claim` records an authenticated source-bound assessment;
+`plan` binds preservation obligations to a claim; `verify` executes
+the existing `agent verify` against a committed candidate and stores
+its unresolved report; `show` replays the ledger and checks identities.
+See the [complete command workflow](INVESTIGATIONS.md). A ledger cannot
+promote a hypothesis to verified behavior or authorize merge.
 
 ## Install
 

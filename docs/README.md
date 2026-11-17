@@ -14,8 +14,8 @@ tool documentation are not alternative product definitions.
 
 | Goal | Canonical guide | Current executable entry |
 | --- | --- | --- |
-| Understand how a behavior works | [Investigation contract](INVESTIGATIONS.md) and [practical workflow](CODEBASE_UNDERSTANDING.md) | `agent locate`, `agent context`, source inspection |
-| Refactor a repository | [Transformation contract](TRANSFORMATIONS.md) | `refactor` / `improve` specialists, native tools |
+| Understand how a behavior works | [Investigation contract](INVESTIGATIONS.md) and [practical workflow](CODEBASE_UNDERSTANDING.md) | `agent locate`/`context`, `investigation start/claim/show`, source inspection |
+| Refactor a repository | [Transformation contract](TRANSFORMATIONS.md) | `investigation plan`, `refactor` / `improve` specialists, native tools |
 | Establish what a change preserves | [Verification](VERIFICATION.md) | Impact/evidence replay, independent tests and receipts |
 | Follow provenance and invalidation | [Evidence lifecycle](EVIDENCE_LIFECYCLE.md) | Git identities, producers, SQLite and audits |
 | Evaluate actual benefit | [Evaluation](EVALUATION.md) | Held-out study protocol; existing benchmarks are diagnostics |

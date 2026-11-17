@@ -1,14 +1,68 @@
 # Investigations: the unit of understanding
 
-**Status:** canonical product contract and target artifact. The CLI does
-not yet emit a full persistent investigation report. The current supported
-building blocks are `agent locate`, `agent context`, `impact`, `explain` and
-`agent verify`; see [agent CLI](AGENT_CLI.md).
+**Status:** the first persistent Git-bound investigation ledger is implemented
+(`excession investigation`). It retains claims, preservation obligations and
+verification reports, but does **not** automatically derive an explanation,
+infer behavior or validate refactoring equivalence. See [agent CLI](AGENT_CLI.md)
+for evidence-gathering building blocks.
 
 An investigation answers a **question at an exact repository revision**,
 not a request for a complete graph. It ends with a reviewable explanation,
 a compact implementation map, evidence, alternative hypotheses, and open
 questions.
+
+## Implemented investigation ledger (v1)
+
+The CLI writes append-only canonical JSON events to an explicitly chosen
+SQLite file **outside the source checkout**. Each event includes a Git
+commit/tree identity, optimistic revision, event ID and predecessor digest.
+
+```sh
+# Pin source; returns investigation_id and event_id
+excession investigation start \
+  --repo /work/project --rev HEAD \
+  --db /tmp/investigations.sqlite --question "How does recovery work?"
+
+# Inspect the exact tracked source first, then report a source-grounded claim
+excession investigation claim \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision 1 \
+  --path src/worker.rs --statement "The retry path calls recovery" \
+  --assumption "This is source review, not an execution observation" \
+  --assessment SOURCE_REVIEW_REPORTED
+
+# Bind a preservation obligation to that claim's returned event_id
+excession investigation plan \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision 2 \
+  --claim-event CLAIM_EVENT_ID \
+  --obligation "Preserve retry error and ordering semantics"
+
+# After a separately committed candidate, run existing agent verification
+excession investigation verify \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision 3 \
+  --plan-event PLAN_EVENT_ID --candidate CANDIDATE_COMMIT
+
+# Audit the event chain and source/verification identities
+excession investigation show \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID
+```
+
+`claim` accepts `HYPOTHESIS` or `SOURCE_REVIEW_REPORTED`, never a
+free-form `VERIFIED` state. `plan` must reference an earlier claim and
+`verify` must reference an earlier plan. Verification runs
+`agent verify` and retains its `OPEN_OBLIGATIONS` or
+`REPORTED_FAILURE` result, not a proof of behavior or merge approval.
+The same expected revision cannot be written twice; event rows refuse SQL
+update/delete, and `show` replays the chain and authenticates Git source.
+
+The ledger does not yet select relevant source itself, infer call paths,
+automatically expand open questions, invalidate claims across revisions,
+or provide native source edits. Its event and report wire contracts are
+[`investigation-event.v1`](../contracts/product/investigation-event.v1.schema.json)
+and [`investigation.v1`](../contracts/product/investigation.v1.schema.json).
 
 ## Required content
 
@@ -69,14 +123,15 @@ SQLite source, name mode-specific conditions and tests, and explicitly
 report missing evidence. This is a **benchmark question**, not a statement
 that Excession has already completed the investigation.
 
-## Proposed agent experience (not a live API)
+## Future automated agent experience (not a live API)
 
 ```text
 investigate(question, repository, revision, scope?)
 expand(investigation_id, question_or_unknown)
 ```
 
-These names are proposed logical operations. Current MCP tools are
+These names are proposed logical operations, separate from the implemented
+`excession investigation` ledger commands. Current MCP tools are
 `search_code`, `get_context`, `explain_impact`, `verify_change`,
 `plan_tests` and `check_coverage`. Do not advertise the proposed API,
 persisted IDs or claim states as available command syntax.

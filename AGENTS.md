@@ -25,9 +25,10 @@ graph density, or novel parser coverage.
 7. Report only capabilities that exist at the inspected source revision.
 
 **Current interface:** `excession agent locate`, `agent context`,
-`agent verify`, `impact`, `explain`, specialist `refactor`/`improve`
-commands, stdio MCP and GitHub Actions evidence. There is not yet a
-shipping `excession investigate` or `excession transform` command.
+`agent verify`, `excession investigation start/claim/plan/verify/show`,
+`impact`, `explain`, specialist `refactor`/`improve` commands, stdio MCP
+and GitHub Actions evidence. The implemented investigation family is an
+evidence ledger; it does not autonomously explain code or transform it.
 See [CLI](docs/CLI.md), [MCP](docs/MCP.md), and
 [refactoring reference](docs/REFACTORING.md).
 

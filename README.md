@@ -5,6 +5,13 @@ relationships, retains the identity and provenance of their sources, and
 reports what remains unknown. The implementation is a Rust CLI with SQLite
 indexes and integrations with language-native analyzers.
 
+Its first job is to help an engineer understand unfamiliar code: find the
+relevant implementation, work outward to callers and dependencies, inspect
+tests and invariants, and identify what a change might affect. Git identities
+and language-native observations support this investigation; they are not a
+substitute for reading and explaining the source. See the
+[codebase-understanding workflow](docs/CODEBASE_UNDERSTANDING.md).
+
 It can help locate an implementation, examine change impact, choose code to
 inspect, and audit the evidence behind a report. These are **candidates and
 observations**, not proofs of behavioral correctness.
@@ -91,7 +98,8 @@ See [architecture](docs/ARCHITECTURE.md),
 ## Documentation
 
 Start with the [documentation index](docs/README.md). The most useful routes
-are [CLI reference](docs/CLI.md), [agent commands](docs/AGENT_CLI.md),
+are [codebase understanding](docs/CODEBASE_UNDERSTANDING.md),
+[CLI reference](docs/CLI.md), [agent commands](docs/AGENT_CLI.md),
 [GitHub workflows](docs/GITHUB_NATIVE_ANALYSIS.md),
 [local MCP](docs/MCP.md), [CI policy](docs/CI.md), and
 [development setup](docs/DEVELOPMENT.md).

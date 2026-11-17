@@ -33,6 +33,23 @@
         "verify-workflow",
         "human-review"
       ]
+    },
+    {
+      "id": "native-cargo-lock-refresh",
+      "producer": "cargo-update-locked",
+      "integration": "automatic-after-exact-head-verification",
+      "paths": [
+        "core/Cargo.lock"
+      ],
+      "rationale": "Refresh compatible native Cargo dependencies without changing manifest constraints, package identities, dependency graph or non-patch versions; independent CI must pass before integration.",
+      "evidence": "https://github.com/laurajoyhutchins/technical-notebook/blob/main/content/concepts/quality-ratchets.md",
+      "independent_checks": [
+        "cargo-lock-graph-audit",
+        "cargo-tests",
+        "quality-ratchet",
+        "verify-workflow",
+        "github-evidence-workflow"
+      ]
     }
   ]
 }

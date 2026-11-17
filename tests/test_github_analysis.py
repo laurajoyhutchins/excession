@@ -121,7 +121,7 @@ class RequestTests(unittest.TestCase):
     def test_malformed_or_cross_operation_budgets_refused(self):
         bad = (
             {}, {"unknown": 2}, {"refresh_segments": 257},
-            {"max_file_bytes": True}, {"max_file_bytes": 0},
+            {"max_file_bytes": True}, {"max_file_bytes": 0}, {"max_file_bytes": 3},
             {"max_file_bytes": -1}, {"max_segment_files": "3"},
             {"max_segment_bytes": 2},
             {"max_file_bytes": 16 * 1024 * 1024, "max_segment_bytes": 1 * 1024 * 1024},

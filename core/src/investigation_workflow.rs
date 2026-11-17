@@ -384,6 +384,7 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
     let mut evidence_gaps = Vec::new();
     let mut preservation_plans = Vec::new();
     let mut behavior_witnesses = Vec::new();
+    let mut prior_witnesses = BTreeMap::<String, Vec<Value>>::new();
     let mut verification_receipts = Vec::new();
     let mut last_refresh = Value::Null;
     for event in history.get("events")?.array_ref()? {
@@ -435,7 +436,10 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                     Value::string("REPORTED_NOT_INDEPENDENTLY_VALIDATED"),
                 ),
             ])),
-            "WITNESS" => behavior_witnesses.push(obj(&[
+            "WITNESS" => {
+                prior_witnesses.entry(payload.get("claim_event_id")?.str()?.to_owned())
+                    .or_default().push(event.get("event_id")?.clone());
+                behavior_witnesses.push(obj(&[
                 ("event_id", event.get("event_id")?.clone()),
                 ("claim_event_id", payload.get("claim_event_id")?.clone()),
                 ("source", payload.get("source")?.clone()),
@@ -447,12 +451,16 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                 ("interpretation", payload.get("interpretation")?.clone()),
                 ("assessment", payload.get("assessment")?.clone()),
                 ("runtime_verified", Value::Bool(false)),
-            ])),
+                ]));
+            }
             "REFRESH" => last_refresh = payload.clone(),
             "PLAN" => preservation_plans.push(obj(&[
                 ("event_id", event.get("event_id")?.clone()),
                 ("claim_event_id", payload.get("claim_event_id")?.clone()),
                 ("obligation", payload.get("obligation")?.clone()),
+                ("witness_event_ids", Value::array(prior_witnesses
+                    .get(payload.get("claim_event_id")?.str()?)
+                    .cloned().unwrap_or_default())),
                 ("state", Value::string("OPEN")),
             ])),
             "VERIFY" => verification_receipts.push(obj(&[

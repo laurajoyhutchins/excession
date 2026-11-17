@@ -705,8 +705,8 @@ mod tests {
         git_at(&root, &["init", "-q"]);
 
         let source = format!(
-            "{}pub fn planner() {{ let needle = 42; }}\\n",
-            "// ordinary source line\\n".repeat(18_000)
+            "{}pub fn planner() {{ let needle = 42; }}\n",
+            "// ordinary source line\n".repeat(18_000)
         );
         assert!(source.len() > 256 * 1024);
         assert!(source.len() < MAX_FILE_BYTES);

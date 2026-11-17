@@ -196,6 +196,72 @@ impl BlobReader {
         Ok(size as u64)
     }
 
+    /// Yield UTF-8 text windows with exact original byte and line offsets.
+    /// Newline boundaries are preferred where possible, and very long lines
+    /// are split only at UTF-8 character boundaries. Chunks concatenate to
+    /// the original blob without gaps or duplication. A source indexer must
+    /// supply overlap or token-aware continuation when token boundaries matter.
+    ///
+    /// Like stream_verified, emitted windows are provisional until the final
+    /// whole-Git-blob identity check succeeds. The caller must use a transaction.
+    pub fn stream_text_chunks_verified(
+        &mut self,
+        expected_oid: &str,
+        max_chunk_bytes: usize,
+        mut emit: impl FnMut(u64, usize, &str) -> Result<()>,
+    ) -> Result<u64> {
+        if max_chunk_bytes < 4 {
+            return refuse("text source chunk budget must allow one UTF-8 scalar (at least 4 bytes)");
+        }
+        let mut pending = Vec::new();
+        let mut start_byte = 0u64;
+        let mut start_line = 1usize;
+        let total = self.stream_verified(expected_oid, max_chunk_bytes, |_, bytes| {
+            pending.extend_from_slice(bytes);
+            while pending.len() >= max_chunk_bytes {
+                let available = &pending[..max_chunk_bytes];
+                let valid_end = match std::str::from_utf8(available) {
+                    Ok(_) => max_chunk_bytes,
+                    Err(error) if error.error_len().is_none() => error.valid_up_to(),
+                    Err(_) => return refuse("source contains invalid UTF-8"),
+                };
+                if valid_end == 0 {
+                    return refuse("source chunk has no complete UTF-8 scalar");
+                }
+                let valid = std::str::from_utf8(&pending[..valid_end])
+                    .map_err(|_| "invalid UTF-8 source prefix")?;
+                let end = valid
+                    .rfind('\n')
+                    .map(|index| index + 1)
+                    .filter(|&index| index >= max_chunk_bytes / 2)
+                    .unwrap_or(valid_end);
+                let text = std::str::from_utf8(&pending[..end])
+                    .map_err(|_| "invalid UTF-8 source chunk")?;
+                if text.contains('\0') {
+                    return refuse("source contains a NUL byte");
+                }
+                emit(start_byte, start_line, text)?;
+                start_byte += end as u64;
+                start_line += text.bytes().filter(|byte| *byte == b'\n').count();
+                pending.drain(..end);
+            }
+            Ok(())
+        })?;
+        if !pending.is_empty() {
+            let text = std::str::from_utf8(&pending)
+                .map_err(|_| "source ends with incomplete or invalid UTF-8")?;
+            if text.contains('\0') {
+                return refuse("source contains a NUL byte");
+            }
+            emit(start_byte, start_line, text)?;
+            start_byte += pending.len() as u64;
+        }
+        if start_byte != total {
+            return refuse("source chunk coverage differs from Git blob length");
+        }
+        Ok(total)
+    }
+
     /// Reject oversized blobs before allocating their payload.
     pub fn read_capped(&mut self, expected_oid: &str, max_bytes: usize) -> Result<Vec<u8>> {
         oid(expected_oid)?;
@@ -471,6 +537,39 @@ mod tests {
         );
         assert!(aborted.read(&blob).is_err());
         drop(aborted);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn text_chunks_preserve_utf8_and_exact_line_byte_offsets() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-text-chunks-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir(&root).unwrap();
+        assert!(Command::new("git")
+            .args(["init", "-q"]).arg(&root).status().unwrap().success());
+        let source = format!("{}{}", "α🚀 one\n".repeat(1000), "é".repeat(5000));
+        std::fs::write(root.join("unicode.rs"), &source).unwrap();
+        let oid = text(&root, &["hash-object", "-w", "unicode.rs"]).unwrap();
+        let mut reader = BlobReader::open(&root).unwrap();
+        let mut actual = String::new();
+        let mut offsets = Vec::new();
+        let total = reader.stream_text_chunks_verified(&oid, 63, |offset, line, text| {
+            assert!(text.len() <= 63);
+            assert_eq!(offset as usize, actual.len());
+            assert_eq!(line, 1 + actual.bytes().filter(|byte| *byte == b'\n').count());
+            offsets.push(offset);
+            actual.push_str(text);
+            Ok(())
+        }).unwrap();
+        assert!(offsets.len() > 20);
+        assert_eq!(total, source.len() as u64);
+        assert_eq!(actual, source);
+        reader.finish().unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
 

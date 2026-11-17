@@ -162,7 +162,9 @@ class CiTopology(unittest.TestCase):
             "  workflow_dispatch:", "permissions:\n  contents: read",
             "github.actor_id == '219002713'",
             "github.ref == 'refs/heads/main'",
-            "persist-credentials: false", "--trusted-local true",
+            "persist-credentials: false",
+            'if ! gh pr create', "Open a PR from the already-pushed",
+            "Settings > Actions > General > Workflow permissions", "--trusted-local true",
             "structural_preservation.py",
             "core/target/debug/excession agent verify",
             "actions/upload-artifact@v4",
@@ -186,6 +188,8 @@ class CiTopology(unittest.TestCase):
             "cargo fmt --manifest-path", "cargo test --offline --locked",
             "gh workflow run verify.yml --ref", "gh workflow run github-evidence.yml --ref",
             "bash tools/ci/await_verified_merge.sh", "native-improvement.json",
+            'if ! gh pr create', "Open a PR from the already-pushed",
+            "Settings > Actions > General > Workflow permissions",
         ):
             self.assertIn(required, auto, required)
         for required in (

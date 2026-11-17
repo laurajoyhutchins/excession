@@ -99,10 +99,9 @@ fn matches_focus(test: &str, focus: &BTreeSet<String>) -> bool {
 /// of actual coverage or a semantic relationship.
 fn salient_test_terms(task: Option<&str>) -> BTreeSet<String> {
     const STOP: &[&str] = &[
-        "test", "tests", "source", "sources", "file", "files", "code",
-        "find", "explain", "identify", "relevant", "evidence", "behavior",
-        "which", "where", "this", "that", "with", "from", "into",
-        "after", "before", "when", "what", "their", "there", "about",
+        "test", "tests", "source", "sources", "file", "files", "code", "find", "explain",
+        "identify", "relevant", "evidence", "behavior", "which", "where", "this", "that", "with",
+        "from", "into", "after", "before", "when", "what", "their", "there", "about",
     ];
     let mut terms = BTreeSet::new();
     for raw in task
@@ -788,7 +787,7 @@ mod tests {
     #[test]
     fn task_stop_words_and_inflections_keep_test_discovery_discriminating() {
         let terms = salient_test_terms(Some(
-            "Explain relevant source and test evidence for CommonJS require caching, circular dependencies and failed loads"
+            "Explain relevant source and test evidence for CommonJS require caching, circular dependencies and failed loads",
         ));
         for noise in ["test", "source", "explain", "relevant", "evidence"] {
             assert!(!terms.contains(noise), "unselective task term: {noise}");
@@ -801,16 +800,26 @@ mod tests {
             "test/parallel/test-module-circular-dependency-warning.js",
             "test/es-module/test-esm-in-require-cache-2.mjs",
         ];
-        let entries = paths.iter().map(|path| git::Entry {
-            path: (*path).to_owned(),
-            mode: "100644".into(),
-            kind: "blob".into(),
-            oid: "a".repeat(40),
-        }).collect::<Vec<_>>();
-        let candidates = ranked_test_candidates(&entries, &focus, Some(
-            "Explain relevant source and test evidence for CommonJS require caching, circular dependencies"
-        ));
-        let chosen = candidates.iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>();
+        let entries = paths
+            .iter()
+            .map(|path| git::Entry {
+                path: (*path).to_owned(),
+                mode: "100644".into(),
+                kind: "blob".into(),
+                oid: "a".repeat(40),
+            })
+            .collect::<Vec<_>>();
+        let candidates = ranked_test_candidates(
+            &entries,
+            &focus,
+            Some(
+                "Explain relevant source and test evidence for CommonJS require caching, circular dependencies",
+            ),
+        );
+        let chosen = candidates
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
         assert!(!chosen.contains(&"test/parallel/test-unrelated.js"));
         assert!(chosen.contains(&"test/parallel/test-module-circular-dependency-warning.js"));
         assert!(chosen.contains(&"test/es-module/test-esm-in-require-cache-2.mjs"));

@@ -29,6 +29,13 @@ python3 benchmarks/understanding/pilot.py \
 The runner fetches exact upstream commits into temporary detached checkouts,
 validates source answer-key anchors against Git objects and compares:
 
+**Pre-change control:** run 44099259305, Excession 5/7 preregistered
+implementation/test paths and Git-only 6/7. The missing SQLite Tcl test
+sources are an explicit negative result. Do not change that baseline or
+present a post-change run against the same questions as held-out evidence.
+Use these cases for *regression testing*, then evaluate changes on new,
+preselected questions with independently reviewed answers.
+
 - **Git-only:** ordinary `git grep -l -i -F` using distinct non-stopword
   terms from the same user question, ranked by number of matched terms and
   Git-path tie-break. It is a *deliberately modest Git search*, not a language

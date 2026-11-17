@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/laurajoyhutchins/excession/blob/main/contracts/agent/locate.schema.json",
-  "title": "Excession task-to-source lexical candidate report",
+  "title": "Excession task-guided committed-source discovery report",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -22,7 +22,8 @@
     "report_id",
     "index",
     "relationship_candidates",
-    "reading_plan"
+    "reading_plan",
+    "git_search"
   ],
   "properties": {
     "schema": {
@@ -43,7 +44,7 @@
       "maxLength": 4096
     },
     "retrieval": {
-      "const": "GIT_BLOB_FTS5_BM25"
+      "const": "COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"
     },
     "candidates": {
       "type": "array",
@@ -124,7 +125,10 @@
             }
           },
           "ranking": {
-            "const": "FTS5_BM25_TEXT_CANDIDATE"
+            "enum": [
+              "GIT_COMMITTED_DISTINCT_TERMS",
+              "FTS5_BM25_TEXT_CANDIDATE"
+            ]
           },
           "semantic_correctness": {
             "const": "UNVERIFIED"
@@ -489,6 +493,41 @@
         }
       },
       "description": "A bounded, task-oriented inspection order over existing Git-pinned lexical sources, native or candidate relationships, and test candidates. Never a behavioral proof."
+    },
+    "git_search": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Committed Git grep source discovery. Incomplete paths or unreadable matching source are reported without false absence claims.",
+      "required": [
+        "searched_terms",
+        "matching_source_files",
+        "selected_source_files",
+        "unreadable_matched_sources",
+        "truncated"
+      ],
+      "properties": {
+        "searched_terms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "matching_source_files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selected_source_files": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "unreadable_matched_sources": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "$defs": {

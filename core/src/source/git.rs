@@ -38,6 +38,91 @@ pub fn command(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+/// Search literal terms in the **committed** tree using Git itself.
+///
+/// Unlike a worktree grep, this uses the pinned commit OID and exposes no
+/// uncommitted content. Paths are returned with an explicit truncation bit:
+/// a memory limit must never be mistaken for a complete negative result.
+/// The caller authenticates each returned path against its own Git inventory.
+pub fn grep_committed_paths(
+    root: &Path,
+    commit: &str,
+    term: &str,
+    max_paths: usize,
+) -> Result<(Vec<String>, bool)> {
+    oid(commit)?;
+    if term.is_empty()
+        || term.len() > 64
+        || !term
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        || max_paths == 0
+    {
+        return refuse("committed Git grep requires a bounded literal identifier term");
+    }
+    verify_repo(root)?;
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "grep",
+            "--no-ext-grep",
+            "--no-textconv",
+            "-i",
+            "-F",
+            "-l",
+            "-z",
+            "-e",
+            term,
+            commit,
+            "--",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| format!("git grep launch: {err}"))?;
+    let stdout = child.stdout.take().ok_or("missing git grep stdout")?;
+    let mut reader = BufReader::new(stdout);
+    let mut paths = Vec::new();
+    let prefix = format!("{commit}:");
+    loop {
+        let mut record = Vec::new();
+        let count = reader
+            .read_until(0, &mut record)
+            .map_err(|err| format!("git grep path read: {err}"))?;
+        if count == 0 {
+            break;
+        }
+        if count > 16 * 1024 || record.last() != Some(&0) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return refuse("git grep produced an oversized or unterminated Git path");
+        }
+        let decoded = std::str::from_utf8(&record[..record.len() - 1])
+            .map_err(|_| "git grep produced a non-UTF-8 Git path")?;
+        let path = decoded
+            .strip_prefix(&prefix)
+            .ok_or("git grep source identity differs from pinned commit")?;
+        validate_path(path)?;
+        if paths.len() == max_paths {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok((paths, true));
+        }
+        paths.push(path.to_owned());
+    }
+    drop(reader);
+    let code = child
+        .wait()
+        .map_err(|err| format!("git grep wait: {err}"))?;
+    // Git grep uses 1 for a valid search with no matching paths.
+    if code.code() != Some(0) && code.code() != Some(1) {
+        return refuse(format!("git grep failed on pinned commit: {code}"));
+    }
+    Ok((paths, false))
+}
+
 pub fn text(root: &Path, args: &[&str]) -> Result<String> {
     let out = command(root, args)?;
     Ok(String::from_utf8(out)
@@ -487,6 +572,64 @@ mod tests {
         }
         assert!(validate_path("src/bin/hello.rs").is_ok());
     }
+    #[test]
+    fn committed_grep_finds_original_test_source_ignoring_dirty_worktree() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_GREP: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-git-grep-{}-{}",
+            std::process::id(),
+            NEXT_GREP.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let run = |args: &[&str]| {
+            let result = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            String::from_utf8(result.stdout).unwrap().trim().to_owned()
+        };
+        run(&["init", "-q"]);
+        std::fs::create_dir_all(root.join("test")).unwrap();
+        std::fs::write(root.join("test/wal.test"), "WAL checkpoint release locks\n").unwrap();
+        std::fs::write(root.join("worker.py"), "def recover(): return 1\n").unwrap();
+        run(&["add", "."]);
+        run(&[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "pinned source",
+        ]);
+        let head = run(&["rev-parse", "HEAD"]);
+        std::fs::write(
+            root.join("test/wal.test"),
+            "dirty worktree has no checkpoint\n",
+        )
+        .unwrap();
+        let (hits, truncated) = grep_committed_paths(&root, &head, "WAL", 10).unwrap();
+        assert_eq!(hits, ["test/wal.test"]);
+        assert!(!truncated);
+        let (missing, incomplete) = grep_committed_paths(&root, &head, "dirty", 10).unwrap();
+        assert!(missing.is_empty());
+        assert!(!incomplete);
+        let (limited, incomplete) = grep_committed_paths(&root, &head, "return", 1).unwrap();
+        assert_eq!(limited, ["worker.py"]);
+        assert!(!incomplete);
+        assert!(grep_committed_paths(&root, &head, "-e dangerous", 10).is_err());
+        assert!(grep_committed_paths(&root, "HEAD", "wal", 10).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn oids_refuse_non_sha1() {
         assert!(oid("a").is_err());

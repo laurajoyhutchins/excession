@@ -5,7 +5,7 @@
 //! preserves the boundary between lexical matches and native observations.
 
 use crate::json::{Value, obj};
-use crate::{Result, agent, agent_locate_cache, discovery, git, refuse};
+use crate::{Result, agent, agent_locate_cache, discovery, git, refuse, source_capabilities};
 pub use agent_locate_cache::IndexLimits;
 
 #[derive(Clone, Copy, Debug)]
@@ -75,6 +75,140 @@ fn source_path(path: &str) -> bool {
     )
 }
 
+const MAX_COMMITTED_GREP_PATHS_PER_TERM: usize = 20_000;
+
+/// Task navigation is broader than the language-native producer inventory.
+/// In particular, SQLite's Tcl .test and .tcl suites are genuine source,
+/// even though they have no SCIP or static-import producer.
+fn investigable_path(path: &str) -> bool {
+    source_path(path)
+        || (source_capabilities::test_candidate(path)
+            && [".test", ".tcl", ".bats"]
+                .iter()
+                .any(|extension| path.ends_with(extension)))
+}
+
+fn filename_stem(path: &str) -> &str {
+    path.rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .split('.')
+        .next()
+        .unwrap_or(path)
+}
+
+fn filename_hits(path: &str, terms: &[String]) -> usize {
+    let filename = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    terms
+        .iter()
+        .filter(|term| filename.contains(term.as_str()))
+        .count()
+}
+
+struct CommittedMatches {
+    selected: Vec<git::Entry>,
+    source_file_count: usize,
+    incomplete: bool,
+}
+
+/// Ask Git which pinned blobs contain the literal question terms, then
+/// prioritize implementation and likely tests. The match is lexical, never
+/// a new language semantic edge. All returned paths are authenticated
+/// against the same Git tree inventory used for the FTS provider.
+fn committed_matches(
+    repo: &Path,
+    commit: &str,
+    words: &[String],
+    inventory: &BTreeMap<String, git::Entry>,
+    limit: usize,
+) -> Result<CommittedMatches> {
+    let mut matches = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut incomplete = false;
+    for word in words {
+        let (paths, truncated) =
+            git::grep_committed_paths(repo, commit, word, MAX_COMMITTED_GREP_PATHS_PER_TERM)?;
+        incomplete |= truncated;
+        for path in paths {
+            if investigable_path(&path)
+                && inventory.get(&path).is_some_and(|entry| {
+                    entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755")
+                })
+            {
+                matches.entry(path).or_default().insert(word.clone());
+            }
+        }
+    }
+    let source_file_count = matches.len();
+    let mut implementations = Vec::new();
+    let mut tests = Vec::new();
+    for (path, found) in matches {
+        let entry = inventory
+            .get(&path)
+            .ok_or("committed grep match absent from Git tree")?
+            .clone();
+        let item = (entry, found.len(), filename_hits(&path, words));
+        if source_capabilities::test_candidate(&path) {
+            tests.push(item);
+        } else {
+            implementations.push(item);
+        }
+    }
+    implementations.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| b.2.cmp(&a.2))
+            .then_with(|| a.0.path.cmp(&b.0.path))
+    });
+    // A test filename resembling one of the top task-matched
+    // implementation stems is a useful navigation hypothesis.
+    // It is not evidence that the test covers that implementation.
+    let stems = implementations
+        .iter()
+        .take(12)
+        .map(|item| filename_stem(&item.0.path).to_ascii_lowercase())
+        .filter(|stem| stem.len() >= 3)
+        .collect::<BTreeSet<_>>();
+    tests.sort_by(|a, b| {
+        let hint = |entry: &git::Entry| {
+            let stem = filename_stem(&entry.path).to_ascii_lowercase();
+            usize::from(stems.iter().any(|base| stem.starts_with(base.as_str())))
+        };
+        hint(&b.0)
+            .cmp(&hint(&a.0))
+            .then_with(|| b.1.cmp(&a.1))
+            .then_with(|| b.2.cmp(&a.2))
+            .then_with(|| a.0.path.cmp(&b.0.path))
+    });
+    let reserved_tests = if tests.is_empty() {
+        0
+    } else {
+        (limit / 3).clamp(1, 3)
+    };
+    let mut chosen = Vec::new();
+    let implementation_slots = limit.saturating_sub(reserved_tests);
+    let mut remaining_implementations = implementations.into_iter();
+    let mut remaining_tests = tests.into_iter();
+    for (entry, _, _) in remaining_implementations
+        .by_ref()
+        .take(implementation_slots)
+    {
+        chosen.push(entry);
+    }
+    for (entry, _, _) in remaining_tests.by_ref().take(reserved_tests) {
+        chosen.push(entry);
+    }
+    for (entry, _, _) in remaining_implementations.chain(remaining_tests) {
+        if chosen.len() == limit {
+            break;
+        }
+        chosen.push(entry);
+    }
+    Ok(CommittedMatches {
+        selected: chosen,
+        source_file_count,
+        incomplete,
+    })
+}
+
 fn terms(task: &str) -> Result<Vec<String>> {
     if task.trim().is_empty() || task.len() > MAX_QUERY_BYTES || task.contains('\0') {
         return refuse("agent locate task must be 1..=4096 bytes of nonempty text");
@@ -115,7 +249,22 @@ fn terms(task: &str) -> Result<Vec<String>> {
         "what",
         "where",
         "which",
+        "when",
+        "why",
+        "what",
         "with",
+        "does",
+        "after",
+        "before",
+        "versus",
+        "under",
+        "through",
+        "that",
+        "these",
+        "then",
+        "test",
+        "tests",
+        "tested",
         "fix",
         "find",
         "implement",
@@ -387,43 +536,93 @@ fn reading_plan(
         budget,
     };
 
-    // Preserve room for a test-reading step when one is present, even under
-    // small budgets. Code understanding must not collapse to graph-neighbor
-    // enumeration simply because a producer supplied many observations.
-    let has_tests =
-        context != &Value::Null && !context.get("test_candidates")?.array_ref()?.is_empty();
-    let reserved_test = usize::from(has_tests && budget > 1);
-    // Read likely implementations before chasing edges. Ranking is lexical,
-    // not a measured probability that the task lives in that file.
-    for (i, candidate) in candidates
+    let task_sources = candidates
         .iter()
-        .take(4.min(budget.saturating_sub(reserved_test)))
         .enumerate()
+        .filter(|(_, item)| {
+            item.get("source")
+                .and_then(|source| source.get("path"))
+                .and_then(Value::str)
+                .map(|path| !source_capabilities::test_candidate(path))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    let task_tests = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| {
+            item.get("source")
+                .and_then(|source| source.get("path"))
+                .and_then(Value::str)
+                .map(source_capabilities::test_candidate)
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    let has_tests = !task_tests.is_empty()
+        || (context != &Value::Null && !context.get("test_candidates")?.array_ref()?.is_empty());
+    let reserved_test = usize::from(has_tests && budget > 1);
+
+    // Prioritize the implementation. A literal match in a committed test is
+    // better evidence for inspection than an unrelated graph neighbor.
+    for (i, candidate) in task_sources
+        .iter()
+        .copied()
+        .take(4.min(budget.saturating_sub(reserved_test)))
     {
         steps.push(
             candidate,
             "INSPECT_TASK_MATCH",
             "GIT_BLOB_LEXICAL_MATCH",
-            "Read the matching source to determine inputs, outputs, state changes, and invariants.",
+            "Read inputs, outputs, state changes and the conditions governing this implementation.",
             "candidates",
             i,
         )?;
     }
-    // Show both sides of a potential behavior path. Observed references
-    // remain producer observations; static imports remain candidates.
-    let relation_budget = 4.min(budget.saturating_sub(steps.items.len() + reserved_test));
+    for (i, candidate) in task_tests.iter().copied().take(3) {
+        steps.push(
+            candidate,
+            "INSPECT_RELATED_TEST",
+            "GIT_BLOB_LEXICAL_MATCH",
+            "Read this task-matching test and verify which behavior its assertions cover.",
+            "candidates",
+            i,
+        )?;
+    }
+    if context != &Value::Null {
+        for (i, candidate) in context
+            .get("test_candidates")?
+            .array_ref()?
+            .iter()
+            .take(3)
+            .enumerate()
+        {
+            // Filename-based tests are weaker suggestions and must not evict
+            // matching test source just to maximize graph neighbor count.
+            steps.push(
+                candidate,
+                "INSPECT_RELATED_TEST",
+                "TEST_PATH_HEURISTIC",
+                "Inspect the test assertions; its filename alone does not establish coverage.",
+                "context.test_candidates",
+                i,
+            )?;
+        }
+    }
+    // Related code is useful when it answers the task, but never outranks
+    // original source and test inspection by default.
+    let relation_budget = 3.min(budget.saturating_sub(steps.items.len()));
     for (i, neighbor) in related.iter().take(relation_budget).enumerate() {
         let assessment = neighbor.get("assessment")?.str()?;
         let direction = neighbor.get("direction")?.str()?;
         let (action, why) = if direction == "LEXICAL_SOURCE_TO_NEIGHBOR" {
             (
                 "INSPECT_POSSIBLE_DEPENDENCY",
-                "Check how the focused code uses this source; confirm whether data or control actually flows to it.",
+                "Check how the implementation uses this source; do not infer an executed call.",
             )
         } else if direction == "NEIGHBOR_TO_LEXICAL_SOURCE" {
             (
                 "INSPECT_POSSIBLE_CALLER",
-                "Check whether this source invokes or configures the focused behavior.",
+                "Check whether this source actually invokes or configures the focused behavior.",
             )
         } else {
             return refuse("reading plan received unsupported relationship direction");
@@ -435,23 +634,17 @@ fn reading_plan(
         };
         steps.push(neighbor, action, basis, why, "relationship_candidates", i)?;
     }
-    if context != &Value::Null {
-        for (i, candidate) in context
-            .get("test_candidates")?
-            .array_ref()?
-            .iter()
-            .take(4)
-            .enumerate()
-        {
-            steps.push(
-                candidate,
-                "INSPECT_RELATED_TEST",
-                "TEST_PATH_HEURISTIC",
-                "Read the assertions and fixtures to identify which behavior they actually cover.",
-                "context.test_candidates",
-                i,
-            )?;
-        }
+    // Remaining explicit lexical matches are better fallback reading than
+    // made-up behavioral edges.
+    for (i, candidate) in task_sources.into_iter().skip(4) {
+        steps.push(
+            candidate,
+            "INSPECT_TASK_MATCH",
+            "GIT_BLOB_LEXICAL_MATCH",
+            "Follow up on another independently located task-matching source file.",
+            "candidates",
+            i,
+        )?;
     }
     Ok(obj(&[
         ("schema", Value::string("excession.agent-reading-plan.v1")),
@@ -550,9 +743,67 @@ pub fn locate_with_limits(
         source_path,
         limits,
     )?;
+    // Git is authoritative for *text presence* in this committed tree. It
+    // can find real test files that have no installed language indexer.
+    // FTS remains a useful, independently ranked fallback, not the product
+    // definition of source completeness.
+    let committed = committed_matches(
+        &discovered.root,
+        &discovered.commit,
+        &words,
+        &inventory,
+        limit,
+    )?;
     let mut candidates = Vec::new();
     let mut selected_paths = Vec::new();
+    let mut skipped_git_excerpts = 0usize;
+    let mut selected_git_count = 0usize;
+    if !committed.selected.is_empty() {
+        let mut reader = git::BlobReader::open(&discovered.root)?;
+        for entry in &committed.selected {
+            // The entire original blob must be verified before exposing a
+            // source excerpt. Refuse to claim coverage of an oversized,
+            // binary or non-UTF-8 blob, and retain an explicit gap count.
+            let body = match reader.read_capped(&entry.oid, limits.max_file_bytes) {
+                Ok(bytes) => match String::from_utf8(bytes) {
+                    Ok(text) if !text.contains('\0') => text,
+                    _ => {
+                        skipped_git_excerpts += 1;
+                        continue;
+                    }
+                },
+                Err(error)
+                    if error
+                        .to_string()
+                        .contains("Git source blob exceeds byte limit") =>
+                {
+                    skipped_git_excerpts += 1;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            selected_paths.push(entry.path.clone());
+            candidates.push(obj(&[
+                ("rank", Value::number(candidates.len() + 1)),
+                (
+                    "source",
+                    source(&discovered.commit, &discovered.tree, entry),
+                ),
+                ("excerpt", excerpt(&body, &words, 1)),
+                ("ranking", Value::string("GIT_COMMITTED_DISTINCT_TERMS")),
+                ("semantic_correctness", Value::string("UNVERIFIED")),
+            ]));
+            selected_git_count += 1;
+        }
+        reader.finish()?;
+    }
     for hit in &index.hits {
+        if candidates.len() == limit {
+            break;
+        }
+        if selected_paths.contains(&hit.entry.path) {
+            continue;
+        }
         selected_paths.push(hit.entry.path.clone());
         candidates.push(obj(&[
             ("rank", Value::number(candidates.len() + 1)),
@@ -576,6 +827,12 @@ pub fn locate_with_limits(
         gap("UNCOMMITTED_CHANGES_EXCLUDED"),
         gap("TEST_SELECTION_NOT_PROVEN"),
     ];
+    if committed.incomplete {
+        gaps.push(gap("GIT_GREP_PATH_RESULTS_TRUNCATED"));
+    }
+    if skipped_git_excerpts > 0 {
+        gaps.push(gap("GIT_GREP_SOURCE_EXCERPTS_UNAVAILABLE"));
+    }
     if skipped > 0 {
         gaps.push(gap("SOURCE_CONTENT_NOT_FULLY_INDEXED"));
     }
@@ -642,7 +899,26 @@ pub fn locate_with_limits(
         ("source_commit", Value::string(&discovered.commit)),
         ("source_tree", Value::string(&discovered.tree)),
         ("task", Value::string(task)),
-        ("retrieval", Value::string("GIT_BLOB_FTS5_BM25")),
+        (
+            "retrieval",
+            Value::string("COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"),
+        ),
+        (
+            "git_search",
+            obj(&[
+                ("searched_terms", Value::number(words.len())),
+                (
+                    "matching_source_files",
+                    Value::number(committed.source_file_count),
+                ),
+                ("selected_source_files", Value::number(selected_git_count)),
+                (
+                    "unreadable_matched_sources",
+                    Value::number(skipped_git_excerpts),
+                ),
+                ("truncated", Value::Bool(committed.incomplete)),
+            ]),
+        ),
         ("candidates", Value::array(candidates)),
         ("candidate_count", Value::number(selected_paths.len())),
         ("relationship_candidates", Value::array(related)),
@@ -771,17 +1047,17 @@ mod tests {
             paths,
             [
                 "src/worker.py",
+                "tests/test_worker.py",
                 "src/handler.py",
-                "src/store.py",
-                "tests/test_worker.py"
+                "src/store.py"
             ]
         );
         assert_eq!(
             steps[1].get("action").unwrap().str().unwrap(),
-            "INSPECT_POSSIBLE_CALLER"
+            "INSPECT_RELATED_TEST"
         );
         assert_eq!(
-            steps[2].get("basis").unwrap().str().unwrap(),
+            steps[3].get("basis").unwrap().str().unwrap(),
             "STATIC_RELATIONSHIP_CANDIDATE"
         );
         assert!(
@@ -815,11 +1091,11 @@ mod tests {
         let steps = plan.get("steps").unwrap().array_ref().unwrap();
         assert_eq!(steps.len(), 8);
         assert_eq!(
-            steps[7].get("action").unwrap().str().unwrap(),
+            steps[4].get("action").unwrap().str().unwrap(),
             "INSPECT_RELATED_TEST"
         );
         assert_eq!(
-            steps[7].get("basis").unwrap().str().unwrap(),
+            steps[4].get("basis").unwrap().str().unwrap(),
             "TEST_PATH_HEURISTIC"
         );
     }
@@ -1029,6 +1305,7 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("test")).unwrap();
         let git = |args: &[&str]| {
             let result = Command::new("git")
                 .arg("-C")
@@ -1049,6 +1326,11 @@ mod tests {
         )
         .unwrap();
         fs::write(root.join("src/other.rs"), "pub fn render_canvas() {}\n").unwrap();
+        fs::write(
+            root.join("test/lease.test"),
+            "do_test lease-recovery { lease checkout and worker assertion }\n",
+        )
+        .unwrap();
         fs::write(root.join("src/oversize.rs"), "x".repeat(MAX_FILE_BYTES + 1)).unwrap();
         git(&["add", "."]);
         git(&[
@@ -1100,6 +1382,30 @@ mod tests {
             0
         );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
+        assert_eq!(
+            first.get("retrieval").unwrap().str().unwrap(),
+            "COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"
+        );
+        assert!(
+            first
+                .get("git_search")
+                .unwrap()
+                .get("selected_source_files")
+                .unwrap()
+                .integer()
+                .unwrap()
+                >= 2
+        );
+        assert!(ranked.iter().any(|candidate| {
+            candidate
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap()
+                == "test/lease.test"
+        }));
         let plan = first.get("reading_plan").unwrap();
         let steps = plan.get("steps").unwrap().array_ref().unwrap();
         assert!(!steps.is_empty());
@@ -1117,6 +1423,16 @@ mod tests {
             steps[0].get("basis").unwrap().str().unwrap(),
             "GIT_BLOB_LEXICAL_MATCH"
         );
+        assert!(steps.iter().any(|step| {
+            step.get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap()
+                == "test/lease.test"
+                && step.get("action").unwrap().str().unwrap() == "INSPECT_RELATED_TEST"
+        }));
         assert_eq!(
             steps[0]
                 .get("source")

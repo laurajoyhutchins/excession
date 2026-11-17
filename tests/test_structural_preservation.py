@@ -81,6 +81,21 @@ class StructuralPreservation(unittest.TestCase):
         self.assertEqual(report["obligations"][0]["result"], "FAIL")
         self.assertEqual(report["obligations"][1]["result"], "FAIL")
 
+    def test_relative_executable_runs_in_each_checked_out_tree(self):
+        self.write("runner.sh", "#!/bin/sh\\npython3 -B -c \"import runpy; print(runpy.run_path('module.py')['answer']())\"\\n")
+        (self.repo / "runner.sh").chmod(0o755)
+        # Rebuild baseline and candidate commits so the executable belongs
+        # to each pinned tree instead of the CI runner's current checkout.
+        git(self.repo, "reset", "--hard", self.base)
+        self.write("runner.sh", "#!/bin/sh\npython3 -B -c \"import runpy; print(runpy.run_path('module.py')['answer']())\"\n")
+        (self.repo / "runner.sh").chmod(0o755)
+        self.base = self.commit()
+        self.write("module.py", "def answer():\n    return 40 + 2\n")
+        self.candidate = self.commit()
+        self.doc["obligations"][0]["argv"] = ["./runner.sh"]
+        self.assertEqual(self.evaluate()["status"],
+                         "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

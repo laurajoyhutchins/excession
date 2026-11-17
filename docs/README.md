@@ -55,6 +55,7 @@ product architecture.
 
 [Development](DEVELOPMENT.md) · [CI policy](CI.md) ·
 [Quality ratchet](QUALITY_RATCHET.md) ·
+[Autonomous improvements](AUTONOMOUS_IMPROVEMENTS.md) ·
 [Structural receipts](STRUCTURAL_PRESERVATION.md) ·
 [Release](RELEASE.md) · [Contributing](../CONTRIBUTING.md) ·
 [Agent instructions](../AGENTS.md) ·

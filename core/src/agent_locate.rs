@@ -991,7 +991,10 @@ mod tests {
             "test/fixtures/typescript/example.mts",
             "test/fixtures/typescript/example.cts",
         ] {
-            assert!(source_path(path), "missing JavaScript/TypeScript source: {path}");
+            assert!(
+                source_path(path),
+                "missing JavaScript/TypeScript source: {path}"
+            );
         }
         assert!(!source_path("node_modules/pkg/index.cjs"));
         assert!(source_path("src/parse.y"));

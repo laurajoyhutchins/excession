@@ -336,7 +336,8 @@ fn reading_plan(
                    basis: &str,
                    why: &str,
                    reference_collection: &str,
-                   reference_index: usize| -> Result<()> {
+                   reference_index: usize|
+     -> Result<()> {
         if steps.len() >= budget {
             return Ok(());
         }
@@ -405,7 +406,13 @@ fn reading_plan(
         )?;
     }
     if context != &Value::Null {
-        for (i, candidate) in context.get("test_candidates")?.array_ref()?.iter().take(8).enumerate() {
+        for (i, candidate) in context
+            .get("test_candidates")?
+            .array_ref()?
+            .iter()
+            .take(8)
+            .enumerate()
+        {
             add(
                 candidate,
                 "source",
@@ -419,7 +426,10 @@ fn reading_plan(
     }
     Ok(obj(&[
         ("schema", Value::string("excession.agent-reading-plan.v1")),
-        ("goal", Value::string("SOURCE_GUIDED_CODEBASE_UNDERSTANDING")),
+        (
+            "goal",
+            Value::string("SOURCE_GUIDED_CODEBASE_UNDERSTANDING"),
+        ),
         ("steps", Value::array(steps)),
         (
             "interpretation",
@@ -642,13 +652,15 @@ mod tests {
 
     #[test]
     fn reading_plan_orients_to_source_then_related_code_then_tests() {
-        let git_source = |path: &str| obj(&[
-            ("source_commit", Value::string("a".repeat(40))),
-            ("source_tree", Value::string("b".repeat(40))),
-            ("path", Value::string(path)),
-            ("blob", Value::string("c".repeat(40))),
-            ("mode", Value::string("100644")),
-        ]);
+        let git_source = |path: &str| {
+            obj(&[
+                ("source_commit", Value::string("a".repeat(40))),
+                ("source_tree", Value::string("b".repeat(40))),
+                ("path", Value::string(path)),
+                ("blob", Value::string("c".repeat(40))),
+                ("mode", Value::string("100644")),
+            ])
+        };
         let lexical = obj(&[("source", git_source("src/worker.py"))]);
         let incoming = obj(&[
             ("source", git_source("src/handler.py")),
@@ -665,23 +677,33 @@ mod tests {
             ("assessment", Value::string("OBSERVED")),
             ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
         ]);
-        let context = obj(&[("test_candidates", Value::array([
-            obj(&[("source", git_source("tests/test_worker.py"))])
-        ]))]);
-        let plan = reading_plan(
-            &[lexical],
-            &[incoming, outgoing, duplicate],
-            &context,
-            8,
-        ).unwrap();
+        let context = obj(&[(
+            "test_candidates",
+            Value::array([obj(&[("source", git_source("tests/test_worker.py"))])]),
+        )]);
+        let plan = reading_plan(&[lexical], &[incoming, outgoing, duplicate], &context, 8).unwrap();
         let steps = plan.get("steps").unwrap().array_ref().unwrap();
         assert_eq!(steps.len(), 4);
-        let paths = steps.iter().map(|item| {
-            item.get("source").unwrap().get("path").unwrap().str().unwrap()
-        }).collect::<Vec<_>>();
-        assert_eq!(paths, [
-            "src/worker.py", "src/handler.py", "src/store.py", "tests/test_worker.py"
-        ]);
+        let paths = steps
+            .iter()
+            .map(|item| {
+                item.get("source")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            [
+                "src/worker.py",
+                "src/handler.py",
+                "src/store.py",
+                "tests/test_worker.py"
+            ]
+        );
         assert_eq!(
             steps[1].get("action").unwrap().str().unwrap(),
             "INSPECT_POSSIBLE_CALLER"
@@ -690,9 +712,11 @@ mod tests {
             steps[2].get("basis").unwrap().str().unwrap(),
             "STATIC_RELATIONSHIP_CANDIDATE"
         );
-        assert!(steps.iter().all(|item| {
-            !item.get("behavior_verified").unwrap().bool().unwrap()
-        }));
+        assert!(
+            steps
+                .iter()
+                .all(|item| { !item.get("behavior_verified").unwrap().bool().unwrap() })
+        );
         assert!(!plan.get("complete_behavior_trace").unwrap().bool().unwrap());
     }
 
@@ -711,7 +735,6 @@ mod tests {
         ]);
         assert!(reading_plan(&[], &[fake], &Value::Null, 16).is_err());
     }
-
 
     #[test]
     fn native_neighbors_preserve_receipts_and_reject_stale_git_identities() {
@@ -960,7 +983,13 @@ mod tests {
         let steps = plan.get("steps").unwrap().array_ref().unwrap();
         assert!(!steps.is_empty());
         assert_eq!(
-            steps[0].get("source").unwrap().get("path").unwrap().str().unwrap(),
+            steps[0]
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "src/lease.rs"
         );
         assert_eq!(
@@ -968,7 +997,13 @@ mod tests {
             "GIT_BLOB_LEXICAL_MATCH"
         );
         assert_eq!(
-            steps[0].get("source").unwrap().get("source_commit").unwrap().str().unwrap(),
+            steps[0]
+                .get("source")
+                .unwrap()
+                .get("source_commit")
+                .unwrap()
+                .str()
+                .unwrap(),
             first.get("source_commit").unwrap().str().unwrap()
         );
         assert!(

@@ -22,11 +22,9 @@ class Refusal(Exception):
     """Invalid input or unverifiable repository state."""
 
 
-def git(repo: Path, *args: str, missing: bool = False) -> bytes | None:
+def git(repo: Path, *args: str) -> bytes:
     proc = subprocess.run(["git", "-C", str(repo), *args], capture_output=True)
     if proc.returncode:
-        if missing and proc.returncode == 128 and b"does not exist in" in proc.stderr:
-            return None
         raise Refusal(f"git {args[0]} failed: {proc.stderr.decode(errors='replace').strip()}")
     return proc.stdout
 

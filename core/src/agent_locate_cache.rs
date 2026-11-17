@@ -672,6 +672,7 @@ fn verify_source_window(
     repo: &std::path::Path,
     oid: &str,
     start_byte: u64,
+    start_line: usize,
     body: &str,
 ) -> Result<()> {
     let expected = body.as_bytes();
@@ -679,9 +680,14 @@ fn verify_source_window(
         .checked_add(expected.len() as u64)
         .ok_or("cached source chunk offset overflow")?;
     let mut checked = 0usize;
+    let mut authenticated_line = 1usize;
     let mut reader = git::BlobReader::open(repo)?;
     let total = reader.stream_verified(oid, 64 * 1024, |offset, bytes| {
         let upper = offset + bytes.len() as u64;
+        if offset < start_byte {
+            let before = (start_byte - offset).min(bytes.len() as u64) as usize;
+            authenticated_line += bytes[..before].iter().filter(|&&byte| byte == b'\n').count();
+        }
         let a = offset.max(start_byte);
         let b = upper.min(end);
         if a < b {
@@ -698,6 +704,9 @@ fn verify_source_window(
     reader.finish()?;
     if end > total || checked != expected.len() {
         return refuse("cached chunk lies outside authenticated Git blob");
+    }
+    if authenticated_line != start_line {
+        return refuse("cached source chunk line differs from authenticated Git blob");
     }
     Ok(())
 }
@@ -883,7 +892,7 @@ pub(crate) fn search_with_limits(
             // A chunk is not itself a Git blob. Re-stream the entire original
             // object to independently verify both its hash and the exact
             // cached byte window before exposing source text to a caller.
-            verify_source_window(&discovered.root, &blob, start_byte as u64, &body)?;
+            verify_source_window(&discovered.root, &blob, start_byte as u64, start_line, &body)?;
             hits.push(Hit {
                 entry: git::Entry {
                     path: name,

@@ -1134,7 +1134,7 @@ mod tests {
                 .unwrap()
                 .integer()
                 .unwrap(),
-            2
+            3
         );
         fs::write(root.join("src/lease.rs"), "pub fn something_else() {}\n").unwrap();
         fs::write(root.join("src/other.rs"), "pub fn renew_lease() {}\n").unwrap();
@@ -1173,7 +1173,7 @@ mod tests {
                 .unwrap()
                 .integer()
                 .unwrap(),
-            2
+            3
         );
         git(&["add", "src/lease.rs", "src/other.rs"]);
         git(&[

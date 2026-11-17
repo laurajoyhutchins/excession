@@ -272,6 +272,12 @@ def evaluate(case: dict, args, work: Path, evidence: Path) -> dict:
 
     stage = work / f"{name}-indexer"
     shutil.copytree(repo, stage)
+    # Native SCIP's project-root URI belongs to this disposable checkout.
+    # Rebind Excession to the *same* exact Git tree and source root rather than
+    # silently changing the SCIP URI or weakening source provenance checks.
+    if (command(["git", "-C", stage, "rev-parse", "HEAD"]).decode().strip() != commit
+            or command(["git", "-C", stage, "rev-parse", "HEAD^{tree}"]).decode().strip() != tree):
+        raise ValueError("SCIP staging checkout differs from independently parsed Git source")
     output = evidence / f"{name}-{language}.decoded.json"
     started = time.perf_counter()
     decoded = generate_index(
@@ -284,7 +290,7 @@ def evaluate(case: dict, args, work: Path, evidence: Path) -> dict:
         raise ValueError(f"native evidence exceeds existing 4MiB capacity: {name}")
     db = work / f"{name}.sqlite"
     imported = json.loads(command([
-        args.bin, "refactor", "scip-ingest", "--repo", repo,
+        args.bin, "refactor", "scip-ingest", "--repo", stage,
         "--rev", commit, "--index", output, "--db", db
     ]))
     if imported.get("source_commit") != commit or imported.get("source_tree") != tree:
@@ -293,14 +299,14 @@ def evaluate(case: dict, args, work: Path, evidence: Path) -> dict:
         raise ValueError("SCIP index has no independently source-bound observations")
 
     full_report = json.loads(command([
-        args.bin, "analyze", repo, "--rev", commit, "--roots",
+        args.bin, "analyze", stage, "--rev", commit, "--roots",
         ",".join(roots), "--db", db, "--json"
     ]))
     full = verified_pairs(full_report, repo, commit, tree, tracked)
     cases = []
     for focus in FOCI[name]:
         context = json.loads(command([
-            args.bin, "agent", "context", "--repo", repo, "--rev", commit,
+            args.bin, "agent", "context", "--repo", stage, "--rev", commit,
             "--focus", focus, "--roots", ",".join(roots),
             "--db", db, "--limit", LIMIT
         ], timeout=240))

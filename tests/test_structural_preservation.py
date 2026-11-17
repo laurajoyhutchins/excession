@@ -109,6 +109,14 @@ class StructuralPreservation(unittest.TestCase):
         with self.assertRaises(runner.Refused):
             self.evaluate()
 
+    def test_changed_symlink_is_refused_before_execution(self):
+        import os
+        (self.repo / "module.py").unlink()
+        os.symlink("missing-target.py", self.repo / "module.py")
+        candidate = self.commit()
+        with self.assertRaisesRegex(runner.Refused, "not a regular tracked Git source file"):
+            self.evaluate(candidate=candidate)
+
     def test_identity_and_ancestry_are_authoritative(self):
         with self.assertRaises(runner.Refused):
             self.evaluate(base="HEAD")

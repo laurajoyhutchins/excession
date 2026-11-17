@@ -569,6 +569,51 @@ mod tests {
         assert!(validate_path("src/bin/hello.rs").is_ok());
     }
     #[test]
+    fn committed_grep_finds_original_test_source_ignoring_dirty_worktree() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_GREP: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-git-grep-{}-{}",
+            std::process::id(),
+            NEXT_GREP.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let run = |args: &[&str]| {
+            let result = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+            String::from_utf8(result.stdout).unwrap().trim().to_owned()
+        };
+        run(&["init", "-q"]);
+        std::fs::create_dir_all(root.join("test")).unwrap();
+        std::fs::write(root.join("test/wal.test"), "WAL checkpoint release locks\n").unwrap();
+        std::fs::write(root.join("worker.py"), "def recover(): return 1\n").unwrap();
+        run(&["add", "."]);
+        run(&[
+            "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "pinned source",
+        ]);
+        let head = run(&["rev-parse", "HEAD"]);
+        std::fs::write(root.join("test/wal.test"), "dirty worktree has no checkpoint\n").unwrap();
+        let (hits, truncated) = grep_committed_paths(&root, &head, "WAL", 10).unwrap();
+        assert_eq!(hits, ["test/wal.test"]);
+        assert!(!truncated);
+        let (missing, incomplete) = grep_committed_paths(&root, &head, "dirty", 10).unwrap();
+        assert!(missing.is_empty());
+        assert!(!incomplete);
+        let (limited, incomplete) = grep_committed_paths(&root, &head, "return", 1).unwrap();
+        assert_eq!(limited, ["worker.py"]);
+        assert!(!incomplete);
+        assert!(grep_committed_paths(&root, &head, "-e dangerous", 10).is_err());
+        assert!(grep_committed_paths(&root, "HEAD", "wal", 10).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn oids_refuse_non_sha1() {
         assert!(oid("a").is_err());
         assert!(oid(&"F".repeat(40)).is_err());

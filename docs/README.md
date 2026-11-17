@@ -1,5 +1,8 @@
 # Documentation
 
+**Resource policies:** [Configurable budgets, checkpoints, and coverage](RESOURCE_BUDGETS.md).
+
+
 Excession has one Rust executable and several ways to consume its evidence.
 Start with the task you want to perform. Documentation here distinguishes
 **implemented commands** from **experimental designs** and

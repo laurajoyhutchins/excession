@@ -1,8 +1,6 @@
 """Counterexamples for conservative native Cargo patch-update integration."""
 from __future__ import annotations
 
-import copy
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -87,7 +85,7 @@ class CargoPatchAcceptance(unittest.TestCase):
 
     def test_changed_dependencies_refused(self):
         with self.assertRaises(audit.common.Refused):
-            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "def", ["new"])))
+            audit.patch_changes(encoded(lock()), encoded(lock("1.2.4", "b" * 64, ["new"])))
 
     def test_checksum_substitution_refused(self):
         with self.assertRaises(audit.common.Refused):

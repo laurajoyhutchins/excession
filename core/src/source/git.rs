@@ -211,7 +211,9 @@ impl BlobReader {
         mut emit: impl FnMut(u64, usize, &str) -> Result<()>,
     ) -> Result<u64> {
         if max_chunk_bytes < 4 {
-            return refuse("text source chunk budget must allow one UTF-8 scalar (at least 4 bytes)");
+            return refuse(
+                "text source chunk budget must allow one UTF-8 scalar (at least 4 bytes)",
+            );
         }
         let mut pending = Vec::new();
         let mut start_byte = 0u64;
@@ -550,22 +552,33 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         std::fs::create_dir(&root).unwrap();
-        assert!(Command::new("git")
-            .args(["init", "-q"]).arg(&root).status().unwrap().success());
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .arg(&root)
+                .status()
+                .unwrap()
+                .success()
+        );
         let source = format!("{}{}", "α🚀 one\n".repeat(1000), "é".repeat(5000));
         std::fs::write(root.join("unicode.rs"), &source).unwrap();
         let oid = text(&root, &["hash-object", "-w", "unicode.rs"]).unwrap();
         let mut reader = BlobReader::open(&root).unwrap();
         let mut actual = String::new();
         let mut offsets = Vec::new();
-        let total = reader.stream_text_chunks_verified(&oid, 63, |offset, line, text| {
-            assert!(text.len() <= 63);
-            assert_eq!(offset as usize, actual.len());
-            assert_eq!(line, 1 + actual.bytes().filter(|byte| *byte == b'\n').count());
-            offsets.push(offset);
-            actual.push_str(text);
-            Ok(())
-        }).unwrap();
+        let total = reader
+            .stream_text_chunks_verified(&oid, 63, |offset, line, text| {
+                assert!(text.len() <= 63);
+                assert_eq!(offset as usize, actual.len());
+                assert_eq!(
+                    line,
+                    1 + actual.bytes().filter(|byte| *byte == b'\n').count()
+                );
+                offsets.push(offset);
+                actual.push_str(text);
+                Ok(())
+            })
+            .unwrap();
         assert!(offsets.len() > 20);
         assert_eq!(total, source.len() as u64);
         assert_eq!(actual, source);

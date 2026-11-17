@@ -84,7 +84,7 @@ def validate_budgets(raw):
     if not isinstance(raw, dict) or not raw or set(raw) - set(LOCATE_INDEX_DEFAULTS):
         raise Refusal("invalid locate budgets")
     for key, value in raw.items():
-        if type(value) is not int or value < 1 or value > (2**63 - 1):
+        if type(value) is not int or value < (4 if key in ("max_file_bytes", "max_segment_bytes") else 1) or value > (2**63 - 1):
             raise Refusal("locate budgets must be positive integers in SQLite range")
         if key == "refresh_segments" and value > 256:
             raise Refusal("refresh_segments must be in 1..256")

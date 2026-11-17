@@ -109,7 +109,7 @@ fn questions_and_explanations_are_traceable_and_incomplete() {
         "--rev",
         &base,
         "--question",
-        "Where is worker recovery implemented?",
+        "Where does recover_worker call retry_job?",
     ]);
     let id = started["investigation_id"].as_str().unwrap();
     let found = command(&[

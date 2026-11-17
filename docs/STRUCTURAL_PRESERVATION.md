@@ -69,7 +69,11 @@ The code also has an owner-only GitHub Actions
 `Structural preservation (trusted manual evidence)` workflow. It accepts
 immutable Git revisions and an already-committed, reviewed contract under
 `quality/structural-contracts/`; it is **never** triggered by arbitrary PR
-content. Neither interface adds execution isolation. Running malicious
+content. The manual workflow also builds and runs Excession's native `agent verify`
+source-impact command and retains its separate `OPEN_OBLIGATIONS`
+report alongside the independent execution receipt. This is a different
+evidence layer, not a proof that the interpretation is correct. Neither
+interface adds execution isolation. Running malicious
 test commands can harm the host. The operator is responsible for ensuring
 the source, command manifest and execution environment are trusted.
 

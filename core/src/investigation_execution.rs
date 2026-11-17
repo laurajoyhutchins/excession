@@ -45,7 +45,7 @@ fn sha256_file(path: &Path) -> Result<(String, u64)> {
             .ok_or("execution artifact size overflow")?;
         sha.update(&buf[..n]);
     }
-    Ok((format!("{:x}", sha.finalize()), bytes))
+    Ok((crate::digest::hex(&sha.finalize()), bytes))
 }
 
 fn argv(raw: &str) -> Result<Vec<String>> {

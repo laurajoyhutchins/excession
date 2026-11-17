@@ -43,8 +43,8 @@ impl Default for IndexLimits {
 impl IndexLimits {
     pub fn validate(self) -> Result<Self> {
         if self.max_files_per_segment == 0
-            || self.max_file_bytes < 4
-            || self.max_bytes_per_segment < 4
+            || self.max_file_bytes < 256
+            || self.max_bytes_per_segment < 256
         {
             return refuse("agent locate indexing budgets must be positive");
         }

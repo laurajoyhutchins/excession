@@ -318,6 +318,143 @@ fn related_sources(
     Ok(neighbors)
 }
 
+/// One bounded, Git-backed source inspection list. This only reorganizes
+/// references already present in locate/context; it never infers dependencies.
+struct ReadingSteps {
+    seen: BTreeSet<String>,
+    items: Vec<Value>,
+    budget: usize,
+}
+
+impl ReadingSteps {
+    fn push(
+        &mut self,
+        item: &Value,
+        action: &str,
+        basis: &str,
+        why: &str,
+        collection: &str,
+        index: usize,
+    ) -> Result<()> {
+        if self.items.len() >= self.budget {
+            return Ok(());
+        }
+        let source = item.get("source")?;
+        let path = source.get("path")?.str()?;
+        if !self.seen.insert(path.to_owned()) {
+            return Ok(());
+        }
+        self.items.push(obj(&[
+            ("sequence", Value::number(self.items.len() + 1)),
+            ("action", Value::string(action)),
+            ("source", source.clone()),
+            ("basis", Value::string(basis)),
+            ("why_read", Value::string(why)),
+            ("reference_collection", Value::string(collection)),
+            ("reference_index", Value::number(index)),
+            ("behavior_verified", Value::Bool(false)),
+        ]));
+        Ok(())
+    }
+}
+
+/// Turn existing task search, source relationships, and test candidates into
+/// a short inspection sequence. It does not infer program behavior, synthesize
+/// missing relations, or ask an indexer to produce additional facts.
+fn reading_plan(
+    candidates: &[Value],
+    related: &[Value],
+    context: &Value,
+    limit: usize,
+) -> Result<Value> {
+    let budget = limit.min(12);
+    let mut steps = ReadingSteps {
+        seen: BTreeSet::new(),
+        items: Vec::new(),
+        budget,
+    };
+
+    // Preserve room for a test-reading step when one is present, even under
+    // small budgets. Code understanding must not collapse to graph-neighbor
+    // enumeration simply because a producer supplied many observations.
+    let has_tests =
+        context != &Value::Null && !context.get("test_candidates")?.array_ref()?.is_empty();
+    let reserved_test = usize::from(has_tests && budget > 1);
+    // Read likely implementations before chasing edges. Ranking is lexical,
+    // not a measured probability that the task lives in that file.
+    for (i, candidate) in candidates
+        .iter()
+        .take(4.min(budget.saturating_sub(reserved_test)))
+        .enumerate()
+    {
+        steps.push(
+            candidate,
+            "INSPECT_TASK_MATCH",
+            "GIT_BLOB_LEXICAL_MATCH",
+            "Read the matching source to determine inputs, outputs, state changes, and invariants.",
+            "candidates",
+            i,
+        )?;
+    }
+    // Show both sides of a potential behavior path. Observed references
+    // remain producer observations; static imports remain candidates.
+    let relation_budget = 4.min(budget.saturating_sub(steps.items.len() + reserved_test));
+    for (i, neighbor) in related.iter().take(relation_budget).enumerate() {
+        let assessment = neighbor.get("assessment")?.str()?;
+        let direction = neighbor.get("direction")?.str()?;
+        let (action, why) = if direction == "LEXICAL_SOURCE_TO_NEIGHBOR" {
+            (
+                "INSPECT_POSSIBLE_DEPENDENCY",
+                "Check how the focused code uses this source; confirm whether data or control actually flows to it.",
+            )
+        } else if direction == "NEIGHBOR_TO_LEXICAL_SOURCE" {
+            (
+                "INSPECT_POSSIBLE_CALLER",
+                "Check whether this source invokes or configures the focused behavior.",
+            )
+        } else {
+            return refuse("reading plan received unsupported relationship direction");
+        };
+        let basis = match assessment {
+            "OBSERVED" => "SOURCE_BOUND_PRODUCER_OBSERVATION",
+            "CANDIDATE" => "STATIC_RELATIONSHIP_CANDIDATE",
+            _ => return refuse("reading plan received unsupported relationship assessment"),
+        };
+        steps.push(neighbor, action, basis, why, "relationship_candidates", i)?;
+    }
+    if context != &Value::Null {
+        for (i, candidate) in context
+            .get("test_candidates")?
+            .array_ref()?
+            .iter()
+            .take(4)
+            .enumerate()
+        {
+            steps.push(
+                candidate,
+                "INSPECT_RELATED_TEST",
+                "TEST_PATH_HEURISTIC",
+                "Read the assertions and fixtures to identify which behavior they actually cover.",
+                "context.test_candidates",
+                i,
+            )?;
+        }
+    }
+    Ok(obj(&[
+        ("schema", Value::string("excession.agent-reading-plan.v1")),
+        (
+            "goal",
+            Value::string("SOURCE_GUIDED_CODEBASE_UNDERSTANDING"),
+        ),
+        ("steps", Value::array(steps.items)),
+        (
+            "interpretation",
+            Value::string("ORDERED_INSPECTION_SUGGESTIONS_NOT_VERIFIED_BEHAVIOR"),
+        ),
+        ("complete_behavior_trace", Value::Bool(false)),
+    ]))
+}
+
 /// Locate candidate source files without requiring an initial --focus path.
 ///
 /// No working-tree reads or checkout changes occur. Cached native observations
@@ -458,6 +595,7 @@ pub fn locate_with_budget(
         gaps.push(gap("RELATIONSHIP_CONTEXT_TRUNCATED"));
     }
 
+    let plan = reading_plan(&candidates, &related, &context, limit)?;
     let mut output = obj(&[
         ("schema", Value::string("excession.agent-locate.v1")),
         ("source_commit", Value::string(&discovered.commit)),
@@ -467,6 +605,7 @@ pub fn locate_with_budget(
         ("candidates", Value::array(candidates)),
         ("candidate_count", Value::number(selected_paths.len())),
         ("relationship_candidates", Value::array(related)),
+        ("reading_plan", plan),
         ("indexed_source_count", Value::number(indexed_files)),
         ("skipped_source_count", Value::number(skipped)),
         ("indexed_bytes", Value::number(bytes)),
@@ -526,6 +665,124 @@ pub fn locate_with_budget(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reading_plan_orients_to_source_then_related_code_then_tests() {
+        let git_source = |path: &str| {
+            obj(&[
+                ("source_commit", Value::string("a".repeat(40))),
+                ("source_tree", Value::string("b".repeat(40))),
+                ("path", Value::string(path)),
+                ("blob", Value::string("c".repeat(40))),
+                ("mode", Value::string("100644")),
+            ])
+        };
+        let lexical = obj(&[("source", git_source("src/worker.py"))]);
+        let incoming = obj(&[
+            ("source", git_source("src/handler.py")),
+            ("assessment", Value::string("OBSERVED")),
+            ("direction", Value::string("NEIGHBOR_TO_LEXICAL_SOURCE")),
+        ]);
+        let outgoing = obj(&[
+            ("source", git_source("src/store.py")),
+            ("assessment", Value::string("CANDIDATE")),
+            ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+        ]);
+        let duplicate = obj(&[
+            ("source", git_source("src/worker.py")),
+            ("assessment", Value::string("OBSERVED")),
+            ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+        ]);
+        let context = obj(&[(
+            "test_candidates",
+            Value::array([obj(&[("source", git_source("tests/test_worker.py"))])]),
+        )]);
+        let plan = reading_plan(&[lexical], &[incoming, outgoing, duplicate], &context, 8).unwrap();
+        let steps = plan.get("steps").unwrap().array_ref().unwrap();
+        assert_eq!(steps.len(), 4);
+        let paths = steps
+            .iter()
+            .map(|item| {
+                item.get("source")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            paths,
+            [
+                "src/worker.py",
+                "src/handler.py",
+                "src/store.py",
+                "tests/test_worker.py"
+            ]
+        );
+        assert_eq!(
+            steps[1].get("action").unwrap().str().unwrap(),
+            "INSPECT_POSSIBLE_CALLER"
+        );
+        assert_eq!(
+            steps[2].get("basis").unwrap().str().unwrap(),
+            "STATIC_RELATIONSHIP_CANDIDATE"
+        );
+        assert!(
+            steps
+                .iter()
+                .all(|item| { !item.get("behavior_verified").unwrap().bool().unwrap() })
+        );
+        assert!(!plan.get("complete_behavior_trace").unwrap().bool().unwrap());
+    }
+
+    #[test]
+    fn reading_plan_reserves_tests_in_small_bounded_investigations() {
+        let source = |path: &str| obj(&[("path", Value::string(path))]);
+        let lexical = (0..4)
+            .map(|i| obj(&[("source", source(&format!("src/feature{i}.rs")))]))
+            .collect::<Vec<_>>();
+        let related = (0..8)
+            .map(|i| {
+                obj(&[
+                    ("source", source(&format!("src/dependency{i}.rs"))),
+                    ("assessment", Value::string("OBSERVED")),
+                    ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+                ])
+            })
+            .collect::<Vec<_>>();
+        let context = obj(&[(
+            "test_candidates",
+            Value::array([obj(&[("source", source("tests/test_feature.rs"))])]),
+        )]);
+        let plan = reading_plan(&lexical, &related, &context, 8).unwrap();
+        let steps = plan.get("steps").unwrap().array_ref().unwrap();
+        assert_eq!(steps.len(), 8);
+        assert_eq!(
+            steps[7].get("action").unwrap().str().unwrap(),
+            "INSPECT_RELATED_TEST"
+        );
+        assert_eq!(
+            steps[7].get("basis").unwrap().str().unwrap(),
+            "TEST_PATH_HEURISTIC"
+        );
+    }
+
+    #[test]
+    fn reading_plan_keeps_small_budget_and_avoids_fabrication() {
+        let source = obj(&[("path", Value::string("src/found.py"))]);
+        let candidates = [obj(&[("source", source)])];
+        let plan = reading_plan(&candidates, &[], &Value::Null, 1).unwrap();
+        assert_eq!(plan.get("steps").unwrap().array_ref().unwrap().len(), 1);
+        let empty = reading_plan(&[], &[], &Value::Null, 16).unwrap();
+        assert!(empty.get("steps").unwrap().array_ref().unwrap().is_empty());
+        let fake = obj(&[
+            ("source", obj(&[("path", Value::string("src/fake.py"))])),
+            ("assessment", Value::string("VERIFIED")),
+            ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+        ]);
+        assert!(reading_plan(&[], &[fake], &Value::Null, 16).is_err());
+    }
 
     #[test]
     fn native_neighbors_preserve_receipts_and_reject_stale_git_identities() {
@@ -770,6 +1027,33 @@ mod tests {
             1
         );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
+        let plan = first.get("reading_plan").unwrap();
+        let steps = plan.get("steps").unwrap().array_ref().unwrap();
+        assert!(!steps.is_empty());
+        assert_eq!(
+            steps[0]
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/lease.rs"
+        );
+        assert_eq!(
+            steps[0].get("basis").unwrap().str().unwrap(),
+            "GIT_BLOB_LEXICAL_MATCH"
+        );
+        assert_eq!(
+            steps[0]
+                .get("source")
+                .unwrap()
+                .get("source_commit")
+                .unwrap()
+                .str()
+                .unwrap(),
+            first.get("source_commit").unwrap().str().unwrap()
+        );
         assert!(
             !first
                 .get("safe_to_skip_unlisted_tests")
@@ -802,6 +1086,11 @@ mod tests {
         fs::write(root.join("src/other.rs"), "pub fn renew_lease() {}\n").unwrap();
         let second = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
         assert_eq!(second.get("report_id").unwrap().str().unwrap(), first_id);
+        assert_eq!(
+            second.get("reading_plan").unwrap(),
+            first.get("reading_plan").unwrap(),
+            "uncommitted edits cannot change the pinned source reading plan"
+        );
         assert_eq!(
             second.get("candidates").unwrap().array_ref().unwrap()[0]
                 .get("source")

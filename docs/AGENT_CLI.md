@@ -11,7 +11,16 @@ excession agent locate --repo /work/project \
 file paths. It maintains a **persistent, incrementally updated SQLite FTS5 index** from
 authenticated regular Git source blobs and ranks candidates using BM25.
 Each candidate carries an exact commit, tree, path, blob, file mode, and a
-1-based **heuristic** source line window. The result also contains the
+1-based **heuristic** source line window.
+
+The response also contains `reading_plan`: at most 12 distinct Git-pinned
+files ordered to inspect task matches first, then connected possible callers
+and dependencies, then filename-suggested tests. Each step contains its
+original array reference (`candidates`, `relationship_candidates`, or
+`context.test_candidates`), observation basis, and a concrete inspection
+question. Nothing in the plan is labeled verified behavior. The plan does not
+perform source interpretation, resolve dynamic calls, or replace an agent's
+inspection of actual source. See [codebase understanding](CODEBASE_UNDERSTANDING.md). The result also contains the
 existing `agent context` report for up to the first 16 candidates, including
 its native relationships, test suggestions, and coverage gaps. Empty results
 do **not** prove the requested behavior is absent.

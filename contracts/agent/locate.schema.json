@@ -21,7 +21,8 @@
     "safe_to_skip_unlisted_tests",
     "report_id",
     "index",
-    "relationship_candidates"
+    "relationship_candidates",
+    "reading_plan"
   ],
   "properties": {
     "schema": {
@@ -371,6 +372,96 @@
           }
         }
       }
+    },
+    "reading_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "goal",
+        "steps",
+        "interpretation",
+        "complete_behavior_trace"
+      ],
+      "properties": {
+        "schema": {
+          "const": "excession.agent-reading-plan.v1"
+        },
+        "goal": {
+          "const": "SOURCE_GUIDED_CODEBASE_UNDERSTANDING"
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "action",
+              "source",
+              "basis",
+              "why_read",
+              "reference_collection",
+              "reference_index",
+              "behavior_verified"
+            ],
+            "properties": {
+              "sequence": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "action": {
+                "enum": [
+                  "INSPECT_TASK_MATCH",
+                  "INSPECT_POSSIBLE_DEPENDENCY",
+                  "INSPECT_POSSIBLE_CALLER",
+                  "INSPECT_RELATED_TEST"
+                ]
+              },
+              "source": {
+                "$ref": "#/properties/candidates/items/properties/source"
+              },
+              "basis": {
+                "enum": [
+                  "GIT_BLOB_LEXICAL_MATCH",
+                  "SOURCE_BOUND_PRODUCER_OBSERVATION",
+                  "STATIC_RELATIONSHIP_CANDIDATE",
+                  "TEST_PATH_HEURISTIC"
+                ]
+              },
+              "why_read": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "reference_collection": {
+                "enum": [
+                  "candidates",
+                  "relationship_candidates",
+                  "context.test_candidates"
+                ]
+              },
+              "reference_index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 63
+              },
+              "behavior_verified": {
+                "const": false
+              }
+            }
+          }
+        },
+        "interpretation": {
+          "const": "ORDERED_INSPECTION_SUGGESTIONS_NOT_VERIFIED_BEHAVIOR"
+        },
+        "complete_behavior_trace": {
+          "const": false
+        }
+      },
+      "description": "A bounded, task-oriented inspection order over existing Git-pinned lexical sources, native or candidate relationships, and test candidates. Never a behavioral proof."
     }
   },
   "$defs": {

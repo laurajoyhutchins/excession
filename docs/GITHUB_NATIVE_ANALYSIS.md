@@ -77,6 +77,36 @@ build script, or shell fragment from the requested checkout is executed.
 The analysis worker itself is compiled from the trusted Excession workflow
 checkout at the Actions revision.
 
+## Configurable indexing budgets for locate requests
+
+An owner-authored `locate` request may supply an optional `budgets` object.
+The GitHub worker still enforces its separate process timeout and artifact
+size limits. Only the authenticated owner can request work, and the worker
+checks that the final native report used the exact selected budgets.
+
+```json
+{
+  "schema": "excession.github-analysis-request.v1",
+  "repository": "sqlite/sqlite",
+  "revision": "3d0c703e3d18b05099d90163189bca51e6820526",
+  "operation": "locate",
+  "task": "Find SQLite's SELECT compiler, planner and VDBE executor",
+  "limit": 24,
+  "budgets": {
+    "max_file_bytes": 8388608,
+    "max_segment_bytes": 33554432,
+    "max_segment_files": 1000,
+    "refresh_segments": 256
+  }
+}
+```
+
+All values must be positive integers; `refresh_segments` is in 1..256,
+and the file byte budget cannot exceed the per-refresh segment byte budget.
+Omitted values use the native defaults. These budgets control indexing
+work, not completeness, and a one-shot GitHub request can still return
+`PARTIAL` source coverage. See [resource budgets](RESOURCE_BUDGETS.md).
+
 ## Evidence and retention
 
 The receipt records the request, producer tool commit and version, workflow

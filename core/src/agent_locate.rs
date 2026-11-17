@@ -48,8 +48,12 @@ fn source_path(path: &str) -> bool {
             | "pyi"
             | "go"
             | "js"
+            | "cjs"
+            | "mjs"
             | "jsx"
             | "ts"
+            | "cts"
+            | "mts"
             | "tsx"
             | "c"
             | "h"
@@ -978,6 +982,18 @@ mod tests {
         assert!(!source_path("docs/readme.md"));
         assert!(source_path("src/agent.rs"));
         assert!(source_path("pkg/controller/main.go"));
+        // Node.js uses explicit CommonJS/ESM suffixes throughout its source
+        // and tests; omitting them makes an index appear more complete than
+        // the source inventory actually is.
+        for path in [
+            "lib/internal/modules/esm/loader.mjs",
+            "test/fixtures/cycles/example.cjs",
+            "test/fixtures/typescript/example.mts",
+            "test/fixtures/typescript/example.cts",
+        ] {
+            assert!(source_path(path), "missing JavaScript/TypeScript source: {path}");
+        }
+        assert!(!source_path("node_modules/pkg/index.cjs"));
         assert!(source_path("src/parse.y"));
         assert!(source_path("src/tokenizer.l"));
     }

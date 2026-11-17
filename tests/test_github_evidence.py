@@ -97,6 +97,13 @@ class GithubEvidence(unittest.TestCase):
                 "example/project", "c" * 40, "", "123456",
             )
 
+    def test_self_pr_uses_trusted_base_producer_not_stale_workflow_file(self):
+        workflow = (ROOT / ".github/workflows/github-evidence.yml").read_text()
+        trusted = "${{ github.event.pull_request.base.sha || job.workflow_sha }}"
+        self.assertIn("ref: " + trusted, workflow)
+        self.assertIn("PRODUCER_SHA: " + trusted, workflow)
+        self.assertIn('test "$TOOL_SHA" = "$PRODUCER_SHA"', workflow)
+
     def test_envelope_preserves_source_witness_and_nonapproval(self):
         report = self.produce()
         self.assertEqual(report["schema"], "excession.github-evidence.v1")

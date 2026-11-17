@@ -96,12 +96,12 @@ def changed_paths(repo: Path, base: str, candidate: str) -> list[str]:
 def verify_changed_entry_modes(repo: Path, base: str, candidate: str, paths: list[str]) -> None:
     for revision in (base, candidate):
         for path in paths:
-            entries = [item for item in git(repo, "ls-tree", "-z", "--full-tree", revision, "--", path).split(b"\\0") if item]
+            entries = [item for item in git(repo, "ls-tree", "-z", "--full-tree", revision, "--", path).split(b"\0") if item]
             if not entries:
                 continue  # additions and deletions are permitted
             if len(entries) != 1:
                 raise Refused("changed path does not denote exactly one source entry")
-            header, name = entries[0].split(b"\\t", 1)
+            header, name = entries[0].split(b"\t", 1)
             if name.decode("utf-8") != path:
                 raise Refused("changed path unexpectedly resolved to another Git entry")
             mode, kind, _oid = header.decode("ascii").split()

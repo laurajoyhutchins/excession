@@ -738,9 +738,63 @@ pub fn locate_with_limits(
         source_path,
         limits,
     )?;
+    // Git is authoritative for *text presence* in this committed tree. It
+    // can find real test files that have no installed language indexer.
+    // FTS remains a useful, independently ranked fallback, not the product
+    // definition of source completeness.
+    let committed = committed_matches(
+        &discovered.root,
+        &discovered.commit,
+        &words,
+        &inventory,
+        limit,
+    )?;
     let mut candidates = Vec::new();
     let mut selected_paths = Vec::new();
+    let mut skipped_git_excerpts = 0usize;
+    let mut selected_git_count = 0usize;
+    if !committed.selected.is_empty() {
+        let mut reader = git::BlobReader::open(&discovered.root)?;
+        for entry in &committed.selected {
+            // The entire original blob must be verified before exposing a
+            // source excerpt. Refuse to claim coverage of an oversized,
+            // binary or non-UTF-8 blob, and retain an explicit gap count.
+            let body = match reader.read_capped(&entry.oid, limits.max_file_bytes) {
+                Ok(bytes) => match String::from_utf8(bytes) {
+                    Ok(text) if !text.contains('\0') => text,
+                    _ => {
+                        skipped_git_excerpts += 1;
+                        continue;
+                    }
+                },
+                Err(error) if error.to_string().contains("Git source blob exceeds byte limit") => {
+                    skipped_git_excerpts += 1;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
+            selected_paths.push(entry.path.clone());
+            candidates.push(obj(&[
+                ("rank", Value::number(candidates.len() + 1)),
+                (
+                    "source",
+                    source(&discovered.commit, &discovered.tree, entry),
+                ),
+                ("excerpt", excerpt(&body, &words, 1)),
+                ("ranking", Value::string("GIT_COMMITTED_DISTINCT_TERMS")),
+                ("semantic_correctness", Value::string("UNVERIFIED")),
+            ]));
+            selected_git_count += 1;
+        }
+        reader.finish()?;
+    }
     for hit in &index.hits {
+        if candidates.len() == limit {
+            break;
+        }
+        if selected_paths.contains(&hit.entry.path) {
+            continue;
+        }
         selected_paths.push(hit.entry.path.clone());
         candidates.push(obj(&[
             ("rank", Value::number(candidates.len() + 1)),
@@ -764,6 +818,12 @@ pub fn locate_with_limits(
         gap("UNCOMMITTED_CHANGES_EXCLUDED"),
         gap("TEST_SELECTION_NOT_PROVEN"),
     ];
+    if committed.incomplete {
+        gaps.push(gap("GIT_GREP_PATH_RESULTS_TRUNCATED"));
+    }
+    if skipped_git_excerpts > 0 {
+        gaps.push(gap("GIT_GREP_SOURCE_EXCERPTS_UNAVAILABLE"));
+    }
     if skipped > 0 {
         gaps.push(gap("SOURCE_CONTENT_NOT_FULLY_INDEXED"));
     }
@@ -830,7 +890,17 @@ pub fn locate_with_limits(
         ("source_commit", Value::string(&discovered.commit)),
         ("source_tree", Value::string(&discovered.tree)),
         ("task", Value::string(task)),
-        ("retrieval", Value::string("GIT_BLOB_FTS5_BM25")),
+        ("retrieval", Value::string("COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK")),
+        (
+            "git_search",
+            obj(&[
+                ("searched_terms", Value::number(words.len())),
+                ("matching_source_files", Value::number(committed.source_file_count)),
+                ("selected_source_files", Value::number(selected_git_count)),
+                ("unreadable_matched_sources", Value::number(skipped_git_excerpts)),
+                ("truncated", Value::Bool(committed.incomplete)),
+            ]),
+        ),
         ("candidates", Value::array(candidates)),
         ("candidate_count", Value::number(selected_paths.len())),
         ("relationship_candidates", Value::array(related)),

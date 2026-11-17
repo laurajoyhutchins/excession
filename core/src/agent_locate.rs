@@ -7,6 +7,12 @@
 use crate::json::{Value, obj};
 use crate::{Result, agent, agent_locate_cache, discovery, git, refuse};
 pub use agent_locate_cache::IndexLimits;
+
+#[derive(Clone, Copy, Debug)]
+pub struct LocateBudget {
+    pub index_segments: usize,
+    pub index: IndexLimits,
+}
 #[cfg(test)]
 use rusqlite::{Connection, params};
 use std::collections::{BTreeMap, BTreeSet};
@@ -500,8 +506,10 @@ pub fn locate_with_budget(
         limit,
         roots,
         db,
-        index_segments,
-        IndexLimits::default(),
+        LocateBudget {
+            index_segments,
+            index: IndexLimits::default(),
+        },
     )
 }
 
@@ -514,10 +522,10 @@ pub fn locate_with_limits(
     limit: usize,
     roots: Option<&str>,
     db: Option<&str>,
-    index_segments: usize,
-    limits: IndexLimits,
+    budget: LocateBudget,
 ) -> Result<Value> {
-    let limits = limits.validate()?;
+    let limits = budget.index.validate()?;
+    let index_segments = budget.index_segments;
     if !(1..=64).contains(&limit) {
         return refuse("agent locate --limit must be 1..=64");
     }

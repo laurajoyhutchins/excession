@@ -93,6 +93,22 @@ def changed_paths(repo: Path, base: str, candidate: str) -> list[str]:
     return sorted(p.decode("utf-8") for p in raw.split(b"\0") if p)
 
 
+def verify_changed_entry_modes(repo: Path, base: str, candidate: str, paths: list[str]) -> None:
+    for revision in (base, candidate):
+        for path in paths:
+            entries = [item for item in git(repo, "ls-tree", "-z", "--full-tree", revision, "--", path).split(b"\\0") if item]
+            if not entries:
+                continue  # additions and deletions are permitted
+            if len(entries) != 1:
+                raise Refused("changed path does not denote exactly one source entry")
+            header, name = entries[0].split(b"\\t", 1)
+            if name.decode("utf-8") != path:
+                raise Refused("changed path unexpectedly resolved to another Git entry")
+            mode, kind, _oid = header.decode("ascii").split()
+            if kind != "blob" or mode not in ("100644", "100755"):
+                raise Refused("changed path is not a regular tracked Git source file")
+
+
 def digest_file(file) -> tuple[str, int]:
     file.seek(0)
     h = hashlib.sha256()
@@ -172,6 +188,7 @@ def evaluate(repo: Path, base: str, candidate: str, doc: dict, sha: str) -> dict
     changed = changed_paths(repo, original, amended)
     if changed != sorted(doc["changed_paths"]):
         raise Refused(f"changed-path mismatch: observed {changed} versus declared {sorted(doc['changed_paths'])}")
+    verify_changed_entry_modes(repo, original, amended, changed)
     report = {
         "schema": REPORT, "base_commit": original, "base_tree": tree_a,
         "candidate_commit": amended, "candidate_tree": tree_b,

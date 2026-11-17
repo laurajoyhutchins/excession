@@ -36,7 +36,9 @@ def commit(repo: Path, rev: str) -> str:
 
 
 def blob(repo: Path, rev: str, path: str, *, missing: bool = False) -> str | None:
-    value = git(repo, "show", f"{rev}:{path}", missing=missing)
+    if missing and not git(repo, "ls-tree", "--name-only", rev, "--", path):
+        return None
+    value = git(repo, "show", f"{rev}:{path}")
     return None if value is None else value.decode("utf-8")
 
 

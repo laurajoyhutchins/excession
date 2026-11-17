@@ -121,11 +121,20 @@ def python_imports(repo: Path, files: set[str], items: dict) -> dict:
                     anchor = ".".join(parts[:len(parts) - node.level + 1])
                     module = ".".join(x for x in (anchor, node.module or "") if x)
                     if node.module:
-                        targets = [module]
+                        targets = [
+                            module + "." + item.name
+                            if module + "." + item.name in modules else module
+                            for item in node.names
+                        ]
                     else:
                         targets = [module + "." + item.name for item in node.names]
                 else:
-                    targets = [node.module] if node.module else []
+                    module = node.module or ""
+                    targets = [
+                        module + "." + item.name
+                        if module + "." + item.name in modules else module
+                        for item in node.names
+                    ]
                 for target in targets:
                     resolved = modules.get(target)
                     if resolved and resolved != name:

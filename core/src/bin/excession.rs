@@ -16,6 +16,7 @@ use excession::improve;
 use excession::improve_edits;
 use excession::investigation;
 use excession::investigation_execution;
+use excession::investigation_trace;
 use excession::investigation_witness;
 use excession::investigation_workflow;
 use excession::native_test_selectors;
@@ -964,6 +965,37 @@ fn execute(args: &[String]) -> Result<Response> {
                             argv_json: opt.get("argv-json"),
                             timeout_ms,
                             max_output_bytes,
+                            trusted_local: opt.get("trusted-local") == "true",
+                        },
+                    )?))
+                }
+                "trace" => {
+                    let parse_u64 = |name: &str, default: &str| -> Result<u64> {
+                        opt.get_or(name, default)
+                            .parse::<u64>()
+                            .map_err(|_| format!("--{name} must be a positive integer"))
+                    };
+                    let parse_usize = |name: &str, default: &str| -> Result<usize> {
+                        opt.get_or(name, default)
+                            .parse::<usize>()
+                            .map_err(|_| format!("--{name} must be a positive integer"))
+                    };
+                    Ok(json(investigation_trace::run(
+                        &ledger,
+                        repo,
+                        investigation_trace::Request {
+                            id: opt.get("id"),
+                            expected_revision: expected_revision()?,
+                            plan_event_id: opt.get("plan-event"),
+                            candidate: opt.get("candidate"),
+                            program: opt.path("program"),
+                            driver: opt.path("driver"),
+                            script: opt.get("script"),
+                            args_json: opt.get("argv-json"),
+                            timeout_ms: parse_u64("timeout-ms", "30000")?,
+                            max_output_bytes: parse_u64("max-output-bytes", "1048576")?,
+                            max_trace_events: parse_usize("max-trace-events", "2000")?,
+                            max_trace_bytes: parse_u64("max-trace-bytes", "1048576")?,
                             trusted_local: opt.get("trusted-local") == "true",
                         },
                     )?))

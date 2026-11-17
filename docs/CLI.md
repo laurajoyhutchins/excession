@@ -56,6 +56,15 @@ shell and persists scoped stdout/stderr and exit-code comparisons for
 a witness-backed preservation plan. **It is not sandboxed or an
 equivalence proof.** See [full invocation and limitations](INVESTIGATIONS.md).
 
+### Trusted-local runtime instrumentation
+
+`excession investigation trace` runs the existing detached-worktree
+comparison with an explicit trusted Python interpreter and
+`tools/python_trace_driver.py`. It accepts the tracked `--script`,
+JSON arguments and configurable limits for time, output bytes, recorded
+events and trace bytes. **No sandbox or runtime attestation is
+provided.** See the [runtime trace workflow](INVESTIGATIONS.md).
+
 ## Install
 
 Build from the repository with Rust 1.99.1, Cargo, Git (SHA-1 object

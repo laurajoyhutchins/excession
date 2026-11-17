@@ -75,6 +75,16 @@ but **not** proof that the cited internal control/data/state operations
 are preserved. Differences and inconclusive runs remain visible.
 See [investigation execution](INVESTIGATIONS.md).
 
+## Comparing internal execution
+
+For a witness-backed preservation plan, `investigation trace` can
+observe CPython source-line visits and local-value changes across
+detached base/candidate worktrees. This provides a finer view than
+process-output comparison. It deliberately reports **observed event
+differences** rather than verified control/data/state equivalence.
+The instrumented runner does not sandbox untrusted code. See the
+[trace command and limitations](INVESTIGATIONS.md).
+
 ## Verification ladder
 
 | Evidence | What it can establish | What remains open |

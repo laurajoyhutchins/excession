@@ -240,6 +240,67 @@ defines the wire contract. Independent CI attestations, real runtime
 instrumentation, repeated input corpora and proof obligations remain
 future extensions, not implied by the observed outcome comparison.
 
+## CPython runtime event observations
+
+The optional `investigation trace` command reuses the **existing**
+trusted-local detached-worktree execution runner and records events from
+a reviewed Python tracing adapter. This is the first instrumented runtime
+slice; the evidence protocol is versioned, but **other languages are not yet
+instrumented**.
+
+```sh
+excession investigation trace \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision REVISION \
+  --plan-event PLAN_EVENT_ID --candidate CANDIDATE_COMMIT \
+  --program /usr/bin/python3 \
+  --driver /trusted/excession/tools/python_trace_driver.py \
+  --script src/counter.py --argv-json '[]' \
+  --timeout-ms 30000 --max-output-bytes 1048576 \
+  --max-trace-events 2000 --max-trace-bytes 1048576 \
+  --trusted-local true
+```
+
+The script must be tracked in both revisions. The tracing adapter is a
+trusted host script **outside the target checkout**. Source worktrees are
+detached and temporary; observation files are stored outside the checkout,
+and source cleanliness is checked after execution. The operator must
+explicitly opt into running the repository's code, which remains unsandboxed
+and may have arbitrary external effects.
+
+Each side retains CPython-reported `CALL`, `LINE`, `RETURN` and
+`EXCEPTION` events, Git-authenticated file identities, line numbers,
+function names and changes in sampled local values. Primitives such as
+bounded integers and booleans can be represented directly; strings and
+byte strings carry length and SHA-256 rather than raw values. Objects and
+mutable containers are **opaque**, so in-place mutation is not independently
+observed. The `values_partial` flag remains true whenever objects are
+opaque, scalar values are hashed-only, or local-variable sampling is incomplete. A local-variable change is associated with the last traced line
+before the next trace callback, not an abstract semantic assignment edge.
+
+Base witness source-line hits are counted but **do not prove** a branch's
+condition evaluated true or that a claimed mutation had the expected effect.
+The candidate's source lines may shift, so it is not automatically paired
+to the old witness by line number. `MATCHING_REPORTED_EVENTS` means the
+recorded event sequences matched for the selected invocation;
+`DIFFERING_REPORTED_EVENTS` means they differed, potentially due to a
+line-number shift or a true behavioral change; `INCONCLUSIVE` covers
+missing, interrupted or truncated trace streams. Output comparison remains
+a **separate** field, so identical stdout cannot conceal a difference in
+the observed internal event sequence.
+
+Tracing is best effort: target code can disable the tracer, values may be
+opaque, C extensions and subprocesses are outside the CPython frame stream,
+and no independent completeness attestation exists. A reported complete
+trace is not a proof of complete coverage. Both source witnesses and
+preservation plans remain unresolved; no outcome authorizes merging.
+
+All events and source identities are retained in an append-only `TRACE`
+record. `investigation show` replays their provenance and conservative
+comparison, while `investigation explain` serves them under
+`runtime_traces`. Neither audit nor explanation executes repository code.
+See the [runtime trace contract](../contracts/product/investigation-runtime-trace.v1.schema.json).
+
 ## Required content
 
 | Field / concept | Meaning |

@@ -708,6 +708,15 @@ pub(super) fn command() -> Command {
                 &["timeout-ms", "max-output-bytes"],
             )
             .about("Explicit trusted-local same-invocation base/candidate execution; no sandbox or equivalence proof"),
+            leaf(
+                "trace",
+                &[
+                    "repo", "db", "id", "expected-revision", "plan-event",
+                    "candidate", "program", "driver", "script", "argv-json",
+                    "trusted-local",
+                ],
+                &["timeout-ms", "max-output-bytes", "max-trace-events", "max-trace-bytes"],
+            ).about("Best-effort CPython runtime event comparison on two Git-pinned worktrees"),
             leaf("explain", &["repo", "db", "id"], &[])
                 .about("Compose a source-linked explanation and expose unresolved obligations"),
             leaf("show", &["repo", "db", "id"], &[])

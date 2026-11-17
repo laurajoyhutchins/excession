@@ -387,6 +387,7 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
     let mut prior_witnesses = BTreeMap::<String, Vec<Value>>::new();
     let mut verification_receipts = Vec::new();
     let mut execution_comparisons = Vec::new();
+    let mut runtime_traces = Vec::new();
     let mut last_refresh = Value::Null;
     for event in history.get("events")?.array_ref()? {
         let payload = event.get("payload")?;
@@ -475,6 +476,11 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                 ),
                 ("state", Value::string("OPEN")),
             ])),
+            "TRACE" => runtime_traces.push(obj(&[
+                ("event_id", event.get("event_id")?.clone()),
+                ("plan_event_id", payload.get("plan_event_id")?.clone()),
+                ("report", payload.get("report")?.clone()),
+            ])),
             "EXECUTION" => execution_comparisons.push(obj(&[
                 ("event_id", event.get("event_id")?.clone()),
                 ("plan_event_id", payload.get("plan_event_id")?.clone()),
@@ -510,6 +516,7 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
         ("preservation_plans", Value::array(preservation_plans)),
         ("verification_receipts", Value::array(verification_receipts)),
         ("execution_comparisons", Value::array(execution_comparisons)),
+        ("runtime_traces", Value::array(runtime_traces)),
         ("latest_refresh", last_refresh),
         (
             "completeness",

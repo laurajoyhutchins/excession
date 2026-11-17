@@ -1364,3 +1364,460 @@ fn execution_requires_prior_witness_and_plan_and_never_runs_by_default() {
         3
     );
 }
+
+#[test]
+fn runtime_trace_observes_lines_local_changes_and_internal_behavior_differences() {
+    let (_tmp, repo, db, _) = setup();
+    fs::write(repo.join("src/counter.py"),
+        "def counter(x):\n    state = x\n    if state > 2:\n        state += 1\n    return state\nprint(counter(3))\n"
+    ).unwrap();
+    let base = commit(&repo, "counter baseline");
+    let r = repo.to_str().unwrap();
+    let d = db.to_str().unwrap();
+    let interpreter = local_python();
+    let driver = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tools/python_trace_driver.py")
+        .canonicalize()
+        .unwrap();
+    let driver = driver.to_str().unwrap();
+    let first = command(&[
+        "investigation",
+        "start",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--rev",
+        &base,
+        "--question",
+        "Which source-level state changes are visited?",
+    ]);
+    let id = first["investigation_id"].as_str().unwrap();
+    let claim = command(&[
+        "investigation",
+        "claim",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "1",
+        "--path",
+        "src/counter.py",
+        "--statement",
+        "counter conditionally updates state",
+        "--assumption",
+        "A source claim is not a runtime proof",
+        "--assessment",
+        "SOURCE_REVIEW_REPORTED",
+    ]);
+    let witness = command(&[
+        "investigation",
+        "witness",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "2",
+        "--claim-event",
+        claim["event_id"].as_str().unwrap(),
+        "--first-line",
+        "4",
+        "--last-line",
+        "4",
+        "--kind",
+        "STATE_MUTATION",
+        "--interpretation",
+        "This line may increase a scalar local",
+    ]);
+    let plan = command(&[
+        "investigation",
+        "plan",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "3",
+        "--claim-event",
+        claim["event_id"].as_str().unwrap(),
+        "--obligation",
+        "Preserve observable counter output and check state-update visits",
+    ]);
+    let plan_id = plan["event_id"].as_str().unwrap();
+
+    fs::write(
+        repo.join("src/other.rs"),
+        "pub fn changed_without_counter() {}\n",
+    )
+    .unwrap();
+    let same = commit(&repo, "unrelated source edit");
+    refused(&[
+        "investigation",
+        "trace",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "4",
+        "--plan-event",
+        plan_id,
+        "--candidate",
+        &same,
+        "--program",
+        &interpreter,
+        "--driver",
+        driver,
+        "--script",
+        "src/counter.py",
+        "--argv-json",
+        "[]",
+        "--trusted-local",
+        "false",
+    ]);
+    let traced = command(&[
+        "investigation",
+        "trace",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "4",
+        "--plan-event",
+        plan_id,
+        "--candidate",
+        &same,
+        "--program",
+        &interpreter,
+        "--driver",
+        driver,
+        "--script",
+        "src/counter.py",
+        "--argv-json",
+        "[]",
+        "--trusted-local",
+        "true",
+        "--timeout-ms",
+        "12000",
+        "--max-trace-events",
+        "2000",
+        "--max-trace-bytes",
+        "1048576",
+        "--max-output-bytes",
+        "8192",
+    ]);
+    assert_eq!(traced["kind"], "TRACE");
+    let report = &traced["payload"]["report"];
+    assert_eq!(report["schema"], "excession.investigation-runtime-trace.v1");
+    assert_eq!(report["process_comparison"], "AGREEMENT_OBSERVED");
+    assert_eq!(report["trace_comparison"], "MATCHING_REPORTED_EVENTS");
+    assert_eq!(report["base_trace"]["status"], "REPORTED_COMPLETE");
+    assert_eq!(report["candidate_trace"]["status"], "REPORTED_COMPLETE");
+    assert_eq!(report["base_trace"]["values_partial"], true);
+    assert_eq!(
+        report["base_witness_line_hits"][0]["witness_event_id"],
+        witness["event_id"]
+    );
+    assert!(
+        report["base_witness_line_hits"][0]["base_line_event_count"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        report["base_witness_line_hits"][0]["interpretation_verified"],
+        false
+    );
+    let events = report["base_trace"]["events"].as_array().unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| event["kind"] == "CALL" && event["function"] == "counter"),
+        "runtime CALL missing: {events:?}"
+    );
+    assert!(
+        events.iter().any(|event| event["kind"] == "LINE"
+            && event["path"] == "src/counter.py"
+            && event["line"] == 4),
+        "conditional body line was not observed"
+    );
+    assert!(
+        events.iter().any(|event| event["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|change| change["name"] == "state" && change["before"] != change["after"])),
+        "local scalar change was not captured"
+    );
+    assert_eq!(
+        report["trust"],
+        "BEST_EFFORT_TRUSTED_LOCAL_CPYTHON_UNATTESTED"
+    );
+    assert_eq!(report["semantic_verification"], "NOT_ESTABLISHED");
+    assert_eq!(report["ready_to_merge"], false);
+
+    // The stdout is unchanged, but an additional internal state transition
+    // gives a different instrumented event sequence.
+    fs::write(repo.join("src/counter.py"),
+        "def counter(x):\n    state = x\n    if state > 2:\n        state += 1\n        state -= 1\n        state += 1\n    return state\nprint(counter(3))\n"
+    ).unwrap();
+    let different_internal = commit(&repo, "add intermediate state transitions");
+    let second = command(&[
+        "investigation",
+        "trace",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "5",
+        "--plan-event",
+        plan_id,
+        "--candidate",
+        &different_internal,
+        "--program",
+        &interpreter,
+        "--driver",
+        driver,
+        "--script",
+        "src/counter.py",
+        "--argv-json",
+        "[]",
+        "--trusted-local",
+        "true",
+        "--timeout-ms",
+        "12000",
+        "--max-trace-events",
+        "2000",
+        "--max-trace-bytes",
+        "1048576",
+    ]);
+    assert_eq!(
+        second["payload"]["report"]["process_comparison"],
+        "AGREEMENT_OBSERVED"
+    );
+    assert_eq!(
+        second["payload"]["report"]["trace_comparison"],
+        "DIFFERING_REPORTED_EVENTS"
+    );
+    assert_eq!(
+        second["payload"]["report"]["base_trace"]["status"],
+        "REPORTED_COMPLETE"
+    );
+
+    let incomplete = command(&[
+        "investigation",
+        "trace",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "6",
+        "--plan-event",
+        plan_id,
+        "--candidate",
+        &different_internal,
+        "--program",
+        &interpreter,
+        "--driver",
+        driver,
+        "--script",
+        "src/counter.py",
+        "--argv-json",
+        "[]",
+        "--trusted-local",
+        "true",
+        "--timeout-ms",
+        "12000",
+        "--max-trace-events",
+        "2",
+        "--max-trace-bytes",
+        "1048576",
+    ]);
+    assert_eq!(
+        incomplete["payload"]["report"]["base_trace"]["status"],
+        "TRUNCATED"
+    );
+    assert_eq!(
+        incomplete["payload"]["report"]["trace_comparison"],
+        "INCONCLUSIVE"
+    );
+
+    let view = command(&[
+        "investigation",
+        "explain",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+    ]);
+    assert_eq!(view["runtime_traces"].as_array().unwrap().len(), 3);
+    assert_eq!(view["preservation_plans"][0]["state"], "OPEN");
+    assert_eq!(view["behavior_witnesses"][0]["runtime_verified"], false);
+    assert_eq!(view["semantic_verification"], "NOT_ESTABLISHED");
+    assert_eq!(view["ready_to_merge"], false);
+    let event_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-event.v1.schema.json"
+    ))
+    .unwrap();
+    let trace_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-runtime-trace.v1.schema.json"
+    ))
+    .unwrap();
+    let view_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../contracts/product/investigation-explanation.v1.schema.json"
+    ))
+    .unwrap();
+    let event_validator = jsonschema::draft202012::new(&event_schema).unwrap();
+    let trace_validator = jsonschema::draft202012::new(&trace_schema).unwrap();
+    let view_validator = jsonschema::draft202012::new(&view_schema).unwrap();
+    let history = command(&["investigation", "show", "--repo", r, "--db", d, "--id", id]);
+    for event in history["events"].as_array().unwrap() {
+        assert!(event_validator.is_valid(event), "event: {event}");
+    }
+    assert!(trace_validator.is_valid(report), "trace report: {report}");
+    assert!(view_validator.is_valid(&view), "view: {view}");
+    let mut forged = report.clone();
+    forged["semantic_verification"] = json!("PROVEN");
+    assert!(!trace_validator.is_valid(&forged));
+    refused(&[
+        "investigation",
+        "trace",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "6",
+        "--plan-event",
+        plan_id,
+        "--candidate",
+        &different_internal,
+        "--program",
+        &interpreter,
+        "--driver",
+        driver,
+        "--script",
+        "src/counter.py",
+        "--argv-json",
+        "[]",
+        "--trusted-local",
+        "true",
+    ]);
+}
+
+#[test]
+fn runtime_trace_refuses_unsupported_source_and_unwitnessed_plan() {
+    let (_tmp, repo, db, base) = setup();
+    let r = repo.to_str().unwrap();
+    let d = db.to_str().unwrap();
+    let py = local_python();
+    let driver = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tools/python_trace_driver.py")
+        .canonicalize()
+        .unwrap();
+    let driver = driver.to_str().unwrap();
+    let first = command(&[
+        "investigation",
+        "start",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--rev",
+        &base,
+        "--question",
+        "Is worker behavior preserved?",
+    ]);
+    let id = first["investigation_id"].as_str().unwrap();
+    let claim = command(&[
+        "investigation",
+        "claim",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "1",
+        "--path",
+        "src/recovery.rs",
+        "--statement",
+        "The worker source has a return",
+        "--assumption",
+        "Source-only claim",
+        "--assessment",
+        "HYPOTHESIS",
+    ]);
+    let plan = command(&[
+        "investigation",
+        "plan",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "2",
+        "--claim-event",
+        claim["event_id"].as_str().unwrap(),
+        "--obligation",
+        "Preserve return behavior",
+    ]);
+    fs::write(repo.join("src/other.rs"), "pub fn modified() {}\n").unwrap();
+    let candidate = commit(&repo, "candidate change");
+    refused(&[
+        "investigation",
+        "trace",
+        "--repo",
+        r,
+        "--db",
+        d,
+        "--id",
+        id,
+        "--expected-revision",
+        "3",
+        "--plan-event",
+        plan["event_id"].as_str().unwrap(),
+        "--candidate",
+        &candidate,
+        "--program",
+        &py,
+        "--driver",
+        driver,
+        "--script",
+        "src/unknown.py",
+        "--argv-json",
+        "[]",
+        "--trusted-local",
+        "true",
+    ]);
+    assert_eq!(
+        command(&["investigation", "show", "--repo", r, "--db", d, "--id", id])["revision"],
+        3
+    );
+}

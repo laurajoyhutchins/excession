@@ -68,7 +68,7 @@ and Matt Housley, not a mandate to build a warehouse or orchestrator.
 | Context | `agent context` exposes bounded source/evidence/test candidates | Behavior-centered, traceable explanation |
 | Impact | `impact` and `agent verify` report candidates and obligations | Impact scoped to specific preservation claims |
 | Refactoring | `refactor`/`improve` provide native-edit paths; `investigation plan` records preservation obligations; `refresh` checks direct source changes | Investigation-driven, cross-module transformation |
-| Verification | Evidence replay, native receipts and trusted-local `investigation execute` compare observable base/candidate outputs for one invocation; obligations remain open | Independently attested, claim-by-claim behavioral preservation report |
+| Verification | Evidence replay, native receipts, trusted-local `investigation execute` output comparisons, and `investigation trace` CPython line/local-value observations for one invocation; obligations remain open | Independently attested, claim-by-claim behavioral preservation report |
 | Serving | CLI, local stdio MCP, GitHub Actions artifacts | First-class investigation/transform/verify agent interface |
 
 The ledger implements one-step question-led retrieval, open questions, and

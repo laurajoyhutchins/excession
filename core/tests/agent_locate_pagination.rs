@@ -91,6 +91,11 @@ fn pages_cover_all_ranked_sources_without_duplicates_or_silent_truncation() {
         }
         let result = page(&root.0, &args);
         assert_eq!(result["schema"], "excession.agent-locate-page.v1");
+        let contract: Value = serde_json::from_str(include_str!(
+            "../../contracts/agent/locate-page.schema.json"
+        )).unwrap();
+        assert!(jsonschema::draft202012::new(&contract).unwrap().is_valid(&result),
+            "page contract mismatch: {result}");
         assert_eq!(result["source_commit"], original);
         assert_eq!(result["index"]["complete"], true);
         assert_eq!(result["indexed_source_count"], Value::Null);

@@ -750,9 +750,9 @@ fn append_corpus_identity(tx: &Transaction<'_>, identity: &mut Vec<u8>) -> Resul
             identity.extend_from_slice(text.as_bytes());
             identity.push(0);
         }
-        identity.extend_from_slice(&nonnegative(chunk_bytes)?.to_le_bytes());
+        identity.extend_from_slice(&(nonnegative(chunk_bytes)? as u64).to_le_bytes());
         let n = nonnegative(chunks)?;
-        identity.extend_from_slice(&n.to_le_bytes());
+        identity.extend_from_slice(&(n as u64).to_le_bytes());
         counted = counted.checked_add(n).ok_or("source corpus chunk count overflow")?;
     }
     let fts_chunks: i64 = tx
@@ -962,7 +962,7 @@ pub(crate) fn search_with_page(
         limits.max_bytes_per_segment,
         limits.max_files_per_segment,
     ] {
-        identity.extend_from_slice(&value.to_le_bytes());
+        identity.extend_from_slice(&(value as u64).to_le_bytes());
     }
     for id in 0..SEGMENT_COUNT {
         // Historical metadata for an empty partition must not change a

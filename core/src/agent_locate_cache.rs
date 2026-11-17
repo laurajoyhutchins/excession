@@ -43,8 +43,8 @@ impl Default for IndexLimits {
 impl IndexLimits {
     pub fn validate(self) -> Result<Self> {
         if self.max_files_per_segment == 0
-            || self.max_file_bytes == 0
-            || self.max_bytes_per_segment == 0
+            || self.max_file_bytes < 4
+            || self.max_bytes_per_segment < 4
         {
             return refuse("agent locate indexing budgets must be positive");
         }
@@ -1045,9 +1045,9 @@ mod tests {
             .unwrap()
         };
         let small = query(128 * 1024);
-        assert_eq!(small.indexed_files, 0);
-        assert_eq!(small.skipped_files, 1);
-        assert!(small.hits.is_empty());
+        assert_eq!(small.indexed_files, 1);
+        assert_eq!(small.skipped_files, 0);
+        assert_eq!(small.hits.len(), 1);
         let large = query(512 * 1024);
         assert_eq!(large.indexed_files, 1);
         assert_eq!(large.skipped_files, 0);
@@ -1057,8 +1057,8 @@ mod tests {
             git::blob(&root, "HEAD", "src/planner.rs").unwrap()
         );
         let smaller_again = query(128 * 1024);
-        assert_eq!(smaller_again.indexed_files, 0);
-        assert_eq!(smaller_again.skipped_files, 1);
+        assert_eq!(smaller_again.indexed_files, 1);
+        assert_eq!(smaller_again.skipped_files, 0);
         fs::remove_dir_all(large.cache_path.parent().unwrap()).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
@@ -1132,6 +1132,85 @@ mod tests {
     }
 
     #[test]
+    fn checkpoints_one_large_source_in_chunks_until_fully_verified() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-chunk-progress-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        let source = format!("{}fn needle() {{}} \n", "/* α🚀 filler */\n".repeat(1000));
+        assert!(source.len() > 8 * 1024);
+        fs::write(root.join("src/huge.rs"), &source).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com",
+            "-c", "user.name=Test", "commit", "-qm", "large source",
+        ]);
+        let query = || {
+            let discovered = discovery::inspect(&root, "HEAD").unwrap();
+            let entries = git::entries(&root, &discovered.commit).unwrap();
+            search_with_limits(
+                &discovered, entries, 4, "\"needle\"", 1,
+                |path| path.ends_with(".rs"),
+                IndexLimits {
+                    max_file_bytes: 256,
+                    max_files_per_segment: 1,
+                    max_bytes_per_segment: 1024,
+                },
+            ).unwrap()
+        };
+        let first = query();
+        assert_eq!(first.indexed_files, 0);
+        assert_eq!(first.skipped_files, 1);
+        assert_eq!(first.pending_segments, 1);
+        assert!(first.hits.is_empty());
+        let mut complete = first;
+        let mut rounds = 1;
+        while complete.pending_segments != 0 && rounds < 40 {
+            complete = query();
+            rounds += 1;
+        }
+        assert!(rounds > 5);
+        assert!(rounds < 40);
+        assert_eq!(complete.pending_segments, 0);
+        assert_eq!(complete.indexed_files, 1);
+        assert_eq!(complete.skipped_files, 0);
+        assert_eq!(complete.hits.len(), 1);
+        assert!(complete.hits[0].body.contains("needle"));
+        assert!(complete.hits[0].start_line > 900);
+        assert_eq!(
+            complete.hits[0].entry.oid,
+            git::blob(&root, "HEAD", "src/huge.rs").unwrap(),
+        );
+        assert!(!complete.truncated);
+
+        // A tampered chunk must never be returned as an authenticated source.
+        let db = Connection::open(&complete.cache_path).unwrap();
+        db.execute(
+            "UPDATE source_search SET body='needle forged' WHERE rowid=
+             (SELECT id FROM locator_chunks ORDER BY id DESC LIMIT 1)",
+            [],
+        ).unwrap();
+        drop(db);
+        let discovered = discovery::inspect(&root, "HEAD").unwrap();
+        let entries = git::entries(&root, &discovered.commit).unwrap();
+        let failed = search_with_limits(
+            &discovered, entries, 4, "\"needle\"", 1,
+            |path| path.ends_with(".rs"),
+            IndexLimits {
+                max_file_bytes: 256,
+                max_files_per_segment: 1,
+                max_bytes_per_segment: 1024,
+            },
+        );
+        assert!(failed.is_err(), "tampered FTS text must fail closed");
+        fs::remove_dir_all(complete.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn rejects_invalid_indexing_budgets() {
         let base = IndexLimits::default();
         assert!(
@@ -1166,6 +1245,7 @@ mod tests {
             .validate()
             .is_err()
         );
+        assert!(IndexLimits { max_file_bytes: 3, ..base }.validate().is_err());
         assert!(base.validate().is_ok());
     }
 

@@ -420,14 +420,7 @@ fn reading_plan(
             "CANDIDATE" => "STATIC_RELATIONSHIP_CANDIDATE",
             _ => return refuse("reading plan received unsupported relationship assessment"),
         };
-        steps.push(
-            neighbor,
-            action,
-            basis,
-            why,
-            "relationship_candidates",
-            i,
-        )?;
+        steps.push(neighbor, action, basis, why, "relationship_candidates", i)?;
     }
     if context != &Value::Null {
         for (i, candidate) in context

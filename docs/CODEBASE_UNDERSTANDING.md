@@ -8,6 +8,17 @@ index. The remaining non-streaming and non-paginated boundaries are listed in
 
 The primary task is **answering a behavior question**. Source location and
 static graph edges are supporting evidence, not a finished explanation.
+
+**Source search uses pinned Git first.** `agent locate` now searches the
+committed tree with literal Git grep terms, includes test suites with
+non-language extensions such as SQLite's `.test` and `.tcl`, then fills
+remaining results from its FTS5 index. The reading plan inspects likely
+implementation and task-matching test source **before** graph neighbors.
+Each Git excerpt is verified against its original Git blob identity, with
+explicit truncation and unreadable-source gaps. Neither a matching test name
+nor a graph reference proves the behavior is covered. This reuse of ordinary
+Git search is intentional; Excession should not maintain a competing
+language index just to identify source files.
 This is the practical workflow using Excession's *implemented* interfaces.
 The complete [investigation artifact contract](INVESTIGATIONS.md) is a
 target, not currently emitted by one command.
@@ -24,7 +35,8 @@ excession agent locate --repo /work/project --rev HEAD \
 
 `agent locate` finds Git-authenticated source candidates. The response
 has a bounded `reading_plan` of at most 12 unique files, evidence-typed
-`relationship_candidates`, and `context`. Its original references separate
+`relationship_candidates`, and `context`. Its `git_search` field distinguishes
+committed-source coverage from FTS index coverage. Its original references separate
 lexical matches, native-producer observations and test-name suggestions.
 It does not inspect arbitrary dirty working-tree edits or certify behavior.
 

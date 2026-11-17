@@ -3,6 +3,7 @@ use crate::{Result, refuse};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use sha1::{Digest, Sha1};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
@@ -121,6 +122,65 @@ impl BlobReader {
 
     pub fn read(&mut self, expected_oid: &str) -> Result<Vec<u8>> {
         self.read_capped(expected_oid, usize::MAX)
+    }
+
+    /// Stream an entire Git blob through bounded buffers and verify the exact
+    /// original Git object ID, including its length-prefixed object header.
+    ///
+    /// The callback receives monotonically increasing *byte* offsets. Its
+    /// output is provisional until this method returns Ok: callers must stage
+    /// changes in a transaction and commit only after final identity verification.
+    /// A callback failure invalidates this batch reader rather than allowing
+    /// a subsequent request against an undrained Git protocol response.
+    pub fn stream_verified(
+        &mut self,
+        expected_oid: &str,
+        chunk_bytes: usize,
+        mut emit: impl FnMut(u64, &[u8]) -> Result<()>,
+    ) -> Result<u64> {
+        oid(expected_oid)?;
+        if chunk_bytes == 0 {
+            return refuse("Git blob stream chunk size must be positive");
+        }
+        let stdin = self.stdin.as_mut().ok_or("Git blob reader already closed")?;
+        writeln!(stdin, "{expected_oid}").map_err(|e| format!("Git batch request: {e}"))?;
+        stdin.flush().map_err(|e| format!("Git batch flush: {e}"))?;
+
+        let mut header = String::new();
+        if self.stdout.read_line(&mut header).map_err(|e| e.to_string())? == 0 {
+            return refuse("Git batch ended before blob response");
+        }
+        let mut fields = header.trim_end_matches('\n').split_ascii_whitespace();
+        if fields.next() != Some(expected_oid) || fields.next() != Some("blob") {
+            return refuse("Git batch returned a missing or non-blob object");
+        }
+        let size = fields.next().ok_or("Git batch missing blob length")?
+            .parse::<usize>().map_err(|_| "invalid Git batch blob length")?;
+        if fields.next().is_some() {
+            return refuse("unexpected Git batch header fields");
+        }
+        let mut hasher = Sha1::new();
+        hasher.update(format!("blob {size}\\0").replace("\\\\0", "\\0").as_bytes());
+        let mut buffer = vec![0u8; chunk_bytes.min(64 * 1024)];
+        let mut offset = 0usize;
+        while offset < size {
+            let len = (size - offset).min(buffer.len());
+            self.stdout.read_exact(&mut buffer[..len])
+                .map_err(|e| format!("truncated Git batch blob: {e}"))?;
+            hasher.update(&buffer[..len]);
+            if let Err(error) = emit(offset as u64, &buffer[..len]) {
+                self.stdin.take();
+                return Err(error);
+            }
+            offset += len;
+        }
+        let mut terminator = [0u8; 1];
+        self.stdout.read_exact(&mut terminator)
+            .map_err(|e| format!("missing Git batch blob separator: {e}"))?;
+        if terminator != *b"\\n" || crate::digest::hex(&hasher.finalize()) != expected_oid {
+            return refuse("Git batch blob identity or framing mismatch");
+        }
+        Ok(size as u64)
     }
 
     /// Reject oversized blobs before allocating their payload.
@@ -343,6 +403,47 @@ mod tests {
         assert!(oid(&"F".repeat(40)).is_err());
         assert!(oid(&"a".repeat(64)).is_err());
     }
+    #[test]
+    fn streamed_read_checks_full_blob_identity_with_bounded_chunks() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-verified-stream-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir(&root).unwrap();
+        assert!(Command::new("git").args(["init", "-q"]).arg(&root).status().unwrap().success());
+        let source = "α🚀 planner query\\n".replace("\\\\n", "\\n").repeat(100_000);
+        std::fs::write(root.join("large.rs"), &source).unwrap();
+        std::fs::write(root.join("empty.rs"), "").unwrap();
+        let blob = text(&root, &["hash-object", "-w", "large.rs"]).unwrap();
+        let empty = text(&root, &["hash-object", "-w", "empty.rs"]).unwrap();
+        let mut reader = BlobReader::open(&root).unwrap();
+        let mut reconstructed = Vec::new();
+        let mut last = 0;
+        let size = reader.stream_verified(&blob, 137, |offset, bytes| {
+            assert!(bytes.len() <= 137);
+            assert_eq!(offset, last);
+            last += bytes.len() as u64;
+            reconstructed.extend_from_slice(bytes);
+            Ok(())
+        }).unwrap();
+        assert_eq!(size, source.len() as u64);
+        assert_eq!(reconstructed, source.as_bytes());
+        assert_eq!(reader.stream_verified(&empty, 4, |_, _| {
+            panic!("empty Git blob must have no payload chunks")
+        }).unwrap(), 0);
+        assert_eq!(reader.read(&blob).unwrap(), source.as_bytes());
+        assert!(reader.stream_verified(&blob, 0, |_, _| Ok(())).is_err());
+        reader.finish().unwrap();
+        let mut aborted = BlobReader::open(&root).unwrap();
+        assert_eq!(aborted.stream_verified(&blob, 128, |_, _| Err("cancelled".into())), Err("cancelled".into()));
+        assert!(aborted.read(&blob).is_err());
+        drop(aborted);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn streamed_blobs_preserve_identity_and_refuse_wrong_object_types() {
         use std::sync::atomic::{AtomicU64, Ordering};

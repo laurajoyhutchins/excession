@@ -566,7 +566,7 @@ pub(crate) fn search_with_limits(
     let mut db = Connection::open(&path).map_err(|e| sql_error("open", e))?;
     db.busy_timeout(Duration::from_secs(15))
         .map_err(|e| sql_error("busy timeout", e))?;
-    let tx = db
+    let mut tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|e| sql_error("begin", e))?;
     initialize(&tx)?;

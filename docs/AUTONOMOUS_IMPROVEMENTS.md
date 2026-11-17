@@ -1,9 +1,9 @@
 # Autonomous native improvement loop
 
-**Shipped scope:** Excession can continuously generate two kinds of native
-source improvements on a trusted `main` checkout. Rustfmt-only changes can
-be automatically integrated **only after independent exact-head CI passes**;
-machine-applicable Clippy edits remain review-required draft PRs. There is no
+**Implemented scope:** Excession has two guarded auto-integration lanes and
+one review lane. Rustfmt-only changes and graph-preserving Cargo patch updates
+can integrate **only after independent exact-head CI passes**. Broader native
+Clippy and dependency updates remain review-required draft PRs. There is no
 general code rewrite or language-independent semantic-equivalence prover.
 
 ## From learned principle to active recipe
@@ -23,6 +23,7 @@ must be review-required. The initially admitted recipes are:
 | --- | --- | --- |
 | `native-rustfmt` | pinned cargo fmt | Apply and auto-merge *only if* all independent receipts succeed |
 | `native-clippy` | pinned cargo clippy --fix | Apply and open a draft PR; no unattended merge |
+| `native-cargo-lock-refresh` | pinned Cargo update | Patch-only, same-dependency-graph updates are auto-integrate eligible after CI; all other resolution changes go to draft review |
 
 The technical notebook supplies reasoning and evidence references. It is not
 parsed as untrusted executable instructions and a prose suggestion cannot
@@ -31,7 +32,10 @@ grant a workflow token permission to merge arbitrary changes.
 ## Production loop
 
 The [auto integration workflow](../.github/workflows/quality-auto-integrate.yml)
-runs weekly or by manual dispatch, only on the repository's `main` ref:
+runs weekly or by manual dispatch, only on the repository's `main` ref. The
+[Cargo updater](../.github/workflows/quality-cargo-update.yml) runs weekly
+on a separate day, also from main. Both use the shared
+[exact-head merge gate](../tools/ci/await_verified_merge.sh):
 
 1. Validate the recipe registry and adversarial Git-fixture suite.
 2. Run the exact pinned native Rust formatter on a clean checkout.
@@ -51,6 +55,17 @@ runs weekly or by manual dispatch, only on the repository's `main` ref:
 8. Merge the PR with normal GitHub branch protection and permissions, never
    with an admin bypass. If rights or checks are missing, stop and leave the
    candidate unmerged for review.
+
+For Cargo's independent lane, `cargo update --manifest-path core/Cargo.toml`
+may produce real `core/Cargo.lock` changes even when formatting and Clippy
+are already clean. The [Cargo patch auditor](../tools/ci/cargo_patch_audit.py)
+allows unattended integration only if every package name/source and dependency
+edge remains identical, every changed registry version increases strictly
+within its existing major/minor, checksums are consistent, and no other file
+changes. Major/minor updates, added dependencies, graph changes, nonregistry
+replacements, and ambiguous versions are **draft PRs**, not silent failures
+and not auto-merged. The auditor is a *lockfile-structure classifier*, not a
+supply-chain malware detector.
 
 The workflow uploads its deterministic native replay receipt. The tool's own
 report is deliberately `REPRODUCED_PENDING_INDEPENDENT_CI` with
@@ -84,15 +99,17 @@ check does not count as a pass.
 outside this tool's control. If the organization forbids bot-created PRs
 or bot merges, automation refuses instead of changing security settings.
 
-**Scope:** The formatter workflow currently maintains Excession's own
-Rust sources. Applying it to other repositories requires their explicit
+**Scope:** The formatter workflow maintains Excession's own
+Rust sources and the dependency updater maintains its Cargo lockfile. Applying it to other repositories requires their explicit
 source/native-tool configuration, required checks and separately scoped
 credentials. It must not silently interpret every connected repository
 as authorized for unattended modification.
 
-**Unverified:** The scheduled main-workflow path and unattended merge have
-not been exercised end-to-end until a real non-empty native formatting
-candidate is produced. Passing fixture tests is not evidence that GitHub
+**Unverified:** Neither the scheduled main-workflow path nor an unattended
+merge has been exercised end-to-end until a real non-empty candidate is
+produced and both exact-head workflows pass. Cargo's patch gate has explicit
+negative cases, but patch-only updates may still introduce malicious code,
+unsupported runtime changes, or untested regressions. Passing fixture tests is not evidence that GitHub
 will permit a bot merge.
 
 ## Promoting further learned improvements

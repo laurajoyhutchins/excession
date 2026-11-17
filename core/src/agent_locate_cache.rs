@@ -387,7 +387,8 @@ fn update_segment(
             && cached.mode == entry.mode
         {
             match cached.status.as_str() {
-                "OK" if cached.size <= limits.max_bytes_per_segment - bytes => {
+                "OK" if cached.size <= limits.max_file_bytes
+                    && cached.size <= limits.max_bytes_per_segment - bytes => {
                     files += 1;
                     bytes += cached.size;
                     state.reused_blobs += 1;

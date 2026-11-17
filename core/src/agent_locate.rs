@@ -127,8 +127,7 @@ fn committed_matches(
         for path in paths {
             if investigable_path(&path)
                 && inventory.get(&path).is_some_and(|entry| {
-                    entry.kind == "blob"
-                        && matches!(entry.mode.as_str(), "100644" | "100755")
+                    entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755")
                 })
             {
                 matches.entry(path).or_default().insert(word.clone());
@@ -184,7 +183,10 @@ fn committed_matches(
     let implementation_slots = limit.saturating_sub(reserved_tests);
     let mut remaining_implementations = implementations.into_iter();
     let mut remaining_tests = tests.into_iter();
-    for (entry, _, _) in remaining_implementations.by_ref().take(implementation_slots) {
+    for (entry, _, _) in remaining_implementations
+        .by_ref()
+        .take(implementation_slots)
+    {
         chosen.push(entry);
     }
     for (entry, _, _) in remaining_tests.by_ref().take(reserved_tests) {
@@ -552,9 +554,9 @@ fn reading_plan(
                 .unwrap_or(false)
         })
         .collect::<Vec<_>>();
-    let has_tests = !task_tests.is_empty()
-        || (context != &Value::Null
-            && !context.get("test_candidates")?.array_ref()?.is_empty());
+    let has_tests =
+        !task_tests.is_empty()
+        || (context != &Value::Null && !context.get("test_candidates")?.array_ref()?.is_empty());
     let reserved_test = usize::from(has_tests && budget > 1);
 
     // Prioritize the implementation. A literal match in a committed test is
@@ -767,7 +769,11 @@ pub fn locate_with_limits(
                         continue;
                     }
                 },
-                Err(error) if error.to_string().contains("Git source blob exceeds byte limit") => {
+                Err(error)
+                    if error
+                        .to_string()
+                        .contains("Git source blob exceeds byte limit") =>
+                {
                     skipped_git_excerpts += 1;
                     continue;
                 }
@@ -890,14 +896,23 @@ pub fn locate_with_limits(
         ("source_commit", Value::string(&discovered.commit)),
         ("source_tree", Value::string(&discovered.tree)),
         ("task", Value::string(task)),
-        ("retrieval", Value::string("COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK")),
+        (
+            "retrieval",
+            Value::string("COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"),
+        ),
         (
             "git_search",
             obj(&[
                 ("searched_terms", Value::number(words.len())),
-                ("matching_source_files", Value::number(committed.source_file_count)),
+                (
+                    "matching_source_files",
+                    Value::number(committed.source_file_count),
+                ),
                 ("selected_source_files", Value::number(selected_git_count)),
-                ("unreadable_matched_sources", Value::number(skipped_git_excerpts)),
+                (
+                    "unreadable_matched_sources",
+                    Value::number(skipped_git_excerpts),
+                ),
                 ("truncated", Value::Bool(committed.incomplete)),
             ]),
         ),
@@ -1354,15 +1369,25 @@ mod tests {
             "COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"
         );
         assert!(
-            first.get("git_search").unwrap().get("selected_source_files")
-                .unwrap().integer().unwrap() >= 2
+            first
+                .get("git_search")
+                .unwrap()
+                .get("selected_source_files")
+                .unwrap()
+                .integer()
+                .unwrap()
+                >= 2
         );
-        assert!(
-            ranked.iter().any(|candidate| {
-                candidate.get("source").unwrap().get("path").unwrap().str().unwrap()
-                    == "test/lease.test"
-            })
-        );
+        assert!(ranked.iter().any(|candidate| {
+            candidate
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap()
+                == "test/lease.test"
+        }));
         let plan = first.get("reading_plan").unwrap();
         let steps = plan.get("steps").unwrap().array_ref().unwrap();
         assert!(!steps.is_empty());
@@ -1381,10 +1406,14 @@ mod tests {
             "GIT_BLOB_LEXICAL_MATCH"
         );
         assert!(steps.iter().any(|step| {
-            step.get("source").unwrap().get("path").unwrap().str().unwrap()
+            step.get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap()
                 == "test/lease.test"
-                && step.get("action").unwrap().str().unwrap()
-                    == "INSPECT_RELATED_TEST"
+                && step.get("action").unwrap().str().unwrap() == "INSPECT_RELATED_TEST"
         }));
         assert_eq!(
             steps[0]

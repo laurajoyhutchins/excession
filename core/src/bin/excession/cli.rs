@@ -728,7 +728,13 @@ pub(super) fn command() -> Command {
                 &["repo", "task"],
                 &["rev", "limit", "roots", "db", "index-segments", "budget-file", "max-file-bytes", "max-segment-bytes", "max-segment-files"],
             )
-            .about("Find ranked Git-pinned source candidates for a natural-language task")
+            .about("Find Git-pinned source and tests fast; FTS/context enrich only when needed or requested")
+            .arg(
+                Arg::new("enrich")
+                    .long("enrich")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Force FTS index refresh and source-bound relationship context, even if Git already filled the reading budget"),
+            )
             .arg(
                 Arg::new("json")
                     .long("json")

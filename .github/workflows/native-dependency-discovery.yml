@@ -104,7 +104,7 @@ jobs:
           set -euo pipefail
           SRC="$RUNNER_TEMP/h11-source"
           CLI="$GITHUB_WORKSPACE/core/target/release/excession"
-          "$CLI" analyze --path "$SRC" --rev "$H11_SHA" --roots h11 \
+          "$CLI" analyze "$SRC" --rev "$H11_SHA" --roots h11 \
             --db "$RUNNER_TEMP/evidence.sqlite" --json > "$RUNNER_TEMP/full-analysis.json"
           /usr/bin/time -v -o "$RUNNER_TEMP/reference-retention.time" \
             python3 tools/benchmark_dependency_retention.py evaluate \

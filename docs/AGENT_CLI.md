@@ -48,9 +48,15 @@ segmented lexical index still sees the full tracked Git source inventory,
 subject to explicit index coverage and size limits.
 
 Source paths are partitioned deterministically into **256 SHA-256(path)
-segments**. Each segment is bounded to 6000 files, 256 KiB per file, and
-32 MiB of indexed text. By default, an invocation refreshes up to eight
-changed or missing segments. To bootstrap all segments in one foreground run:
+segments**. The *default processing budgets* are 6000 newly read files per
+segment refresh, 1 MiB per source blob, and 32 MiB of newly indexed text per
+segment refresh. These are caller-configurable with `--budget-file` or
+`--max-file-bytes`, `--max-segment-bytes` and `--max-segment-files`.
+A budget-exhausted segment is checkpointed and continues on subsequent runs;
+the file-read cap still excludes larger blobs until the caller raises it.
+See [resource budgets and remaining limitations](RESOURCE_BUDGETS.md).
+By default, an invocation refreshes up to eight changed or incomplete
+segments. To process up to 256 segments in one foreground run:
 
 ```sh
 excession agent locate --repo /work/project \

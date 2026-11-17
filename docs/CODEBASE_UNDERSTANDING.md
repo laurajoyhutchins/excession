@@ -1,5 +1,11 @@
 # Investigating an unfamiliar codebase today
 
+For large repositories, use `--budget-file` or the `--max-file-bytes`,
+`--max-segment-bytes`, and `--max-segment-files` overrides. Incomplete
+segments resume at the next invocation rather than disappearing from the
+index. The remaining non-streaming and non-paginated boundaries are listed in
+[resource budgets](RESOURCE_BUDGETS.md).
+
 The primary task is **answering a behavior question**. Source location and
 static graph edges are supporting evidence, not a finished explanation.
 This is the practical workflow using Excession's *implemented* interfaces.

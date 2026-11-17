@@ -1,5 +1,7 @@
 # Documentation
 
+**Resource policies:** [Configurable budgets, checkpoints, and coverage](RESOURCE_BUDGETS.md).
+
 **Start with the engineering question, not an index command.**
 
 The [documentation cutover](CUTOVER.md),

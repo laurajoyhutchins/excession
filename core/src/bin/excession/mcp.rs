@@ -23,6 +23,20 @@ struct ExcessionMcp {
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+struct SearchBudgets {
+    /// Maximum bytes read from a Git blob in one allocation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_file_bytes: Option<usize>,
+    /// Maximum new source bytes indexed per segment refresh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_segment_bytes: Option<usize>,
+    /// Maximum new source files indexed per segment refresh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_segment_files: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct SearchArgs {
     /// Task description for Git-pinned lexical source discovery.
     task: String,
@@ -35,6 +49,9 @@ struct SearchArgs {
     /// Lexical index partitions refreshed; defaults to 8 (1..256).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     index_segments: Option<usize>,
+    /// Authorized, caller-selected indexing policy; defaults apply per field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    budgets: Option<SearchBudgets>,
 }
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -159,15 +176,40 @@ fn call(
 ) -> std::result::Result<Value, String> {
     let report = match name {
         "search_code" => {
-            allowed(args, &["task", "revision", "limit", "index_segments"])?;
-            agent_locate::locate_with_budget(
+            allowed(
+                args,
+                &["task", "revision", "limit", "index_segments", "budgets"],
+            )?;
+            let defaults = agent_locate::IndexLimits::default();
+            let chosen = match args.get("budgets") {
+                Some(value) => serde_json::from_value::<SearchBudgets>(value.clone())
+                    .map_err(|err| format!("invalid indexing budgets: {err}"))?,
+                None => SearchBudgets {
+                    max_file_bytes: None,
+                    max_segment_bytes: None,
+                    max_segment_files: None,
+                },
+            };
+            agent_locate::locate_with_limits(
                 repo,
                 optional(args, "revision", "HEAD")?,
                 required(args, "task")?,
                 limit(args, "limit", 20, 64)?,
                 roots,
                 db,
-                limit(args, "index_segments", 8, 256)?,
+                agent_locate::LocateBudget {
+                    index_segments: limit(args, "index_segments", 8, 256)?,
+                    index: agent_locate::IndexLimits {
+                        max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
+                        max_bytes_per_segment: chosen
+                            .max_segment_bytes
+                            .unwrap_or(defaults.max_bytes_per_segment),
+                        max_files_per_segment: chosen
+                            .max_segment_files
+                            .unwrap_or(defaults.max_files_per_segment),
+                    }
+                    .validate()?,
+                },
             )?
         }
         "get_context" => {
@@ -436,6 +478,19 @@ pub(super) fn serve(repo: &Path, roots: Option<&str>, db: Option<&str>) -> exces
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn search_budget_schema_rejects_unknown_or_invalid_values() {
+        let budget: SearchBudgets = serde_json::from_str(
+            r#"{"max_file_bytes":524288,"max_segment_bytes":1048576,"max_segment_files":2}"#,
+        )
+        .unwrap();
+        assert_eq!(budget.max_file_bytes, Some(524288));
+        assert_eq!(budget.max_segment_files, Some(2));
+        assert!(serde_json::from_str::<SearchBudgets>(r#"{"unknown":12}"#).is_err());
+        assert!(serde_json::from_str::<SearchBudgets>(r#"{"max_file_bytes":-1}"#).is_err());
+        assert!(serde_json::from_str::<SearchBudgets>(r#"{"max_segment_files":"3"}"#).is_err());
+    }
+
     #[test]
     fn tools_have_typed_schemas_and_read_only_annotations() {
         let tools = ExcessionMcp::tool_router();

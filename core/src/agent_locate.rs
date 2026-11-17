@@ -6,6 +6,13 @@
 
 use crate::json::{Value, obj};
 use crate::{Result, agent, agent_locate_cache, discovery, git, refuse};
+pub use agent_locate_cache::IndexLimits;
+
+#[derive(Clone, Copy, Debug)]
+pub struct LocateBudget {
+    pub index_segments: usize,
+    pub index: IndexLimits,
+}
 #[cfg(test)]
 use rusqlite::{Connection, params};
 use std::collections::{BTreeMap, BTreeSet};
@@ -59,6 +66,8 @@ fn source_path(path: &str) -> bool {
             | "sql"
             | "proto"
             | "lean"
+            | "y"
+            | "l"
     )
 }
 
@@ -490,6 +499,33 @@ pub fn locate_with_budget(
     db: Option<&str>,
     index_segments: usize,
 ) -> Result<Value> {
+    locate_with_limits(
+        repo,
+        rev,
+        task,
+        limit,
+        roots,
+        db,
+        LocateBudget {
+            index_segments,
+            index: IndexLimits::default(),
+        },
+    )
+}
+
+/// Run source discovery using explicitly selected index processing budgets.
+/// All three budgets are included in the cache fingerprint and in the report.
+pub fn locate_with_limits(
+    repo: &Path,
+    rev: &str,
+    task: &str,
+    limit: usize,
+    roots: Option<&str>,
+    db: Option<&str>,
+    budget: LocateBudget,
+) -> Result<Value> {
+    let limits = budget.index.validate()?;
+    let index_segments = budget.index_segments;
     if !(1..=64).contains(&limit) {
         return refuse("agent locate --limit must be 1..=64");
     }
@@ -501,13 +537,14 @@ pub fn locate_with_budget(
         .filter(|entry| entry.kind == "blob" && matches!(entry.mode.as_str(), "100644" | "100755"))
         .map(|entry| (entry.path.clone(), entry.clone()))
         .collect::<BTreeMap<_, _>>();
-    let index = agent_locate_cache::search(
+    let index = agent_locate_cache::search_with_limits(
         &discovered,
         entries,
         limit,
         &match_expression(&words),
         index_segments,
         source_path,
+        limits,
     )?;
     let mut candidates = Vec::new();
     let mut selected_paths = Vec::new();
@@ -627,6 +664,20 @@ pub fn locate_with_budget(
                     "complete",
                     Value::Bool(index.pending_segments == 0 && skipped == 0 && !truncated),
                 ),
+                (
+                    "limits",
+                    obj(&[
+                        (
+                            "max_files_per_segment",
+                            Value::number(limits.max_files_per_segment),
+                        ),
+                        ("max_file_bytes", Value::number(limits.max_file_bytes)),
+                        (
+                            "max_bytes_per_segment",
+                            Value::number(limits.max_bytes_per_segment),
+                        ),
+                    ]),
+                ),
             ]),
         ),
         ("context", context),
@@ -657,6 +708,7 @@ pub fn locate_with_budget(
                 "refreshed_segments",
                 Value::number(index.refreshed_segments),
             ),
+            ("refresh_budget_segments", Value::number(index_segments)),
         ]),
     );
     Ok(output)
@@ -926,6 +978,8 @@ mod tests {
         assert!(!source_path("docs/readme.md"));
         assert!(source_path("src/agent.rs"));
         assert!(source_path("pkg/controller/main.go"));
+        assert!(source_path("src/parse.y"));
+        assert!(source_path("src/tokenizer.l"));
     }
 
     #[test]

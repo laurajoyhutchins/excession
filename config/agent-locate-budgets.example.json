@@ -1,0 +1,5 @@
+{
+  "max_files_per_segment": 1000,
+  "max_file_bytes": 8388608,
+  "max_bytes_per_segment": 33554432
+}

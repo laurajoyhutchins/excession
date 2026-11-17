@@ -753,14 +753,43 @@ fn execute(args: &[String]) -> Result<Response> {
                         .get_or("index-segments", "8")
                         .parse::<usize>()
                         .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
-                    Ok(json(agent_locate::locate_with_budget(
+                    let defaults = if let Some(path) = opt.0.get("budget-file") {
+                        let content = std::fs::read_to_string(path)
+                            .map_err(|err| format!("--budget-file could not be read: {err}"))?;
+                        serde_json::from_str::<agent_locate::IndexLimits>(&content)
+                            .map_err(|err| format!("--budget-file is invalid: {err}"))?
+                    } else {
+                        agent_locate::IndexLimits::default()
+                    };
+                    let parse_budget = |name: &str, default: usize| -> Result<usize> {
+                        opt.0.get(name).map_or(Ok(default), |raw| {
+                            raw.parse::<usize>().map_err(|_| {
+                                format!("--{name} must be a positive integer in bytes or files")
+                            })
+                        })
+                    };
+                    let limits = agent_locate::IndexLimits {
+                        max_file_bytes: parse_budget("max-file-bytes", defaults.max_file_bytes)?,
+                        max_bytes_per_segment: parse_budget(
+                            "max-segment-bytes",
+                            defaults.max_bytes_per_segment,
+                        )?,
+                        max_files_per_segment: parse_budget(
+                            "max-segment-files",
+                            defaults.max_files_per_segment,
+                        )?,
+                    };
+                    Ok(json(agent_locate::locate_with_limits(
                         opt.path("repo"),
                         opt.get_or("rev", "HEAD"),
                         opt.get("task"),
                         limit,
                         roots,
                         db,
-                        budget,
+                        agent_locate::LocateBudget {
+                            index_segments: budget,
+                            index: limits,
+                        },
                     )?))
                 }
                 "context" => Ok(json(agent::context(

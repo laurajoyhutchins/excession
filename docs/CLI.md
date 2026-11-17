@@ -57,6 +57,10 @@ excession --help
 
 For development, `make cli` produces `core/target/debug/excession`. `make check` runs the existing source/evidence tests and the dedicated CLI tests.
 
+See [resource budgets](RESOURCE_BUDGETS.md) for the configurable agent-locate
+indexing policy, the distinction between processing and completeness, and
+remaining pagination and streaming limitations.
+
 ## Ordinary repository analysis
 
 Use a checkout containing a supported Python or JavaScript/TypeScript source

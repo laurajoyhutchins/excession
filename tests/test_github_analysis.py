@@ -86,6 +86,52 @@ class RequestTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(module.Refusal):
                 module.validate(request(limit=value), TARGETS)
 
+    def test_owner_can_select_index_budgets_without_shell_interpolation(self):
+        chosen = {
+            "max_file_bytes": 4 * 1024 * 1024,
+            "max_segment_bytes": 8 * 1024 * 1024,
+            "max_segment_files": 3,
+            "refresh_segments": 2,
+        }
+        value = module.validate(request(budgets=chosen), TARGETS)
+        argv = module.command(value, Path("/source"), Path("/tool/excession"))
+        for flag, expected in (
+            ("--max-file-bytes", chosen["max_file_bytes"]),
+            ("--max-segment-bytes", chosen["max_segment_bytes"]),
+            ("--max-segment-files", chosen["max_segment_files"]),
+            ("--index-segments", chosen["refresh_segments"]),
+        ):
+            self.assertEqual(argv[argv.index(flag) + 1], str(expected))
+        observed = {
+            "schema": module.SCHEMAS["locate"],
+            "source_commit": SHA,
+            "source_tree": BASE,
+            "index": {"limits": {
+                "max_file_bytes": chosen["max_file_bytes"],
+                "max_bytes_per_segment": chosen["max_segment_bytes"],
+                "max_files_per_segment": chosen["max_segment_files"],
+            }},
+            "cache": {"refresh_budget_segments": chosen["refresh_segments"]},
+        }
+        module.check_report(value, observed, BASE)
+        observed["index"]["limits"]["max_file_bytes"] = 1024 * 1024
+        with self.assertRaises(module.Refusal):
+            module.check_report(value, observed, BASE)
+
+    def test_malformed_or_cross_operation_budgets_refused(self):
+        bad = (
+            {}, {"unknown": 2}, {"refresh_segments": 257},
+            {"max_file_bytes": True}, {"max_file_bytes": 0},
+            {"max_file_bytes": -1}, {"max_segment_files": "3"},
+            {"max_segment_bytes": 2},
+            {"max_file_bytes": 16 * 1024 * 1024, "max_segment_bytes": 1 * 1024 * 1024},
+        )
+        for budgets in bad:
+            with self.subTest(budgets=budgets), self.assertRaises(module.Refusal):
+                module.validate(request(budgets=budgets), TARGETS)
+        with self.assertRaises(module.Refusal):
+            module.validate(request("context", budgets={"max_file_bytes": 1024}), TARGETS)
+
     def test_focus_path_traversal(self):
         for path in ("/etc/passwd", "../src", "src/../a", "a//b", "a,b",
                      "a\\b", "a\x00b", ""):

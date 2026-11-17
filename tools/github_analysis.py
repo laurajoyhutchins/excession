@@ -21,6 +21,15 @@ SCHEMAS = {
     "context": "excession.agent-context.v1",
     "verify": "excession.agent-verification.v1",
 }
+# Trusted defaults match the native CLI. A caller can override work budgets,
+# but not the workflow's separate OS/CI execution safety envelope.
+LOCATE_INDEX_DEFAULTS = {
+    "max_file_bytes": 1024 * 1024,
+    "max_segment_bytes": 32 * 1024 * 1024,
+    "max_segment_files": 6000,
+    "refresh_segments": 256,
+}
+
 
 
 class Refusal(ValueError):
@@ -71,11 +80,25 @@ def valid_focus(value):
     )
 
 
+def validate_budgets(raw):
+    if not isinstance(raw, dict) or not raw or set(raw) - set(LOCATE_INDEX_DEFAULTS):
+        raise Refusal("invalid locate budgets")
+    for key, value in raw.items():
+        if type(value) is not int or value < 1 or value > (2**63 - 1):
+            raise Refusal("locate budgets must be positive integers in SQLite range")
+        if key == "refresh_segments" and value > 256:
+            raise Refusal("refresh_segments must be in 1..256")
+    limits = {**LOCATE_INDEX_DEFAULTS, **raw}
+    if limits["max_file_bytes"] > limits["max_segment_bytes"]:
+        raise Refusal("max_file_bytes must not exceed max_segment_bytes")
+    return dict(sorted(raw.items()))
+
+
 def validate(value, targets):
     if not isinstance(value, dict):
         raise Refusal("request must be an object")
     kind = value.get("operation")
-    permitted = {"schema", "repository", "revision", "operation", "task", "focus", "base", "limit"}
+    permitted = {"schema", "repository", "revision", "operation", "task", "focus", "base", "limit", "budgets"}
     if set(value) - permitted or kind not in SCHEMAS:
         raise Refusal("unknown request field or operation")
     if value.get("schema") != REQUEST_SCHEMA:
@@ -88,10 +111,12 @@ def validate(value, targets):
     if type(limit) is not int or not 1 <= limit <= 64:
         raise Refusal("limit outside 1..64")
     if kind == "locate":
-        if set(value) - {"schema", "repository", "revision", "operation", "task", "limit"}:
+        if set(value) - {"schema", "repository", "revision", "operation", "task", "limit", "budgets"}:
             raise Refusal("unexpected locate field")
         if not isinstance(value.get("task"), str) or not 3 <= len(value["task"]) <= 4000 or "\x00" in value["task"]:
             raise Refusal("locate task missing or invalid")
+        if "budgets" in value:
+            validate_budgets(value["budgets"])
     elif kind == "context":
         if set(value) - {"schema", "repository", "revision", "operation", "focus", "task", "limit"}:
             raise Refusal("unexpected context field")
@@ -180,8 +205,13 @@ def command(request, source, binary):
     kind = request["operation"]
     argv = [str(binary), "agent", kind, "--repo", str(source)]
     if kind == "locate":
+        budgets = {**LOCATE_INDEX_DEFAULTS, **request.get("budgets", {})}
         argv += ["--rev", request["revision"], "--task", request["task"],
-                 "--limit", str(request["limit"]), "--index-segments", "256", "--json"]
+                 "--limit", str(request["limit"]),
+                 "--index-segments", str(budgets["refresh_segments"]),
+                 "--max-file-bytes", str(budgets["max_file_bytes"]),
+                 "--max-segment-bytes", str(budgets["max_segment_bytes"]),
+                 "--max-segment-files", str(budgets["max_segment_files"]), "--json"]
     elif kind == "context":
         argv += ["--rev", request["revision"], "--focus", ",".join(request["focus"]),
                  "--limit", str(request["limit"])]
@@ -203,6 +233,18 @@ def check_report(request, report, tree):
             raise Refusal("verification identities disagree with Git")
     elif report.get("source_commit") != request["revision"] or report.get("source_tree") != tree:
         raise Refusal("source identities disagree with Git")
+    if request["operation"] == "locate":
+        expected = {**LOCATE_INDEX_DEFAULTS, **request.get("budgets", {})}
+        observed = report.get("index", {}).get("limits", {})
+        for key, field in (
+            ("max_file_bytes", "max_file_bytes"),
+            ("max_segment_bytes", "max_bytes_per_segment"),
+            ("max_segment_files", "max_files_per_segment"),
+        ):
+            if observed.get(field) != expected[key]:
+                raise Refusal("native report indexing budgets differ from request")
+        if report.get("cache", {}).get("refresh_budget_segments") != expected["refresh_segments"]:
+            raise Refusal("native report refresh budget differs from request")
 
 
 def execute(request, binary, output, source_checkout=None, tool_checkout=None):

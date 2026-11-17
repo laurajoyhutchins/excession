@@ -36,6 +36,23 @@ The technical notebook supplies reasoning and evidence references. It is not
 parsed as untrusted executable instructions and a prose suggestion cannot
 grant a workflow token permission to merge arbitrary changes.
 
+## Running the loop from a connected GitHub client
+
+The GitHub connector may not expose GitHub Actions `workflow_dispatch`.
+The native workflows therefore also accept one **owner-authored issue-opened**
+event with a fixed title: `[Excession] Run Cargo improvement` or
+`[Excession] Run Rustfmt improvement`. The workflow still checks the
+canonical repository, `main` and GitHub's immutable issue author ID
+`219002713`; it does **not** read the issue body as code, paths or commands.
+An issue by another account cannot authorize the privileged job. Existing
+scheduled and explicit `workflow_dispatch` paths remain unchanged.
+
+A successful trigger is only a start. Review the actual run, candidate branch,
+GitHub evidence, full Verify results and resulting PR/merge. A no-op formatter
+is a verified **absence of an eligible edit**, not a completed improvement.
+If a workflow creates a draft dependency PR, it observed work but did not
+satisfy automatic patch-only policy.
+
 ## Production loop
 
 The [auto integration workflow](../.github/workflows/quality-auto-integrate.yml)

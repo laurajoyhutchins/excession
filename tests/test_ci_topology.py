@@ -188,6 +188,12 @@ class CiTopology(unittest.TestCase):
             "bash tools/ci/await_verified_merge.sh", "native-improvement.json",
         ):
             self.assertIn(required, auto, required)
+        for required in (
+            "  issues:", "    types: [opened]",
+            "github.event.issue.user.id == 219002713",
+            "[Excession] Run Rustfmt improvement",
+        ):
+            self.assertIn(required, auto, required)
         self.assertNotIn("  pull_request:", auto)
         self.assertNotIn("pull_request_target:", auto)
         self.assertNotIn("  workflow_run:", auto)
@@ -205,6 +211,12 @@ class CiTopology(unittest.TestCase):
             "persist-credentials: false",
         ):
             self.assertIn(required, cargo)
+        for required in (
+            "  issues:", "    types: [opened]",
+            "github.event.issue.user.id == 219002713",
+            "[Excession] Run Cargo improvement",
+        ):
+            self.assertIn(required, cargo, required)
         self.assertNotIn("  pull_request:", cargo)
         self.assertNotIn("pull_request_target:", cargo)
         self.assertNotIn(" --admin", cargo)

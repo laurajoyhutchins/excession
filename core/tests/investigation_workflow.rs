@@ -1526,6 +1526,7 @@ fn runtime_trace_observes_lines_local_changes_and_internal_behavior_differences(
     assert_eq!(report["trace_comparison"], "MATCHING_REPORTED_EVENTS");
     assert_eq!(report["base_trace"]["status"], "REPORTED_COMPLETE");
     assert_eq!(report["candidate_trace"]["status"], "REPORTED_COMPLETE");
+    assert_eq!(report["base_trace"]["values_partial"], true);
     assert_eq!(
         report["base_witness_line_hits"][0]["witness_event_id"],
         witness["event_id"]

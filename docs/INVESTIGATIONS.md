@@ -274,7 +274,8 @@ function names and changes in sampled local values. Primitives such as
 bounded integers and booleans can be represented directly; strings and
 byte strings carry length and SHA-256 rather than raw values. Objects and
 mutable containers are **opaque**, so in-place mutation is not independently
-observed. A local-variable change is associated with the last traced line
+observed. The `values_partial` flag remains true whenever objects are
+opaque, scalar values are hashed-only, or local-variable sampling is incomplete. A local-variable change is associated with the last traced line
 before the next trace callback, not an abstract semantic assignment edge.
 
 Base witness source-line hits are counted but **do not prove** a branch's

@@ -110,7 +110,10 @@ def main() -> None:
                 partial_values = True
             for name in keys[:128]:
                 if len(name) <= 128:
-                    now[name] = scalar(frame.f_locals[name])
+                    encoded = scalar(frame.f_locals[name])
+                    now[name] = encoded
+                    if encoded["type"] in ("opaque", "str", "bytes") or encoded.get("value") == "UNAVAILABLE_TOO_LARGE":
+                        partial_values = True
                 else:
                     partial_values = True
             changes = [

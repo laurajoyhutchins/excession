@@ -256,7 +256,8 @@ class RequestTests(unittest.TestCase):
                 "id": run_id,
                 "event": "issues",
                 "conclusion": "success",
-                "name": "Excession agent analysis (GitHub-native)",
+                "name": "Excession analysis request 123456789",
+                "path": ".github/workflows/github-native-analysis.yml",
                 "head_sha": tool_commit,
                 "head_branch": "main",
                 "actor": {"id": module.OWNER_ID},
@@ -283,6 +284,13 @@ class RequestTests(unittest.TestCase):
                     {**metadata, "actor": {"id": 1234}}, tool_commit,
                     root / "forged-cache", report_root,
                 )
+            with self.assertRaises(module.Refusal):
+                module.restore_checkpoint(
+                    {**request_value, "resume_run_id": run_id}, artifact,
+                    {**metadata, "path": ".github/workflows/untrusted.yml"}, tool_commit,
+                    root / "wrong-workflow-cache", report_root,
+                )
+
             with self.assertRaises(module.Refusal):
                 module.restore_checkpoint(
                     {**request_value, "resume_run_id": run_id}, artifact,

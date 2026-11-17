@@ -240,10 +240,11 @@ def check_report(request, report, tree):
             ("max_file_bytes", "max_file_bytes"),
             ("max_segment_bytes", "max_bytes_per_segment"),
             ("max_segment_files", "max_files_per_segment"),
-            ("refresh_segments", "refresh_segments"),
         ):
             if observed.get(field) != expected[key]:
                 raise Refusal("native report indexing budgets differ from request")
+        if report.get("cache", {}).get("refresh_budget_segments") != expected["refresh_segments"]:
+            raise Refusal("native report refresh budget differs from request")
 
 
 def execute(request, binary, output, source_checkout=None, tool_checkout=None):

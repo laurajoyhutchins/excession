@@ -4,6 +4,8 @@ name: Auto-integrate reproducible native improvements
 # The only auto-merging recipe is native-rustfmt, hard-allowlisted by the
 # repository's improvement_cycle.py and independently replayed from Git.
 on:
+  issues:
+    types: [opened]
   schedule:
     - cron: '45 10 * * 2'
   workflow_dispatch:
@@ -19,7 +21,14 @@ concurrency:
 
 jobs:
   integrate:
-    if: github.repository == 'laurajoyhutchins/excession' && github.ref == 'refs/heads/main'
+    # Only the repository owner can invoke an issue-triggered maintenance run.
+    # The event supplies no commands or file paths to the native producer.
+    if: >-
+      github.repository == 'laurajoyhutchins/excession' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'issues' ||
+        (github.event.issue.user.id == 219002713 &&
+         github.event.issue.title == '[Excession] Run Rustfmt improvement'))
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:

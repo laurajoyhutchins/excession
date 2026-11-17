@@ -80,6 +80,7 @@ fn is_test(path: &str) -> bool {
 }
 
 fn matches_focus(test: &str, focus: &BTreeSet<String>) -> bool {
+    let file = test.rsplit('/').next().unwrap_or(test).to_ascii_lowercase();
     focus.iter().any(|path| {
         let stem = path
             .rsplit('/')
@@ -87,9 +88,51 @@ fn matches_focus(test: &str, focus: &BTreeSet<String>) -> bool {
             .unwrap_or(path)
             .split('.')
             .next()
-            .unwrap_or("");
-        stem.len() >= 3 && test.contains(stem)
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        stem.len() >= 3 && file.contains(&stem)
     })
+}
+
+/// Rank test *navigation suggestions*, not established test ownership. Direct
+/// focus paths are always first; source-native tests precede vendored fixtures.
+fn ranked_test_candidates<'a>(
+    entries: &'a [git::Entry],
+    focus: &BTreeSet<String>,
+    task: Option<&str>,
+) -> Vec<&'a git::Entry> {
+    let terms = task
+        .unwrap_or("")
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|word| word.len() >= 4)
+        .map(str::to_ascii_lowercase)
+        .collect::<BTreeSet<_>>();
+    let mut ranked = Vec::new();
+    for entry in entries {
+        if entry.kind != "blob"
+            || !matches!(entry.mode.as_str(), "100644" | "100755")
+            || !is_test(&entry.path)
+        {
+            continue;
+        }
+        let file = entry.path.rsplit('/').next().unwrap_or(&entry.path).to_ascii_lowercase();
+        let direct_focus = focus.contains(&entry.path);
+        let source_hint = matches_focus(&entry.path, focus);
+        let task_hits = terms.iter().filter(|term| file.contains(term.as_str())).count();
+        if !direct_focus && !source_hint && task_hits == 0 {
+            continue;
+        }
+        let rank = (
+            direct_focus,
+            !crate::source_capabilities::third_party_test_path(&entry.path),
+            task_hits,
+            !crate::source_capabilities::fixture_test_path(&entry.path),
+            source_hint,
+        );
+        ranked.push((entry, rank));
+    }
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.path.cmp(&b.0.path)));
+    ranked.into_iter().map(|(entry, _)| entry).collect()
 }
 
 /// Keep producer-observed references before weaker candidates when context is
@@ -232,29 +275,28 @@ pub fn context(
         }
     }
 
+    let ranked_tests = ranked_test_candidates(&entries, &focus, task);
+    let total_tests = ranked_tests.len();
     let mut test_candidates = Vec::new();
-    let mut total_tests = 0usize;
-    for entry in &entries {
-        if entry.kind != "blob"
-            || !matches!(entry.mode.as_str(), "100644" | "100755")
-            || !is_test(&entry.path)
-            || !matches_focus(&entry.path, &focus)
-        {
-            continue;
-        }
-        total_tests += 1;
-        if test_candidates.len() < limit {
-            test_candidates.push(obj(&[
-                (
-                    "source",
-                    source(&discovered.commit, &discovered.tree, entry),
-                ),
-                ("reason", Value::string("PATH_NAME_HEURISTIC")),
-                ("selection_verified", Value::Bool(false)),
-            ]));
-        } else {
-            truncated = true;
-        }
+    for entry in ranked_tests.into_iter().take(limit) {
+        test_candidates.push(obj(&[
+            (
+                "source",
+                source(&discovered.commit, &discovered.tree, entry),
+            ),
+            (
+                "reason",
+                Value::string(if focus.contains(&entry.path) {
+                    "EXPLICIT_FOCUS_TEST"
+                } else {
+                    "PATH_NAME_HEURISTIC"
+                }),
+            ),
+            ("selection_verified", Value::Bool(false)),
+        ]));
+    }
+    if total_tests > test_candidates.len() {
+        truncated = true;
     }
     gaps.push(gap("TEST_SELECTION_NOT_PROVEN"));
     gaps.push(gap("TASK_SEMANTICS_NOT_INTERPRETED"));
@@ -703,6 +745,41 @@ mod tests {
         assert!(matches_focus("core/tests/test_impact_query.rs", &focus));
         assert!(!matches_focus("core/tests/test_security.rs", &focus));
         assert!(!is_test("core/src/impact_query.rs"));
+    }
+
+    #[test]
+    fn task_matched_first_party_tests_outrank_vendored_loader_fixtures() {
+        let names = [
+            "deps/v8/tools/testrunner/testproc/loader_test.py",
+            "test/es-module/test-esm-loader-cache-clearing.js",
+            "test/parallel/test-module-circular-dependency-warning.js",
+            "test/parallel/test-module-relative-resolve-cache.js",
+            "test/parallel/test-module-cache.js",
+            "test/fixtures/es-module-loaders/loader.js",
+        ];
+        let entries = names.iter().map(|path| git::Entry {
+            path: (*path).to_owned(),
+            kind: "blob".into(),
+            oid: "a".repeat(40),
+            mode: "100644".into(),
+        }).collect::<Vec<_>>();
+        let focus = BTreeSet::from([
+            "lib/internal/modules/cjs/loader.js".into(),
+            "test/parallel/test-module-cache.js".into(),
+            "test/parallel/test-module-relative-resolve-cache.js".into(),
+        ]);
+        let ranked = ranked_test_candidates(
+            &entries,
+            &focus,
+            Some("Explain CommonJS require caching and circular dependency warnings"),
+        );
+        let paths = ranked.iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>();
+        assert_eq!(paths[0], "test/parallel/test-module-cache.js");
+        assert_eq!(paths[1], "test/parallel/test-module-relative-resolve-cache.js");
+        assert!(paths.iter().position(|p| p.contains("circular-dependency"))
+            < paths.iter().position(|p| p.starts_with("deps/v8")));
+        assert!(paths.iter().position(|p| p.starts_with("test/parallel"))
+            < paths.iter().position(|p| p.starts_with("test/fixtures")));
     }
 
     #[test]

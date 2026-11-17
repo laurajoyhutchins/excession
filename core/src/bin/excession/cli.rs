@@ -699,6 +699,15 @@ pub(super) fn command() -> Command {
                 &[],
             )
             .about("Bind a control/data/state interpretation to exact authenticated source lines"),
+            leaf(
+                "execute",
+                &[
+                    "repo", "db", "id", "expected-revision", "plan-event",
+                    "candidate", "program", "argv-json", "trusted-local",
+                ],
+                &["timeout-ms", "max-output-bytes"],
+            )
+            .about("Explicit trusted-local same-invocation base/candidate execution; no sandbox or equivalence proof"),
             leaf("explain", &["repo", "db", "id"], &[])
                 .about("Compose a source-linked explanation and expose unresolved obligations"),
             leaf("show", &["repo", "db", "id"], &[])

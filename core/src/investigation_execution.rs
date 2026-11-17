@@ -255,7 +255,7 @@ pub(crate) fn validate_event(
     let plan_id = payload.get("plan_event_id")?.str()?;
     let witness_ids = planned_witnesses(prior, plan_id)?;
     let report = payload.get("report")?;
-    if report.entries()?.len() != 14
+    if report.entries()?.len() != 17
         || report.get("schema")?.str()? != FORMAT
         || report.get("base_commit")?.str()? != commit
         || report.get("base_tree")?.str()? != tree
@@ -365,7 +365,7 @@ pub fn compare(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
     let new = observation(&candidate_root, &candidate, &candidate_tree, &program, &arguments, timeout, request.max_output_bytes)?;
     temp.cleanup()?;
 
-    let mut report = obj(&[
+    let report = obj(&[
         ("schema", Value::string(FORMAT)),
         ("base_commit", Value::string(base)),
         ("base_tree", Value::string(tree)),
@@ -401,7 +401,5 @@ pub fn compare(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
             ("report", report.clone()),
         ]), None)?;
     // The original report remains included inside the append-only event.
-    report = Value::Null;
-    let _ = report;
     Ok(result)
 }

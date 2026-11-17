@@ -16,6 +16,7 @@ use excession::improve;
 use excession::improve_edits;
 use excession::investigation;
 use excession::investigation_witness;
+use excession::investigation_execution;
 use excession::investigation_workflow;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
@@ -939,6 +940,25 @@ fn execute(args: &[String]) -> Result<Response> {
                             last_line: parse_line("last-line")?,
                             kind: opt.get("kind"),
                             interpretation: opt.get("interpretation"),
+                        },
+                    )?))
+                }
+                "execute" => {
+                    let timeout_ms = opt.get_or("timeout-ms", "30000")
+                        .parse::<u64>().map_err(|_| "--timeout-ms must be an integer".to_owned())?;
+                    let max_output_bytes = opt.get_or("max-output-bytes", "1048576")
+                        .parse::<u64>().map_err(|_| "--max-output-bytes must be an integer".to_owned())?;
+                    Ok(json(investigation_execution::compare(
+                        &ledger, repo, investigation_execution::Request {
+                            id: opt.get("id"),
+                            expected_revision: expected_revision()?,
+                            plan_event_id: opt.get("plan-event"),
+                            candidate: opt.get("candidate"),
+                            program: opt.path("program"),
+                            argv_json: opt.get("argv-json"),
+                            timeout_ms,
+                            max_output_bytes,
+                            trusted_local: opt.get("trusted-local") == "true",
                         },
                     )?))
                 }

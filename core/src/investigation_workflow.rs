@@ -5,7 +5,7 @@
 
 use crate::evidence::identity::SourceRef;
 use crate::json::{Value, obj};
-use crate::{Result, agent_locate, change_inventory, digest, git, investigation, refuse};
+use crate::{Result, agent_locate, change_inventory, digest, investigation, refuse};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -271,7 +271,7 @@ pub fn explore(db: &crate::sqlite::Db, repo: &Path, options: Explore<'_>) -> Res
         options.limit,
         options.roots,
         options.evidence_db,
-        options.index_segments,
+        options.budget,
     )?;
     // The original locate report excludes volatile cache stats from its
     // stable report_id. Persist its exact stable portion, not a cache path.

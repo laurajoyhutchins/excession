@@ -110,8 +110,8 @@ class RequestTests(unittest.TestCase):
                 "max_file_bytes": chosen["max_file_bytes"],
                 "max_bytes_per_segment": chosen["max_segment_bytes"],
                 "max_files_per_segment": chosen["max_segment_files"],
-                "refresh_segments": chosen["refresh_segments"],
             }},
+            "cache": {"refresh_budget_segments": chosen["refresh_segments"]},
         }
         module.check_report(value, observed, BASE)
         observed["index"]["limits"]["max_file_bytes"] = 1024 * 1024

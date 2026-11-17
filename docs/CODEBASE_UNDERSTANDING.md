@@ -1,4 +1,10 @@
 # Understanding a codebase with Excession
+For large repositories, use `--budget-file` or the `--max-file-bytes`,
+`--max-segment-bytes`, and `--max-segment-files` overrides. Incomplete
+segments resume at the next invocation rather than disappearing from the
+index. The remaining non-streaming and non-paginated boundaries are listed in
+[resource budgets](RESOURCE_BUDGETS.md).
+
 
 Excession should help an engineer answer questions about unfamiliar software.
 A graph of symbol references is an input to that work, not its result.

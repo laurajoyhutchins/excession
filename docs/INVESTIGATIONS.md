@@ -105,7 +105,11 @@ excession investigation explain \
 Every mutating command requires the current \`--expected-revision\`. Replace
 \`REVISION\` with the actual current ledger revision, which increments on
 each successful append. \`explore\` reuses the existing \`agent locate\`
-retrieval model and index budgets. Its reading plan is **not** a program
+retrieval model and configurable index budgets. The same `--budget-file`,
+`--max-file-bytes`, `--max-segment-bytes`, and `--max-segment-files`
+options are available on both `agent locate` and `investigation explore`.
+A source above an assigned budget is reported as incomplete rather than
+silently excluded from the coverage claim. Its reading plan is **not** a program
 trace; missing matches and incomplete index segments are reported as gaps.
 The stored report omits volatile local cache paths but retains its stable
 report digest and Git-bound candidate identities.

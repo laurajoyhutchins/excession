@@ -480,6 +480,37 @@ fn clang_command(opt: &Options) -> Result<Response> {
     )?))
 }
 
+/// Use one set of source-index processing limits for discovery and persisted
+/// investigations. They are budgets, not evidence of repository completeness.
+fn locate_budget(opt: &Options) -> Result<agent_locate::LocateBudget> {
+    let index_segments = opt.get_or("index-segments", "8")
+        .parse::<usize>().map_err(|_| "--index-segments must be an integer from 1 to 256")?;
+    let defaults = if let Some(path) = opt.0.get("budget-file") {
+        let content = std::fs::read_to_string(path)
+            .map_err(|err| format!("--budget-file could not be read: {err}"))?;
+        serde_json::from_str::<agent_locate::IndexLimits>(&content)
+            .map_err(|err| format!("--budget-file is invalid: {err}"))?
+    } else {
+        agent_locate::IndexLimits::default()
+    };
+    let parse_budget = |name: &str, default: usize| -> Result<usize> {
+        opt.0.get(name).map_or(Ok(default), |raw| {
+            raw.parse::<usize>().map_err(|_| {
+                format!("--{name} must be a positive integer in bytes or files")
+            })
+        })
+    };
+    let limits = agent_locate::IndexLimits {
+        max_file_bytes: parse_budget("max-file-bytes", defaults.max_file_bytes)?,
+        max_bytes_per_segment: parse_budget("max-segment-bytes", defaults.max_bytes_per_segment)?,
+        max_files_per_segment: parse_budget("max-segment-files", defaults.max_files_per_segment)?,
+    };
+    Ok(agent_locate::LocateBudget {
+        index_segments,
+        index: limits.validate()?,
+    })
+}
+
 fn execute(args: &[String]) -> Result<Response> {
     let parsed = match cli::parse(args)? {
         ParseOutcome::Help(message) => return Ok(Response::Message(message)),
@@ -749,50 +780,15 @@ fn execute(args: &[String]) -> Result<Response> {
                     )?)
                     .map_err(|err| format!("serialize agent onboarding: {err}"))?,
                 )),
-                "locate" => {
-                    let budget = opt
-                        .get_or("index-segments", "8")
-                        .parse::<usize>()
-                        .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
-                    let defaults = if let Some(path) = opt.0.get("budget-file") {
-                        let content = std::fs::read_to_string(path)
-                            .map_err(|err| format!("--budget-file could not be read: {err}"))?;
-                        serde_json::from_str::<agent_locate::IndexLimits>(&content)
-                            .map_err(|err| format!("--budget-file is invalid: {err}"))?
-                    } else {
-                        agent_locate::IndexLimits::default()
-                    };
-                    let parse_budget = |name: &str, default: usize| -> Result<usize> {
-                        opt.0.get(name).map_or(Ok(default), |raw| {
-                            raw.parse::<usize>().map_err(|_| {
-                                format!("--{name} must be a positive integer in bytes or files")
-                            })
-                        })
-                    };
-                    let limits = agent_locate::IndexLimits {
-                        max_file_bytes: parse_budget("max-file-bytes", defaults.max_file_bytes)?,
-                        max_bytes_per_segment: parse_budget(
-                            "max-segment-bytes",
-                            defaults.max_bytes_per_segment,
-                        )?,
-                        max_files_per_segment: parse_budget(
-                            "max-segment-files",
-                            defaults.max_files_per_segment,
-                        )?,
-                    };
-                    Ok(json(agent_locate::locate_with_limits(
-                        opt.path("repo"),
-                        opt.get_or("rev", "HEAD"),
-                        opt.get("task"),
-                        limit,
-                        roots,
-                        db,
-                        agent_locate::LocateBudget {
-                            index_segments: budget,
-                            index: limits,
-                        },
-                    )?))
-                }
+                "locate" => Ok(json(agent_locate::locate_with_limits(
+                    opt.path("repo"),
+                    opt.get_or("rev", "HEAD"),
+                    opt.get("task"),
+                    limit,
+                    roots,
+                    db,
+                    locate_budget(opt)?,
+                )?)),
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),
                     opt.get("rev"),
@@ -884,16 +880,9 @@ fn execute(args: &[String]) -> Result<Response> {
                     )?))
                 }
                 "explore" => {
-                    let limit = opt
-                        .get_or("limit", "12")
+                    let limit = opt.get_or("limit", "12")
                         .parse::<usize>()
                         .map_err(|_| "--limit must be an integer from 1 to 64".to_owned())?;
-                    let segments =
-                        opt.get_or("index-segments", "8")
-                            .parse::<usize>()
-                            .map_err(|_| {
-                                "--index-segments must be an integer from 1 to 256".to_owned()
-                            })?;
                     Ok(json(investigation_workflow::explore(
                         &ledger,
                         repo,
@@ -901,7 +890,7 @@ fn execute(args: &[String]) -> Result<Response> {
                             id: opt.get("id"),
                             expected_revision: expected_revision()?,
                             limit,
-                            index_segments: segments,
+                            budget: locate_budget(opt)?,
                             roots: opt.0.get("roots").map(String::as_str),
                             evidence_db: opt.0.get("evidence-db").map(String::as_str),
                         },

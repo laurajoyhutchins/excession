@@ -248,7 +248,7 @@ pub struct Explore<'a> {
     pub id: &'a str,
     pub expected_revision: usize,
     pub limit: usize,
-    pub index_segments: usize,
+    pub budget: agent_locate::LocateBudget,
     pub roots: Option<&'a str>,
     pub evidence_db: Option<&'a str>,
 }
@@ -258,13 +258,13 @@ pub fn explore(db: &crate::sqlite::Db, repo: &Path, options: Explore<'_>) -> Res
     if history.get("revision")?.integer()? != options.expected_revision as i64 {
         return refuse("stale investigation expected revision");
     }
-    if !(1..=64).contains(&options.limit) || !(1..=256).contains(&options.index_segments) {
+    if !(1..=64).contains(&options.limit) || !(1..=256).contains(&options.budget.index_segments) {
         return refuse("investigation explore limit must be 1..64 and index-segments 1..256");
     }
     let commit = history.get("source_commit")?.str()?;
     let tree = history.get("source_tree")?.str()?;
     let question = history.get("question")?.str()?;
-    let mut report = agent_locate::locate_with_budget(
+    let mut report = agent_locate::locate_with_limits(
         repo,
         commit,
         question,

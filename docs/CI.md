@@ -70,3 +70,16 @@ The standard-library-only tests/test_ci_topology.py runs before expensive depend
 The normal PR checkout is shallow for cost. The history planner must report SHALLOW rather than complete ancestry. History reconstruction requires an independently verified full checkout and source evidence.
 
 Do not change required branch-protection checks without separately confirming the rules from an authorized GitHub account.
+
+## Cumulative improvement ratchet
+
+The standard-library-only [quality ratchet](QUALITY_RATCHET.md) runs before
+heavy PR dependency installation. It compares exact Git baseline/candidate
+snapshots, refuses newly introduced registered violations, and prohibits
+quiet weakening of accepted rules. The prior revision's checker is rerun
+when available; independent native tests remain mandatory.
+
+A weekly/on-demand, main-only GitHub workflow can propose native Rust
+formatter and Clippy fixes in a draft PR. It does not merge automatically
+or authorize structural refactoring. Its execution is contingent on Actions
+permissions and available runner capacity.

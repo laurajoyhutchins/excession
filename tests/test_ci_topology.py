@@ -130,6 +130,29 @@ class CiTopology(unittest.TestCase):
             self.assertNotIn("pull_request_target:", workflow)
             self.assertNotIn("contents: write", workflow)
 
+    def test_quality_ratchet_retains_baseline_and_review_boundary(self):
+        verify = read("verify.yml")
+        for required in (
+            "test_quality_ratchet.py",
+            'git show "$BASE:tools/ci/quality_ratchet.py"',
+            'quality_ratchet.py check --base "$BASE" --candidate HEAD',
+        ):
+            self.assertIn(required, verify)
+        fixes = read("quality-improvements.yml")
+        for required in (
+            "  schedule:", "  workflow_dispatch:",
+            "github.ref == 'refs/heads/main'",
+            "github.repository == 'laurajoyhutchins/excession'",
+            "cargo clippy --fix", "cargo fmt --manifest-path",
+            'git diff --check', 'cargo test --offline --locked',
+            'gh pr create --draft', "pull-requests: write",
+            "actions: write", 'gh workflow run verify.yml --ref "$BRANCH"',
+        ):
+            self.assertIn(required, fixes)
+        self.assertNotIn("pull_request_target:", fixes)
+        self.assertNotIn("gh pr merge", fixes)
+        self.assertNotIn("  pull_request:", fixes)
+
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):
             with self.subTest(name=name):

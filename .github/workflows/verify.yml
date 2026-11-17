@@ -35,6 +35,19 @@ jobs:
         run: |
           python3 tools/check_docs.py
           python3 -m unittest discover -s tests -p 'test_docs.py' -v
+      - name: Cumulative quality ratchet (no new violations or quiet rule weakening)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="$(git rev-parse HEAD^1)"
+          python3 -m unittest discover -s tests -p 'test_quality_ratchet.py' -v
+          # Re-run the previously accepted checker if it exists. A PR must
+          # not weaken its own gate by editing the candidate-side script.
+          if git cat-file -e "$BASE:tools/ci/quality_ratchet.py" 2>/dev/null; then
+            git show "$BASE:tools/ci/quality_ratchet.py" > "$RUNNER_TEMP/quality-ratchet-base.py"
+            python3 "$RUNNER_TEMP/quality-ratchet-base.py" check --base "$BASE" --candidate HEAD
+          fi
+          python3 tools/ci/quality_ratchet.py check --base "$BASE" --candidate HEAD
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: core -> target

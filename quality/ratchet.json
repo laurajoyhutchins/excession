@@ -1,0 +1,43 @@
+{
+  "schema": "excession.quality-ratchet.v1",
+  "rules": [
+    {
+      "id": "no-pull-request-target",
+      "paths": [
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml"
+      ],
+      "pattern": "^\\s*pull_request_target\\s*:",
+      "rationale": "PR-source workflows must not receive privileged pull_request_target context.",
+      "evidence": "docs/CI.md"
+    },
+    {
+      "id": "no-moving-action-refs",
+      "paths": [
+        ".github/workflows/*.yml",
+        ".github/workflows/*.yaml"
+      ],
+      "pattern": "^\\s*(?:-\\s*)?uses:\\s*[^\\s#]+@(?:main|master|latest|HEAD)(?:\\s|$)",
+      "rationale": "Do not introduce workflow dependencies tracking mutable branch names.",
+      "evidence": "docs/CI.md"
+    },
+    {
+      "id": "no-python-shell-true",
+      "paths": [
+        "tools/*.py"
+      ],
+      "pattern": "\\bshell\\s*=\\s*True\\b",
+      "rationale": "Avoid adding shell execution to source-inspection and verification utilities.",
+      "evidence": "docs/EVIDENCE_LIFECYCLE.md"
+    },
+    {
+      "id": "no-new-rust-stubs",
+      "paths": [
+        "core/src/*.rs"
+      ],
+      "pattern": "\\b(?:todo|unimplemented)!\\s*\\(",
+      "rationale": "Production paths should refuse unsupported cases explicitly, not introduce placeholder panics.",
+      "evidence": "docs/VERIFICATION.md"
+    }
+  ]
+}

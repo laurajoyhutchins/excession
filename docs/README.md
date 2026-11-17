@@ -54,6 +54,7 @@ product architecture.
 ## Develop and maintain
 
 [Development](DEVELOPMENT.md) · [CI policy](CI.md) ·
+[Quality ratchet](QUALITY_RATCHET.md) ·
 [Release](RELEASE.md) · [Contributing](../CONTRIBUTING.md) ·
 [Agent instructions](../AGENTS.md) ·
 [Documentation maintenance](DOCUMENTATION.md) ·

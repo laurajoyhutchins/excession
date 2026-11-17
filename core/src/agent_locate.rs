@@ -318,6 +318,116 @@ fn related_sources(
     Ok(neighbors)
 }
 
+/// Turn existing task search, source relationships, and test candidates into
+/// a short inspection sequence. It does not infer program behavior, synthesize
+/// missing relations, or ask an indexer to produce additional facts.
+fn reading_plan(
+    candidates: &[Value],
+    related: &[Value],
+    context: &Value,
+    limit: usize,
+) -> Result<Value> {
+    let mut seen = BTreeSet::new();
+    let mut steps = Vec::new();
+    let budget = limit.min(12);
+    let mut add = |item: &Value,
+                   source_key: &str,
+                   action: &str,
+                   basis: &str,
+                   why: &str,
+                   reference_collection: &str,
+                   reference_index: usize| -> Result<()> {
+        if steps.len() >= budget {
+            return Ok(());
+        }
+        let source = item.get(source_key)?;
+        let path = source.get("path")?.str()?;
+        if !seen.insert(path.to_owned()) {
+            return Ok(());
+        }
+        steps.push(obj(&[
+            ("sequence", Value::number(steps.len() + 1)),
+            ("action", Value::string(action)),
+            ("source", source.clone()),
+            ("basis", Value::string(basis)),
+            ("why_read", Value::string(why)),
+            ("reference_collection", Value::string(reference_collection)),
+            ("reference_index", Value::number(reference_index)),
+            ("behavior_verified", Value::Bool(false)),
+        ]));
+        Ok(())
+    };
+
+    // Read likely implementations before chasing edges. Ranking is lexical,
+    // not a measured probability that the task lives in that file.
+    for (i, candidate) in candidates.iter().take(4).enumerate() {
+        add(
+            candidate,
+            "source",
+            "INSPECT_TASK_MATCH",
+            "GIT_BLOB_LEXICAL_MATCH",
+            "Read the matching source to determine inputs, outputs, state changes, and invariants.",
+            "candidates",
+            i,
+        )?;
+    }
+    // Show both sides of a potential behavior path. Observed references
+    // remain producer observations; static imports remain candidates.
+    for (i, neighbor) in related.iter().take(8).enumerate() {
+        let assessment = neighbor.get("assessment")?.str()?;
+        let direction = neighbor.get("direction")?.str()?;
+        let (action, why) = if direction == "LEXICAL_SOURCE_TO_NEIGHBOR" {
+            (
+                "INSPECT_POSSIBLE_DEPENDENCY",
+                "Check how the focused code uses this source; confirm whether data or control actually flows to it.",
+            )
+        } else if direction == "NEIGHBOR_TO_LEXICAL_SOURCE" {
+            (
+                "INSPECT_POSSIBLE_CALLER",
+                "Check whether this source invokes or configures the focused behavior.",
+            )
+        } else {
+            return refuse("reading plan received unsupported relationship direction");
+        };
+        let basis = match assessment {
+            "OBSERVED" => "SOURCE_BOUND_PRODUCER_OBSERVATION",
+            "CANDIDATE" => "STATIC_RELATIONSHIP_CANDIDATE",
+            _ => return refuse("reading plan received unsupported relationship assessment"),
+        };
+        add(
+            neighbor,
+            "source",
+            action,
+            basis,
+            why,
+            "relationship_candidates",
+            i,
+        )?;
+    }
+    if context != &Value::Null {
+        for (i, candidate) in context.get("test_candidates")?.array_ref()?.iter().take(8).enumerate() {
+            add(
+                candidate,
+                "source",
+                "INSPECT_RELATED_TEST",
+                "Read the assertions and fixtures to identify which behavior they actually cover.",
+                "context.test_candidates",
+                i,
+            )?;
+        }
+    }
+    Ok(obj(&[
+        ("schema", Value::string("excession.agent-reading-plan.v1")),
+        ("goal", Value::string("SOURCE_GUIDED_CODEBASE_UNDERSTANDING")),
+        ("steps", Value::array(steps)),
+        (
+            "interpretation",
+            Value::string("ORDERED_INSPECTION_SUGGESTIONS_NOT_VERIFIED_BEHAVIOR"),
+        ),
+        ("complete_behavior_trace", Value::Bool(false)),
+    ]))
+}
+
 /// Locate candidate source files without requiring an initial --focus path.
 ///
 /// No working-tree reads or checkout changes occur. Cached native observations
@@ -458,6 +568,7 @@ pub fn locate_with_budget(
         gaps.push(gap("RELATIONSHIP_CONTEXT_TRUNCATED"));
     }
 
+    let plan = reading_plan(&candidates, &related, &context, limit)?;
     let mut output = obj(&[
         ("schema", Value::string("excession.agent-locate.v1")),
         ("source_commit", Value::string(&discovered.commit)),
@@ -467,6 +578,7 @@ pub fn locate_with_budget(
         ("candidates", Value::array(candidates)),
         ("candidate_count", Value::number(selected_paths.len())),
         ("relationship_candidates", Value::array(related)),
+        ("reading_plan", plan),
         ("indexed_source_count", Value::number(indexed_files)),
         ("skipped_source_count", Value::number(skipped)),
         ("indexed_bytes", Value::number(bytes)),
@@ -526,6 +638,79 @@ pub fn locate_with_budget(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reading_plan_orients_to_source_then_related_code_then_tests() {
+        let git_source = |path: &str| obj(&[
+            ("source_commit", Value::string("a".repeat(40))),
+            ("source_tree", Value::string("b".repeat(40))),
+            ("path", Value::string(path)),
+            ("blob", Value::string("c".repeat(40))),
+            ("mode", Value::string("100644")),
+        ]);
+        let lexical = obj(&[("source", git_source("src/worker.py"))]);
+        let incoming = obj(&[
+            ("source", git_source("src/handler.py")),
+            ("assessment", Value::string("OBSERVED")),
+            ("direction", Value::string("NEIGHBOR_TO_LEXICAL_SOURCE")),
+        ]);
+        let outgoing = obj(&[
+            ("source", git_source("src/store.py")),
+            ("assessment", Value::string("CANDIDATE")),
+            ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+        ]);
+        let duplicate = obj(&[
+            ("source", git_source("src/worker.py")),
+            ("assessment", Value::string("OBSERVED")),
+            ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+        ]);
+        let context = obj(&[("test_candidates", Value::array([
+            obj(&[("source", git_source("tests/test_worker.py"))])
+        ]))]);
+        let plan = reading_plan(
+            &[lexical],
+            &[incoming, outgoing, duplicate],
+            &context,
+            8,
+        ).unwrap();
+        let steps = plan.get("steps").unwrap().array_ref().unwrap();
+        assert_eq!(steps.len(), 4);
+        let paths = steps.iter().map(|item| {
+            item.get("source").unwrap().get("path").unwrap().str().unwrap()
+        }).collect::<Vec<_>>();
+        assert_eq!(paths, [
+            "src/worker.py", "src/handler.py", "src/store.py", "tests/test_worker.py"
+        ]);
+        assert_eq!(
+            steps[1].get("action").unwrap().str().unwrap(),
+            "INSPECT_POSSIBLE_CALLER"
+        );
+        assert_eq!(
+            steps[2].get("basis").unwrap().str().unwrap(),
+            "STATIC_RELATIONSHIP_CANDIDATE"
+        );
+        assert!(steps.iter().all(|item| {
+            !item.get("behavior_verified").unwrap().bool().unwrap()
+        }));
+        assert!(!plan.get("complete_behavior_trace").unwrap().bool().unwrap());
+    }
+
+    #[test]
+    fn reading_plan_keeps_small_budget_and_avoids_fabrication() {
+        let source = obj(&[("path", Value::string("src/found.py"))]);
+        let candidates = [obj(&[("source", source)])];
+        let plan = reading_plan(&candidates, &[], &Value::Null, 1).unwrap();
+        assert_eq!(plan.get("steps").unwrap().array_ref().unwrap().len(), 1);
+        let empty = reading_plan(&[], &[], &Value::Null, 16).unwrap();
+        assert!(empty.get("steps").unwrap().array_ref().unwrap().is_empty());
+        let fake = obj(&[
+            ("source", obj(&[("path", Value::string("src/fake.py"))])),
+            ("assessment", Value::string("VERIFIED")),
+            ("direction", Value::string("LEXICAL_SOURCE_TO_NEIGHBOR")),
+        ]);
+        assert!(reading_plan(&[], &[fake], &Value::Null, 16).is_err());
+    }
+
 
     #[test]
     fn native_neighbors_preserve_receipts_and_reject_stale_git_identities() {

@@ -15,10 +15,28 @@ excession agent locate --repo /work/project \
 ```
 
 `agent locate` accepts natural-language tasks without requiring prior exact
-file paths. It maintains a **persistent, incrementally updated SQLite FTS5 index** from
-authenticated regular Git source blobs and ranks candidates using BM25.
+file paths. It starts with **literal `git grep` over the pinned commit**, including
+test sources without a language-native indexer. When Git fills the requested
+source budget with authenticated readable sources, the default invocation
+returns immediately without opening FTS, refreshing a source index, or
+querying relationship context. FTS5 remains a **persistent, incremental
+fallback** if Git cannot fill the budget; use `--enrich` to force FTS
+refresh and relationship context even when Git already found enough files.
 Each candidate carries an exact commit, tree, path, blob, file mode, and a
 1-based **heuristic** source line window.
+
+The response contains `enrichment` (`PERFORMED` or
+`NOT_REQUESTED_GIT_SUFFICIENT`). On the fast path, `index`, `cache`
+and `context` are **null**, and `relationship_candidates` is empty.
+These mean *not queried*, never "no relationships exist"; the coverage gaps
+explicitly include `FTS_NOT_QUERIED_GIT_RESULTS_SUFFICIENT` and
+`RELATIONSHIP_CONTEXT_NOT_QUERIED`. The full evidence path is available
+when requested:
+
+```sh
+excession agent locate --repo /work/project --task "Fix worker lease recovery" \
+  --rev HEAD --limit 12 --enrich --json
+```
 
 The response also contains `reading_plan`: at most 12 distinct Git-pinned
 files ordered to inspect task-matching implementation source, literal
@@ -30,8 +48,8 @@ original array reference (`candidates`, `relationship_candidates`, or
 `context.test_candidates`), observation basis, and a concrete inspection
 question. Nothing in the plan is labeled verified behavior. The plan does not
 perform source interpretation, resolve dynamic calls, or replace an agent's
-inspection of actual source. See [codebase understanding](CODEBASE_UNDERSTANDING.md). The result also contains the
-existing `agent context` report for up to the first 16 candidates, including
+inspection of actual source. See [codebase understanding](CODEBASE_UNDERSTANDING.md). When enrichment actually runs, the result also contains the existing
+`agent context` report for up to the first 16 candidates, including
 its native relationships, test suggestions, and coverage gaps. Empty results
 do **not** prove the requested behavior is absent.
 
@@ -59,8 +77,8 @@ segment refresh. These are caller-configurable with `--budget-file` or
 A budget-exhausted segment is checkpointed and continues on subsequent runs;
 the file-read cap still excludes larger blobs until the caller raises it.
 See [resource budgets and remaining limitations](RESOURCE_BUDGETS.md).
-By default, an invocation refreshes up to eight changed or incomplete
-segments. To process up to 256 segments in one foreground run:
+When enrichment runs, an invocation refreshes up to eight changed or
+incomplete segments by default. To process up to 256 segments in one foreground run:
 
 ```sh
 excession agent locate --repo /work/project \

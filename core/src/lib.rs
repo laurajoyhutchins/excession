@@ -56,6 +56,7 @@ pub mod index;
 mod indexed_tree;
 pub mod integration;
 pub mod investigation;
+pub mod investigation_workflow;
 pub mod java_native;
 pub mod json;
 pub mod jvm_inputs;

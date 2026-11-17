@@ -26,12 +26,6 @@ fn hash(value: &str) -> Result<()> {
     Ok(())
 }
 
-fn existing_claims(prior: &[Value]) -> Result<BTreeSet<String>> {
-    prior.iter().filter(|event| {
-        event.get("kind").and_then(Value::str).ok() == Some("CLAIM")
-    }).map(|event| Ok(event.get("event_id")?.str()?.to_owned())).collect()
-}
-
 fn source_candidate(repo: &Path, commit: &str, tree: &str, value: &Value) -> Result<()> {
     if value.entries()?.len() != 5
         || value.get("source_commit")?.str()? != commit
@@ -193,7 +187,7 @@ pub(crate) fn validate_event(
             Ok(())
         }
         "REFRESH" => {
-            if payload.entries()?.len() != 7 || !payload.get("refresh_id")?.str()?.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if payload.entries()?.len() != 8 || !payload.get("refresh_id")?.str()?.bytes().all(|b| b.is_ascii_hexdigit()) {
                 return refuse("invalid refresh report shape");
             }
             if payload != &refresh_report(repo, commit, tree, payload.get("candidate_commit")?.str()?, prior)? {

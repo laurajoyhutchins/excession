@@ -762,6 +762,9 @@ pub fn locate_with_mode(
     let force_enrichment = execution.force_enrichment;
     let limits = budget.index.validate()?;
     let index_segments = budget.index_segments;
+    if !(1..=256).contains(&index_segments) {
+        return refuse("agent locate --index-segments must be 1..=256");
+    }
     if !(1..=64).contains(&limit) {
         return refuse("agent locate --limit must be 1..=64");
     }
@@ -1423,6 +1426,23 @@ mod tests {
             .index_path
             .with_file_name("agent-locate-chunks.sqlite");
         assert!(!index_file.exists());
+        // Operational budgets are validated even when the fast path never
+        // reaches the indexer. Invalid flags cannot become silently accepted.
+        assert!(locate_with_mode(
+            &root,
+            "HEAD",
+            "checkpoint lock",
+            2,
+            None,
+            None,
+            LocateExecution {
+                budget: LocateBudget {
+                    index_segments: 0,
+                    index: IndexLimits::default(),
+                },
+                force_enrichment: false,
+            },
+        ).is_err());
         let fast = locate_with_mode(
             &root,
             "HEAD",

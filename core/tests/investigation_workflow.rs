@@ -467,3 +467,48 @@ fn refresh_distinguishes_direct_source_changes_from_unresolved_behavior() {
         .is_err()
     );
 }
+
+#[test]
+fn incomplete_index_budgets_remain_visible_in_persisted_explanations() {
+    let (_tmp, repo, db, base) = setup();
+    let r = repo.to_str().unwrap();
+    let d = db.to_str().unwrap();
+    let started = command(&[
+        "investigation", "start", "--repo", r, "--db", d,
+        "--rev", &base, "--question", "Where is recover_worker?"
+    ]);
+    let id = started["investigation_id"].as_str().unwrap();
+    let explored = command(&[
+        "investigation", "explore", "--repo", r, "--db", d,
+        "--id", id, "--expected-revision", "1",
+        "--limit", "8", "--index-segments", "256",
+        "--max-file-bytes", "16",
+        "--max-segment-bytes", "16",
+        "--max-segment-files", "1",
+    ]);
+    assert_eq!(explored["kind"], "EXPLORE");
+    assert_eq!(explored["payload"]["report"]["index"]["complete"], false);
+    assert_eq!(explored["payload"]["report"]["index"]["limits"]["max_file_bytes"], 16);
+    let gaps = explored["payload"]["report"]["coverage"]["gaps"].as_array().unwrap();
+    assert!(gaps.iter().any(|gap| {
+        gap["reason"] == "UNINDEXED_OVERSIZE_OR_NON_UTF8_SOURCE"
+    }), "source exclusion must be explicit: {gaps:?}");
+    let explanation = command(&[
+        "investigation", "explain", "--repo", r, "--db", d, "--id", id
+    ]);
+    assert_eq!(explanation["retrievals"][0]["index_complete"], false);
+    assert!(explanation["evidence_gaps"].as_array().unwrap().iter().any(|gap| {
+        gap["reason"] == "UNINDEXED_OVERSIZE_OR_NON_UTF8_SOURCE"
+            && gap["state"] == "UNRESOLVED"
+    }));
+    assert_eq!(explanation["completeness"], "INCOMPLETE_BEHAVIORAL_COVERAGE");
+
+    refused(&[
+        "investigation", "explore", "--repo", r, "--db", d,
+        "--id", id, "--expected-revision", "2",
+        "--max-file-bytes", "0"
+    ]);
+    assert_eq!(command(&[
+        "investigation", "show", "--repo", r, "--db", d, "--id", id
+    ])["revision"], 2);
+}

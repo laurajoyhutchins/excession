@@ -85,6 +85,9 @@ pub(crate) struct Search {
     pub ready_segments: usize,
     pub pending_segments: usize,
     pub refreshed_segments: usize,
+    pub page_offset: usize,
+    pub next_cursor: Option<String>,
+    pub snapshot_id: String,
 }
 
 fn sql_error(operation: &str, error: impl std::fmt::Display) -> String {
@@ -746,7 +749,38 @@ pub(crate) fn search_with_limits(
     source_path: impl Fn(&str) -> bool,
     limits: IndexLimits,
 ) -> Result<Search> {
+    search_with_page(
+        discovered,
+        entries,
+        limit,
+        expression,
+        refresh_budget,
+        source_path,
+        limits,
+        expression,
+        None,
+    )
+}
+
+/// Enumerate ranked lexical source hits in stable snapshot-bound pages.
+/// A cursor binds the tree, task, index policy and every visible segment's
+/// completion state; it is invalidated rather than mixed after an index change.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn search_with_page(
+    discovered: &discovery::Discovery,
+    entries: Vec<git::Entry>,
+    limit: usize,
+    expression: &str,
+    refresh_budget: usize,
+    source_path: impl Fn(&str) -> bool,
+    limits: IndexLimits,
+    task_key: &str,
+    after: Option<&str>,
+) -> Result<Search> {
     let limits = limits.validate()?;
+    if !(1..=64).contains(&limit) {
+        return refuse("agent locate page size must be 1..=64");
+    }
     if !(1..=SEGMENT_COUNT).contains(&refresh_budget) {
         return refuse("agent locate --index-segments must be 1..=256");
     }
@@ -857,7 +891,46 @@ pub(crate) fn search_with_limits(
     put_meta(&tx, "source_commit", &discovered.commit)?;
     put_meta(&tx, "source_tree", &discovered.tree)?;
 
+    let mut identity = format!(
+        "excession-locate-page-v1\\0{}\\0{}\\0{}\\0{}\\0",
+        CACHE_VERSION, discovered.commit, discovered.tree, task_key,
+    ).into_bytes();
+    identity.extend_from_slice(expression.as_bytes());
+    identity.push(0);
+    for id in 0..SEGMENT_COUNT {
+        if let Some(ref segment) = prior[id]
+            && segment.fingerprint == fingerprints[id]
+        {
+            identity.extend_from_slice(format!(
+                "{id}:{}:{}:{}:{}:{}\\0",
+                segment.fingerprint,
+                segment.indexed_files,
+                segment.indexed_bytes,
+                segment.skipped_files,
+                segment.truncated
+            ).as_bytes());
+        }
+    }
+    let snapshot_id = crate::digest::sha256(&identity);
+    let page_offset = if let Some(cursor) = after {
+        let mut parts = cursor.split('.');
+        if parts.next() != Some("v1") || parts.next() != Some(snapshot_id.as_str()) {
+            return refuse("source page cursor belongs to a different query or indexed Git snapshot");
+        }
+        let offset = parts.next().ok_or("source page cursor has no offset")?;
+        if parts.next().is_some() || offset.is_empty() || offset.starts_with('0') {
+            return refuse("invalid source page cursor");
+        }
+        let offset = offset.parse::<usize>().map_err(|_| "invalid source page cursor offset")?;
+        if offset == 0 {
+            return refuse("source page cursor offset must be positive");
+        }
+        offset
+    } else { 0 };
+
     let mut hits = Vec::new();
+    let mut unique_rank = 0usize;
+    let mut has_more = false;
     let mut returned_paths = BTreeSet::new();
     {
         let mut stmt = tx
@@ -878,6 +951,14 @@ pub(crate) fn search_with_limits(
             let name: String = row.get(0).map_err(|e| sql_error("ranked path", e))?;
             if !returned_paths.insert(name.clone()) {
                 continue;
+            }
+            unique_rank += 1;
+            if unique_rank <= page_offset {
+                continue;
+            }
+            if hits.len() >= limit {
+                has_more = true;
+                break;
             }
             let blob: String = row.get(1).map_err(|e| sql_error("ranked blob", e))?;
             let mode: String = row.get(2).map_err(|e| sql_error("ranked mode", e))?;
@@ -912,11 +993,12 @@ pub(crate) fn search_with_limits(
                 body,
                 start_line,
             });
-            if hits.len() == limit {
-                break;
-            }
         }
     }
+    if page_offset > unique_rank {
+        return refuse("source page cursor is beyond available ranked results");
+    }
+    let next_cursor = has_more.then(|| format!("v1.{snapshot_id}.{}", page_offset + hits.len()));
     tx.commit().map_err(|e| sql_error("commit", e))?;
     Ok(Search {
         hits,
@@ -932,6 +1014,9 @@ pub(crate) fn search_with_limits(
         ready_segments,
         pending_segments,
         refreshed_segments,
+        page_offset,
+        next_cursor,
+        snapshot_id,
     })
 }
 

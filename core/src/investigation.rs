@@ -6,7 +6,9 @@ use crate::evidence::identity::SourceRef;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
-use crate::{investigation_execution, investigation_trace, investigation_witness, investigation_workflow};
+use crate::{
+    investigation_execution, investigation_trace, investigation_witness, investigation_workflow,
+};
 use std::collections::BTreeSet;
 use std::path::Path;
 

@@ -971,11 +971,13 @@ fn execute(args: &[String]) -> Result<Response> {
                 }
                 "trace" => {
                     let parse_u64 = |name: &str, default: &str| -> Result<u64> {
-                        opt.get_or(name, default).parse::<u64>()
+                        opt.get_or(name, default)
+                            .parse::<u64>()
                             .map_err(|_| format!("--{name} must be a positive integer"))
                     };
                     let parse_usize = |name: &str, default: &str| -> Result<usize> {
-                        opt.get_or(name, default).parse::<usize>()
+                        opt.get_or(name, default)
+                            .parse::<usize>()
                             .map_err(|_| format!("--{name} must be a positive integer"))
                     };
                     Ok(json(investigation_trace::run(

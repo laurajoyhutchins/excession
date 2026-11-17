@@ -790,8 +790,10 @@ fn execute(args: &[String]) -> Result<Response> {
                     limit,
                     roots,
                     db,
-                    locate_budget(opt)?,
-                    opt.get_or("enrich", "false") == "true",
+                    agent_locate::LocateExecution {
+                        budget: locate_budget(opt)?,
+                        force_enrichment: opt.get_or("enrich", "false") == "true",
+                    },
                 )?)),
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),

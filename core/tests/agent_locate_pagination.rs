@@ -358,24 +358,48 @@ fn staging_more_chunks_invalidates_cursor_even_before_a_file_becomes_visible() {
     }
     let files = buckets.values().find(|paths| paths.len() >= 4).unwrap();
     for (number, path) in files.iter().take(3).enumerate() {
-        fs::write(root.0.join(path), format!("fn f_{number}() {{ let needle = 1; }}\n")).unwrap();
+        fs::write(
+            root.0.join(path),
+            format!("fn f_{number}() {{ let needle = 1; }}\n"),
+        )
+        .unwrap();
     }
-    fs::write(root.0.join(&files[3]), "// deferred source contents\n".repeat(600)).unwrap();
+    fs::write(
+        root.0.join(&files[3]),
+        "// deferred source contents\n".repeat(600),
+    )
+    .unwrap();
     let rev = commit(&root.0);
     let options = [
-        "--rev", rev.as_str(), "--task", "needle", "--limit", "2",
-        "--index-segments", "1", "--max-file-bytes", "256",
-        "--max-segment-bytes", "1024", "--max-segment-files", "10",
+        "--rev",
+        rev.as_str(),
+        "--task",
+        "needle",
+        "--limit",
+        "2",
+        "--index-segments",
+        "1",
+        "--max-file-bytes",
+        "256",
+        "--max-segment-bytes",
+        "1024",
+        "--max-segment-files",
+        "10",
     ];
     let first = page(&root.0, &options);
     assert_eq!(first["index"]["indexed_source_count"], 3);
     assert_eq!(first["index"]["skipped_source_count"], 1);
     assert_eq!(first["index"]["complete"], false);
-    let cursor = first["page"]["next_cursor"].as_str().expect("cursor before staging more bytes");
+    let cursor = first["page"]["next_cursor"]
+        .as_str()
+        .expect("cursor before staging more bytes");
     let mut resumed = options.to_vec();
     resumed.extend(["--after", cursor]);
     let second = output(&root.0, &resumed);
-    assert_eq!(second.status.code(), Some(2),
-        "continued staging must invalidate a cursor over a changed FTS corpus");
+    assert_eq!(
+        second.status.code(),
+        Some(2),
+        "continued staging must invalidate a cursor over a changed FTS corpus"
+    );
     assert!(String::from_utf8_lossy(&second.stderr).contains("REFUSED:"));
 }

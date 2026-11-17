@@ -42,7 +42,8 @@ impl Default for IndexLimits {
 
 impl IndexLimits {
     pub fn validate(self) -> Result<Self> {
-        if self.max_files_per_segment == 0 || self.max_file_bytes == 0
+        if self.max_files_per_segment == 0
+            || self.max_file_bytes == 0
             || self.max_bytes_per_segment == 0
         {
             return refuse("agent locate indexing budgets must be positive");
@@ -50,8 +51,13 @@ impl IndexLimits {
         if self.max_file_bytes > self.max_bytes_per_segment {
             return refuse("agent locate max-file-bytes must not exceed max-segment-bytes");
         }
-        if [self.max_files_per_segment, self.max_file_bytes, self.max_bytes_per_segment]
-            .iter().any(|&n| i64::try_from(n).is_err())
+        if [
+            self.max_files_per_segment,
+            self.max_file_bytes,
+            self.max_bytes_per_segment,
+        ]
+        .iter()
+        .any(|&n| i64::try_from(n).is_err())
         {
             return refuse("agent locate budget exceeds SQLite integer range");
         }
@@ -340,7 +346,11 @@ fn fingerprint(entries: &[git::Entry], limits: IndexLimits) -> String {
     // Index eligibility is part of the cache identity. If size limits change,
     // unchanged Git trees must refresh previously skipped source blobs.
     let mut data = b"agent-locate-eligibility-v1\0".to_vec();
-    for limit in [limits.max_files_per_segment, limits.max_file_bytes, limits.max_bytes_per_segment] {
+    for limit in [
+        limits.max_files_per_segment,
+        limits.max_file_bytes,
+        limits.max_bytes_per_segment,
+    ] {
         data.extend_from_slice(&(limit as u64).to_le_bytes());
     }
     for entry in entries {
@@ -527,7 +537,15 @@ pub(crate) fn search(
     refresh_budget: usize,
     source_path: impl Fn(&str) -> bool,
 ) -> Result<Search> {
-    search_with_limits(discovered, entries, limit, expression, refresh_budget, source_path, IndexLimits::default())
+    search_with_limits(
+        discovered,
+        entries,
+        limit,
+        expression,
+        refresh_budget,
+        source_path,
+        IndexLimits::default(),
+    )
 }
 
 pub(crate) fn search_with_limits(
@@ -600,7 +618,8 @@ pub(crate) fn search_with_limits(
         refreshed_segments += 1;
         // Persist this unit of work before moving to the next partition.
         // A workflow timeout or process crash cannot erase prior segments.
-        tx.commit().map_err(|e| sql_error("segment checkpoint", e))?;
+        tx.commit()
+            .map_err(|e| sql_error("segment checkpoint", e))?;
         tx = db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|e| sql_error("resume transaction", e))?;
@@ -818,7 +837,6 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-
     #[test]
     fn changed_budget_rechecks_large_blob_at_the_same_git_revision() {
         let root = std::env::temp_dir().join(format!(
@@ -828,27 +846,44 @@ mod tests {
         ));
         fs::create_dir_all(root.join("src")).unwrap();
         git_at(&root, &["init", "-q"]);
-        fs::write(root.join("src/planner.rs"), format!(
-            "{}pub fn planner() {{ let needle = 42; }}\n",
-            "// source text\n".repeat(25_000)
-        )).unwrap();
+        fs::write(
+            root.join("src/planner.rs"),
+            format!(
+                "{}pub fn planner() {{ let needle = 42; }}\n",
+                "// source text\n".repeat(25_000)
+            ),
+        )
+        .unwrap();
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com",
-            "-c", "user.name=Test", "commit", "-qm", "large blob"
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "large blob",
+            ],
+        );
         let query = |max_file_bytes| {
             let discovered = discovery::inspect(&root, "HEAD").unwrap();
             let entries = git::entries(&root, &discovered.commit).unwrap();
             search_with_limits(
-                &discovered, entries, 8, "\"needle\"", SEGMENT_COUNT,
+                &discovered,
+                entries,
+                8,
+                "\"needle\"",
+                SEGMENT_COUNT,
                 |p| p.ends_with(".rs"),
                 IndexLimits {
                     max_file_bytes,
                     max_files_per_segment: 6000,
                     max_bytes_per_segment: 1024 * 1024,
                 },
-            ).unwrap()
+            )
+            .unwrap()
         };
         let small = query(128 * 1024);
         assert_eq!(small.indexed_files, 0);
@@ -858,7 +893,10 @@ mod tests {
         assert_eq!(large.indexed_files, 1);
         assert_eq!(large.skipped_files, 0);
         assert_eq!(large.hits[0].entry.path, "src/planner.rs");
-        assert_eq!(large.hits[0].entry.oid, git::blob(&root, "HEAD", "src/planner.rs").unwrap());
+        assert_eq!(
+            large.hits[0].entry.oid,
+            git::blob(&root, "HEAD", "src/planner.rs").unwrap()
+        );
         let smaller_again = query(128 * 1024);
         assert_eq!(smaller_again.indexed_files, 0);
         assert_eq!(smaller_again.skipped_files, 1);
@@ -883,26 +921,39 @@ mod tests {
             .take(3)
             .collect::<Vec<_>>();
         assert_eq!(paths.len(), 3);
-        for (i,path) in paths.iter().enumerate() {
+        for (i, path) in paths.iter().enumerate() {
             fs::write(root.join(path), format!("fn needle_{i}() {{}}\n")).unwrap();
         }
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com",
-            "-c", "user.name=Test", "commit", "-qm", "three in same segment",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "three in same segment",
+            ],
+        );
         let run = || {
             let discovered = discovery::inspect(&root, "HEAD").unwrap();
             let entries = git::entries(&root, &discovered.commit).unwrap();
             search_with_limits(
-                &discovered, entries, 16, "\"needle\"", 1,
+                &discovered,
+                entries,
+                16,
+                "\"needle\"",
+                1,
                 |p| p.ends_with(".rs"),
                 IndexLimits {
                     max_files_per_segment: 1,
                     max_file_bytes: 4096,
                     max_bytes_per_segment: 4096,
                 },
-            ).unwrap()
+            )
+            .unwrap()
         };
         let a = run();
         assert_eq!(a.indexed_files, 1);
@@ -924,10 +975,38 @@ mod tests {
     #[test]
     fn rejects_invalid_indexing_budgets() {
         let base = IndexLimits::default();
-        assert!(IndexLimits { max_file_bytes: 0, ..base }.validate().is_err());
-        assert!(IndexLimits { max_file_bytes: base.max_bytes_per_segment + 1, ..base }.validate().is_err());
-        assert!(IndexLimits { max_files_per_segment: 0, ..base }.validate().is_err());
-        assert!(IndexLimits { max_bytes_per_segment: 0, ..base }.validate().is_err());
+        assert!(
+            IndexLimits {
+                max_file_bytes: 0,
+                ..base
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            IndexLimits {
+                max_file_bytes: base.max_bytes_per_segment + 1,
+                ..base
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            IndexLimits {
+                max_files_per_segment: 0,
+                ..base
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            IndexLimits {
+                max_bytes_per_segment: 0,
+                ..base
+            }
+            .validate()
+            .is_err()
+        );
         assert!(base.validate().is_ok());
     }
 

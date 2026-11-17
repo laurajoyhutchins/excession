@@ -19,7 +19,8 @@ CATALOG = "quality/improvement-recipes.json"
 SCHEMA = "excession.improvement-recipes.v1"
 RECEIPT = "excession.native-improvement-reproduction.v1"
 # This is an executable allowlist, not a field that a candidate can grant itself.
-AUTO_NATIVE_PRODUCERS = {"native-rustfmt": "cargo-fmt-pinned"}
+AUTO_NATIVE_PRODUCERS = {"native-rustfmt": "cargo-fmt-pinned",
+                         "native-cargo-lock-refresh": "cargo-update-locked"}
 REVIEW_NATIVE_PRODUCERS = {"native-clippy": "cargo-clippy-fix-pinned"}
 MAX_CHANGED_PATHS = 128
 
@@ -80,10 +81,10 @@ def validated_catalog(data: bytes) -> dict:
             if not isinstance(rid, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", rid) or rid in seen:
                 raise ValueError("duplicate or invalid recipe ID")
             seen.add(rid)
-            if not isinstance(item["paths"], list) or not item["paths"] or not all(
-                isinstance(p, str) and p == "core/**/*.rs" for p in item["paths"]
-            ):
-                raise ValueError("recipe path escapes permitted native Rust scope")
+            allowed_paths = (["core/Cargo.lock"] if rid == "native-cargo-lock-refresh"
+                             else ["core/**/*.rs"])
+            if item["paths"] != allowed_paths:
+                raise ValueError("recipe path escapes its hard-allowlisted scope")
             if any(not isinstance(item[k], str) or not item[k].strip()
                    for k in ("producer", "integration", "rationale", "evidence")):
                 raise ValueError("incomplete recipe")
@@ -94,8 +95,12 @@ def validated_catalog(data: bytes) -> dict:
             if rid in AUTO_NATIVE_PRODUCERS:
                 if item["producer"] != AUTO_NATIVE_PRODUCERS[rid] or item["integration"] != "automatic-after-exact-head-verification":
                     raise ValueError("automatic integration recipe changed its authority")
-                if not {"formatter-replay", "quality-ratchet", "cargo-tests",
-                        "verify-workflow", "github-evidence-workflow"}.issubset(item["independent_checks"]):
+                required = ({"cargo-lock-graph-audit", "cargo-tests", "quality-ratchet",
+                             "verify-workflow", "github-evidence-workflow"}
+                            if rid == "native-cargo-lock-refresh" else
+                            {"formatter-replay", "quality-ratchet", "cargo-tests",
+                             "verify-workflow", "github-evidence-workflow"})
+                if not required.issubset(item["independent_checks"]):
                     raise ValueError("missing mandatory auto-integration checks")
             elif rid in REVIEW_NATIVE_PRODUCERS:
                 if item["producer"] != REVIEW_NATIVE_PRODUCERS[rid] or item["integration"] != "review-required":

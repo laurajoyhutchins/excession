@@ -636,6 +636,55 @@ pub(super) fn command() -> Command {
                 &["limit", "roots", "evidence-db", "receipts"],
             )
             .about("Run existing agent verification and retain its unresolved obligations"),
+            leaf(
+                "explore",
+                &["repo", "db", "id", "expected-revision"],
+                &[
+                    "limit",
+                    "index-segments",
+                    "roots",
+                    "evidence-db",
+                    "budget-file",
+                    "max-file-bytes",
+                    "max-segment-bytes",
+                    "max-segment-files",
+                ],
+            )
+            .about("Persist Git-pinned candidate source and an incomplete reading plan"),
+            leaf(
+                "question",
+                &[
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "question",
+                    "reason",
+                ],
+                &[],
+            )
+            .about("Record an unresolved investigation question"),
+            leaf(
+                "synthesize",
+                &[
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "narrative",
+                    "claim-events",
+                ],
+                &[],
+            )
+            .about("Record an attributed explanation linked to existing source claims"),
+            leaf(
+                "refresh",
+                &["repo", "db", "id", "expected-revision", "candidate"],
+                &[],
+            )
+            .about("Reassess exact claim source identity at a candidate revision"),
+            leaf("explain", &["repo", "db", "id"], &[])
+                .about("Compose a source-linked explanation and expose unresolved obligations"),
             leaf("show", &["repo", "db", "id"], &[])
                 .about("Audit and replay an entire persistent investigation"),
         ],

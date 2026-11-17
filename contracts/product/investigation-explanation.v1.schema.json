@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laurajoyhutchins/excession/contracts/product/investigation-explanation.v1.schema.json",
+  "title": "Excession investigation explanation projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "investigation_id",
+    "source_commit",
+    "source_tree",
+    "question",
+    "revision",
+    "implementation_map",
+    "claims",
+    "narratives",
+    "open_questions",
+    "retrievals",
+    "evidence_gaps",
+    "preservation_plans",
+    "verification_receipts",
+    "latest_refresh",
+    "completeness",
+    "semantic_verification",
+    "ready_to_merge",
+    "report_id"
+  ],
+  "properties": {
+    "schema": {
+      "const": "excession.investigation-explanation.v1"
+    },
+    "investigation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "source_tree": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "implementation_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "commit",
+          "tree",
+          "path",
+          "blob",
+          "mode"
+        ],
+        "properties": {
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "tree": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "blob": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "mode": {
+            "enum": [
+              "100644",
+              "100755"
+            ]
+          }
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "source",
+          "statement",
+          "assumption",
+          "assessment"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "source": {
+            "type": "object"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "assumption": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "assessment": {
+            "enum": [
+              "HYPOTHESIS",
+              "SOURCE_REVIEW_REPORTED"
+            ]
+          }
+        }
+      }
+    },
+    "narratives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "narrative",
+          "claim_event_ids",
+          "authorship"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "narrative": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "claim_event_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "minItems": 1
+          },
+          "authorship": {
+            "const": "REPORTED_NOT_INDEPENDENTLY_VALIDATED"
+          }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "question",
+          "reason",
+          "state"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "state": {
+            "const": "OPEN"
+          }
+        }
+      }
+    },
+    "retrievals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "report_id",
+          "reading_plan",
+          "index_complete",
+          "coverage"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "report_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reading_plan": {
+            "type": "object"
+          },
+          "index_complete": {
+            "type": "boolean"
+          },
+          "coverage": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "latest_refresh": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "candidate_commit",
+            "claim_assessments",
+            "semantic_verification"
+          ]
+        }
+      ]
+    },
+    "completeness": {
+      "const": "INCOMPLETE_BEHAVIORAL_COVERAGE"
+    },
+    "semantic_verification": {
+      "const": "NOT_ESTABLISHED"
+    },
+    "ready_to_merge": {
+      "const": false
+    },
+    "report_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "evidence_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "exploration_event_id",
+          "reason",
+          "state"
+        ],
+        "properties": {
+          "exploration_event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "state": {
+            "const": "UNRESOLVED"
+          }
+        }
+      }
+    },
+    "preservation_plans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "claim_event_id",
+          "obligation",
+          "state"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "claim_event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "obligation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "state": {
+            "const": "OPEN"
+          }
+        }
+      }
+    },
+    "verification_receipts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "plan_event_id",
+          "report_id",
+          "status",
+          "ready_to_merge"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "plan_event_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "report_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "status": {
+            "enum": [
+              "OPEN_OBLIGATIONS",
+              "REPORTED_FAILURE"
+            ]
+          },
+          "ready_to_merge": {
+            "const": false
+          }
+        }
+      }
+    }
+  }
+}

@@ -118,6 +118,59 @@ class RequestTests(unittest.TestCase):
         with self.assertRaises(module.Refusal):
             module.check_report(value, observed, BASE)
 
+    def test_source_bound_cache_identity_and_explicit_enrichment(self):
+        values = module.validate(request(
+            repository="nodejs/node", enrich=True,
+            budgets={"refresh_segments": 8},
+        ), TARGETS | {"nodejs/node"})
+        self.assertIn("--enrich", module.command(
+            values, Path("/source"), Path("/tool/excession")))
+        tool = "d" * 40
+        key = module.cache_identity(values, tool)
+        self.assertEqual(len(key), 64)
+        self.assertEqual(key, module.cache_identity(
+            {**values, "task": "Look for a different behavior"}, tool))
+        self.assertNotEqual(key, module.cache_identity(
+            {**values, "revision": BASE}, tool))
+        self.assertNotEqual(key, module.cache_identity(
+            {**values, "budgets": {"refresh_segments": 16}}, tool))
+        self.assertNotEqual(key, module.cache_identity(values, "e" * 40))
+        self.assertIsNone(module.cache_identity(request("context"), tool))
+        for bad in ("true", 1, None):
+            with self.subTest(bad=bad), self.assertRaises(module.Refusal):
+                module.validate(request(enrich=bad), TARGETS)
+        with self.assertRaises(module.Refusal):
+            module.validate(request("context", enrich=True), TARGETS)
+        with self.assertRaises(module.Refusal):
+            module.cache_identity(values, "HEAD")
+
+    def test_legitimate_git_only_report_can_omit_fts_but_not_requested_enrichment(self):
+        value = request()
+        bare = {
+            "schema": module.SCHEMAS["locate"],
+            "source_commit": SHA,
+            "source_tree": BASE,
+            "retrieval": "COMMITTED_GIT_GREP",
+            "enrichment": "NOT_REQUESTED_GIT_SUFFICIENT",
+            "index": None,
+            "cache": None,
+        }
+        module.check_report(value, bare, BASE)
+        with self.assertRaises(module.Refusal):
+            module.check_report(request(enrich=True), bare, BASE)
+        with self.assertRaises(module.Refusal):
+            module.check_report(value, {**bare, "enrichment": "PERFORMED"}, BASE)
+
+    def test_github_locate_cache_transport_uses_authorized_identity(self):
+        workflow = (ROOT / ".github/workflows/github-native-analysis.yml").read_text()
+        self.assertIn("tools/github_analysis.py cache-identity", workflow)
+        self.assertIn("actions/cache/restore@v4", workflow)
+        self.assertIn("actions/cache/save@v4", workflow)
+        self.assertIn("EXCESSION_CACHE_DIR:", workflow)
+        self.assertLess(workflow.index("cache-identity \\"), workflow.index("actions/cache/restore@v4"))
+        self.assertLess(workflow.index("actions/cache/restore@v4"), workflow.index("tools/github_analysis.py execute"))
+        self.assertLess(workflow.index("tools/github_analysis.py execute"), workflow.index("actions/cache/save@v4"))
+
     def test_malformed_or_cross_operation_budgets_refused(self):
         bad = (
             {}, {"unknown": 2}, {"refresh_segments": 257},

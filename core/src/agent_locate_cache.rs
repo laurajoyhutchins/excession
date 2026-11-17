@@ -22,7 +22,8 @@ pub(crate) const MAX_TOTAL_BYTES: usize = 32 * 1024 * 1024;
 /// Caller-selected processing budgets. The defaults preserve existing behavior;
 /// changing a budget invalidates the corresponding Git-bound cache partition.
 /// These are *per index refresh* limits, not claims about repository coverage.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct IndexLimits {
     pub max_files_per_segment: usize,
     pub max_file_bytes: usize,

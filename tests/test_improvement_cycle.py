@@ -118,8 +118,10 @@ class NativeImprovementCycle(unittest.TestCase):
             self.verify(candidate=beyond)
 
     def test_missing_diff_refuses(self):
+        git(self.repo, "commit", "--allow-empty", "-qm", "no source change")
+        empty = git(self.repo, "rev-parse", "HEAD")
         with self.assertRaisesRegex(cycle.Refused, "1-128"):
-            cycle.verify(self.repo, self.base, self.base, formatter=self.formatter)
+            cycle.verify(self.repo, self.candidate, empty, formatter=self.formatter)
 
     def test_path_mode_changes_refuse(self):
         (self.repo / "core/src/lib.rs").chmod(0o755)

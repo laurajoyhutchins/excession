@@ -111,9 +111,18 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
     if not cwd.is_relative_to(worktree.resolve()) or not cwd.is_dir():
         raise Refused("requested cwd absent or outside detached worktree")
     command = check["argv"]
-    executable = shutil.which(command[0], path=os.environ.get("PATH", ""))
-    if not executable:
-        return {"status": "INCONCLUSIVE", "reason": "EXECUTABLE_UNAVAILABLE", "argv": command}
+    if "/" in command[0]:
+        executable_path = Path(command[0])
+        executable_path = (cwd / executable_path).resolve() if not executable_path.is_absolute() else executable_path.resolve()
+        # A relative executable is located in its own Git worktree, never
+        # in the verifier checkout or the other compared worktree.
+        if not executable_path.is_file() or not os.access(executable_path, os.X_OK):
+            return {"status": "INCONCLUSIVE", "reason": "EXECUTABLE_UNAVAILABLE", "argv": command}
+        executable = str(executable_path)
+    else:
+        executable = shutil.which(command[0], path=os.environ.get("PATH", ""))
+        if not executable:
+            return {"status": "INCONCLUSIVE", "reason": "EXECUTABLE_UNAVAILABLE", "argv": command}
     environment = {
         "PATH": os.environ.get("PATH", ""), "HOME": str(home),
         "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC",

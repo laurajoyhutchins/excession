@@ -1,0 +1,227 @@
+{
+  "schema": "excession.code-understanding-study.v1",
+  "study_id": "sqlite-first-pilot-20261117",
+  "status": "SOURCE_AUTHORED_PROVISIONAL_AWAITING_INDEPENDENT_REVIEW",
+  "purpose": "Assess source discovery plus actual behavioral explanation on unfamiliar repositories, not SCIP or index coverage",
+  "arms": [
+    "git",
+    "excession"
+  ],
+  "same_agent_required": true,
+  "question_and_oracle_frozen_before_excession_evaluation": true,
+  "cases": [
+    {
+      "id": "sqlite-wal-checkpoint-locks",
+      "repository": "sqlite/sqlite",
+      "commit": "bcbbcee64ee7edd0b9883029da7251f9af1745d2",
+      "question": "When a SQLite WAL checkpoint encounters active readers or unavailable locks, how do PASSIVE versus FULL modes differ, and what test checks checkpoint lock release?",
+      "scope": "WAL checkpoint implementation and lock-related tests",
+      "oracle": [
+        {
+          "role": "implementation",
+          "path": "src/wal.c",
+          "anchors": [
+            "static int walCheckpoint(",
+            "mxSafeFrame = y;",
+            "xBusy = 0;"
+          ]
+        },
+        {
+          "role": "mode_and_error",
+          "path": "src/wal.c",
+          "anchors": [
+            "eMode2 = SQLITE_CHECKPOINT_PASSIVE;",
+            "WAL_CKPT_LOCK"
+          ]
+        },
+        {
+          "role": "test",
+          "path": "test/wal.test",
+          "anchors": [
+            "releases all locks before returning a busy error."
+          ]
+        }
+      ],
+      "rubric": [
+        {
+          "id": "W1",
+          "fact": "PASSIVE checkpoint avoids invoking the busy handler and may make only partial progress when read-locks are unavailable",
+          "evidence": [
+            "src/wal.c"
+          ]
+        },
+        {
+          "id": "W2",
+          "fact": "An unavailable writer lock in a stronger checkpoint mode can cause a fallback to PASSIVE without promoting it to guaranteed completion",
+          "evidence": [
+            "src/wal.c"
+          ]
+        },
+        {
+          "id": "W3",
+          "fact": "The WAL locking tests cover behavior after checkpoint lock contention and subsequent operations",
+          "evidence": [
+            "test/wal.test"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sqlite-hot-journal-corruption",
+      "repository": "sqlite/sqlite",
+      "commit": "bcbbcee64ee7edd0b9883029da7251f9af1745d2",
+      "question": "When SQLite replays a hot rollback journal after a crash, what does it do when a journal header or page record is malformed, and where is this tested?",
+      "scope": "Rollback-journal playback and hot-journal tests",
+      "oracle": [
+        {
+          "role": "implementation",
+          "path": "src/pager.c",
+          "anchors": [
+            "static int pager_playback(Pager *pPager, int isHot){",
+            "readJournalHdr(pPager, isHot, szJ, &nRec, &mxPg)"
+          ]
+        },
+        {
+          "role": "test",
+          "path": "test/pager1.test",
+          "anchors": [
+            "Hot journal rollback related test cases.",
+            "journal-record for which the checksum fails."
+          ]
+        }
+      ],
+      "rubric": [
+        {
+          "id": "J1",
+          "fact": "Malformed journal data stops playback at the corruption boundary instead of treating later bytes as valid records",
+          "evidence": [
+            "src/pager.c"
+          ]
+        },
+        {
+          "id": "J2",
+          "fact": "The journal is handled differently for data corruption versus I/O or allocation failure, which returns an error and avoids deleting the journal",
+          "evidence": [
+            "src/pager.c"
+          ]
+        },
+        {
+          "id": "J3",
+          "fact": "pager1.4 hot-journal tests cover invalid headers and checksum errors",
+          "evidence": [
+            "test/pager1.test"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sqlite-btree-commit-phases",
+      "repository": "sqlite/sqlite",
+      "commit": "bcbbcee64ee7edd0b9883029da7251f9af1745d2",
+      "question": "How does SQLite separate B-tree commit phase one from phase two, what does each hand off to the pager, and what is special about cleanup after a multi-file commit?",
+      "scope": "B-tree transaction commit implementation and pager handoff",
+      "oracle": [
+        {
+          "role": "phase_one",
+          "path": "src/btree.c",
+          "anchors": [
+            "int sqlite3BtreeCommitPhaseOne(Btree *p, const char *zSuperJrnl){",
+            "sqlite3PagerCommitPhaseOne(pBt->pPager, zSuperJrnl, 0);"
+          ]
+        },
+        {
+          "role": "phase_two",
+          "path": "src/btree.c",
+          "anchors": [
+            "int sqlite3BtreeCommitPhaseTwo(Btree *p, int bCleanup){",
+            "rc = sqlite3PagerCommitPhaseTwo(pBt->pPager);"
+          ]
+        }
+      ],
+      "rubric": [
+        {
+          "id": "C1",
+          "fact": "Phase one flushes prepared database changes through sqlite3PagerCommitPhaseOne, with optional super-journal coordination",
+          "evidence": [
+            "src/btree.c"
+          ]
+        },
+        {
+          "id": "C2",
+          "fact": "Phase two finalizes the rollback journal and transaction state; the journal action commits the transaction",
+          "evidence": [
+            "src/btree.c"
+          ]
+        },
+        {
+          "id": "C3",
+          "fact": "Multi-file bCleanup allows transaction state cleanup even after a pager phase-two error because the super-journal deletion already committed the transaction",
+          "evidence": [
+            "src/btree.c"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "requests-redirect-auth",
+      "repository": "psf/requests",
+      "commit": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
+      "question": "When Requests follows a redirect, under which host, scheme and port changes is the Authorization header removed or preserved, and what tests define the exceptions?",
+      "scope": "Request redirect handling, authentication policy and tests",
+      "oracle": [
+        {
+          "role": "implementation",
+          "path": "src/requests/sessions.py",
+          "anchors": [
+            "def should_strip_auth(self, old_url: str, new_url: str) -> bool:",
+            "def rebuild_auth("
+          ]
+        },
+        {
+          "role": "test",
+          "path": "tests/test_requests.py",
+          "anchors": [
+            "def test_should_strip_auth_host_change(self):",
+            "def test_should_strip_auth_https_upgrade(self):",
+            "def test_should_strip_auth_port_change(self):"
+          ]
+        }
+      ],
+      "rubric": [
+        {
+          "id": "R1",
+          "fact": "Changing redirect host causes Authorization stripping, avoiding credential leakage",
+          "evidence": [
+            "src/requests/sessions.py",
+            "tests/test_requests.py"
+          ]
+        },
+        {
+          "id": "R2",
+          "fact": "A same-host HTTP to HTTPS upgrade on standard ports is a deliberate exception that preserves Authorization",
+          "evidence": [
+            "src/requests/sessions.py",
+            "tests/test_requests.py"
+          ]
+        },
+        {
+          "id": "R3",
+          "fact": "Other scheme and port transitions can require stripping; tests cover exceptions for default ports",
+          "evidence": [
+            "src/requests/sessions.py",
+            "tests/test_requests.py"
+          ]
+        }
+      ]
+    }
+  ],
+  "policies": {
+    "retrieval_limit": 12,
+    "baseline": "Git grep over exact checked-out commit; ranked by same question terms with explicit source-excerpt and cost receipt",
+    "excession": "excession agent locate using the identical question and 12-result limit; preserve reading_plan, coverage, cache/index costs",
+    "outcome": "Human-reviewed claim correctness with exact cited source support; retrieval-path coverage is only a proxy, never the outcome",
+    "pairing": "Same agent model, prompt, commit, tool privileges, budget; randomized arm order and isolated context per arm",
+    "scoring": "Rubric item correct only after reviewer checks explanation and source citation. Missing and unsupported claims remain visible.",
+    "failure": "No outcome score unless actual blinded agent responses and independent reviewer decisions are supplied"
+  }
+}

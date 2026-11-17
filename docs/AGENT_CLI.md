@@ -64,6 +64,25 @@ excession agent locate --repo /work/project \
   --task "worker lease recovery" --index-segments 256 --json
 ```
 
+## Paginated lexical candidates
+
+Use `agent locate-page` when the answer may require inspecting more than the
+first 64 source matches. Follow `page.next_cursor` until it becomes `null`:
+
+```sh
+excession agent locate-page --repo /work/project --rev HEAD \
+  --task "query planner" --limit 16 --index-segments 256
+excession agent locate-page --repo /work/project --rev COMMIT \
+  --task "query planner" --limit 16 --after 'v1.SNAPSHOT.OFFSET'
+```
+
+The displayed cursor is schematic; use the exact returned value. It binds
+the query, effective index policy, source commit/tree and indexed segment
+state. Changes cause a refusal, never an unannounced jump to another
+ranking. `rank` is global across pages. The report deliberately excludes
+unpaged graph context; retrieve context separately for chosen source paths.
+A complete lexical index is **not** complete semantic understanding.
+
 A cold or revision-switched index may be **partial**. The `index` output
 records populated, ready and pending segments and whether source indexing is
 complete. `SEGMENT_INDEX_INCOMPLETE` is reported when additional calls are

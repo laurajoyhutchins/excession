@@ -161,12 +161,12 @@ fn line_tokens(line: &str) -> BTreeSet<String> {
 }
 
 /// A source-location heuristic for navigation, not a validated symbol range.
-fn excerpt(body: &str, words: &[String]) -> Value {
+fn excerpt(body: &str, words: &[String], first_line: usize) -> Value {
     let lines = body.lines().collect::<Vec<_>>();
     if lines.is_empty() {
         return obj(&[
-            ("start_line", Value::number(1)),
-            ("end_line", Value::number(1)),
+            ("start_line", Value::number(first_line)),
+            ("end_line", Value::number(first_line)),
             ("text", Value::string("")),
             ("method", Value::string("TEXT_LINE_HEURISTIC")),
         ]);
@@ -218,8 +218,8 @@ fn excerpt(body: &str, words: &[String]) -> Value {
         &selected[..cut]
     };
     obj(&[
-        ("start_line", Value::number(start + 1)),
-        ("end_line", Value::number(end)),
+        ("start_line", Value::number(start + first_line)),
+        ("end_line", Value::number(first_line + end - 1)),
         ("text", Value::string(shown)),
         ("method", Value::string("TEXT_LINE_HEURISTIC")),
     ])
@@ -556,7 +556,7 @@ pub fn locate_with_limits(
                 "source",
                 source(&discovered.commit, &discovered.tree, &hit.entry),
             ),
-            ("excerpt", excerpt(&hit.body, &words)),
+            ("excerpt", excerpt(&hit.body, &words, hit.start_line)),
             ("ranking", Value::string("FTS5_BM25_TEXT_CANDIDATE")),
             ("semantic_correctness", Value::string("UNVERIFIED")),
         ]));
@@ -985,7 +985,7 @@ mod tests {
     #[test]
     fn line_windows_are_bounded_and_one_based() {
         let source = "alpha\nbeta\nfn recover_lease() {}\ngamma\n";
-        let value = excerpt(source, &["recover_lease".into()]);
+        let value = excerpt(source, &["recover_lease".into()], 1);
         assert_eq!(value.get("start_line").unwrap().integer().unwrap(), 1);
         assert_eq!(value.get("end_line").unwrap().integer().unwrap(), 4);
         assert!(

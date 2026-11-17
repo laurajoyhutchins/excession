@@ -20,7 +20,9 @@ about adopting a warehouse stack or running unconditional ETL jobs.
 These are conceptual responsibilities. Existing Rust/SQLite paths implement
 parts of the flow, including an append-only
 [`investigation` ledger](INVESTIGATIONS.md) with candidate source discovery,
-attributed synthesis, open questions and direct-source refresh.
+attributed synthesis, open questions, direct-source refresh and
+independently replayed Git source-line witnesses for proposed control,
+data and state operations. Witness interpretation is not behavior proof.
 Full dependency-aware invalidation and autonomously verified behavioral
 models remain targets, not implemented guarantees.
 

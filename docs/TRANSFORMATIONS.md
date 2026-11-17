@@ -51,6 +51,19 @@ of semantics, contracts, callers and error paths.
 - For cross-language transformations, record each provider's actual
   semantic scope and check interfaces across boundaries.
 
+## Preservation evidence from exact source witnesses
+
+`investigation witness` records line-precise control, data and state
+**source candidates** against an existing claim. A later `investigation
+plan` includes already recorded witness IDs for that claim. This makes
+the preservation obligation reviewable at the exact base Git revision
+without pretending the source classification is runtime behavior.
+
+During review, compare those source-bound candidate operations with the
+candidate revision, then require independent executions or proofs for
+material preservation claims. Neither a matching witness text nor a
+successful syntax check establishes behavioral equivalence.
+
 ## Verification ladder
 
 | Evidence | What it can establish | What remains open |

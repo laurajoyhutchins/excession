@@ -470,7 +470,18 @@ fn refresh_distinguishes_direct_source_changes_from_unresolved_behavior() {
 
 #[test]
 fn incomplete_index_budgets_remain_visible_in_persisted_explanations() {
-    let (_tmp, repo, db, base) = setup();
+    let (_tmp, repo, db, _base) = setup();
+    // A processing budget smaller than this authenticated source must
+    // checkpoint an incomplete file, not silently omit it or report COMPLETE.
+    fs::write(
+        repo.join("src/recovery.rs"),
+        format!(
+            "{}pub fn recover_worker() -> bool {{ retry_job(); true }}\nfn retry_job() {{}}\n",
+            "// source filler\n".repeat(100)
+        ),
+    )
+    .unwrap();
+    let base = commit(&repo, "large recovery source");
     let r = repo.to_str().unwrap();
     let d = db.to_str().unwrap();
     let started = command(&[
@@ -502,9 +513,9 @@ fn incomplete_index_budgets_remain_visible_in_persisted_explanations() {
         "--index-segments",
         "256",
         "--max-file-bytes",
-        "16",
+        "256",
         "--max-segment-bytes",
-        "16",
+        "256",
         "--max-segment-files",
         "1",
     ]);
@@ -512,15 +523,15 @@ fn incomplete_index_budgets_remain_visible_in_persisted_explanations() {
     assert_eq!(explored["payload"]["report"]["index"]["complete"], false);
     assert_eq!(
         explored["payload"]["report"]["index"]["limits"]["max_file_bytes"],
-        16
+        256
     );
     let gaps = explored["payload"]["report"]["coverage"]["gaps"]
         .as_array()
         .unwrap();
     assert!(
         gaps.iter()
-            .any(|gap| { gap["reason"] == "UNINDEXED_OVERSIZE_OR_NON_UTF8_SOURCE" }),
-        "source exclusion must be explicit: {gaps:?}"
+            .any(|gap| { gap["reason"] == "SOURCE_CONTENT_NOT_FULLY_INDEXED" }),
+        "incomplete source index must be explicit: {gaps:?}"
     );
     let explanation = command(&[
         "investigation",
@@ -539,7 +550,7 @@ fn incomplete_index_budgets_remain_visible_in_persisted_explanations() {
             .unwrap()
             .iter()
             .any(|gap| {
-                gap["reason"] == "UNINDEXED_OVERSIZE_OR_NON_UTF8_SOURCE"
+                gap["reason"] == "SOURCE_CONTENT_NOT_FULLY_INDEXED"
                     && gap["state"] == "UNRESOLVED"
             })
     );

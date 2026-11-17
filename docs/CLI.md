@@ -46,6 +46,16 @@ unresolved report; `show` replays the ledger and checks identities.
 See the [complete command workflow](INVESTIGATIONS.md). A ledger cannot
 promote a hypothesis to verified behavior or authorize merge.
 
+### Executable behavior comparison
+
+`excession investigation execute` accepts an absolute trusted host
+`--program`, JSON argument vector `--argv-json`, explicit
+`--trusted-local true`, and configurable `--timeout-ms` and
+`--max-output-bytes`. It runs two detached Git worktrees without a
+shell and persists scoped stdout/stderr and exit-code comparisons for
+a witness-backed preservation plan. **It is not sandboxed or an
+equivalence proof.** See [full invocation and limitations](INVESTIGATIONS.md).
+
 ## Install
 
 Build from the repository with Rust 1.99.1, Cargo, Git (SHA-1 object

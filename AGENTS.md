@@ -25,11 +25,13 @@ graph density, or novel parser coverage.
 7. Report only capabilities that exist at the inspected source revision.
 
 **Current interface:** `excession agent locate`, `agent context`,
-`agent verify`, `excession investigation start/explore/claim/witness/question/synthesize/explain/refresh/plan/verify/show`,
+`agent verify`, `excession investigation start/explore/claim/witness/question/synthesize/explain/refresh/plan/verify/execute/show`,
 `impact`, `explain`, specialist `refactor`/`improve` commands, stdio MCP
 and GitHub Actions evidence. The investigation family builds source-bound explanation projections,
 records authenticated control/data/state source witnesses, and reassesses
-direct source identity. It does not autonomously prove semantic
+direct source identity. The opt-in trusted-local execution compares one
+base/candidate invocation without sandboxing or signed attestation.
+It does not autonomously prove semantic
 behavior, infer complete dependencies or transform code.
 See [CLI](docs/CLI.md), [MCP](docs/MCP.md), and
 [refactoring reference](docs/REFACTORING.md).

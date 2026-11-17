@@ -184,6 +184,62 @@ transitions require independent compiler or execution evidence that
 corresponds to these source spans. This remains the next acceptance
 boundary, not a capability inferred from syntax.
 
+## Trusted-local differential execution (observed outcomes)
+
+The explicit opt-in `investigation execute` command runs the **same
+host executable and arguments** on two independently created, detached,
+Git-pinned worktrees for a witness-backed preservation plan. No shell
+interpolation, checkout of the user's working tree, or implicit execution
+occurs. The executable must be an absolute trusted host path outside
+the mutable source checkout. This operation **does execute repository
+code**, so it is not a sandbox and should only be used with reviewed
+code in an isolated environment.
+
+```sh
+excession investigation execute \
+  --repo /work/project --db /tmp/investigations.sqlite \
+  --id INVESTIGATION_ID --expected-revision REVISION \
+  --plan-event PLAN_EVENT_ID --candidate CANDIDATE_COMMIT \
+  --program /usr/bin/python3 \
+  --argv-json '["-B","src/counter.py"]' \
+  --timeout-ms 30000 --max-output-bytes 1048576 \
+  --trusted-local true
+```
+
+The `PLAN_EVENT_ID` must reference a plan with at least one prior
+`investigation witness` for its claimed source. The output records:
+- Authenticated base/candidate commit and tree identities, and the relevant
+  witness event IDs that existed when the plan was made.
+- The local host executable SHA-256, arguments, fixed minimal process
+  environment policy, and configured time/output budgets.
+- Exit status and exit code, stdout/stderr byte counts and SHA-256 digests.
+  Raw output is **not** persisted in the investigation ledger.
+- A comparison: `AGREEMENT_OBSERVED`, `DIFFERENCE_OBSERVED`, or
+  `INCONCLUSIVE` if either run times out, exceeds output budgets, or
+  does not exit normally.
+
+Both sides run with the same arguments and a minimal locale/PATH environment.
+Runtime OS state, dynamic libraries, clock, network, environment-dependent
+behavior, and external effects are **not** attested or made deterministic.
+Child process trees are not sandboxed. Excession only captures a local
+observation; it does not claim a signed independent execution oracle.
+A matching result for a single invocation does **not** establish all-input
+behavioral equivalence, preservation of a particular internal state mutation,
+or that a refactoring is ready to merge. The source witness remains
+`runtime_verified: false`; the plan remains `OPEN`.
+
+The full report is retained in an append-only `EXECUTION` event.
+`investigation explain` exposes its original report under
+`execution_comparisons`, joined to the preservation plan and source
+witnesses. Replaying the ledger revalidates Git identities, referenced
+event history, content hashes, and comparison consistency **without
+re-executing source code**.
+
+The [execution report schema](../contracts/product/investigation-execution.v1.schema.json)
+defines the wire contract. Independent CI attestations, real runtime
+instrumentation, repeated input corpora and proof obligations remain
+future extensions, not implied by the observed outcome comparison.
+
 ## Required content
 
 | Field / concept | Meaning |

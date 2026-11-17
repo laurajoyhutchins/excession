@@ -83,18 +83,22 @@ preserved. `--roots` and `--db` pass through to the normal analyzer.
 The response has schema `excession.agent-context.v1`, maximum 64 returned
 relationships and 64 test candidates, original counts, truncation and coverage
 gaps. The relationship budget now retains producer-observed `SCIP_REFERENCE`
-source edges **before** static-import candidates. This prevents the analyzer's
-static-first emission order from silently consuming the entire bounded result
-before native source-reference evidence is surfaced. It does not rank a source
+source edges **before** static-import candidates and retains one native
+observation from each distinct directed source-to-source pair before repeating
+a pair. This prevents the analyzer's static-first emission order, as well
+as repeated references between the same two files, from consuming every
+bounded result slot before other native source dependencies are surfaced. It does not rank a source
 match as semantically correct or infer an unobserved dependency.
 `observed_reference_count` and `returned_observed_reference_count` separately
 report the native reference total and the retained subset. Consumers must still
 inspect truncation and original producer receipts.
 
 The independent external [h11 native-reference benchmark](../tools/benchmark_dependency_retention.py)
-compares old static-first and new observed-first retention at exactly the same
-16-relationship budget and five preregistered source paths. It measures retained
-source-authenticated SCIP observations, **not** semantic dependency accuracy.
+compares old static-first and new distinct-native-first retention at exactly
+the same 16-relationship budget and five preregistered source paths. It reports
+both native observation retention and **distinct directed source-pair retention**.
+These are source-authenticated SCIP observations, **not** semantic dependency
+accuracy.
 The deep `native-dependency-discovery.yml` workflow preserves the producer and
 Git identity receipts. A Rust-only project currently has an exact source inventory but no
 Python/JavaScript static-module relationships; that is reported as

@@ -956,6 +956,21 @@ mod tests {
             1
         );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
+        let plan = first.get("reading_plan").unwrap();
+        let steps = plan.get("steps").unwrap().array_ref().unwrap();
+        assert!(!steps.is_empty());
+        assert_eq!(
+            steps[0].get("source").unwrap().get("path").unwrap().str().unwrap(),
+            "src/lease.rs"
+        );
+        assert_eq!(
+            steps[0].get("basis").unwrap().str().unwrap(),
+            "GIT_BLOB_LEXICAL_MATCH"
+        );
+        assert_eq!(
+            steps[0].get("source").unwrap().get("source_commit").unwrap().str().unwrap(),
+            first.get("source_commit").unwrap().str().unwrap()
+        );
         assert!(
             !first
                 .get("safe_to_skip_unlisted_tests")
@@ -988,6 +1003,11 @@ mod tests {
         fs::write(root.join("src/other.rs"), "pub fn renew_lease() {}\n").unwrap();
         let second = locate(&root, "HEAD", "renew lease", 4, None, None).unwrap();
         assert_eq!(second.get("report_id").unwrap().str().unwrap(), first_id);
+        assert_eq!(
+            second.get("reading_plan").unwrap(),
+            first.get("reading_plan").unwrap(),
+            "uncommitted edits cannot change the pinned source reading plan"
+        );
         assert_eq!(
             second.get("candidates").unwrap().array_ref().unwrap()[0]
                 .get("source")

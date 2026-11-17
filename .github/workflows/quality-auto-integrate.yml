@@ -29,6 +29,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
       - uses: jdx/mise-action@v5
       - uses: Swatinem/rust-cache@v2
         with:
@@ -92,6 +93,7 @@ jobs:
           BASE: ${{ steps.candidate.outputs.base }}
         run: |
           set -euo pipefail
+          gh auth setup-git
           git push origin "HEAD:refs/heads/$BRANCH"
           gh pr create --base main --head "$BRANCH" \
             --title "style: reproducible native Rust formatting" \

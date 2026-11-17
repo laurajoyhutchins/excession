@@ -100,14 +100,27 @@ fn budget_file_and_cli_override_recover_a_previously_excluded_large_blob() {
     // produces the same source report identity with a smaller refresh budget.
     let warm = Command::new(env!("CARGO_BIN_EXE_excession"))
         .args([
-            "agent", "locate", "--repo", root.to_str().unwrap(),
-            "--task", "planner", "--index-segments", "8",
-            "--budget-file", policy.to_str().unwrap(),
-            "--max-file-bytes", "524288", "--json",
+            "agent",
+            "locate",
+            "--repo",
+            root.to_str().unwrap(),
+            "--task",
+            "planner",
+            "--index-segments",
+            "8",
+            "--budget-file",
+            policy.to_str().unwrap(),
+            "--max-file-bytes",
+            "524288",
+            "--json",
         ])
         .output()
         .unwrap();
-    assert!(warm.status.success(), "{}", String::from_utf8_lossy(&warm.stderr));
+    assert!(
+        warm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&warm.stderr)
+    );
     let warm: serde_json::Value = serde_json::from_slice(&warm.stdout).unwrap();
     assert_eq!(high["report_id"], warm["report_id"]);
     assert_eq!(warm["cache"]["refresh_budget_segments"], 8);

@@ -142,9 +142,9 @@ class StructuralPreservation(unittest.TestCase):
         ]
         self.doc["obligations"][1]["argv"] = [
             "python3", "-B", "-c",
-            "from pathlib import Path; import os; assert (Path(os.environ['HOME']) / 'marker').exists()",
+            "from pathlib import Path; import os; assert not (Path(os.environ['HOME']) / 'marker').exists()",
         ]
-        # The base writes only into base-home; candidate does not inherit it.
+        # Every obligation has new source worktrees and HOME directories; the\n        # candidate's second command cannot see the first one's marker.
         self.assertEqual(self.evaluate()["status"],
                          "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
 

@@ -74,7 +74,9 @@ function oracle(root, relativeFiles) {
           // symbol definition. A general value receiver is dynamic dispatch.
           if (ts.isIdentifier(callee.expression)) {
             const receiver = checker.getSymbolAtLocation(callee.expression);
-            if (receiver && receiver.flags & ts.SymbolFlags.Alias) {
+            const namespace = receiver && (receiver.declarations || []).some(
+              d => ts.isNamespaceImport(d) || ts.isImportEqualsDeclaration(d));
+            if (namespace) {
               resolve(checker.getSymbolAtLocation(callee.name), f,
                       file.getLineAndCharacterOfPosition(callee.getStart(file)).line + 1,
                       'call');

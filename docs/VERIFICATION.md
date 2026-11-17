@@ -46,6 +46,21 @@ flow or all-input equivalence. It therefore never clears a plan's
 preservation obligations or grants merge approval. See the
 [execution contract and example](INVESTIGATIONS.md).
 
+## Runtime-event differential observations
+
+`excession investigation trace` adds a bounded CPython event stream to
+the existing base/candidate execution workflow. It records line visits,
+function entry/exit and sampled local changes, separately from stdout,
+stderr and exit codes. A preserved process output with a different
+runtime event stream is a genuine observation of **different recorded
+execution**, not proof of universal behavioral divergence.
+
+Tracing remains best effort and **unattested**. Opaque values,
+untraced subprocesses, C extensions, disabled instrumentation and
+incomplete streams remain unresolved. No trace result automatically
+proves a source witness's interpretation or discharges a refactoring
+preservation obligation. See [runtime instrumentation](INVESTIGATIONS.md).
+
 ## Negative evidence
 
 Record counterexamples, contradictory traces, failing tests, unsupported

@@ -18,7 +18,7 @@ tool documentation are not alternative product definitions.
 | --- | --- | --- |
 | Understand how a behavior works | [Investigation contract](INVESTIGATIONS.md) and [practical workflow](CODEBASE_UNDERSTANDING.md) | `agent locate`/`context`, `investigation start/claim/witness/explain`, source inspection |
 | Refactor a repository | [Transformation contract](TRANSFORMATIONS.md) | `investigation plan`, `refactor` / `improve` specialists, native tools |
-| Establish what a change preserves | [Verification](VERIFICATION.md) | Impact/evidence replay, opt-in `investigation execute` output comparison, independent test receipts |
+| Establish what a change preserves | [Verification](VERIFICATION.md) | Impact/evidence replay, opt-in `investigation execute` output comparison and `investigation trace` Python observations, independent test receipts |
 | Follow provenance and invalidation | [Evidence lifecycle](EVIDENCE_LIFECYCLE.md) | Git identities, producers, SQLite and audits |
 | Evaluate actual benefit | [Evaluation](EVALUATION.md) | Held-out study protocol; existing benchmarks are diagnostics |
 

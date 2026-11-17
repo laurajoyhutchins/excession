@@ -5,7 +5,7 @@
 //! preserves the boundary between lexical matches and native observations.
 
 use crate::json::{Value, obj};
-use crate::{Result, agent, agent_locate_cache, discovery, git, refuse};
+use crate::{Result, agent, agent_locate_cache, discovery, git, refuse, source_capabilities};
 pub use agent_locate_cache::IndexLimits;
 
 #[derive(Clone, Copy, Debug)]
@@ -69,6 +69,138 @@ fn source_path(path: &str) -> bool {
             | "y"
             | "l"
     )
+}
+
+const MAX_COMMITTED_GREP_PATHS_PER_TERM: usize = 20_000;
+
+/// Task navigation is broader than the language-native producer inventory.
+/// In particular, SQLite's Tcl .test and .tcl suites are genuine source,
+/// even though they have no SCIP or static-import producer.
+fn investigable_path(path: &str) -> bool {
+    source_path(path)
+        || (source_capabilities::test_candidate(path)
+            && [".test", ".tcl", ".bats"]
+                .iter()
+                .any(|extension| path.ends_with(extension)))
+}
+
+fn filename_stem(path: &str) -> &str {
+    path.rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .split('.')
+        .next()
+        .unwrap_or(path)
+}
+
+fn filename_hits(path: &str, terms: &[String]) -> usize {
+    let filename = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    terms
+        .iter()
+        .filter(|term| filename.contains(term.as_str()))
+        .count()
+}
+
+struct CommittedMatches {
+    selected: Vec<git::Entry>,
+    source_file_count: usize,
+    incomplete: bool,
+}
+
+/// Ask Git which pinned blobs contain the literal question terms, then
+/// prioritize implementation and likely tests. The match is lexical, never
+/// a new language semantic edge. All returned paths are authenticated
+/// against the same Git tree inventory used for the FTS provider.
+fn committed_matches(
+    repo: &Path,
+    commit: &str,
+    words: &[String],
+    inventory: &BTreeMap<String, git::Entry>,
+    limit: usize,
+) -> Result<CommittedMatches> {
+    let mut matches = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut incomplete = false;
+    for word in words {
+        let (paths, truncated) =
+            git::grep_committed_paths(repo, commit, word, MAX_COMMITTED_GREP_PATHS_PER_TERM)?;
+        incomplete |= truncated;
+        for path in paths {
+            if investigable_path(&path)
+                && inventory.get(&path).is_some_and(|entry| {
+                    entry.kind == "blob"
+                        && matches!(entry.mode.as_str(), "100644" | "100755")
+                })
+            {
+                matches.entry(path).or_default().insert(word.clone());
+            }
+        }
+    }
+    let source_file_count = matches.len();
+    let mut implementations = Vec::new();
+    let mut tests = Vec::new();
+    for (path, found) in matches {
+        let entry = inventory
+            .get(&path)
+            .ok_or("committed grep match absent from Git tree")?
+            .clone();
+        let item = (entry, found.len(), filename_hits(&path, words));
+        if source_capabilities::test_candidate(&path) {
+            tests.push(item);
+        } else {
+            implementations.push(item);
+        }
+    }
+    implementations.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| b.2.cmp(&a.2))
+            .then_with(|| a.0.path.cmp(&b.0.path))
+    });
+    // A test filename resembling one of the top task-matched
+    // implementation stems is a useful navigation hypothesis.
+    // It is not evidence that the test covers that implementation.
+    let stems = implementations
+        .iter()
+        .take(12)
+        .map(|item| filename_stem(&item.0.path).to_ascii_lowercase())
+        .filter(|stem| stem.len() >= 3)
+        .collect::<BTreeSet<_>>();
+    tests.sort_by(|a, b| {
+        let hint = |entry: &git::Entry| {
+            let stem = filename_stem(&entry.path).to_ascii_lowercase();
+            usize::from(stems.iter().any(|base| stem.starts_with(base)))
+        };
+        hint(&b.0)
+            .cmp(&hint(&a.0))
+            .then_with(|| b.1.cmp(&a.1))
+            .then_with(|| b.2.cmp(&a.2))
+            .then_with(|| a.0.path.cmp(&b.0.path))
+    });
+    let reserved_tests = if tests.is_empty() {
+        0
+    } else {
+        (limit / 3).clamp(1, 3)
+    };
+    let mut chosen = Vec::new();
+    let implementation_slots = limit.saturating_sub(reserved_tests);
+    let mut remaining_implementations = implementations.into_iter();
+    let mut remaining_tests = tests.into_iter();
+    for (entry, _, _) in remaining_implementations.by_ref().take(implementation_slots) {
+        chosen.push(entry);
+    }
+    for (entry, _, _) in remaining_tests.by_ref().take(reserved_tests) {
+        chosen.push(entry);
+    }
+    for (entry, _, _) in remaining_implementations.chain(remaining_tests) {
+        if chosen.len() == limit {
+            break;
+        }
+        chosen.push(entry);
+    }
+    Ok(CommittedMatches {
+        selected: chosen,
+        source_file_count,
+        incomplete,
+    })
 }
 
 fn terms(task: &str) -> Result<Vec<String>> {

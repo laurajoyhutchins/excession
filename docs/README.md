@@ -9,6 +9,7 @@ Start with the task you want to perform. Documentation here distinguishes
 
 | Task | Read | Expected result |
 | --- | --- | --- |
+| Understand unfamiliar code from a question | [Codebase understanding](CODEBASE_UNDERSTANDING.md) | Source-first investigation and bounded reading plan |
 | Install and inspect a repository | [Quick start](QUICKSTART.md) | A report pinned to Git source |
 | Ask Excession from ChatGPT | [GitHub-native analysis](GITHUB_NATIVE_ANALYSIS.md) | Workflow artifact with original report and receipt |
 | Ask about a private repository | [Private GitHub analysis](PRIVATE_GITHUB_ANALYSIS.md) | Advisory evidence retained only in the caller's private Actions run |
@@ -22,7 +23,7 @@ Start with the task you want to perform. Documentation here distinguishes
 | Question | Guide |
 | --- | --- |
 | What commands exist and what are their options? | [CLI reference](CLI.md) |
-| Where is a behavior implemented? | [Agent locate/context/verify](AGENT_CLI.md) |
+| Where is a behavior implemented? | [Codebase understanding](CODEBASE_UNDERSTANDING.md) and [agent locate/context/verify](AGENT_CLI.md) |
 | What might this change affect? | [Source-impact witnesses](COMPACT_IMPACT.md) |
 | How do I inspect and improve a refactoring? | [Refactoring](REFACTORING.md) |
 | How are independent checks selected and executed? | [Native test selection](NATIVE_TEST_SELECTORS.md) |

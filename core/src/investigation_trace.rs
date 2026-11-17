@@ -401,17 +401,21 @@ pub(crate) fn validate_event(
     Ok(())
 }
 
+struct TraceInvocation<'a, 'b> {
+    program: &'a Path,
+    driver: &'a Path,
+    args: &'a [String],
+    request: &'a Request<'b>,
+}
+
 fn observed(
     repo: &Path,
     worktree: &Path,
     revision: &str,
     tree: &str,
-    program: &Path,
-    driver: &Path,
-    script: &str,
-    args: &[String],
-    request: &Request<'_>,
+    invocation: &TraceInvocation<'_, '_>,
 ) -> Result<(Value, Value)> {
+    let request = invocation.request;
     let root = worktree
         .parent()
         .ok_or("runtime trace worktree missing parent")?;
@@ -422,7 +426,7 @@ fn observed(
     let trace = root.join(format!(".{label}.trace.jsonl"));
     let mut argv = vec![
         "-I".to_owned(),
-        driver.to_string_lossy().into_owned(),
+        invocation.driver.to_string_lossy().into_owned(),
         "--root".into(),
         worktree.to_string_lossy().into_owned(),
         "--out".into(),
@@ -431,14 +435,14 @@ fn observed(
         request.max_trace_events.to_string(),
         "--max-bytes".into(),
         request.max_trace_bytes.to_string(),
-        script.to_owned(),
+        request.script.to_owned(),
     ];
-    argv.extend(args.iter().cloned());
+    argv.extend(invocation.args.iter().cloned());
     let output = exec::observation(
         worktree,
         revision,
         tree,
-        program,
+        invocation.program,
         &argv,
         Duration::from_millis(request.timeout_ms),
         request.max_output_bytes,
@@ -500,28 +504,16 @@ pub fn run(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
     let mut temp = exec::Worktrees::new(repo)?;
     let base_root = temp.add("base", base)?;
     let candidate_root = temp.add("candidate", &candidate)?;
-    let (base_execution, base_trace) = observed(
-        repo,
-        &base_root,
-        base,
-        tree,
-        &program,
-        &driver,
-        request.script,
-        &arguments,
-        &request,
-    )?;
-    let (candidate_execution, candidate_trace) = observed(
-        repo,
-        &candidate_root,
-        &candidate,
-        &candidate_tree,
-        &program,
-        &driver,
-        request.script,
-        &arguments,
-        &request,
-    )?;
+    let invocation = TraceInvocation {
+        program: &program,
+        driver: &driver,
+        args: &arguments,
+        request: &request,
+    };
+    let (base_execution, base_trace) =
+        observed(repo, &base_root, base, tree, &invocation)?;
+    let (candidate_execution, candidate_trace) =
+        observed(repo, &candidate_root, &candidate, &candidate_tree, &invocation)?;
     temp.cleanup()?;
     let report = obj(&[
         ("schema", Value::string(FORMAT)),

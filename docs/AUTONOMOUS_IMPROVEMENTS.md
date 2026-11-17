@@ -25,6 +25,13 @@ must be review-required. The initially admitted recipes are:
 | `native-clippy` | pinned cargo clippy --fix | Apply and open a draft PR; no unattended merge |
 | `native-cargo-lock-refresh` | pinned Cargo update | Patch-only, same-dependency-graph updates are auto-integrate eligible after CI; all other resolution changes go to draft review |
 
+A successful `Verify` workflow already enforces clean Rustfmt and Clippy,
+so those two producers normally find **no new work** on a healthy `main`.
+They remain defensive recipes, not evidence of a self-improving system by
+themselves. Native Cargo resolution can discover genuinely newer dependencies;
+the separate recurring engineering investigation must generate additional
+source-grounded refactoring recipes over time.
+
 The technical notebook supplies reasoning and evidence references. It is not
 parsed as untrusted executable instructions and a prose suggestion cannot
 grant a workflow token permission to merge arbitrary changes.

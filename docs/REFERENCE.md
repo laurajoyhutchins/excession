@@ -59,3 +59,44 @@ schema or planned benchmark does not demonstrate completed functionality.
 
 For current claims: inspect pinned source, emitted versioned schemas and
 independent run receipts. See [evidence limits](EVIDENCE_AND_LIMITS.md).
+
+## Additional specialist guides
+
+These are supporting source-producer and research references, not alternate
+product architecture or proof of behavioral correctness.
+
+### Language, compiler and kernel producers
+
+- [Clang tu](CLANG_TU.md)
+- [Compiler check receipts](COMPILER_CHECK_RECEIPTS.md)
+- [Java native](JAVA_NATIVE.md)
+- [JVM resolved inputs](JVM_RESOLVED_INPUTS.md)
+- [Python native resolution](PYTHON_NATIVE_RESOLUTION.md)
+- [Python import names](PYTHON_IMPORT_NAMES.md)
+- [Kernel parsers](KERNEL_PARSERS.md)
+- [KBUILD graphs](KBUILD_GRAPHS.md)
+- [Linux kernel experiment](LINUX_KERNEL_EXPERIMENT.md)
+- [Linux whole source](LINUX_WHOLE_SOURCE.md)
+- [Syntax parsers](SYNTAX_PARSERS.md)
+
+### History and source reconstruction
+
+- [Git reconstruction oracles](GIT_RECONSTRUCTION_ORACLES.md)
+- [Git reconstruction synthesis](GIT_RECONSTRUCTION_SYNTHESIS.md)
+- [Git reconstruction evidence](GIT_RECONSTRUCTION_EVIDENCE.md)
+- [Reconstruction runtime boundary](RECONSTRUCTION_RUNTIME_BOUNDARY.md)
+
+### Security and structural studies
+
+- [Security heldout results](SECURITY_HELDOUT_RESULTS.md)
+- [Security candidate discovery](SECURITY_CANDIDATE_DISCOVERY.md)
+- [Projection model boundary](PROJECTION_MODEL_BOUNDARY.md)
+- [Self analysis](SELF_ANALYSIS.md)
+
+### Reproducibility, portability and origins
+
+- [Origins](ORIGINS.md)
+- [Verification profile](VERIFICATION_PROFILE.md)
+- [Real fixtures](REAL_FIXTURES.md)
+- [Portability](PORTABILITY.md)
+

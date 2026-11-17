@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const CACHE_VERSION: &str = "agent-locate-segments-v2";
+const CACHE_VERSION: &str = "agent-locate-segments-v3";
 pub(crate) const SEGMENT_COUNT: usize = 256;
 pub(crate) const DEFAULT_REFRESH_SEGMENTS: usize = 8;
 pub(crate) const MAX_FILES: usize = 6000;
@@ -68,6 +68,7 @@ impl IndexLimits {
 pub(crate) struct Hit {
     pub entry: git::Entry,
     pub body: String,
+    pub start_line: usize,
 }
 
 pub(crate) struct Search {
@@ -95,7 +96,7 @@ fn external_cache(discovered: &discovery::Discovery) -> Result<PathBuf> {
     // New filename leaves the v1 index untouched during the schema upgrade.
     let path = discovered
         .index_path
-        .with_file_name("agent-locate-segments.sqlite");
+        .with_file_name("agent-locate-chunks.sqlite");
     let parent = path.parent().ok_or("agent locate cache missing parent")?;
     let root = fs::canonicalize(&discovered.root).map_err(|e| sql_error("root canonicalize", e))?;
     if !parent.is_absolute()
@@ -155,8 +156,18 @@ fn initialize(db: &Connection) -> Result<()> {
             blob TEXT NOT NULL,
             mode TEXT NOT NULL,
             bytes INTEGER NOT NULL,
-            status TEXT NOT NULL
+            status TEXT NOT NULL,
+            chunk_bytes INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS locator_chunks(
+            id INTEGER PRIMARY KEY,
+            file_id INTEGER NOT NULL,
+            ordinal INTEGER NOT NULL,
+            start_byte INTEGER NOT NULL,
+            start_line INTEGER NOT NULL,
+            UNIQUE(file_id,ordinal)
+        );
+        CREATE INDEX IF NOT EXISTS locator_chunks_file ON locator_chunks(file_id);
         CREATE INDEX IF NOT EXISTS locator_file_segments
             ON locator_files(segment);
         CREATE VIRTUAL TABLE IF NOT EXISTS source_search
@@ -201,6 +212,7 @@ struct CachedFile {
     mode: String,
     size: usize,
     status: String,
+    chunk_bytes: usize,
 }
 
 struct SegmentMeta {
@@ -216,9 +228,9 @@ fn nonnegative(value: i64) -> Result<usize> {
 }
 
 fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<CachedFile>> {
-    let row: Option<(i64, String, String, i64, String)> = tx
+    let row: Option<(i64, String, String, i64, String, i64)> = tx
         .query_row(
-            "SELECT id,blob,mode,bytes,status FROM locator_files WHERE path=?1",
+            "SELECT id,blob,mode,bytes,status,chunk_bytes FROM locator_files WHERE path=?1",
             params![path],
             |row| {
                 Ok((
@@ -227,18 +239,20 @@ fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<CachedFile>> {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             },
         )
         .optional()
         .map_err(|e| sql_error("select cached path", e))?;
-    row.map(|(id, blob, mode, size, status)| {
+    row.map(|(id, blob, mode, size, status, chunk_bytes)| {
         Ok(CachedFile {
             id,
             blob,
             mode,
             size: nonnegative(size)?,
             status,
+            chunk_bytes: nonnegative(chunk_bytes)?,
         })
     })
     .transpose()
@@ -283,10 +297,37 @@ fn prior_segments(tx: &Transaction<'_>) -> Result<Vec<Option<SegmentMeta>>> {
 }
 
 fn delete_file(tx: &Transaction<'_>, id: i64) -> Result<()> {
-    tx.execute("DELETE FROM source_search WHERE rowid=?1", params![id])
-        .map_err(|e| sql_error("delete FTS row", e))?;
+    tx.execute(
+        "DELETE FROM source_search WHERE rowid IN
+         (SELECT id FROM locator_chunks WHERE file_id=?1)",
+        params![id],
+    )
+    .map_err(|e| sql_error("delete FTS file chunks", e))?;
+    tx.execute("DELETE FROM locator_chunks WHERE file_id=?1", params![id])
+        .map_err(|e| sql_error("delete file chunks", e))?;
     tx.execute("DELETE FROM locator_files WHERE id=?1", params![id])
         .map_err(|e| sql_error("delete file row", e))?;
+    Ok(())
+}
+
+fn insert_chunk(
+    tx: &Transaction<'_>,
+    file_id: i64,
+    entry: &git::Entry,
+    ordinal: usize,
+    start_byte: u64,
+    start_line: usize,
+    body: &str,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO locator_chunks(file_id,ordinal,start_byte,start_line)
+         VALUES(?1,?2,?3,?4)",
+        params![file_id, ordinal as i64, start_byte as i64, start_line as i64],
+    ).map_err(|e| sql_error("insert source chunk", e))?;
+    tx.execute(
+        "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
+        params![tx.last_insert_rowid(), &entry.path, body],
+    ).map_err(|e| sql_error("insert chunk FTS row", e))?;
     Ok(())
 }
 
@@ -296,29 +337,63 @@ fn insert_file(
     entry: &git::Entry,
     body: Option<&str>,
     status: &str,
-) -> Result<()> {
+    chunk_bytes: usize,
+) -> Result<i64> {
     tx.execute(
-        "INSERT INTO locator_files(segment,path,blob,mode,bytes,status)
-         VALUES(?1,?2,?3,?4,?5,?6)",
+        "INSERT INTO locator_files(segment,path,blob,mode,bytes,status,chunk_bytes)
+         VALUES(?1,?2,?3,?4,?5,?6,?7)",
         params![
             segment as i64,
             &entry.path,
             &entry.oid,
             &entry.mode,
             body.map_or(0usize, str::len) as i64,
-            status
+            status,
+            chunk_bytes as i64,
         ],
-    )
-    .map_err(|e| sql_error("insert cached file", e))?;
+    ).map_err(|e| sql_error("insert cached file", e))?;
+    let id = tx.last_insert_rowid();
     if let Some(text) = body {
-        tx.execute(
-            "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
-            params![tx.last_insert_rowid(), &entry.path, text],
-        )
-        .map_err(|e| sql_error("insert FTS row", e))?;
+        if !text.is_empty() {
+            insert_chunk(tx, id, entry, 0, 0, 1, text)?;
+        }
+    }
+    Ok(id)
+}
+
+fn existing_chunks(tx: &Transaction<'_>, file_id: i64) -> Result<usize> {
+    let count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM locator_chunks WHERE file_id=?1",
+        params![file_id],
+        |row| row.get(0),
+    ).map_err(|e| sql_error("count existing source chunks", e))?;
+    nonnegative(count)
+}
+
+fn verify_cached_chunk(
+    tx: &Transaction<'_>,
+    file_id: i64,
+    ordinal: usize,
+    start_byte: u64,
+    start_line: usize,
+    body: &str,
+) -> Result<()> {
+    let stored: Option<(i64, i64, String)> = tx.query_row(
+        "SELECT c.start_byte,c.start_line,s.body
+         FROM locator_chunks c JOIN source_search s ON s.rowid=c.id
+         WHERE c.file_id=?1 AND c.ordinal=?2",
+        params![file_id, ordinal as i64],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).optional().map_err(|e| sql_error("verify staged chunk", e))?;
+    let Some((position, line, text)) = stored else {
+        return refuse("missing previously checkpointed source chunk");
+    };
+    if position != start_byte as i64 || line != start_line as i64 || text != body {
+        return refuse("checkpointed chunk disagrees with authenticated Git source");
     }
     Ok(())
 }
+
 
 fn segment_for(path: &str) -> usize {
     let digest = crate::digest::sha256(path.as_bytes());

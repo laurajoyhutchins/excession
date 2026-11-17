@@ -41,7 +41,7 @@ segmented lexical index still sees the full tracked Git source inventory,
 subject to explicit index coverage and size limits.
 
 Source paths are partitioned deterministically into **256 SHA-256(path)
-segments**. Each segment is bounded to 6000 files, 256 KiB per file, and
+segments**. Each segment is bounded to 6000 files, 1 MiB per file, and
 32 MiB of indexed text. By default, an invocation refreshes up to eight
 changed or missing segments. To bootstrap all segments in one foreground run:
 

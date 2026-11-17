@@ -141,7 +141,7 @@ class NativeImprovementCycle(unittest.TestCase):
         self.fork_from_base()
         (self.repo / "core/src/lib.rs").chmod(0o755)
         bad = self.commit()
-        with self.assertRaises(cycle.Refused):
+        with self.assertRaisesRegex(cycle.Refused, "executable mode"):
             self.verify(candidate=bad)
 
     def test_native_tool_modifying_nonrust_file_refuses(self):

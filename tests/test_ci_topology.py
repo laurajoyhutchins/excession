@@ -186,6 +186,8 @@ class CiTopology(unittest.TestCase):
             "cargo fmt --manifest-path", "cargo test --offline --locked",
             "gh workflow run verify.yml --ref", "gh workflow run github-evidence.yml --ref",
             "bash tools/ci/await_verified_merge.sh", "native-improvement.json",
+            'if ! gh pr create', "Open a PR from the already-pushed",
+            "Settings > Actions > General > Workflow permissions",
         ):
             self.assertIn(required, auto, required)
         for required in (
@@ -211,6 +213,11 @@ class CiTopology(unittest.TestCase):
             "persist-credentials: false",
         ):
             self.assertIn(required, cargo)
+        for required in (
+            'if ! gh pr create', "Open a PR from the already-pushed",
+            "Settings > Actions > General > Workflow permissions",
+        ):
+            self.assertIn(required, cargo, required)
         for required in (
             "  issues:", "    types: [opened]",
             "github.event.issue.user.id == 219002713",

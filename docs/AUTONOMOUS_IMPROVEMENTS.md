@@ -136,6 +136,36 @@ negative cases, but patch-only updates may still introduce malicious code,
 unsupported runtime changes, or untested regressions. Passing fixture tests is not evidence that GitHub
 will permit a bot merge.
 
+## Live operational evidence (November 17, 2026)
+
+[Owner invocation #319](https://github.com/laurajoyhutchins/excession/issues/319)
+really started [native Cargo improvement run #44154374026](https://github.com/laurajoyhutchins/excession/actions/runs/44154374026).
+The workflow generated nine updates and successfully pushed commit
+`4d05cd0c099366fa362555a6c720a9558bab9736` to branch
+`automation/cargo-refresh-44154374026`. Its native patch-only classifier
+refused automatic integration because `rmcp-macros 3.10.0 → 3.11.0` is a
+minor-version upgrade; that was correct behavior.
+
+The attempted `gh pr create` then failed with
+`GitHub Actions is not permitted to create or approve pull requests`.
+This is an actual GitHub repository Actions-setting restriction even though
+the workflow specifies `pull-requests: write`. The runner cannot override
+it and must not push directly to `main` as a fallback.
+
+**Administrator action:** In the Excession repository's **Settings →
+Actions → General → Workflow permissions**, enable
+**Allow GitHub Actions to create and approve pull requests**. Keep the
+independent exact-head Verify/source-evidence requirements and normal
+branch protection enabled. The recovery path is to open the already-pushed
+bot branch through the connected GitHub account; [draft PR #320](https://github.com/laurajoyhutchins/excession/pull/320)
+preserves the full native proposal, while [PR #321](https://github.com/laurajoyhutchins/excession/pull/321)
+isolates the eight patch updates pending independent verification.
+
+Until repository permission is enabled and a real bot-created PR passes
+the full two-receipt merge gate, **unattended improvement integration has not
+been observed**. A candidate push is useful progress, not a successful
+autonomous merge.
+
 ## Promoting further learned improvements
 
 For each new engineering lesson, first capture a real failure, counterexample

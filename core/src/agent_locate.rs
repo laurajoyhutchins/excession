@@ -1428,21 +1428,24 @@ mod tests {
         assert!(!index_file.exists());
         // Operational budgets are validated even when the fast path never
         // reaches the indexer. Invalid flags cannot become silently accepted.
-        assert!(locate_with_mode(
-            &root,
-            "HEAD",
-            "checkpoint lock",
-            2,
-            None,
-            None,
-            LocateExecution {
-                budget: LocateBudget {
-                    index_segments: 0,
-                    index: IndexLimits::default(),
+        assert!(
+            locate_with_mode(
+                &root,
+                "HEAD",
+                "checkpoint lock",
+                2,
+                None,
+                None,
+                LocateExecution {
+                    budget: LocateBudget {
+                        index_segments: 0,
+                        index: IndexLimits::default(),
+                    },
+                    force_enrichment: false,
                 },
-                force_enrichment: false,
-            },
-        ).is_err());
+            )
+            .is_err()
+        );
         let fast = locate_with_mode(
             &root,
             "HEAD",

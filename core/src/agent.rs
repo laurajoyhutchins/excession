@@ -77,9 +77,9 @@ fn focused_relationships(
         if relation.get("kind")?.str()? == "SCIP_REFERENCE" {
             let evidence = relation.get("evidence")?.array_ref()?;
             if evidence.is_empty()
-                || evidence.iter().any(|row| {
-                    row.get("assessment").and_then(Value::str).ok() != Some("OBSERVED")
-                })
+                || evidence
+                    .iter()
+                    .any(|row| row.get("assessment").and_then(Value::str).ok() != Some("OBSERVED"))
             {
                 return refuse("native SCIP reference has missing or incompatible evidence");
             }
@@ -223,7 +223,10 @@ pub fn context(
         ("sources", Value::array(sources)),
         ("relationships", Value::array(relations.clone())),
         ("relationship_count", Value::number(total_relations)),
-        ("observed_reference_count", Value::number(observed_reference_count)),
+        (
+            "observed_reference_count",
+            Value::number(observed_reference_count),
+        ),
         (
             "returned_observed_reference_count",
             Value::number(
@@ -549,17 +552,34 @@ mod native_dependency_selection_tests {
         // Original first-N selection returned one static candidate and no
         // observed source reference. The revised selector preserves the native
         // relation without changing its direction, kind, or producer receipt.
-        assert_eq!(candidates[0].get("kind").unwrap().str().unwrap(), "STATIC_IMPORT");
-        let (selected, total, observed) =
-            focused_relationships(&candidates, &focus, 1).unwrap();
-        assert_eq!((total, observed, selected.len()), (3, 1, 1));
-        assert_eq!(selected[0].get("kind").unwrap().str().unwrap(), "SCIP_REFERENCE");
         assert_eq!(
-            selected[0].get("source").unwrap().get("path").unwrap().str().unwrap(),
+            candidates[0].get("kind").unwrap().str().unwrap(),
+            "STATIC_IMPORT"
+        );
+        let (selected, total, observed) = focused_relationships(&candidates, &focus, 1).unwrap();
+        assert_eq!((total, observed, selected.len()), (3, 1, 1));
+        assert_eq!(
+            selected[0].get("kind").unwrap().str().unwrap(),
+            "SCIP_REFERENCE"
+        );
+        assert_eq!(
+            selected[0]
+                .get("source")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "src/c.py"
         );
         assert_eq!(
-            selected[0].get("target").unwrap().get("path").unwrap().str().unwrap(),
+            selected[0]
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
             "src/entry.py"
         );
     }
@@ -572,14 +592,21 @@ mod native_dependency_selection_tests {
             edge("STATIC_IMPORT", "src/a.py", "src/c.py", "CANDIDATE"),
             edge("SCIP_REFERENCE", "src/d.py", "src/e.py", "OBSERVED"),
         ];
-        let (selected, total, observed) =
-            focused_relationships(&source, &focus, 1).unwrap();
+        let (selected, total, observed) = focused_relationships(&source, &focus, 1).unwrap();
         assert_eq!((total, observed), (2, 0));
-        assert_eq!(selected[0].get("target").unwrap().get("path").unwrap().str().unwrap(), "src/b.py");
+        assert_eq!(
+            selected[0]
+                .get("target")
+                .unwrap()
+                .get("path")
+                .unwrap()
+                .str()
+                .unwrap(),
+            "src/b.py"
+        );
         let forged = [edge("SCIP_REFERENCE", "src/a.py", "src/b.py", "CANDIDATE")];
         assert!(focused_relationships(&forged, &focus, 1).is_err());
-        let (selected, total, observed) =
-            focused_relationships(&source, &focus, 2).unwrap();
+        let (selected, total, observed) = focused_relationships(&source, &focus, 2).unwrap();
         assert_eq!((total, observed, selected.len()), (2, 0, 2));
     }
 }

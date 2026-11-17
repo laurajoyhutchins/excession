@@ -124,7 +124,7 @@ fn ranked_test_candidates<'a>(
         }
         let rank = (
             direct_focus,
-            !crate::source_capabilities::third_party_test_path(&entry.path),
+            !crate::source_capabilities::third_party_source_path(&entry.path),
             task_hits,
             !crate::source_capabilities::fixture_test_path(&entry.path),
             source_hint,

@@ -100,6 +100,13 @@ class QualityRatchet(unittest.TestCase):
         with self.assertRaises(ratchet.Refusal):
             self.check()
 
+    def test_initial_rule_catalog_bootstrap_is_allowed(self):
+        run(self.repo, "rm", "quality/ratchet.json")
+        self.base = self.commit()
+        self.save_catalog([self.rule])
+        self.commit()
+        self.assertEqual(self.check()["status"], "PASS")
+
     def test_unrelated_file_cannot_trigger_violation(self):
         self.put("docs/notes.md", "shell=True\n")
         self.commit()

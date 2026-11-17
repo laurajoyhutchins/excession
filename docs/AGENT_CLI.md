@@ -54,7 +54,7 @@ and 32 MiB of newly indexed text per
 segment refresh. These are caller-configurable with `--budget-file` or
 `--max-file-bytes`, `--max-segment-bytes` and `--max-segment-files`.
 A budget-exhausted segment is checkpointed and continues on subsequent runs;
-the file-read cap still excludes larger blobs until the caller raises it.
+large UTF-8 source files are chunk-indexed without a file-size eligibility cutoff.
 See [resource budgets and remaining limitations](RESOURCE_BUDGETS.md).
 By default, an invocation refreshes up to eight changed or incomplete
 segments. To process up to 256 segments in one foreground run:
@@ -69,10 +69,10 @@ records populated, ready and pending segments and whether source indexing is
 complete. `SEGMENT_INDEX_INCOMPLETE` is reported when additional calls are
 needed. Stale segments are excluded from results, and an empty candidate set
 never proves that behavior is absent. A fully refreshed index still reports
-unsupported source, non-UTF-8, oversized, and semantic verification gaps.
+unsupported source encodings, pending work and semantic verification gaps.
 
 The cache lives outside the source checkout in
-`agent-locate-segments.sqlite` alongside Excession's existing SQLite
+`agent-locate-chunks.sqlite` alongside Excession's existing SQLite
 cache. It reuses unchanged Git blobs, updates changed/deleted paths within
 transactions and verifies the blob identity of returned evidence.
 `cache` records local read/reuse/refreshed counts; these incidental values

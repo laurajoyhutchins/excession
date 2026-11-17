@@ -80,8 +80,10 @@ runs weekly or on owner dispatch **from main only**. It executes pinned
 `rustfmt` and Clippy's machine-applicable `--fix` using the repository's
 locked Rust configuration. It refuses edits outside tracked Rust source,
 checks formatting, Clippy, library tests, and the fast ratchet suite, commits
-a candidate to a new bot branch and opens a **draft PR**. Full existing
-PR admission and human review remain necessary. It never auto-merges.
+a candidate to a new bot branch and opens a **draft PR**. It explicitly
+uses GitHub `workflow_dispatch` to run Verify on the candidate head,
+because bot-token-created PR events may not automatically trigger checks.
+Full existing PR admission and human review remain necessary. It never auto-merges.
 
 The workflow requires GitHub Actions permission to create PRs and available
 runner minutes. If that setting or Actions billing prevents execution, no

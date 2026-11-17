@@ -55,7 +55,7 @@ pub fn detected_language(path: &str) -> Option<String> {
 
 /// Toolchain/vendor fixtures remain searchable but should not displace tests
 /// owned by the investigated project in a bounded reading plan.
-pub fn third_party_test_path(path: &str) -> bool {
+pub fn third_party_source_path(path: &str) -> bool {
     path.starts_with("deps/")
         || path.split('/').any(|component| {
             matches!(

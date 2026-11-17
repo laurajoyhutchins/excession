@@ -503,6 +503,23 @@ mod tests {
     }
 
     #[test]
+    fn search_args_default_to_fast_discovery_and_require_boolean_enrichment() {
+        let fast: SearchArgs = serde_json::from_str(r#"{"task":"find lease recovery"}"#).unwrap();
+        assert_eq!(fast.enrich, None);
+        let deep: SearchArgs =
+            serde_json::from_str(r#"{"task":"find lease recovery","enrich":true}"#).unwrap();
+        assert_eq!(deep.enrich, Some(true));
+        assert!(serde_json::from_str::<SearchArgs>(
+            r#"{"task":"find lease recovery","enrich":"true"}"#
+        )
+        .is_err());
+        assert!(serde_json::from_str::<SearchArgs>(
+            r#"{"task":"find lease recovery","unused":true}"#
+        )
+        .is_err());
+    }
+
+    #[test]
     fn tools_have_typed_schemas_and_read_only_annotations() {
         let tools = ExcessionMcp::tool_router();
         assert_eq!(tools.map.len(), 6);

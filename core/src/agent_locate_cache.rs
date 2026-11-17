@@ -369,26 +369,22 @@ fn update_segment(
     let mut seen = BTreeSet::new();
     let mut files = 0usize;
     let mut bytes = 0usize;
+    let mut refreshed_files = 0usize;
+    let mut refreshed_bytes = 0usize;
     let mut skipped = 0usize;
     let mut truncated = false;
     for entry in entries {
         seen.insert(entry.path.as_str());
-        if files + skipped >= limits.max_files_per_segment || bytes >= limits.max_bytes_per_segment {
-            skipped += 1;
-            truncated = true;
-            if let Some(old) = previous(tx, &entry.path)? {
-                delete_file(tx, old.id)?;
-            }
-            continue;
-        }
         let old = previous(tx, &entry.path)?;
         if let Some(ref cached) = old
             && cached.blob == entry.oid
             && cached.mode == entry.mode
         {
             match cached.status.as_str() {
-                "OK" if cached.size <= limits.max_file_bytes
-                    && cached.size <= limits.max_bytes_per_segment - bytes => {
+                "OK" if cached.size <= limits.max_file_bytes => {
+                    // Reusing a fully authenticated Git blob costs no new
+                    // source-read budget. The budget limits *this refresh*,
+                    // not the size of the persistent index.
                     files += 1;
                     bytes += cached.size;
                     state.reused_blobs += 1;
@@ -398,11 +394,23 @@ fn update_segment(
                     skipped += 1;
                     continue;
                 }
-                // A larger file limit may make a formerly LARGE blob eligible.
-                // Re-read it when this partition's policy fingerprint changes.
-                "LARGE" => {}
                 _ => {}
             }
+        }
+
+        // A budget-exhausted source remains pending for a subsequent call.
+        // We checkpoint each segment separately; no source disappears
+        // permanently merely because its siblings consumed this work unit.
+        if refreshed_files >= limits.max_files_per_segment
+            || refreshed_bytes >= limits.max_bytes_per_segment
+        {
+            if let Some(cached) = old {
+                delete_file(tx, cached.id)?;
+            }
+            skipped += 1;
+            truncated = true;
+            insert_file(tx, segment, entry, None, "BUDGET")?;
+            continue;
         }
         if let Some(cached) = old {
             delete_file(tx, cached.id)?;
@@ -435,7 +443,7 @@ fn update_segment(
             insert_file(tx, segment, entry, None, "NON_UTF8")?;
             continue;
         }
-        if body.len() > limits.max_bytes_per_segment - bytes {
+        if body.len() > limits.max_bytes_per_segment - refreshed_bytes {
             skipped += 1;
             truncated = true;
             insert_file(tx, segment, entry, None, "BUDGET")?;
@@ -443,6 +451,8 @@ fn update_segment(
         }
         files += 1;
         bytes += body.len();
+        refreshed_files += 1;
+        refreshed_bytes += body.len();
         insert_file(tx, segment, entry, Some(&body), "OK")?;
     }
 
@@ -471,11 +481,11 @@ fn update_segment(
          (segment,fingerprint,indexed_files,indexed_bytes,skipped_files,truncated)
          VALUES(?1,?2,?3,?4,?5,?6)
          ON CONFLICT(segment) DO UPDATE SET
-         fingerprint=excluded.fingerprint,
-         indexed_files=excluded.indexed_files,
-         indexed_bytes=excluded.indexed_bytes,
-         skipped_files=excluded.skipped_files,
-         truncated=excluded.truncated",
+            fingerprint=excluded.fingerprint,
+            indexed_files=excluded.indexed_files,
+            indexed_bytes=excluded.indexed_bytes,
+            skipped_files=excluded.skipped_files,
+            truncated=excluded.truncated",
         params![
             segment as i64,
             expected,
@@ -565,7 +575,7 @@ pub(crate) fn search_with_limits(
         .filter(|&id| {
             prior[id]
                 .as_ref()
-                .is_some_and(|row| row.fingerprint != fingerprints[id])
+                .is_some_and(|row| row.fingerprint != fingerprints[id] || row.truncated)
                 || (prior[id].is_none() && !groups[id].is_empty())
         })
         .collect::<Vec<_>>();
@@ -587,6 +597,12 @@ pub(crate) fn search_with_limits(
         let updated = update_segment(&tx, id, &groups[id], &fingerprints[id], &mut state, limits)?;
         prior[id] = Some(updated);
         refreshed_segments += 1;
+        // Persist this unit of work before moving to the next partition.
+        // A workflow timeout or process crash cannot erase prior segments.
+        tx.commit().map_err(|e| sql_error("segment checkpoint", e))?;
+        tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| sql_error("resume transaction", e))?;
     }
     if let Some(reader) = state.reader.take() {
         reader.finish()?;
@@ -619,7 +635,14 @@ pub(crate) fn search_with_limits(
             truncated |= snapshot.truncated;
         }
     }
-    let pending_segments = pending.len().saturating_sub(refreshed_segments);
+    let pending_segments = (0..SEGMENT_COUNT)
+        .filter(|&id| {
+            !groups[id].is_empty()
+                && prior[id]
+                    .as_ref()
+                    .is_none_or(|row| row.fingerprint != fingerprints[id] || row.truncated)
+        })
+        .count();
     truncated |= pending_segments > 0;
     reused_blobs += indexed_files.saturating_sub(read_blobs + reused_blobs);
     put_meta(&tx, "source_commit", &discovered.commit)?;
@@ -839,6 +862,61 @@ mod tests {
         assert_eq!(smaller_again.indexed_files, 0);
         assert_eq!(smaller_again.skipped_files, 1);
         fs::remove_dir_all(large.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn segment_budget_is_checkpointed_and_resumes_to_full_coverage() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-budget-resume-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        let first_path = "src/same-bucket-0000.rs".to_owned();
+        let bucket = segment_for(&first_path);
+        let paths = std::iter::once(first_path)
+            .chain((1..10_000).map(|i| format!("src/same-bucket-{i:04}.rs")))
+            .filter(|p| segment_for(p) == bucket)
+            .take(3)
+            .collect::<Vec<_>>();
+        assert_eq!(paths.len(), 3);
+        for (i,path) in paths.iter().enumerate() {
+            fs::write(root.join(path), format!("fn needle_{i}() {{}}\n")).unwrap();
+        }
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com",
+            "-c", "user.name=Test", "commit", "-qm", "three in same segment",
+        ]);
+        let run = || {
+            let discovered = discovery::inspect(&root, "HEAD").unwrap();
+            let entries = git::entries(&root, &discovered.commit).unwrap();
+            search_with_limits(
+                &discovered, entries, 16, "\"needle\"", 1,
+                |p| p.ends_with(".rs"),
+                IndexLimits {
+                    max_files_per_segment: 1,
+                    max_file_bytes: 4096,
+                    max_bytes_per_segment: 4096,
+                },
+            ).unwrap()
+        };
+        let a = run();
+        assert_eq!(a.indexed_files, 1);
+        assert_eq!(a.pending_segments, 1);
+        assert!(a.truncated);
+        let b = run();
+        assert_eq!(b.indexed_files, 2);
+        assert_eq!(b.pending_segments, 1);
+        let c = run();
+        assert_eq!(c.indexed_files, 3);
+        assert_eq!(c.skipped_files, 0);
+        assert_eq!(c.pending_segments, 0);
+        assert_eq!(c.hits.len(), 3);
+        assert!(!c.truncated);
+        fs::remove_dir_all(c.cache_path.parent().unwrap()).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 

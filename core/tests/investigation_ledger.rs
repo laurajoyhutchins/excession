@@ -146,6 +146,22 @@ fn persistent_investigation_connects_source_claim_plan_and_agent_verification() 
     assert_eq!(history["semantic_verification"], "NOT_ESTABLISHED");
     assert_eq!(history["ready_to_merge"], false);
 
+    let event_schema: serde_json::Value = serde_json::from_str(
+        include_str!("../../contracts/product/investigation-event.v1.schema.json")
+    ).unwrap();
+    let report_schema: serde_json::Value = serde_json::from_str(
+        include_str!("../../contracts/product/investigation.v1.schema.json")
+    ).unwrap();
+    let event_validator = jsonschema::draft202012::new(&event_schema).unwrap();
+    let report_validator = jsonschema::draft202012::new(&report_schema).unwrap();
+    for event in history["events"].as_array().unwrap() {
+        assert!(event_validator.is_valid(event), "invalid event schema: {event}");
+    }
+    assert!(report_validator.is_valid(&history), "invalid report schema: {history}");
+    let mut false_proof = history.clone();
+    false_proof["semantic_verification"] = json!("PROVEN");
+    assert!(!report_validator.is_valid(&false_proof));
+
     let database = Db::open(Path::new(db)).unwrap();
     assert!(database.execute(
         "UPDATE investigation_event_v1 SET revision=999 WHERE investigation_id=?",

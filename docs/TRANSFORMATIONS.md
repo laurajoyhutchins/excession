@@ -1,10 +1,13 @@
 # Transformations: investigation-driven refactoring
 
-**Status:** canonical target workflow. Excession already exposes bounded
-`refactor` and `improve` commands, including source-bound candidate reports
-and isolated native-edit replay, but **does not implement this complete
-end-to-end transformation contract**. See [refactoring technical reference](REFACTORING.md)
+**Status:** canonical target workflow. Excession now also supports an
+append-only `investigation plan` event linking a preservation obligation
+to a source-bound claim. It already exposes bounded `refactor` and
+`improve` commands, including source-bound candidate reports and isolated
+native-edit replay, but **does not implement this complete end-to-end
+transformation contract**. See [refactoring technical reference](REFACTORING.md)
 and [improvement loop](IMPROVEMENT_LOOP.md) for exact shipped commands.
+See [investigation ledger](INVESTIGATIONS.md) for persisting the obligation.
 
 A transformation changes structure while preserving specified behavior or
 explicitly documenting an intentional behavior change. It starts from a

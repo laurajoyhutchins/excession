@@ -18,8 +18,10 @@ about adopting a warehouse stack or running unconditional ETL jobs.
 | Serving | Investigations, plans, verification reports, CLI/MCP/Actions artifacts | Report identity, revision, coverage, unknowns, and any expired or unavailable evidence |
 
 These are conceptual responsibilities. Existing Rust/SQLite paths implement
-parts of this flow; the full persistent claim/investigation model is a target,
-not an existing database migration.
+parts of the flow, including a first append-only
+[`investigation` ledger](INVESTIGATIONS.md). A fully automatic
+question-scoped behavioral model with dependency-aware invalidation remains
+a target, not an existing migration.
 
 ## Authority and identity
 

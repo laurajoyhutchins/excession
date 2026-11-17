@@ -64,14 +64,16 @@ and Matt Housley, not a mandate to build a warehouse or orchestrator.
 
 | Capability | Current main-line support | Target |
 | --- | --- | --- |
-| Source discovery | `agent locate` ranks Git-bound candidates and a bounded reading plan | Question-led implementation discovery with follow-up decisions |
+| Source discovery | `agent locate` ranks Git-bound candidates and a bounded reading plan; `investigation start/claim/show` persists source-bound notes | Question-led implementation discovery with follow-up decisions |
 | Context | `agent context` exposes bounded source/evidence/test candidates | Behavior-centered, traceable explanation |
 | Impact | `impact` and `agent verify` report candidates and obligations | Impact scoped to specific preservation claims |
-| Refactoring | `refactor` and `improve` offer bounded advisory and native-edit paths | Investigation-driven, cross-module transformation |
-| Verification | Evidence replay and some native test/build receipt paths | Claim-by-claim behavioral preservation report |
+| Refactoring | `refactor`/`improve` provide native-edit paths; `investigation plan` records preservation obligations | Investigation-driven, cross-module transformation |
+| Verification | Evidence replay and native receipts; `investigation verify` persists `agent verify` with open obligations | Claim-by-claim behavioral preservation report |
 | Serving | CLI, local stdio MCP, GitHub Actions artifacts | First-class investigation/transform/verify agent interface |
 
-Do not advertise the target column as shipped. Existing commands and
+The ledger is a first implemented artifact, **not** the target automated
+investigation engine or behavioral equivalence checker. Do not advertise
+the target column as shipped. Existing commands and
 wire schemas are documented in [CLI](CLI.md), [agent CLI](AGENT_CLI.md),
 [refactoring technical reference](REFACTORING.md), and [MCP](MCP.md).
 These remain supported implementation surfaces, not competing product

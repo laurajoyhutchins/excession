@@ -26,9 +26,11 @@ bounded context and reading plans, identify possible change impact,
 inspect source-bound observations, audit report replay, and support
 bounded refactoring proposals and native edit replay.
 
-**Important distinction:** a complete persistent investigation/claim
-engine and an end-to-end investigation-driven transformation command
-are **target architecture**, not shipped interfaces. Current reports do
+**Important distinction:** a first persistent investigation ledger is now
+available through `excession investigation`. It records claims, behavior-
+preservation obligations and existing `agent verify` outputs, but **does not
+write behavioral explanations or certify equivalence**. A fully automated
+investigation engine and transformation command remain target architecture. Current reports do
 not themselves certify behavior, semantic equivalence, safe test selection
 or permission to merge.
 
@@ -41,6 +43,20 @@ or permission to merge.
 | Judge whether Excession helps agents | [Evaluation](docs/EVALUATION.md) |
 | Integrate a terminal or coding agent | [Quick start](docs/QUICKSTART.md) and [local MCP](docs/MCP.md) |
 | Request analysis through GitHub | [GitHub-native analysis](docs/GITHUB_NATIVE_ANALYSIS.md) |
+
+## Record a persisted investigation
+
+```sh
+excession investigation start --repo /path/to/repository \
+  --rev HEAD --question "How does recovery work?" \
+  --db /tmp/excession-investigations.sqlite
+```
+
+This returns an `investigation_id` and first event. Use
+[`investigation claim`, `plan`, `verify`, and `show`](docs/INVESTIGATIONS.md)
+to record source-grounded findings, preservation obligations and scoped
+verification. The ledger stores reports outside the source checkout;
+it does not modify code or confer merge approval.
 
 ## Try a source investigation
 

@@ -25,16 +25,17 @@ native commands or historical experiments and must remain readable.
 ## Present interfaces remain intact
 
 Do not rename, remove or pretend to have replaced existing CLI/MCP or
-versioned JSON contracts as a side effect of documentation. Today,
-`agent locate` and `agent context` remain evidence-gathering tools;
+versioned JSON contracts as a side effect of documentation. Today, `agent locate` and `agent context` remain evidence-gathering tools;
 `refactor` and `improve` remain bounded and advisory/native-edit tools.
-Persistent claim lineage and proposed `investigate` / `transform` APIs
-require a separate implementation and acceptance cycle.
+The first `excession investigation` append-only ledger persists claims,
+preservation plans and `agent verify` results, but automated explanations,
+cross-revision invalidation and the proposed `investigate` / `transform`
+agent APIs still require implementation and acceptance.
 
 ## Product/runtime follow-through (not shipped by this docs change)
 
-- Implement persistent investigation and claim artifacts with source,
-  configuration, producer and inference lineage.
+- Extend the implemented persistent investigation/claim ledger with richer
+  configuration, producer and inference lineage and source-linked follow-ups.
 - Implement demand-driven expansion and claim invalidation.
 - Connect transformation preservation obligations to the investigation.
 - Expose validated agent/CLI entry points without breaking existing tools

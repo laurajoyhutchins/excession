@@ -596,13 +596,27 @@ mod native_dependency_selection_tests {
         assert_eq!((total, observed, selected.len()), (4, 3, 2));
         let paths = selected
             .iter()
-            .map(|row| row.get("target").unwrap().get("path").unwrap().str().unwrap())
+            .map(|row| {
+                row.get("target")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+            })
             .collect::<Vec<_>>();
         assert_eq!(paths, ["src/b.py", "src/c.py"]);
         let (large, _, _) = focused_relationships(&records, &focus, 4).unwrap();
         let order = large
             .iter()
-            .map(|row| row.get("target").unwrap().get("path").unwrap().str().unwrap())
+            .map(|row| {
+                row.get("target")
+                    .unwrap()
+                    .get("path")
+                    .unwrap()
+                    .str()
+                    .unwrap()
+            })
             .collect::<Vec<_>>();
         assert_eq!(order, ["src/b.py", "src/c.py", "src/b.py", "src/z.py"]);
     }

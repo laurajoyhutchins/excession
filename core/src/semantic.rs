@@ -387,16 +387,19 @@ mod module_name_tests {
     fn unreadable_javascript_remains_a_source_with_an_explicit_gap() {
         use std::fs;
         use std::process::Command;
-        let root = std::env::temp_dir().join(format!(
-            "excession-nonutf8-js-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("excession-nonutf8-js-{}", std::process::id()));
         if root.exists() {
             fs::remove_dir_all(&root).unwrap();
         }
         fs::create_dir_all(root.join("lib")).unwrap();
         let command = |args: &[&str]| {
-            let status = Command::new("git").arg("-C").arg(&root).args(args).status().unwrap();
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .status()
+                .unwrap();
             assert!(status.success(), "git {args:?}");
         };
         command(&["init", "-q"]);
@@ -404,9 +407,13 @@ mod module_name_tests {
         fs::write(root.join("lib/bad.js"), [0xff, 0xfe]).unwrap();
         command(&["add", "."]);
         command(&[
-            "-c", "user.name=Excession Test",
-            "-c", "user.email=excession@example.invalid",
-            "commit", "-qm", "fixture",
+            "-c",
+            "user.name=Excession Test",
+            "-c",
+            "user.email=excession@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
         ]);
         let commit = git::rev(&root, "HEAD").unwrap();
         let entries = git::entries(&root, &commit).unwrap();
@@ -415,14 +422,21 @@ mod module_name_tests {
         assert!(prepared.unreadable_js_modules.contains("lib.bad.js"));
 
         let db = Db::open(&root.join("evidence.sqlite")).unwrap();
-        let repo = crate::index::index_revision_for_evidence(
-            &db, &root, "nonutf8-js-fixture", &commit, "test"
-        ).unwrap();
-        index_prepared(&db, repo, &commit, &prepared).unwrap();
-        let gaps = db.query(
-            "SELECT module_name,reason FROM hazard WHERE repo_id=? AND commit_oid=?",
-            &[Param::Integer(repo), Param::Text(&commit)],
-        ).unwrap();
+        let repo = crate::index::index_revision_with_roots(
+            &db,
+            &root,
+            "nonutf8-js-fixture",
+            &commit,
+            "test",
+            &["lib"],
+        )
+        .unwrap();
+        let gaps = db
+            .query(
+                "SELECT module_name,reason FROM hazard WHERE repo_id=? AND commit_oid=?",
+                &[Param::Integer(repo), Param::Text(&commit)],
+            )
+            .unwrap();
         assert!(gaps.iter().any(|row| {
             row.first().and_then(|v| v.as_deref()) == Some("lib.bad.js")
                 && row.get(1).and_then(|v| v.as_deref()) == Some("NON_UTF8_SOURCE_UNSUPPORTED")

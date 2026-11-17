@@ -783,7 +783,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     )?)
                     .map_err(|err| format!("serialize agent onboarding: {err}"))?,
                 )),
-                "locate" => Ok(json(agent_locate::locate_with_limits(
+                "locate" => Ok(json(agent_locate::locate_with_mode(
                     opt.path("repo"),
                     opt.get_or("rev", "HEAD"),
                     opt.get("task"),
@@ -791,6 +791,7 @@ fn execute(args: &[String]) -> Result<Response> {
                     roots,
                     db,
                     locate_budget(opt)?,
+                    opt.get_or("enrich", "false") == "true",
                 )?)),
                 "context" => Ok(json(agent::context(
                     opt.path("repo"),

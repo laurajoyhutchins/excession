@@ -905,6 +905,13 @@ pub(crate) fn search_with_page(
     ).into_bytes();
     identity.extend_from_slice(expression.as_bytes());
     identity.push(0);
+    for value in [
+        limits.max_file_bytes,
+        limits.max_bytes_per_segment,
+        limits.max_files_per_segment,
+    ] {
+        identity.extend_from_slice(&value.to_le_bytes());
+    }
     for id in 0..SEGMENT_COUNT {
         if let Some(ref segment) = prior[id]
             && segment.fingerprint == fingerprints[id]

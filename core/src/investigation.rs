@@ -3,10 +3,10 @@
 //! behavior by source identity, a plan, or an agent-verification report.
 use crate::discovery;
 use crate::evidence::identity::SourceRef;
-use crate::investigation_workflow;
 use crate::json::{self, Value, obj};
 use crate::sqlite::{Db, Param};
 use crate::{Result, digest, git, refuse};
+use crate::{investigation_witness, investigation_workflow};
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -45,7 +45,7 @@ pub fn investigation_id(commit: &str, tree: &str, question: &str) -> Result<Stri
     Ok(digest::sha256(&bytes))
 }
 
-fn source_value(source: &SourceRef) -> Value {
+pub(crate) fn source_value(source: &SourceRef) -> Value {
     obj(&[
         ("commit", Value::string(&source.commit)),
         ("tree", Value::string(&source.tree)),
@@ -55,7 +55,7 @@ fn source_value(source: &SourceRef) -> Value {
     ])
 }
 
-fn source_from_value(value: &Value) -> Result<SourceRef> {
+pub(crate) fn source_from_value(value: &Value) -> Result<SourceRef> {
     if value.entries()?.len() != 5 {
         return refuse("investigation source has unexpected fields");
     }
@@ -231,6 +231,9 @@ fn records(db: &Db, repo: &Path, id: &str) -> Result<Vec<Value>> {
                     return refuse("verification must reference an earlier preservation plan");
                 }
                 verify_agent_report(repo, c, t, payload.get("report")?)?;
+            }
+            "WITNESS" if i > 0 => {
+                investigation_witness::validate_event(repo, c, t, payload, &result)?;
             }
             "EXPLORE" | "QUESTION" | "SYNTHESIS" | "REFRESH" if i > 0 => {
                 investigation_workflow::validate_event(

@@ -35,7 +35,9 @@ not the correctness or completeness of an external analyzer. The
 
 Use `excession investigation start` to pin a question to an exact Git
 revision; `explore` stores Git-bound candidate evidence; `claim` records
-an authenticated source-bound assessment; `question` records an unresolved
+an authenticated source-bound assessment; `witness` binds a typed
+control/data/state hypothesis to independently replayed Git source lines;
+`question` records an unresolved
 gap; `synthesize` links an authored narrative to claim events; `explain`
 composes a reviewable evidence view; `refresh` checks claim source identity
 at a different committed revision. `plan` binds preservation obligations;

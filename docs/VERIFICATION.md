@@ -20,6 +20,11 @@ result and distinguish:
 - **Safety of application:** whether the change was actually applied to a
   trusted isolated destination, and whether independent gate(s) passed.
 
+Source-line witnesses may authenticate the exact control/data/state text
+cited by a claim, but do not prove runtime behavior. Those witnesses are
+linked to preservation plans and remain `runtime_verified: false` until a
+separate independently scoped verification workflow is established.
+
 No identity, static index or generic green workflow proves behavioral
 equivalence. No Excession report by itself authorizes merging, deleting code
 or skipping tests.

@@ -64,7 +64,7 @@ and Matt Housley, not a mandate to build a warehouse or orchestrator.
 
 | Capability | Current main-line support | Target |
 | --- | --- | --- |
-| Source discovery | `investigation explore` stores Git-bound ranked candidates and gaps; `start/claim/question/synthesize/explain` retain a reviewable explanation | Question-led implementation discovery with follow-up decisions |
+| Source discovery | `investigation explore` stores candidates; `witness` authenticates exact source spans; `start/claim/question/synthesize/explain` retain a reviewable model | Question-led implementation discovery with follow-up decisions |
 | Context | `agent context` exposes bounded source/evidence/test candidates | Behavior-centered, traceable explanation |
 | Impact | `impact` and `agent verify` report candidates and obligations | Impact scoped to specific preservation claims |
 | Refactoring | `refactor`/`improve` provide native-edit paths; `investigation plan` records preservation obligations; `refresh` checks direct source changes | Investigation-driven, cross-module transformation |

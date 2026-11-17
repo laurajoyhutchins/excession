@@ -56,6 +56,8 @@ This returns an `investigation_id` and first event. Use
 `excession investigation explore --repo /path/to/repository --db /tmp/excession-investigations.sqlite --id INVESTIGATION_ID --expected-revision 1 --limit 12`
 to persist source candidates and a reading plan; then inspect the actual
 Git-pinned source. Record claims, questions and preservation obligations.
+`investigation witness` authenticates exact control/data/state source
+spans against a recorded claim without claiming runtime proof;
 `investigation synthesize` links an authored explanation to claims;
 `investigation refresh` checks direct source changes at a candidate commit;
 `investigation explain` produces a navigable, incomplete evidence view.

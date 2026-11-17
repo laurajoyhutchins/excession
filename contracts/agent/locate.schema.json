@@ -235,6 +235,12 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 256
+        },
+        "refresh_budget_segments": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "description": "Operational invocation limit excluded from report_id."
         }
       },
       "description": "Operational diagnostic, excluded from the deterministic report_id."
@@ -285,8 +291,7 @@
           "required": [
             "max_files_per_segment",
             "max_file_bytes",
-            "max_bytes_per_segment",
-            "refresh_segments"
+            "max_bytes_per_segment"
           ],
           "properties": {
             "max_files_per_segment": {
@@ -300,11 +305,6 @@
             "max_bytes_per_segment": {
               "type": "integer",
               "minimum": 1
-            },
-            "refresh_segments": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 256
             }
           }
         }

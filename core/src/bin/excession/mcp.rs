@@ -176,7 +176,10 @@ fn call(
 ) -> std::result::Result<Value, String> {
     let report = match name {
         "search_code" => {
-            allowed(args, &["task", "revision", "limit", "index_segments", "budgets"])?;
+            allowed(
+                args,
+                &["task", "revision", "limit", "index_segments", "budgets"],
+            )?;
             let defaults = agent_locate::IndexLimits::default();
             let chosen = match args.get("budgets") {
                 Some(value) => serde_json::from_value::<SearchBudgets>(value.clone())
@@ -198,9 +201,14 @@ fn call(
                     index_segments: limit(args, "index_segments", 8, 256)?,
                     index: agent_locate::IndexLimits {
                         max_file_bytes: chosen.max_file_bytes.unwrap_or(defaults.max_file_bytes),
-                        max_bytes_per_segment: chosen.max_segment_bytes.unwrap_or(defaults.max_bytes_per_segment),
-                        max_files_per_segment: chosen.max_segment_files.unwrap_or(defaults.max_files_per_segment),
-                    }.validate()?,
+                        max_bytes_per_segment: chosen
+                            .max_segment_bytes
+                            .unwrap_or(defaults.max_bytes_per_segment),
+                        max_files_per_segment: chosen
+                            .max_segment_files
+                            .unwrap_or(defaults.max_files_per_segment),
+                    }
+                    .validate()?,
                 },
             )?
         }
@@ -474,7 +482,8 @@ mod tests {
     fn search_budget_schema_rejects_unknown_or_invalid_values() {
         let budget: SearchBudgets = serde_json::from_str(
             r#"{"max_file_bytes":524288,"max_segment_bytes":1048576,"max_segment_files":2}"#,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(budget.max_file_bytes, Some(524288));
         assert_eq!(budget.max_segment_files, Some(2));
         assert!(serde_json::from_str::<SearchBudgets>(r#"{"unknown":12}"#).is_err());

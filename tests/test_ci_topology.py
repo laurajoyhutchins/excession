@@ -146,6 +146,7 @@ class CiTopology(unittest.TestCase):
             "cargo clippy --fix", "cargo fmt --manifest-path",
             'git diff --check', 'cargo test --offline --locked',
             'gh pr create --draft', "pull-requests: write",
+            "actions: write", 'gh workflow run verify.yml --ref "$BRANCH"',
         ):
             self.assertIn(required, fixes)
         self.assertNotIn("pull_request_target:", fixes)

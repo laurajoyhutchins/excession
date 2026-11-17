@@ -41,7 +41,7 @@ fn line_range(first: usize, last: usize) -> Result<()> {
 /// object ID on completion, but retain only the selected short source span.
 /// A long excluded file never needs to fit in memory. Oversized target spans
 /// refuse without pretending the file is absent.
-fn exact_span(repo: &Path, source: &SourceRef, first: usize, last: usize) -> Result<String> {
+pub(crate) fn exact_span(repo: &Path, source: &SourceRef, first: usize, last: usize) -> Result<String> {
     line_range(first, last)?;
     let mut reader = git::BlobReader::open(repo)?;
     let mut selected = Vec::new();

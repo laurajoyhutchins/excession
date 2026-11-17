@@ -127,7 +127,7 @@ fn read_trace(repo: &Path, commit: &str, path: &Path, max_bytes: u64, max_events
         return Ok(no_trace("MISSING"));
     }
     let raw_len = fs::metadata(path).map_err(|e| e.to_string())?.len();
-    if raw_len > max_bytes + 512 {
+    if raw_len > max_bytes.saturating_add(512) {
         return refuse("runtime trace sidecar exceeds configured trace byte budget");
     }
     let raw = fs::read(path).map_err(|e| format!("read runtime trace sidecar: {e}"))?;

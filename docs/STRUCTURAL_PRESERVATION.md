@@ -14,8 +14,8 @@ that the base precedes the candidate, and that the actual Git diff paths equal
 the declared set. Changed entries must be ordinary tracked Git blobs,
 never symlinks or submodules. It refuses to run if those checks differ.
 
-For each `differential` obligation it runs the same argv in **two independent
-detached worktrees**, requires successful exit on both sides, and compares
+For each `differential` obligation it runs the same argv in **two independent,
+fresh detached worktrees**, requires successful exit on both sides, and compares
 the SHA-256 digests of stdout and stderr. A `candidate_pass` obligation
 executes only the candidate-side command and requires exit code zero. Both
 kinds are mandatory. Command exit codes, actual invocation, source IDs,
@@ -92,8 +92,9 @@ The runner records stdout/stderr sizes and refuses to claim complete
 observations after timeout or output-budget exceedance. Its temporary files
 still require adequate disk resources; it is not a protective resource
 sandbox, and it does not attest the host interpreter or tests cryptographically.
-It never deletes, commits or merges the original user's source. Temporary
-detached worktrees are removed after evaluation.
+It never deletes, commits or merges the original user's source. Each individual obligation receives fresh detached worktrees and home
+directories, avoiding output and cache reuse between checks. Temporary
+worktrees are removed after evaluation.
 
 An incomplete, failing, or unsupported obligation is preserved as
 `INCONCLUSIVE` or `FAILED`. In particular, a missing executable cannot

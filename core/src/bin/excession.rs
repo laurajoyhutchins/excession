@@ -12,6 +12,7 @@ use excession::explain;
 use excession::history;
 use excession::history_rewrite;
 use excession::impact_query;
+use excession::investigation;
 use excession::improve;
 use excession::improve_edits;
 use excession::native_test_selectors;
@@ -790,6 +791,64 @@ fn execute(args: &[String]) -> Result<Response> {
                     opt.get("trusted-local"),
                 )?)),
                 _ => refuse(format!("unknown agent command: {sub}")),
+            }
+        }
+        [top, sub] if top == "investigation" => {
+            let repo = opt.path("repo");
+            let db_path = analyze::checked_external_destination(
+                repo,
+                opt.path("db"),
+                "investigation ledger",
+            )?;
+            let ledger = Db::open(&db_path)?;
+            let expected_revision = || -> Result<usize> {
+                opt.get("expected-revision")
+                    .parse::<usize>()
+                    .map_err(|_| "--expected-revision must be a nonnegative integer".into())
+            };
+            match sub.as_str() {
+                "start" => Ok(json(investigation::start(
+                    &ledger, repo, opt.get("rev"), opt.get("question"),
+                )?)),
+                "claim" => Ok(json(investigation::claim(
+                    &ledger,
+                    repo,
+                    opt.get("id"),
+                    expected_revision()?,
+                    opt.get("path"),
+                    opt.get("statement"),
+                    opt.get("assumption"),
+                    opt.get("assessment"),
+                )?)),
+                "plan" => Ok(json(investigation::plan(
+                    &ledger,
+                    repo,
+                    opt.get("id"),
+                    expected_revision()?,
+                    opt.get("claim-event"),
+                    opt.get("obligation"),
+                )?)),
+                "verify" => {
+                    let limit = opt.get_or("limit", "32")
+                        .parse::<usize>()
+                        .map_err(|_| "--limit must be a bounded integer".to_owned())?;
+                    Ok(json(investigation::verify(
+                        &ledger,
+                        repo,
+                        opt.get("id"),
+                        expected_revision()?,
+                        opt.get("plan-event"),
+                        opt.get("candidate"),
+                        limit,
+                        opt.0.get("roots").map(String::as_str),
+                        opt.0.get("evidence-db").map(String::as_str),
+                        opt.0.get("receipts").map(|s| Path::new(s.as_str())),
+                    )?))
+                }
+                "show" => Ok(json(investigation::audit(
+                    &ledger, repo, opt.get("id"),
+                )?)),
+                _ => refuse(format!("unknown investigation command: {sub}")),
             }
         }
         [top] if top == "commands" => Ok(Response::Message(cli::catalog())),

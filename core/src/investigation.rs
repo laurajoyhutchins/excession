@@ -292,7 +292,7 @@ fn append(
                 last.get("source_tree")?.str()?.to_owned(),
             )
         };
-        let mut event = obj(&[
+        let event = obj(&[
             ("schema", Value::string(SCHEMA)),
             ("investigation_id", Value::string(id)),
             ("revision", Value::number(expected_revision + 1)),
@@ -322,7 +322,7 @@ fn append(
         )?;
         // Validate the complete persisted chain, not just the newly supplied payload.
         records(db, repo, id)?;
-        Ok(std::mem::replace(&mut event, Value::Null))
+        Ok(event)
     })
 }
 

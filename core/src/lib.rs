@@ -48,6 +48,7 @@ pub mod history_rewrite;
 pub mod identity;
 pub mod impact;
 pub mod impact_query;
+pub mod investigation;
 pub mod improve;
 pub mod improve_edits;
 pub mod improve_generic;

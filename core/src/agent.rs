@@ -180,7 +180,6 @@ pub fn context(
         }
     }
 
-
     let mut test_candidates = Vec::new();
     let mut total_tests = 0usize;
     for entry in &entries {
@@ -210,13 +209,17 @@ pub fn context(
     if truncated {
         gaps.push(gap("TRUNCATED"));
     }
+    let returned_observed_reference_count = relations
+        .iter()
+        .filter(|relation| relation.get("kind").and_then(Value::str).ok() == Some("SCIP_REFERENCE"))
+        .count();
     report_id(obj(&[
         ("schema", Value::string("excession.agent-context.v1")),
         ("source_commit", Value::string(&discovered.commit)),
         ("source_tree", Value::string(&discovered.tree)),
         ("task", task.map(Value::string).unwrap_or(Value::Null)),
         ("sources", Value::array(sources)),
-        ("relationships", Value::array(relations.clone())),
+        ("relationships", Value::array(relations)),
         ("relationship_count", Value::number(total_relations)),
         (
             "observed_reference_count",
@@ -224,14 +227,7 @@ pub fn context(
         ),
         (
             "returned_observed_reference_count",
-            Value::number(
-                relations
-                    .iter()
-                    .filter(|relation| {
-                        relation.get("kind").and_then(Value::str).ok() == Some("SCIP_REFERENCE")
-                    })
-                    .count(),
-            ),
+            Value::number(returned_observed_reference_count),
         ),
         (
             "configured_observations",

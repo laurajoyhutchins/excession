@@ -322,12 +322,19 @@ fn insert_chunk(
     tx.execute(
         "INSERT INTO locator_chunks(file_id,ordinal,start_byte,start_line)
          VALUES(?1,?2,?3,?4)",
-        params![file_id, ordinal as i64, start_byte as i64, start_line as i64],
-    ).map_err(|e| sql_error("insert source chunk", e))?;
+        params![
+            file_id,
+            ordinal as i64,
+            start_byte as i64,
+            start_line as i64
+        ],
+    )
+    .map_err(|e| sql_error("insert source chunk", e))?;
     tx.execute(
         "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
         params![tx.last_insert_rowid(), &entry.path, body],
-    ).map_err(|e| sql_error("insert chunk FTS row", e))?;
+    )
+    .map_err(|e| sql_error("insert chunk FTS row", e))?;
     Ok(())
 }
 
@@ -351,7 +358,8 @@ fn insert_file(
             status,
             chunk_bytes as i64,
         ],
-    ).map_err(|e| sql_error("insert cached file", e))?;
+    )
+    .map_err(|e| sql_error("insert cached file", e))?;
     let id = tx.last_insert_rowid();
     if let Some(text) = body {
         if !text.is_empty() {
@@ -362,11 +370,13 @@ fn insert_file(
 }
 
 fn existing_chunks(tx: &Transaction<'_>, file_id: i64) -> Result<usize> {
-    let count: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM locator_chunks WHERE file_id=?1",
-        params![file_id],
-        |row| row.get(0),
-    ).map_err(|e| sql_error("count existing source chunks", e))?;
+    let count: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM locator_chunks WHERE file_id=?1",
+            params![file_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| sql_error("count existing source chunks", e))?;
     nonnegative(count)
 }
 
@@ -378,13 +388,16 @@ fn verify_cached_chunk(
     start_line: usize,
     body: &str,
 ) -> Result<()> {
-    let stored: Option<(i64, i64, String)> = tx.query_row(
-        "SELECT c.start_byte,c.start_line,s.body
+    let stored: Option<(i64, i64, String)> = tx
+        .query_row(
+            "SELECT c.start_byte,c.start_line,s.body
          FROM locator_chunks c JOIN source_search s ON s.rowid=c.id
          WHERE c.file_id=?1 AND c.ordinal=?2",
-        params![file_id, ordinal as i64],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-    ).optional().map_err(|e| sql_error("verify staged chunk", e))?;
+            params![file_id, ordinal as i64],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| sql_error("verify staged chunk", e))?;
     let Some((position, line, text)) = stored else {
         return refuse("missing previously checkpointed source chunk");
     };
@@ -393,7 +406,6 @@ fn verify_cached_chunk(
     }
     Ok(())
 }
-
 
 fn segment_for(path: &str) -> usize {
     let digest = crate::digest::sha256(path.as_bytes());
@@ -459,7 +471,8 @@ fn update_segment(
     let mut refreshed_bytes = 0usize;
     let mut skipped = 0usize;
     let mut truncated = false;
-    let chunk_bytes = limits.max_file_bytes
+    let chunk_bytes = limits
+        .max_file_bytes
         .min(limits.max_bytes_per_segment)
         .min(64 * 1024);
 
@@ -527,27 +540,37 @@ fn update_segment(
         let mut ordinal = 0usize;
         let mut added_bytes = 0usize;
         let mut deferred = false;
-        let result = state.reader.as_mut()
+        let result = state
+            .reader
+            .as_mut()
             .ok_or("missing Git blob reader")?
-            .stream_text_chunks_verified(&entry.oid, chunk_bytes, |start_byte, start_line, body| {
-                if ordinal < resumed_chunks {
-                    verify_cached_chunk(tx, file_id, ordinal, start_byte, start_line, body)?;
-                } else if deferred || body.len() >
-                    limits.max_bytes_per_segment.saturating_sub(refreshed_bytes + added_bytes)
-                {
-                    deferred = true;
-                } else {
-                    insert_chunk(tx, file_id, entry, ordinal, start_byte, start_line, body)?;
-                    added_bytes += body.len();
-                }
-                ordinal += 1;
-                Ok(())
-            });
+            .stream_text_chunks_verified(
+                &entry.oid,
+                chunk_bytes,
+                |start_byte, start_line, body| {
+                    if ordinal < resumed_chunks {
+                        verify_cached_chunk(tx, file_id, ordinal, start_byte, start_line, body)?;
+                    } else if deferred
+                        || body.len()
+                            > limits
+                                .max_bytes_per_segment
+                                .saturating_sub(refreshed_bytes + added_bytes)
+                    {
+                        deferred = true;
+                    } else {
+                        insert_chunk(tx, file_id, entry, ordinal, start_byte, start_line, body)?;
+                        added_bytes += body.len();
+                    }
+                    ordinal += 1;
+                    Ok(())
+                },
+            );
         let total_bytes = match result {
             Ok(size) => size,
-            Err(error) if error.contains("invalid UTF-8")
-                || error.contains("incomplete or invalid UTF-8")
-                || error.contains("source contains a NUL byte") =>
+            Err(error)
+                if error.contains("invalid UTF-8")
+                    || error.contains("incomplete or invalid UTF-8")
+                    || error.contains("source contains a NUL byte") =>
             {
                 // No claim of valid source content is made from a rejected
                 // text blob. Discard any staged chunks, including old ones.
@@ -570,14 +593,16 @@ fn update_segment(
             tx.execute(
                 "UPDATE locator_files SET status='BUDGET' WHERE id=?1",
                 params![file_id],
-            ).map_err(|e| sql_error("checkpoint partial source", e))?;
+            )
+            .map_err(|e| sql_error("checkpoint partial source", e))?;
             skipped += 1;
             truncated = true;
         } else {
             tx.execute(
                 "UPDATE locator_files SET status='OK', bytes=?2 WHERE id=?1",
                 params![file_id, total_bytes as i64],
-            ).map_err(|e| sql_error("complete source", e))?;
+            )
+            .map_err(|e| sql_error("complete source", e))?;
             files += 1;
             bytes += total_bytes as usize;
         }
@@ -650,7 +675,8 @@ fn verify_source_window(
     body: &str,
 ) -> Result<()> {
     let expected = body.as_bytes();
-    let end = start_byte.checked_add(expected.len() as u64)
+    let end = start_byte
+        .checked_add(expected.len() as u64)
         .ok_or("cached source chunk offset overflow")?;
     let mut checked = 0usize;
     let mut reader = git::BlobReader::open(repo)?;
@@ -662,9 +688,7 @@ fn verify_source_window(
             let chunk_start = (a - offset) as usize;
             let body_start = (a - start_byte) as usize;
             let count = (b - a) as usize;
-            if bytes[chunk_start..chunk_start + count]
-                != expected[body_start..body_start + count]
-            {
+            if bytes[chunk_start..chunk_start + count] != expected[body_start..body_start + count] {
                 return refuse("cached source chunk disagrees with pinned Git blob");
             }
             checked += count;
@@ -835,7 +859,8 @@ pub(crate) fn search_with_limits(
                  ORDER BY bm25(source_search,4.0,1.0), source_search.rowid",
             )
             .map_err(|e| sql_error("ranking prepare", e))?;
-        let mut rows = stmt.query(params![expression])
+        let mut rows = stmt
+            .query(params![expression])
             .map_err(|e| sql_error("ranking query", e))?;
         while let Some(row) = rows.next().map_err(|e| sql_error("ranked row", e))? {
             let name: String = row.get(0).map_err(|e| sql_error("ranked path", e))?;
@@ -1144,22 +1169,35 @@ mod tests {
         assert!(source.len() > 8 * 1024);
         fs::write(root.join("src/huge.rs"), &source).unwrap();
         git_at(&root, &["add", "."]);
-        git_at(&root, &[
-            "-c", "user.email=test@example.com",
-            "-c", "user.name=Test", "commit", "-qm", "large source",
-        ]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "large source",
+            ],
+        );
         let query = || {
             let discovered = discovery::inspect(&root, "HEAD").unwrap();
             let entries = git::entries(&root, &discovered.commit).unwrap();
             search_with_limits(
-                &discovered, entries, 4, "\"needle\"", 1,
+                &discovered,
+                entries,
+                4,
+                "\"needle\"",
+                1,
                 |path| path.ends_with(".rs"),
                 IndexLimits {
                     max_file_bytes: 256,
                     max_files_per_segment: 1,
                     max_bytes_per_segment: 1024,
                 },
-            ).unwrap()
+            )
+            .unwrap()
         };
         let first = query();
         assert_eq!(first.indexed_files, 0);
@@ -1192,12 +1230,17 @@ mod tests {
             "UPDATE source_search SET body='needle forged' WHERE rowid=
              (SELECT id FROM locator_chunks ORDER BY id DESC LIMIT 1)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         drop(db);
         let discovered = discovery::inspect(&root, "HEAD").unwrap();
         let entries = git::entries(&root, &discovered.commit).unwrap();
         let failed = search_with_limits(
-            &discovered, entries, 4, "\"needle\"", 1,
+            &discovered,
+            entries,
+            4,
+            "\"needle\"",
+            1,
             |path| path.ends_with(".rs"),
             IndexLimits {
                 max_file_bytes: 256,
@@ -1245,7 +1288,14 @@ mod tests {
             .validate()
             .is_err()
         );
-        assert!(IndexLimits { max_file_bytes: 3, ..base }.validate().is_err());
+        assert!(
+            IndexLimits {
+                max_file_bytes: 3,
+                ..base
+            }
+            .validate()
+            .is_err()
+        );
         assert!(base.validate().is_ok());
     }
 

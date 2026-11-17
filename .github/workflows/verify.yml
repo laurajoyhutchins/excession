@@ -48,6 +48,10 @@ jobs:
             python3 "$RUNNER_TEMP/quality-ratchet-base.py" check --base "$BASE" --candidate HEAD
           fi
           python3 tools/ci/quality_ratchet.py check --base "$BASE" --candidate HEAD
+      - name: Autonomous native improvement recipes and adversarial replay tests
+        run: |
+          python3 tools/ci/improvement_cycle.py catalog
+          python3 -m unittest discover -s tests -p 'test_improvement_cycle.py' -v
       - name: Structural preservation contract and negative-case tests
         run: python3 -m unittest discover -s tests -p 'test_structural_preservation.py' -v
       - uses: Swatinem/rust-cache@v2

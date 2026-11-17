@@ -89,7 +89,9 @@ permissions and available runner capacity.
 The [structural preservation runner](STRUCTURAL_PRESERVATION.md) provides an
 explicitly trusted, manually dispatched exact-Git source comparison for a
 precommitted candidate and reviewed executable contract. Its negative-case
-fixtures run as cheap PR admission checks, but the actual candidate code
+fixtures run as cheap PR admission checks. The manual workflow joins a native
+Excession `agent verify` source-impact report to an independent execution
+receipt, but the actual candidate code
 **never** runs from an arbitrary PR trigger. It records differential output
 and candidate test results with immutable source identities, while always
 leaving merge readiness and all-input semantic equivalence unproved.

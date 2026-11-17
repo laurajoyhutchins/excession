@@ -1157,6 +1157,43 @@ mod tests {
     }
 
     #[test]
+    fn long_single_line_source_keeps_searchable_tokens_across_chunk_boundaries() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-long-line-search-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        let source = format!("{} needle {} \n", "q".repeat(220), "z".repeat(2000));
+        fs::write(root.join("src/minified.rs"), &source).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com",
+            "-c", "user.name=Test", "commit", "-qm", "minified",
+        ]);
+        let discovered = discovery::inspect(&root, "HEAD").unwrap();
+        let entries = git::entries(&root, &discovered.commit).unwrap();
+        let found = search_with_limits(
+            &discovered, entries, 4, "\"needle\"", SEGMENT_COUNT,
+            |path| path.ends_with(".rs"),
+            IndexLimits {
+                max_file_bytes: 256,
+                max_files_per_segment: 10,
+                max_bytes_per_segment: 4096,
+            },
+        ).unwrap();
+        assert_eq!(found.indexed_files, 1);
+        assert_eq!(found.skipped_files, 0);
+        assert_eq!(found.hits.len(), 1);
+        assert_eq!(found.hits[0].entry.path, "src/minified.rs");
+        assert!(found.hits[0].body.contains("needle"));
+        assert_eq!(found.hits[0].start_line, 1);
+        fs::remove_dir_all(found.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn checkpoints_one_large_source_in_chunks_until_fully_verified() {
         let root = std::env::temp_dir().join(format!(
             "excession-chunk-progress-{}-{}",

@@ -161,12 +161,12 @@ fn line_tokens(line: &str) -> BTreeSet<String> {
 }
 
 /// A source-location heuristic for navigation, not a validated symbol range.
-fn excerpt(body: &str, words: &[String]) -> Value {
+fn excerpt(body: &str, words: &[String], first_line: usize) -> Value {
     let lines = body.lines().collect::<Vec<_>>();
     if lines.is_empty() {
         return obj(&[
-            ("start_line", Value::number(1)),
-            ("end_line", Value::number(1)),
+            ("start_line", Value::number(first_line)),
+            ("end_line", Value::number(first_line)),
             ("text", Value::string("")),
             ("method", Value::string("TEXT_LINE_HEURISTIC")),
         ]);
@@ -218,8 +218,8 @@ fn excerpt(body: &str, words: &[String]) -> Value {
         &selected[..cut]
     };
     obj(&[
-        ("start_line", Value::number(start + 1)),
-        ("end_line", Value::number(end)),
+        ("start_line", Value::number(start + first_line)),
+        ("end_line", Value::number(first_line + end - 1)),
         ("text", Value::string(shown)),
         ("method", Value::string("TEXT_LINE_HEURISTIC")),
     ])
@@ -556,7 +556,7 @@ pub fn locate_with_limits(
                 "source",
                 source(&discovered.commit, &discovered.tree, &hit.entry),
             ),
-            ("excerpt", excerpt(&hit.body, &words)),
+            ("excerpt", excerpt(&hit.body, &words, hit.start_line)),
             ("ranking", Value::string("FTS5_BM25_TEXT_CANDIDATE")),
             ("semantic_correctness", Value::string("UNVERIFIED")),
         ]));
@@ -573,7 +573,7 @@ pub fn locate_with_limits(
         gap("TEST_SELECTION_NOT_PROVEN"),
     ];
     if skipped > 0 {
-        gaps.push(gap("UNINDEXED_OVERSIZE_OR_NON_UTF8_SOURCE"));
+        gaps.push(gap("SOURCE_CONTENT_NOT_FULLY_INDEXED"));
     }
     if truncated {
         gaps.push(gap("INDEX_BUDGET_EXHAUSTED"));
@@ -985,7 +985,7 @@ mod tests {
     #[test]
     fn line_windows_are_bounded_and_one_based() {
         let source = "alpha\nbeta\nfn recover_lease() {}\ngamma\n";
-        let value = excerpt(source, &["recover_lease".into()]);
+        let value = excerpt(source, &["recover_lease".into()], 1);
         assert_eq!(value.get("start_line").unwrap().integer().unwrap(), 1);
         assert_eq!(value.get("end_line").unwrap().integer().unwrap(), 4);
         assert!(
@@ -1078,7 +1078,7 @@ mod tests {
                 .unwrap()
                 .integer()
                 .unwrap(),
-            1
+            0
         );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
         let plan = first.get("reading_plan").unwrap();
@@ -1134,7 +1134,7 @@ mod tests {
                 .unwrap()
                 .integer()
                 .unwrap(),
-            2
+            3
         );
         fs::write(root.join("src/lease.rs"), "pub fn something_else() {}\n").unwrap();
         fs::write(root.join("src/other.rs"), "pub fn renew_lease() {}\n").unwrap();
@@ -1173,7 +1173,7 @@ mod tests {
                 .unwrap()
                 .integer()
                 .unwrap(),
-            2
+            3
         );
         git(&["add", "src/lease.rs", "src/other.rs"]);
         git(&[

@@ -49,7 +49,8 @@ subject to explicit index coverage and size limits.
 
 Source paths are partitioned deterministically into **256 SHA-256(path)
 segments**. The *default processing budgets* are 6000 newly read files per
-segment refresh, 1 MiB per source blob, and 32 MiB of newly indexed text per
+segment refresh, 1 MiB maximum per text chunk (actual windows at most 64 KiB),
+and 32 MiB of newly indexed text per
 segment refresh. These are caller-configurable with `--budget-file` or
 `--max-file-bytes`, `--max-segment-bytes` and `--max-segment-files`.
 A budget-exhausted segment is checkpointed and continues on subsequent runs;

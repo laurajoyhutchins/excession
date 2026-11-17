@@ -27,17 +27,24 @@ excession agent locate \
   --index-segments 8
 ```
 
-`--max-file-bytes` controls the maximum allocation for reading **one Git
-source blob**. It defaults to 1 MiB; source files larger than the selected
-budget remain explicitly unsupported (`LARGE`) until a larger budget is
-selected. **Streaming/chunk indexing for files exceeding a bounded read remains
-unimplemented.** The file budget cannot exceed `--max-segment-bytes`.
+`--max-file-bytes` is retained as the CLI name for the **per-source-chunk
+buffer ceiling**, not a maximum source-file length. Large Git blobs are now
+read in bounded, verified UTF-8 windows and stored as FTS5 chunks. The effective
+chunk size is at most 64 KiB, the configured `--max-file-bytes` (default
+1 MiB), and the per-refresh segment budget. Source sizes do not determine
+index eligibility. Text-index byte budgets must be at least 256 bytes, allowing the
+indexer to preserve all supported search identifier tokens across chunk
+boundaries even for long one-line sources.
+A source remains unavailable to search until all its chunks are authenticated
+and indexed. That avoids presenting a partial source as the complete file.
 
 `--max-segment-files` (default 6000) and `--max-segment-bytes` (default
-32 MiB) bound **new source work during one segment refresh**. Files that
-exceed the current refresh budget are marked `BUDGET`, not permanently
-excluded. The same invocation or a later invocation can reuse all already
-indexed Git-authenticated files and continue with the deferred files.
+32 MiB) bound **new source work during one segment refresh**. Files or file chunks that
+exhaust the current refresh budget are marked `BUDGET`, not permanently
+excluded. The same invocation or a later invocation reuses previously
+verified chunks and resumes from the next missing chunk. The original Git blob
+is re-streamed and its complete identity verified before any additional
+chunk checkpoint is committed.
 A per-segment transaction commits after each refreshed segment, so a
 subsequent invocation can resume without repeating completed segments.
 
@@ -48,7 +55,9 @@ units. A segment with deferred files can require multiple passes.
 
 All three indexing limits are included in the segment fingerprint. A change
 rechecks the same immutable Git revision rather than incorrectly reusing
-an older `LARGE` or `BUDGET` decision. The report includes the effective
+an older `BUDGET` decision. Completed, verified chunks remain reusable
+regardless of the budget used to read them. The v3 chunk cache has a separate
+filename, leaving older per-file caches untouched. The report includes the effective
 policy under `index.limits`.
 
 The policy file must be explicitly selected by the caller. Excession does not
@@ -70,7 +79,7 @@ This does not relax the worker's separate execution/response safety envelope.
 - `index.total_source_files`: eligible source inventory for this locator.
 - `indexed_source_count`: source blobs available in the search index.
 - `skipped_source_count`: currently unavailable sources, including unsupported
-  blob encodings or file-level budget exclusions.
+  blob encodings or deferred chunks due to the current work budget.
 - `index.pending_segments`: partitions that need additional work, including
   partially indexed partitions with deferred `BUDGET` files.
 - `index.complete`: source indexing is complete only when none of those gaps
@@ -96,11 +105,11 @@ stream returns successfully. The text windows concatenate without gaps or
 duplication; an FTS producer must separately handle token continuation at
 a very long line split, and build paged search results.
 
-This is the reading substrate, **not** a claim that the current FTS locator
-already uses it to index a multi-gigabyte source file. The existing locator
-still has a configurable file-level read ceiling. Follow-up #280 integrates
-those windows into the persistent index with resumable, original-source
-provenance.
+The locator now stores authenticated text windows as persistent FTS chunks,
+checks every returned window against the full pinned Git blob, and resumes
+incomplete files on subsequent invocations. **The per-invocation time budget is
+not yet resumable across machines or temporary GitHub workers.** Follow-up
+#280 addresses portable continuation receipts and snapshot-bound pagination.
 
 ## Existing boundaries outside source indexing
 
@@ -109,7 +118,7 @@ provenance.
 | Query results | `--limit` accepts 1–64; `reading_plan` contains at most 12 entries | Deterministic, snapshot-bound page cursors; no huge single response |
 | Agent context | Up to 16 focus paths and 64 relationships per response | Continuation across pages with exact source and evidence identities |
 | GitHub-native execution | 240-second native process and 8 MiB report caps; 30-day artifact retention | Explicit supported budgets, per-partition artifact checkpoints and continuation |
-| Very large Git blobs | Can configure in-memory read cap but oversized files are not chunk-indexed | Authenticated streaming reads and byte/line-aligned chunks |
+| Very large Git blobs | Source chunks are indexed and checkpointed within bounded buffers; complete re-streaming may still be expensive | Add bounded-time incremental verification and avoid replaying the entire blob to resume a chunk |
 | Configured compiler analysis | Provider-specific limits and configured inputs | Native producer checkpointing with explicit per-configuration coverage |
 | Repository scale | 256 logical hash groups, with resumable partial refreshes | Dynamic subdivision for pathological group distributions |
 | External receipts | Type/size limits protect ingestion | Bounded, independently authenticated receipt pages |
@@ -127,5 +136,5 @@ Memory ceilings, CPU timeouts and report-size limits belong to the
 execution environment. They are not assertions of source absence.
 Untrusted repository files must not be allowed to raise worker privileges or
 resource ceilings. Source analysis reads pinned Git objects, not source code
-executed in the host process. `LARGE`, `NON_UTF8`, `BUDGET`,
+executed in the host process. `NON_UTF8`, `BUDGET`,
 `SEGMENT_INDEX_INCOMPLETE` and other gaps must remain visible.

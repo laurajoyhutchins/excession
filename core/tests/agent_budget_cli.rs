@@ -81,8 +81,9 @@ fn budget_file_and_cli_override_recover_a_previously_excluded_large_blob() {
     );
     let low: serde_json::Value = serde_json::from_slice(&low.stdout).unwrap();
     assert_eq!(low["index"]["limits"]["max_file_bytes"], 65536);
-    assert_eq!(low["skipped_source_count"], 1);
-    assert_eq!(low["index"]["complete"], false);
+    assert_eq!(low["skipped_source_count"], 0);
+    assert_eq!(low["index"]["complete"], true);
+    assert_eq!(low["candidates"][0]["source"]["path"], "src/huge.rs");
 
     let high = execute(&["--max-file-bytes", "524288"]);
     assert!(
@@ -129,8 +130,8 @@ fn budget_file_and_cli_override_recover_a_previously_excluded_large_blob() {
     let low_again = execute(&[]);
     assert!(low_again.status.success());
     let low_again: serde_json::Value = serde_json::from_slice(&low_again.stdout).unwrap();
-    assert_eq!(low_again["skipped_source_count"], 1);
-    assert_eq!(low_again["index"]["complete"], false);
+    assert_eq!(low_again["skipped_source_count"], 0);
+    assert_eq!(low_again["index"]["complete"], true);
 
     fs::write(&policy, r#"{"max_file_bytes": 0}"#).unwrap();
     let invalid = execute(&[]);

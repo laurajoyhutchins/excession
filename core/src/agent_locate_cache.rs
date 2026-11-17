@@ -12,7 +12,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-const CACHE_VERSION: &str = "agent-locate-segments-v2";
+const CACHE_VERSION: &str = "agent-locate-segments-v3";
 pub(crate) const SEGMENT_COUNT: usize = 256;
 pub(crate) const DEFAULT_REFRESH_SEGMENTS: usize = 8;
 pub(crate) const MAX_FILES: usize = 6000;
@@ -43,8 +43,8 @@ impl Default for IndexLimits {
 impl IndexLimits {
     pub fn validate(self) -> Result<Self> {
         if self.max_files_per_segment == 0
-            || self.max_file_bytes == 0
-            || self.max_bytes_per_segment == 0
+            || self.max_file_bytes < 256
+            || self.max_bytes_per_segment < 256
         {
             return refuse("agent locate indexing budgets must be positive");
         }
@@ -68,6 +68,7 @@ impl IndexLimits {
 pub(crate) struct Hit {
     pub entry: git::Entry,
     pub body: String,
+    pub start_line: usize,
 }
 
 pub(crate) struct Search {
@@ -95,7 +96,7 @@ fn external_cache(discovered: &discovery::Discovery) -> Result<PathBuf> {
     // New filename leaves the v1 index untouched during the schema upgrade.
     let path = discovered
         .index_path
-        .with_file_name("agent-locate-segments.sqlite");
+        .with_file_name("agent-locate-chunks.sqlite");
     let parent = path.parent().ok_or("agent locate cache missing parent")?;
     let root = fs::canonicalize(&discovered.root).map_err(|e| sql_error("root canonicalize", e))?;
     if !parent.is_absolute()
@@ -155,8 +156,18 @@ fn initialize(db: &Connection) -> Result<()> {
             blob TEXT NOT NULL,
             mode TEXT NOT NULL,
             bytes INTEGER NOT NULL,
-            status TEXT NOT NULL
+            status TEXT NOT NULL,
+            chunk_bytes INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS locator_chunks(
+            id INTEGER PRIMARY KEY,
+            file_id INTEGER NOT NULL,
+            ordinal INTEGER NOT NULL,
+            start_byte INTEGER NOT NULL,
+            start_line INTEGER NOT NULL,
+            UNIQUE(file_id,ordinal)
+        );
+        CREATE INDEX IF NOT EXISTS locator_chunks_file ON locator_chunks(file_id);
         CREATE INDEX IF NOT EXISTS locator_file_segments
             ON locator_files(segment);
         CREATE VIRTUAL TABLE IF NOT EXISTS source_search
@@ -201,6 +212,7 @@ struct CachedFile {
     mode: String,
     size: usize,
     status: String,
+    chunk_bytes: usize,
 }
 
 struct SegmentMeta {
@@ -216,9 +228,9 @@ fn nonnegative(value: i64) -> Result<usize> {
 }
 
 fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<CachedFile>> {
-    let row: Option<(i64, String, String, i64, String)> = tx
+    let row: Option<(i64, String, String, i64, String, i64)> = tx
         .query_row(
-            "SELECT id,blob,mode,bytes,status FROM locator_files WHERE path=?1",
+            "SELECT id,blob,mode,bytes,status,chunk_bytes FROM locator_files WHERE path=?1",
             params![path],
             |row| {
                 Ok((
@@ -227,18 +239,20 @@ fn previous(tx: &Transaction<'_>, path: &str) -> Result<Option<CachedFile>> {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             },
         )
         .optional()
         .map_err(|e| sql_error("select cached path", e))?;
-    row.map(|(id, blob, mode, size, status)| {
+    row.map(|(id, blob, mode, size, status, chunk_bytes)| {
         Ok(CachedFile {
             id,
             blob,
             mode,
             size: nonnegative(size)?,
             status,
+            chunk_bytes: nonnegative(chunk_bytes)?,
         })
     })
     .transpose()
@@ -283,10 +297,44 @@ fn prior_segments(tx: &Transaction<'_>) -> Result<Vec<Option<SegmentMeta>>> {
 }
 
 fn delete_file(tx: &Transaction<'_>, id: i64) -> Result<()> {
-    tx.execute("DELETE FROM source_search WHERE rowid=?1", params![id])
-        .map_err(|e| sql_error("delete FTS row", e))?;
+    tx.execute(
+        "DELETE FROM source_search WHERE rowid IN
+         (SELECT id FROM locator_chunks WHERE file_id=?1)",
+        params![id],
+    )
+    .map_err(|e| sql_error("delete FTS file chunks", e))?;
+    tx.execute("DELETE FROM locator_chunks WHERE file_id=?1", params![id])
+        .map_err(|e| sql_error("delete file chunks", e))?;
     tx.execute("DELETE FROM locator_files WHERE id=?1", params![id])
         .map_err(|e| sql_error("delete file row", e))?;
+    Ok(())
+}
+
+fn insert_chunk(
+    tx: &Transaction<'_>,
+    file_id: i64,
+    entry: &git::Entry,
+    ordinal: usize,
+    start_byte: u64,
+    start_line: usize,
+    body: &str,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO locator_chunks(file_id,ordinal,start_byte,start_line)
+         VALUES(?1,?2,?3,?4)",
+        params![
+            file_id,
+            ordinal as i64,
+            start_byte as i64,
+            start_line as i64
+        ],
+    )
+    .map_err(|e| sql_error("insert source chunk", e))?;
+    tx.execute(
+        "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
+        params![tx.last_insert_rowid(), &entry.path, body],
+    )
+    .map_err(|e| sql_error("insert chunk FTS row", e))?;
     Ok(())
 }
 
@@ -296,26 +344,65 @@ fn insert_file(
     entry: &git::Entry,
     body: Option<&str>,
     status: &str,
-) -> Result<()> {
+    chunk_bytes: usize,
+) -> Result<i64> {
     tx.execute(
-        "INSERT INTO locator_files(segment,path,blob,mode,bytes,status)
-         VALUES(?1,?2,?3,?4,?5,?6)",
+        "INSERT INTO locator_files(segment,path,blob,mode,bytes,status,chunk_bytes)
+         VALUES(?1,?2,?3,?4,?5,?6,?7)",
         params![
             segment as i64,
             &entry.path,
             &entry.oid,
             &entry.mode,
             body.map_or(0usize, str::len) as i64,
-            status
+            status,
+            chunk_bytes as i64,
         ],
     )
     .map_err(|e| sql_error("insert cached file", e))?;
-    if let Some(text) = body {
-        tx.execute(
-            "INSERT INTO source_search(rowid,path,body) VALUES(?1,?2,?3)",
-            params![tx.last_insert_rowid(), &entry.path, text],
+    let id = tx.last_insert_rowid();
+    if let Some(text) = body
+        && !text.is_empty()
+    {
+        insert_chunk(tx, id, entry, 0, 0, 1, text)?;
+    }
+    Ok(id)
+}
+
+fn existing_chunks(tx: &Transaction<'_>, file_id: i64) -> Result<usize> {
+    let count: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM locator_chunks WHERE file_id=?1",
+            params![file_id],
+            |row| row.get(0),
         )
-        .map_err(|e| sql_error("insert FTS row", e))?;
+        .map_err(|e| sql_error("count existing source chunks", e))?;
+    nonnegative(count)
+}
+
+fn verify_cached_chunk(
+    tx: &Transaction<'_>,
+    file_id: i64,
+    ordinal: usize,
+    start_byte: u64,
+    start_line: usize,
+    body: &str,
+) -> Result<()> {
+    let stored: Option<(i64, i64, String)> = tx
+        .query_row(
+            "SELECT c.start_byte,c.start_line,s.body
+         FROM locator_chunks c JOIN source_search s ON s.rowid=c.id
+         WHERE c.file_id=?1 AND c.ordinal=?2",
+            params![file_id, ordinal as i64],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| sql_error("verify staged chunk", e))?;
+    let Some((position, line, text)) = stored else {
+        return refuse("missing previously checkpointed source chunk");
+    };
+    if position != start_byte as i64 || line != start_line as i64 || text != body {
+        return refuse("checkpointed chunk disagrees with authenticated Git source");
     }
     Ok(())
 }
@@ -384,6 +471,11 @@ fn update_segment(
     let mut refreshed_bytes = 0usize;
     let mut skipped = 0usize;
     let mut truncated = false;
+    let chunk_bytes = limits
+        .max_file_bytes
+        .min(limits.max_bytes_per_segment)
+        .min(64 * 1024);
+
     for entry in entries {
         seen.insert(entry.path.as_str());
         let old = previous(tx, &entry.path)?;
@@ -392,10 +484,10 @@ fn update_segment(
             && cached.mode == entry.mode
         {
             match cached.status.as_str() {
-                "OK" if cached.size <= limits.max_file_bytes => {
-                    // Reusing a fully authenticated Git blob costs no new
-                    // source-read budget. The budget limits *this refresh*,
-                    // not the size of the persistent index.
+                "OK" if cached.chunk_bytes == chunk_bytes => {
+                    // A completed Git-verified index may be reused only
+                    // under the same chunking policy. Different boundaries
+                    // can change FTS ranking, even for the same Git blob.
                     files += 1;
                     bytes += cached.size;
                     state.reused_blobs += 1;
@@ -409,62 +501,111 @@ fn update_segment(
             }
         }
 
-        // A budget-exhausted source remains pending for a subsequent call.
-        // We checkpoint each segment separately; no source disappears
-        // permanently merely because its siblings consumed this work unit.
+        let can_resume = old.as_ref().is_some_and(|cached| {
+            cached.blob == entry.oid
+                && cached.mode == entry.mode
+                && cached.status == "BUDGET"
+                && cached.chunk_bytes == chunk_bytes
+        });
         if refreshed_files >= limits.max_files_per_segment
             || refreshed_bytes >= limits.max_bytes_per_segment
         {
-            if let Some(cached) = old {
-                delete_file(tx, cached.id)?;
+            if !can_resume {
+                if let Some(ref cached) = old {
+                    delete_file(tx, cached.id)?;
+                }
+                insert_file(tx, segment, entry, None, "BUDGET", chunk_bytes)?;
             }
             skipped += 1;
             truncated = true;
-            insert_file(tx, segment, entry, None, "BUDGET")?;
             continue;
         }
-        if let Some(cached) = old {
-            delete_file(tx, cached.id)?;
-        }
+
+        let file_id = if can_resume {
+            old.as_ref().ok_or("missing resumable file")?.id
+        } else {
+            if let Some(ref cached) = old {
+                delete_file(tx, cached.id)?;
+            }
+            insert_file(tx, segment, entry, None, "BUDGET", chunk_bytes)?
+        };
+        let resumed_chunks = if can_resume {
+            existing_chunks(tx, file_id)?
+        } else {
+            0
+        };
         if state.reader.is_none() {
             state.reader = Some(git::BlobReader::open(state.repo)?);
         }
-        let data = match state
+        let mut ordinal = 0usize;
+        let mut added_bytes = 0usize;
+        let mut deferred = false;
+        let result = state
             .reader
             .as_mut()
             .ok_or("missing Git blob reader")?
-            .read_capped(&entry.oid, limits.max_file_bytes)
-        {
-            Ok(data) => data,
-            Err(err) if err == "Git source blob exceeds byte limit" => {
+            .stream_text_chunks_verified(
+                &entry.oid,
+                chunk_bytes,
+                |start_byte, start_line, body| {
+                    if ordinal < resumed_chunks {
+                        verify_cached_chunk(tx, file_id, ordinal, start_byte, start_line, body)?;
+                    } else if deferred
+                        || body.len()
+                            > limits
+                                .max_bytes_per_segment
+                                .saturating_sub(refreshed_bytes + added_bytes)
+                    {
+                        deferred = true;
+                    } else {
+                        insert_chunk(tx, file_id, entry, ordinal, start_byte, start_line, body)?;
+                        added_bytes += body.len();
+                    }
+                    ordinal += 1;
+                    Ok(())
+                },
+            );
+        let total_bytes = match result {
+            Ok(size) => size,
+            Err(error)
+                if error.contains("invalid UTF-8")
+                    || error.contains("incomplete or invalid UTF-8")
+                    || error.contains("source contains a NUL byte") =>
+            {
+                // No claim of valid source content is made from a rejected
+                // text blob. Discard any staged chunks, including old ones.
+                state.reader.take();
+                delete_file(tx, file_id)?;
+                insert_file(tx, segment, entry, None, "NON_UTF8", 0)?;
+                refreshed_files += 1;
                 skipped += 1;
-                insert_file(tx, segment, entry, None, "LARGE")?;
                 continue;
             }
-            Err(err) => return Err(err),
+            Err(error) => return Err(error),
         };
-        state.read_blobs += 1;
-        let Ok(body) = String::from_utf8(data) else {
-            skipped += 1;
-            insert_file(tx, segment, entry, None, "NON_UTF8")?;
-            continue;
-        };
-        if body.contains('\0') {
-            skipped += 1;
-            insert_file(tx, segment, entry, None, "NON_UTF8")?;
-            continue;
+        if ordinal < resumed_chunks {
+            return refuse("checkpointed chunk count exceeds authenticated Git source");
         }
-        if body.len() > limits.max_bytes_per_segment - refreshed_bytes {
+        state.read_blobs += 1;
+        refreshed_files += 1;
+        refreshed_bytes += added_bytes;
+        if deferred {
+            tx.execute(
+                "UPDATE locator_files SET status='BUDGET' WHERE id=?1",
+                params![file_id],
+            )
+            .map_err(|e| sql_error("checkpoint partial source", e))?;
             skipped += 1;
             truncated = true;
-            insert_file(tx, segment, entry, None, "BUDGET")?;
-            continue;
+        } else {
+            tx.execute(
+                "UPDATE locator_files SET status='OK', bytes=?2 WHERE id=?1",
+                params![file_id, total_bytes as i64],
+            )
+            .map_err(|e| sql_error("complete source", e))?;
+            files += 1;
+            bytes += total_bytes as usize;
         }
-        files += 1;
-        bytes += body.len();
-        refreshed_files += 1;
-        refreshed_bytes += body.len();
-        insert_file(tx, segment, entry, Some(&body), "OK")?;
     }
 
     let mut stale_ids = Vec::new();
@@ -523,6 +664,53 @@ fn put_meta(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
         params![key, value],
     )
     .map_err(|e| sql_error("snapshot metadata", e))?;
+    Ok(())
+}
+
+/// Independently authenticate an indexed excerpt against the full Git blob.
+fn verify_source_window(
+    repo: &std::path::Path,
+    oid: &str,
+    start_byte: u64,
+    start_line: usize,
+    body: &str,
+) -> Result<()> {
+    let expected = body.as_bytes();
+    let end = start_byte
+        .checked_add(expected.len() as u64)
+        .ok_or("cached source chunk offset overflow")?;
+    let mut checked = 0usize;
+    let mut authenticated_line = 1usize;
+    let mut reader = git::BlobReader::open(repo)?;
+    let total = reader.stream_verified(oid, 64 * 1024, |offset, bytes| {
+        let upper = offset + bytes.len() as u64;
+        if offset < start_byte {
+            let before = (start_byte - offset).min(bytes.len() as u64) as usize;
+            authenticated_line += bytes[..before]
+                .iter()
+                .filter(|&&byte| byte == b'\n')
+                .count();
+        }
+        let a = offset.max(start_byte);
+        let b = upper.min(end);
+        if a < b {
+            let chunk_start = (a - offset) as usize;
+            let body_start = (a - start_byte) as usize;
+            let count = (b - a) as usize;
+            if bytes[chunk_start..chunk_start + count] != expected[body_start..body_start + count] {
+                return refuse("cached source chunk disagrees with pinned Git blob");
+            }
+            checked += count;
+        }
+        Ok(())
+    })?;
+    reader.finish()?;
+    if end > total || checked != expected.len() {
+        return refuse("cached chunk lies outside authenticated Git blob");
+    }
+    if authenticated_line != start_line {
+        return refuse("cached source chunk line differs from authenticated Git blob");
+    }
     Ok(())
 }
 
@@ -670,30 +858,32 @@ pub(crate) fn search_with_limits(
     put_meta(&tx, "source_tree", &discovered.tree)?;
 
     let mut hits = Vec::new();
+    let mut returned_paths = BTreeSet::new();
     {
         let mut stmt = tx
             .prepare(
-                "SELECT f.path,f.blob,f.mode,source_search.body
-             FROM source_search
-             JOIN locator_files f ON f.id=source_search.rowid
-             JOIN locator_active a ON a.segment=f.segment
-             WHERE source_search MATCH ?1
-             ORDER BY bm25(source_search,4.0,1.0), source_search.rowid
-             LIMIT ?2",
+                "SELECT f.path,f.blob,f.mode,c.start_byte,c.start_line,source_search.body
+                 FROM source_search
+                 JOIN locator_chunks c ON c.id=source_search.rowid
+                 JOIN locator_files f ON f.id=c.file_id
+                 JOIN locator_active a ON a.segment=f.segment
+                 WHERE source_search MATCH ?1 AND f.status='OK'
+                 ORDER BY bm25(source_search,4.0,1.0), f.path, c.ordinal",
             )
             .map_err(|e| sql_error("ranking prepare", e))?;
-        let rows = stmt
-            .query_map(params![expression, limit as i64], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })
+        let mut rows = stmt
+            .query(params![expression])
             .map_err(|e| sql_error("ranking query", e))?;
-        for row in rows {
-            let (name, blob, mode, body) = row.map_err(|e| sql_error("ranked row", e))?;
+        while let Some(row) = rows.next().map_err(|e| sql_error("ranked row", e))? {
+            let name: String = row.get(0).map_err(|e| sql_error("ranked path", e))?;
+            if !returned_paths.insert(name.clone()) {
+                continue;
+            }
+            let blob: String = row.get(1).map_err(|e| sql_error("ranked blob", e))?;
+            let mode: String = row.get(2).map_err(|e| sql_error("ranked mode", e))?;
+            let start_byte = nonnegative(row.get(3).map_err(|e| sql_error("chunk offset", e))?)?;
+            let start_line = nonnegative(row.get(4).map_err(|e| sql_error("chunk line", e))?)?;
+            let body: String = row.get(5).map_err(|e| sql_error("ranked body", e))?;
             let segment = segment_for(&name);
             let pinned = groups[segment]
                 .binary_search_by(|entry| entry.path.as_str().cmp(name.as_str()))
@@ -702,9 +892,16 @@ pub(crate) fn search_with_limits(
             if pinned.oid != blob || pinned.mode != mode {
                 return refuse("cached FTS path/blob/mode differs from pinned Git tree");
             }
-            if crate::digest::git_blob(body.as_bytes()) != blob {
-                return refuse("cached FTS source failed Git blob identity verification");
-            }
+            // A chunk is not itself a Git blob. Re-stream the entire original
+            // object to independently verify both its hash and the exact
+            // cached byte window before exposing source text to a caller.
+            verify_source_window(
+                &discovered.root,
+                &blob,
+                start_byte as u64,
+                start_line,
+                &body,
+            )?;
             hits.push(Hit {
                 entry: git::Entry {
                     path: name,
@@ -713,7 +910,11 @@ pub(crate) fn search_with_limits(
                     kind: "blob".into(),
                 },
                 body,
+                start_line,
             });
+            if hits.len() == limit {
+                break;
+            }
         }
     }
     tx.commit().map_err(|e| sql_error("commit", e))?;
@@ -887,9 +1088,9 @@ mod tests {
             .unwrap()
         };
         let small = query(128 * 1024);
-        assert_eq!(small.indexed_files, 0);
-        assert_eq!(small.skipped_files, 1);
-        assert!(small.hits.is_empty());
+        assert_eq!(small.indexed_files, 1);
+        assert_eq!(small.skipped_files, 0);
+        assert_eq!(small.hits.len(), 1);
         let large = query(512 * 1024);
         assert_eq!(large.indexed_files, 1);
         assert_eq!(large.skipped_files, 0);
@@ -899,8 +1100,8 @@ mod tests {
             git::blob(&root, "HEAD", "src/planner.rs").unwrap()
         );
         let smaller_again = query(128 * 1024);
-        assert_eq!(smaller_again.indexed_files, 0);
-        assert_eq!(smaller_again.skipped_files, 1);
+        assert_eq!(smaller_again.indexed_files, 1);
+        assert_eq!(smaller_again.skipped_files, 0);
         fs::remove_dir_all(large.cache_path.parent().unwrap()).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
@@ -974,6 +1175,218 @@ mod tests {
     }
 
     #[test]
+    fn chunk_policy_switch_rebuilds_deterministic_fts_windows() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-chunk-policy-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        fs::write(
+            root.join("src/planner.rs"),
+            format!("{}needle planner\n", "long identifier \n".repeat(500)),
+        )
+        .unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "indexed",
+            ],
+        );
+        let query = |size| {
+            let discovered = discovery::inspect(&root, "HEAD").unwrap();
+            let entries = git::entries(&root, &discovered.commit).unwrap();
+            search_with_limits(
+                &discovered,
+                entries,
+                8,
+                "\"needle\"",
+                SEGMENT_COUNT,
+                |path| path.ends_with(".rs"),
+                IndexLimits {
+                    max_file_bytes: size,
+                    max_bytes_per_segment: 65536,
+                    max_files_per_segment: 16,
+                },
+            )
+            .unwrap()
+        };
+        let small = query(256);
+        assert_eq!(small.indexed_files, 1);
+        let large = query(4096);
+        assert_eq!(large.indexed_files, 1);
+        assert_eq!(large.read_blobs, 1);
+        let restored = query(256);
+        assert_eq!(restored.read_blobs, 1);
+        assert_eq!(restored.indexed_files, 1);
+        assert_eq!(small.hits[0].body, restored.hits[0].body);
+        assert_eq!(small.hits[0].start_line, restored.hits[0].start_line);
+        assert_eq!(small.hits[0].entry.oid, restored.hits[0].entry.oid);
+        fs::remove_dir_all(restored.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn long_single_line_source_keeps_searchable_tokens_across_chunk_boundaries() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-long-line-search-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        let source = format!("{} needle {} \n", "q".repeat(220), "z".repeat(2000));
+        fs::write(root.join("src/minified.rs"), &source).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "minified",
+            ],
+        );
+        let discovered = discovery::inspect(&root, "HEAD").unwrap();
+        let entries = git::entries(&root, &discovered.commit).unwrap();
+        let found = search_with_limits(
+            &discovered,
+            entries,
+            4,
+            "\"needle\"",
+            SEGMENT_COUNT,
+            |path| path.ends_with(".rs"),
+            IndexLimits {
+                max_file_bytes: 256,
+                max_files_per_segment: 10,
+                max_bytes_per_segment: 4096,
+            },
+        )
+        .unwrap();
+        assert_eq!(found.indexed_files, 1);
+        assert_eq!(found.skipped_files, 0);
+        assert_eq!(found.hits.len(), 1);
+        assert_eq!(found.hits[0].entry.path, "src/minified.rs");
+        assert!(found.hits[0].body.contains("needle"));
+        assert_eq!(found.hits[0].start_line, 1);
+        fs::remove_dir_all(found.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checkpoints_one_large_source_in_chunks_until_fully_verified() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-chunk-progress-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        let source = format!("{}fn needle() {{}} \n", "/* α🚀 filler */\n".repeat(1000));
+        assert!(source.len() > 8 * 1024);
+        fs::write(root.join("src/huge.rs"), &source).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "large source",
+            ],
+        );
+        let query = || {
+            let discovered = discovery::inspect(&root, "HEAD").unwrap();
+            let entries = git::entries(&root, &discovered.commit).unwrap();
+            search_with_limits(
+                &discovered,
+                entries,
+                4,
+                "\"needle\"",
+                1,
+                |path| path.ends_with(".rs"),
+                IndexLimits {
+                    max_file_bytes: 256,
+                    max_files_per_segment: 1,
+                    max_bytes_per_segment: 1024,
+                },
+            )
+            .unwrap()
+        };
+        let first = query();
+        assert_eq!(first.indexed_files, 0);
+        assert_eq!(first.skipped_files, 1);
+        assert_eq!(first.pending_segments, 1);
+        assert!(first.hits.is_empty());
+        let mut complete = first;
+        let mut rounds = 1;
+        while complete.pending_segments != 0 && rounds < 40 {
+            complete = query();
+            rounds += 1;
+        }
+        assert!(rounds > 5);
+        assert!(rounds < 40);
+        assert_eq!(complete.pending_segments, 0);
+        assert_eq!(complete.indexed_files, 1);
+        assert_eq!(complete.skipped_files, 0);
+        assert_eq!(complete.hits.len(), 1);
+        assert!(complete.hits[0].body.contains("needle"));
+        assert!(complete.hits[0].start_line > 900);
+        assert_eq!(
+            complete.hits[0].entry.oid,
+            git::blob(&root, "HEAD", "src/huge.rs").unwrap(),
+        );
+        assert!(!complete.truncated);
+        let position = source.find("fn needle").unwrap() as u64;
+        let oid = &complete.hits[0].entry.oid;
+        assert!(verify_source_window(&root, oid, position, 1001, "fn needle").is_ok());
+        assert!(verify_source_window(&root, oid, position, 1000, "fn needle").is_err());
+        assert!(verify_source_window(&root, oid, position, 1001, "fn forged").is_err());
+
+        // A tampered chunk must never be returned as an authenticated source.
+        let db = Connection::open(&complete.cache_path).unwrap();
+        db.execute(
+            "UPDATE source_search SET body='needle forged' WHERE rowid=
+             (SELECT id FROM locator_chunks ORDER BY id DESC LIMIT 1)",
+            [],
+        )
+        .unwrap();
+        drop(db);
+        let discovered = discovery::inspect(&root, "HEAD").unwrap();
+        let entries = git::entries(&root, &discovered.commit).unwrap();
+        let failed = search_with_limits(
+            &discovered,
+            entries,
+            4,
+            "\"needle\"",
+            1,
+            |path| path.ends_with(".rs"),
+            IndexLimits {
+                max_file_bytes: 256,
+                max_files_per_segment: 1,
+                max_bytes_per_segment: 1024,
+            },
+        );
+        assert!(failed.is_err(), "tampered FTS text must fail closed");
+        fs::remove_dir_all(complete.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn rejects_invalid_indexing_budgets() {
         let base = IndexLimits::default();
         assert!(
@@ -1003,6 +1416,14 @@ mod tests {
         assert!(
             IndexLimits {
                 max_bytes_per_segment: 0,
+                ..base
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            IndexLimits {
+                max_file_bytes: 3,
                 ..base
             }
             .validate()

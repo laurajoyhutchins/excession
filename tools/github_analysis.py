@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import sqlite3
 import subprocess
 import sys
 
@@ -98,7 +100,7 @@ def validate(value, targets):
     if not isinstance(value, dict):
         raise Refusal("request must be an object")
     kind = value.get("operation")
-    permitted = {"schema", "repository", "revision", "operation", "task", "focus", "base", "limit", "budgets", "enrich"}
+    permitted = {"schema", "repository", "revision", "operation", "task", "focus", "base", "limit", "budgets", "enrich", "resume_run_id"}
     if set(value) - permitted or kind not in SCHEMAS:
         raise Refusal("unknown request field or operation")
     if value.get("schema") != REQUEST_SCHEMA:
@@ -111,7 +113,7 @@ def validate(value, targets):
     if type(limit) is not int or not 1 <= limit <= 64:
         raise Refusal("limit outside 1..64")
     if kind == "locate":
-        if set(value) - {"schema", "repository", "revision", "operation", "task", "limit", "budgets", "enrich"}:
+        if set(value) - {"schema", "repository", "revision", "operation", "task", "limit", "budgets", "enrich", "resume_run_id"}:
             raise Refusal("unexpected locate field")
         if not isinstance(value.get("task"), str) or not 3 <= len(value["task"]) <= 4000 or "\x00" in value["task"]:
             raise Refusal("locate task missing or invalid")
@@ -119,6 +121,11 @@ def validate(value, targets):
             validate_budgets(value["budgets"])
         if "enrich" in value and type(value["enrich"]) is not bool:
             raise Refusal("locate enrich must be a boolean")
+        if "resume_run_id" in value:
+            if (type(value["resume_run_id"]) is not int
+                    or not 1 <= value["resume_run_id"] <= 2**63 - 1
+                    or value.get("enrich") is not True):
+                raise Refusal("locate resume_run_id requires positive integer and enrich=true")
     elif kind == "context":
         if set(value) - {"schema", "repository", "revision", "operation", "focus", "task", "limit"}:
             raise Refusal("unexpected context field")
@@ -155,6 +162,165 @@ def cache_identity(request, tool_commit):
         "budgets": budgets,
     }
     return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+CHECKPOINT_SCHEMA = "excession.github-locate-checkpoint.v1"
+CHECKPOINT_MAX_BYTES = 512 * 1024 * 1024
+
+
+def file_digest(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while True:
+            block = source.read(1024 * 1024)
+            if not block:
+                break
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def checkpoint_report(request, report_directory, tool_commit):
+    if request["operation"] != "locate":
+        return None
+    report_file = report_directory / "report.json"
+    receipt_file = report_directory / "receipt.json"
+    receipt = json.loads(receipt_file.read_text(encoding="utf-8"))
+    report = json.loads(report_file.read_text(encoding="utf-8"))
+    if (receipt.get("status") != "COMPLETED"
+            or receipt.get("tool_commit") != tool_commit
+            or receipt.get("request") != request
+            or receipt.get("report_sha256") != file_digest(report_file)
+            or receipt.get("report_id") != report.get("report_id")):
+        raise Refusal("checkpoint source report/receipt identity mismatch")
+    check_report(request, report, receipt.get("source_tree"))
+    if report.get("index") is None:
+        return None
+    if not SHA.fullmatch(receipt["source_tree"]):
+        raise Refusal("checkpoint source tree is not an exact Git identity")
+    return report, receipt
+
+
+def publish_checkpoint(request, report_directory, destination, tool_commit, run_id, cache_root):
+    """Save an advisory, source-verified locator snapshot as an immutable artifact.
+
+    An issue-originated worker cannot publish a writable Actions cache. This
+    explicit artifact may be reused only with a matching tool/source/budget
+    identity and the next worker reauthenticates the Git blobs.
+    """
+    evidence = checkpoint_report(request, report_directory, tool_commit)
+    if evidence is None:
+        return False
+    report, receipt = evidence
+    if type(run_id) is not int or run_id <= 0:
+        raise Refusal("checkpoint requires a valid GitHub workflow run ID")
+    source = Path(report["cache"]["path"])
+    allowed_root = cache_root.resolve(strict=True)
+    if (source.is_symlink() or not source.is_file()
+            or not source.resolve(strict=True).is_relative_to(allowed_root)
+            or source.name != "agent-locate-chunks.sqlite"):
+        raise Refusal("checkpoint is not a native locator SQLite file")
+    if source.stat().st_size > CHECKPOINT_MAX_BYTES:
+        raise Refusal("checkpoint exceeds explicit 512 MiB artifact limit")
+    destination.mkdir(parents=True, exist_ok=False)
+    archive = destination / "locator.sqlite"
+    try:
+        with sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True) as current:
+            with sqlite3.connect(str(archive)) as stable:
+                current.backup(stable)
+        if archive.stat().st_size > CHECKPOINT_MAX_BYTES:
+            raise Refusal("checkpoint exceeds explicit 512 MiB artifact limit")
+        manifest = {
+            "schema": CHECKPOINT_SCHEMA,
+            "cache_identity": cache_identity(request, tool_commit),
+            "run_id": run_id,
+            "source_repository": request["repository"],
+            "source_commit": request["revision"],
+            "source_tree": receipt["source_tree"],
+            "tool_commit": tool_commit,
+            "report_sha256": receipt["report_sha256"],
+            "sqlite_sha256": file_digest(archive),
+            "sqlite_bytes": archive.stat().st_size,
+            "ready_segments": report["index"]["ready_segments"],
+            "pending_segments": report["index"]["pending_segments"],
+        }
+        (destination / "manifest.json").write_text(
+            json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+    except Exception:
+        shutil.rmtree(destination)
+        raise
+    return True
+
+
+def restore_checkpoint(request, archive_root, run_metadata, tool_commit, cache_root, report_root):
+    """Reject incompatible or untrusted artifacts before native Git validation."""
+    if request["operation"] != "locate" or "resume_run_id" not in request:
+        raise Refusal("resume requires a pinned locate request")
+    manifest_path = archive_root / "manifest.json"
+    sqlite_path = archive_root / "locator.sqlite"
+    if (manifest_path.is_symlink() or sqlite_path.is_symlink()
+            or not manifest_path.is_file() or not sqlite_path.is_file()):
+        raise Refusal("checkpoint artifact missing or contains symlink")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected_keys = {
+        "schema", "cache_identity", "run_id", "source_repository",
+        "source_commit", "source_tree", "tool_commit", "report_sha256",
+        "sqlite_sha256", "sqlite_bytes", "ready_segments", "pending_segments",
+    }
+    if not isinstance(manifest, dict) or set(manifest) != expected_keys:
+        raise Refusal("checkpoint manifest schema has unknown/missing properties")
+    if (manifest["schema"] != CHECKPOINT_SCHEMA
+            or manifest["cache_identity"] != cache_identity(request, tool_commit)
+            or manifest["run_id"] != request["resume_run_id"]
+            or manifest["source_repository"] != request["repository"]
+            or manifest["source_commit"] != request["revision"]
+            or manifest["tool_commit"] != tool_commit
+            or not isinstance(manifest["source_tree"], str)
+            or not SHA.fullmatch(manifest["source_tree"])
+            or not isinstance(manifest["report_sha256"], str)
+            or not SHA.fullmatch(manifest["report_sha256"])
+            or not isinstance(manifest["sqlite_sha256"], str)
+            or not SHA.fullmatch(manifest["sqlite_sha256"])
+            or type(manifest["sqlite_bytes"]) is not int
+            or not 0 < manifest["sqlite_bytes"] <= CHECKPOINT_MAX_BYTES
+            or type(manifest["ready_segments"]) is not int
+            or type(manifest["pending_segments"]) is not int):
+        raise Refusal("checkpoint identity or manifest value mismatch")
+    if (not isinstance(run_metadata, dict)
+            or run_metadata.get("id") != request["resume_run_id"]
+            or run_metadata.get("event") != "issues"
+            or run_metadata.get("conclusion") != "success"
+            or run_metadata.get("name") != "Excession agent analysis (GitHub-native)"
+            or run_metadata.get("head_sha") != tool_commit
+            or run_metadata.get("head_branch") != "main"
+            or run_metadata.get("actor", {}).get("id") != OWNER_ID
+            or run_metadata.get("repository", {}).get("full_name") != "laurajoyhutchins/excession"):
+        raise Refusal("checkpoint must come from successful owner-authorized main workflow")
+    if (sqlite_path.stat().st_size != manifest["sqlite_bytes"]
+            or file_digest(sqlite_path) != manifest["sqlite_sha256"]):
+        raise Refusal("checkpoint SQLite checksum or length mismatch")
+    with sqlite3.connect(f"file:{sqlite_path.as_posix()}?mode=ro", uri=True) as db:
+        if db.execute("PRAGMA quick_check").fetchone() != ("ok",):
+            raise Refusal("checkpoint SQLite integrity check failed")
+        version = db.execute(
+            "SELECT value FROM locator_meta WHERE key='version'"
+        ).fetchone()
+        if version != ("agent-locate-segments-v3",):
+            raise Refusal("checkpoint native index schema differs from expected")
+    # The worker clones this exact path during 'execute'. The native
+    # discovery::cache_path hashes the *absolute source root*, not a branch.
+    source_root = (report_root / "work" / "source").resolve()
+    cache_id = hashlib.sha256(str(source_root).encode("utf-8")).hexdigest()[:24]
+    cache_root.mkdir(parents=True, exist_ok=True)
+    destination_dir = cache_root.resolve() / cache_id
+    destination_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    destination = destination_dir / "agent-locate-chunks.sqlite"
+    if destination.is_symlink():
+        raise Refusal("checkpoint cannot overwrite a symlink")
+    temporary = destination_dir / "locator-restoring.sqlite"
+    shutil.copyfile(sqlite_path, temporary)
+    temporary.replace(destination)
+    return destination
 
 
 def from_event(event, actor_id, targets):
@@ -348,12 +514,15 @@ def execute(request, binary, output, source_checkout=None, tool_checkout=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("validate", "execute", "cache-identity"))
+    parser.add_argument("mode", choices=("validate", "execute", "cache-identity", "publish-checkpoint", "restore-checkpoint"))
     parser.add_argument("--event", type=Path)
     parser.add_argument("--actor-id", type=int, default=0)
     parser.add_argument("--targets", type=Path, default=Path("config/github-analysis-targets.json"))
     parser.add_argument("--request", type=Path)
     parser.add_argument("--binary", type=Path)
+    parser.add_argument("--report-dir", type=Path)
+    parser.add_argument("--checkpoint-dir", type=Path)
+    parser.add_argument("--run-metadata", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--trusted-repository")
     parser.add_argument("--local-checkout", type=Path)
@@ -387,6 +556,28 @@ def main():
             args.out.parent.mkdir(parents=True, exist_ok=True)
             with args.out.open("a", encoding="utf-8") as output:
                 output.write("prefix=" + (identity or "") + "\n")
+                output.write("resume_run_id=" + str(request.get("resume_run_id", "")) + "\n")
+        elif args.mode == "publish-checkpoint":
+            if args.request is None or args.report_dir is None:
+                raise Refusal("checkpoint publishing needs source report and request")
+            request = validate(json.loads(args.request.read_text(encoding="utf-8")), targets)
+            root = Path(os.environ["EXCESSION_CACHE_DIR"])
+            published = publish_checkpoint(
+                request, args.report_dir, args.out, git("rev-parse", "HEAD"),
+                int(os.environ["GITHUB_RUN_ID"]), root,
+            )
+            print("checkpoint artifact: " + ("PUBLISHED" if published else "NO_INDEX"))
+        elif args.mode == "restore-checkpoint":
+            if args.request is None or args.checkpoint_dir is None or args.run_metadata is None:
+                raise Refusal("checkpoint restoration needs manifest, request and trusted run data")
+            request = validate(json.loads(args.request.read_text(encoding="utf-8")), targets)
+            restored = restore_checkpoint(
+                request, args.checkpoint_dir,
+                json.loads(args.run_metadata.read_text(encoding="utf-8")),
+                git("rev-parse", "HEAD"), Path(os.environ["EXCESSION_CACHE_DIR"]),
+                Path(os.environ["RUNNER_TEMP"]) / "excession-evidence",
+            )
+            args.out.write_text(str(restored) + "\n", encoding="utf-8")
         else:
             if args.request is None or args.binary is None:
                 raise Refusal("request and binary required")

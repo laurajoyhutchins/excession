@@ -115,10 +115,18 @@ fn ranked_test_candidates<'a>(
         {
             continue;
         }
-        let file = entry.path.rsplit('/').next().unwrap_or(&entry.path).to_ascii_lowercase();
+        let file = entry
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&entry.path)
+            .to_ascii_lowercase();
         let direct_focus = focus.contains(&entry.path);
         let source_hint = matches_focus(&entry.path, focus);
-        let task_hits = terms.iter().filter(|term| file.contains(term.as_str())).count();
+        let task_hits = terms
+            .iter()
+            .filter(|term| file.contains(term.as_str()))
+            .count();
         if !direct_focus && !source_hint && task_hits == 0 {
             continue;
         }
@@ -757,12 +765,15 @@ mod tests {
             "test/parallel/test-module-cache.js",
             "test/fixtures/es-module-loaders/loader.js",
         ];
-        let entries = names.iter().map(|path| git::Entry {
-            path: (*path).to_owned(),
-            kind: "blob".into(),
-            oid: "a".repeat(40),
-            mode: "100644".into(),
-        }).collect::<Vec<_>>();
+        let entries = names
+            .iter()
+            .map(|path| git::Entry {
+                path: (*path).to_owned(),
+                kind: "blob".into(),
+                oid: "a".repeat(40),
+                mode: "100644".into(),
+            })
+            .collect::<Vec<_>>();
         let focus = BTreeSet::from([
             "lib/internal/modules/cjs/loader.js".into(),
             "test/parallel/test-module-cache.js".into(),
@@ -773,13 +784,25 @@ mod tests {
             &focus,
             Some("Explain CommonJS require caching and circular dependency warnings"),
         );
-        let paths = ranked.iter().map(|entry| entry.path.as_str()).collect::<Vec<_>>();
+        let paths = ranked
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
         assert_eq!(paths[0], "test/parallel/test-module-cache.js");
-        assert_eq!(paths[1], "test/parallel/test-module-relative-resolve-cache.js");
-        assert!(paths.iter().position(|p| p.contains("circular-dependency"))
-            < paths.iter().position(|p| p.starts_with("deps/v8")));
-        assert!(paths.iter().position(|p| p.starts_with("test/parallel"))
-            < paths.iter().position(|p| p.starts_with("test/fixtures")));
+        assert_eq!(
+            paths[1],
+            "test/parallel/test-module-relative-resolve-cache.js"
+        );
+        assert!(paths.contains(&"test/parallel/test-module-circular-dependency-warning.js"));
+        assert!(paths.contains(&"deps/v8/tools/testrunner/testproc/loader_test.py"));
+        assert!(
+            paths.iter().position(|p| p.contains("circular-dependency"))
+                < paths.iter().position(|p| p.starts_with("deps/v8"))
+        );
+        assert!(
+            paths.iter().position(|p| p.starts_with("test/parallel"))
+                < paths.iter().position(|p| p.starts_with("test/fixtures"))
+        );
     }
 
     #[test]

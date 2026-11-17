@@ -106,6 +106,8 @@ class RequestTests(unittest.TestCase):
             "schema": module.SCHEMAS["locate"],
             "source_commit": SHA,
             "source_tree": BASE,
+            "enrichment": "PERFORMED",
+            "cache": {"refresh_budget_segments": chosen["refresh_segments"]},
             "index": {"limits": {
                 "max_file_bytes": chosen["max_file_bytes"],
                 "max_bytes_per_segment": chosen["max_segment_bytes"],

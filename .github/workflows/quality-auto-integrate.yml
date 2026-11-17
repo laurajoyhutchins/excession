@@ -112,43 +112,7 @@ jobs:
           HEAD: ${{ steps.candidate.outputs.head }}
           BASE: ${{ steps.candidate.outputs.base }}
           PR: ${{ steps.publish.outputs.pr }}
-        run: |
-          set -euo pipefail
-          test -n "$PR"
-          VERIFIED=false
-          for attempt in $(seq 1 72); do
-            VERIFY="$(gh run list --workflow verify.yml --branch "$BRANCH" \
-              --event workflow_dispatch --limit 30 \
-              --json databaseId,headSha,status,conclusion \
-              | jq -r --arg sha "$HEAD" '[.[] | select(.headSha == $sha)] | sort_by(.databaseId) | last | if . == null or .status != "completed" then "pending" else .conclusion end')"
-            EVIDENCE="$(gh run list --workflow github-evidence.yml --branch "$BRANCH" \
-              --event workflow_dispatch --limit 30 \
-              --json databaseId,headSha,status,conclusion \
-              | jq -r --arg sha "$HEAD" '[.[] | select(.headSha == $sha)] | sort_by(.databaseId) | last | if . == null or .status != "completed" then "pending" else .conclusion end')"
-            echo "Exact head $HEAD: Verify=$VERIFY; GitHub evidence=$EVIDENCE"
-            if [ "$VERIFY" = success ] && [ "$EVIDENCE" = success ]; then
-              VERIFIED=true
-              break
-            fi
-            for result in "$VERIFY" "$EVIDENCE"; do
-              if [ "$result" != pending ] && [ "$result" != success ]; then
-                echo "REFUSED: an independent verification was not successful."
-                exit 1
-              fi
-            done
-            sleep 20
-          done
-          test "$VERIFIED" = true || { echo "REFUSED: CI receipt timeout"; exit 1; }
-          # Refuse any race with newer main or a replaced candidate head.
-          REMOTE_BASE="$(git ls-remote origin refs/heads/main | cut -f1)"
-          test "$REMOTE_BASE" = "$BASE" || { echo "REFUSED: main advanced"; exit 1; }
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" > "$RUNNER_TEMP/auto-pr.json"
-          jq -e --arg base "$BASE" --arg head "$HEAD" \
-            '.state == "open" and .draft == false and .base.sha == $base and .head.sha == $head' \
-            "$RUNNER_TEMP/auto-pr.json"
-          gh pr merge "$PR" --squash --delete-branch \
-            --subject "style: reproducible rustfmt improvement"
-          echo "Integrated exact-head verified candidate $HEAD (PR #$PR)." >> "$GITHUB_STEP_SUMMARY"
+        run: bash tools/ci/await_verified_merge.sh
       - name: Retain exact native reproduction receipt
         if: always()
         uses: actions/upload-artifact@v4

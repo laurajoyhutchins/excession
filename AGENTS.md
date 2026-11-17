@@ -24,6 +24,7 @@ graph density, or novel parser coverage.
 6. Re-run relevant checks and preserve failing or unsupported evidence.
 7. Report only capabilities that exist at the inspected source revision.
 8. When a defect teaches a reusable invariant, add a negative regression test and consider an evidence-backed rule in [the quality ratchet](docs/QUALITY_RATCHET.md). A green gate is not a semantic proof.
+9. For proposed structural changes, use the [trusted structural receipt contract](docs/STRUCTURAL_PRESERVATION.md) to compare named behavior across exact Git revisions. Never convert an observed match into merge authority.
 
 **Current interface:** `excession agent locate`, `agent context`,
 `agent verify`, `excession investigation start/explore/claim/witness/question/synthesize/explain/refresh/plan/verify/execute/show`,

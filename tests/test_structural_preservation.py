@@ -144,7 +144,8 @@ class StructuralPreservation(unittest.TestCase):
             "python3", "-B", "-c",
             "from pathlib import Path; import os; assert not (Path(os.environ['HOME']) / 'marker').exists()",
         ]
-        # Every obligation has new source worktrees and HOME directories; the\n        # candidate's second command cannot see the first one's marker.
+        # Every obligation has new source worktrees and HOME directories; the
+        # candidate's second command cannot see the first one's marker.
         self.assertEqual(self.evaluate()["status"],
                          "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
 

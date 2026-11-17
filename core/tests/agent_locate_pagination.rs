@@ -339,3 +339,43 @@ fn partial_index_paging_never_claims_missing_sources_are_absent() {
         "a newly completed partition must invalidate the old cursor"
     );
 }
+
+#[test]
+fn staging_more_chunks_invalidates_cursor_even_before_a_file_becomes_visible() {
+    let root = Scratch(std::env::temp_dir().join(format!(
+        "excession-locate-staged-page-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed),
+    )));
+    fs::create_dir_all(root.0.join("src")).unwrap();
+    git(&root.0, &["init", "-q"]);
+    let mut buckets = std::collections::BTreeMap::<u8, Vec<String>>::new();
+    for index in 0..1500 {
+        let path = format!("src/group_{index:05}.rs");
+        let digest = excession::digest::sha256(path.as_bytes());
+        let bucket = u8::from_str_radix(&digest[..2], 16).unwrap();
+        buckets.entry(bucket).or_default().push(path);
+    }
+    let files = buckets.values().find(|paths| paths.len() >= 4).unwrap();
+    for (number, path) in files.iter().take(3).enumerate() {
+        fs::write(root.0.join(path), format!("fn f_{number}() {{ let needle = 1; }}\n")).unwrap();
+    }
+    fs::write(root.0.join(&files[3]), "// deferred source contents\n".repeat(600)).unwrap();
+    let rev = commit(&root.0);
+    let options = [
+        "--rev", rev.as_str(), "--task", "needle", "--limit", "2",
+        "--index-segments", "1", "--max-file-bytes", "256",
+        "--max-segment-bytes", "1024", "--max-segment-files", "10",
+    ];
+    let first = page(&root.0, &options);
+    assert_eq!(first["index"]["indexed_source_count"], 3);
+    assert_eq!(first["index"]["skipped_source_count"], 1);
+    assert_eq!(first["index"]["complete"], false);
+    let cursor = first["page"]["next_cursor"].as_str().expect("cursor before staging more bytes");
+    let mut resumed = options.to_vec();
+    resumed.extend(["--after", cursor]);
+    let second = output(&root.0, &resumed);
+    assert_eq!(second.status.code(), Some(2),
+        "continued staging must invalidate a cursor over a changed FTS corpus");
+    assert!(String::from_utf8_lossy(&second.stderr).contains("REFUSED:"));
+}

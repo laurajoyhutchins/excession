@@ -816,12 +816,14 @@ fn execute(args: &[String]) -> Result<Response> {
                 "claim" => Ok(json(investigation::claim(
                     &ledger,
                     repo,
-                    opt.get("id"),
-                    expected_revision()?,
-                    opt.get("path"),
-                    opt.get("statement"),
-                    opt.get("assumption"),
-                    opt.get("assessment"),
+                    investigation::Claim {
+                        id: opt.get("id"),
+                        expected_revision: expected_revision()?,
+                        path: opt.get("path"),
+                        statement: opt.get("statement"),
+                        assumption: opt.get("assumption"),
+                        assessment: opt.get("assessment"),
+                    },
                 )?)),
                 "plan" => Ok(json(investigation::plan(
                     &ledger,
@@ -839,14 +841,16 @@ fn execute(args: &[String]) -> Result<Response> {
                     Ok(json(investigation::verify(
                         &ledger,
                         repo,
-                        opt.get("id"),
-                        expected_revision()?,
-                        opt.get("plan-event"),
-                        opt.get("candidate"),
-                        limit,
-                        opt.0.get("roots").map(String::as_str),
-                        opt.0.get("evidence-db").map(String::as_str),
-                        opt.0.get("receipts").map(|s| Path::new(s.as_str())),
+                        investigation::Verification {
+                            id: opt.get("id"),
+                            expected_revision: expected_revision()?,
+                            plan_event_id: opt.get("plan-event"),
+                            candidate: opt.get("candidate"),
+                            limit,
+                            roots: opt.0.get("roots").map(String::as_str),
+                            evidence_db: opt.0.get("evidence-db").map(String::as_str),
+                            receipts: opt.0.get("receipts").map(|s| Path::new(s.as_str())),
+                        },
                     )?))
                 }
                 "show" => Ok(json(investigation::audit(&ledger, repo, opt.get("id"))?)),

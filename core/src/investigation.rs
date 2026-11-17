@@ -357,36 +357,36 @@ pub fn start(db: &Db, repo: &Path, rev: &str, question: &str) -> Result<Value> {
     )
 }
 
-pub fn claim(
-    db: &Db,
-    repo: &Path,
-    id: &str,
-    expected_revision: usize,
-    path: &str,
-    statement: &str,
-    assumption: &str,
-    assessment: &str,
-) -> Result<Value> {
-    bounded(statement, "claim")?;
-    bounded(assumption, "claim assumption")?;
-    if !matches!(assessment, "HYPOTHESIS" | "SOURCE_REVIEW_REPORTED") {
+pub struct Claim<'a> {
+    pub id: &'a str,
+    pub expected_revision: usize,
+    pub path: &'a str,
+    pub statement: &'a str,
+    pub assumption: &'a str,
+    pub assessment: &'a str,
+}
+
+pub fn claim(db: &Db, repo: &Path, request: Claim<'_>) -> Result<Value> {
+    bounded(request.statement, "claim")?;
+    bounded(request.assumption, "claim assumption")?;
+    if !matches!(request.assessment, "HYPOTHESIS" | "SOURCE_REVIEW_REPORTED") {
         return refuse("claim assessment must be HYPOTHESIS or SOURCE_REVIEW_REPORTED");
     }
     // Resolve source from the ledger's pinned commit, never the working tree.
-    let history = audit(db, repo, id)?;
+    let history = audit(db, repo, request.id)?;
     let commit = history.get("source_commit")?.str()?;
-    let source = SourceRef::from_git(repo, commit, path)?;
+    let source = SourceRef::from_git(repo, commit, request.path)?;
     append(
         db,
         repo,
-        id,
-        expected_revision,
+        request.id,
+        request.expected_revision,
         "CLAIM",
         obj(&[
             ("source", source_value(&source)),
-            ("statement", Value::string(statement)),
-            ("assumption", Value::string(assumption)),
-            ("assessment", Value::string(assessment)),
+            ("statement", Value::string(request.statement)),
+            ("assumption", Value::string(request.assumption)),
+            ("assessment", Value::string(request.assessment)),
         ]),
         None,
     )
@@ -415,33 +415,41 @@ pub fn plan(
     )
 }
 
-pub fn verify(
-    db: &Db,
-    repo: &Path,
-    id: &str,
-    expected_revision: usize,
-    plan_event_id: &str,
-    candidate: &str,
-    limit: usize,
-    roots: Option<&str>,
-    evidence_db: Option<&str>,
-    receipts: Option<&Path>,
-) -> Result<Value> {
-    let history = audit(db, repo, id)?;
-    if history.get("revision")?.integer()? != expected_revision as i64 {
+pub struct Verification<'a> {
+    pub id: &'a str,
+    pub expected_revision: usize,
+    pub plan_event_id: &'a str,
+    pub candidate: &'a str,
+    pub limit: usize,
+    pub roots: Option<&'a str>,
+    pub evidence_db: Option<&'a str>,
+    pub receipts: Option<&'a Path>,
+}
+
+pub fn verify(db: &Db, repo: &Path, request: Verification<'_>) -> Result<Value> {
+    let history = audit(db, repo, request.id)?;
+    if history.get("revision")?.integer()? != request.expected_revision as i64 {
         return refuse("stale investigation expected revision");
     }
     let base = history.get("source_commit")?.str()?;
-    let report = crate::agent::verify(repo, base, candidate, limit, roots, evidence_db, receipts)?;
+    let report = crate::agent::verify(
+        repo,
+        base,
+        request.candidate,
+        request.limit,
+        request.roots,
+        request.evidence_db,
+        request.receipts,
+    )?;
     verify_agent_report(repo, base, history.get("source_tree")?.str()?, &report)?;
     append(
         db,
         repo,
-        id,
-        expected_revision,
+        request.id,
+        request.expected_revision,
         "VERIFY",
         obj(&[
-            ("plan_event_id", Value::string(plan_event_id)),
+            ("plan_event_id", Value::string(request.plan_event_id)),
             ("report", report),
         ]),
         None,

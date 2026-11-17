@@ -34,9 +34,15 @@ fn sha256_file(path: &Path) -> Result<(String, u64)> {
     let mut bytes = 0u64;
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n = f.read(&mut buf).map_err(|e| format!("execution artifact stream: {e}"))?;
-        if n == 0 { break; }
-        bytes = bytes.checked_add(n as u64).ok_or("execution artifact size overflow")?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| format!("execution artifact stream: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        bytes = bytes
+            .checked_add(n as u64)
+            .ok_or("execution artifact size overflow")?;
         sha.update(&buf[..n]);
     }
     Ok((format!("{:x}", sha.finalize()), bytes))
@@ -69,7 +75,9 @@ fn planned_witnesses(events: &[Value], plan_id: &str) -> Result<Vec<Value>> {
         let id = event.get("event_id")?.str()?;
         let kind = event.get("kind")?.str()?;
         if id == plan_id {
-            if kind != "PLAN" { return refuse("execution references a non-plan event"); }
+            if kind != "PLAN" {
+                return refuse("execution references a non-plan event");
+            }
             let claim = event.get("payload")?.get("claim_event_id")?.str()?;
             witnesses.retain(|item: &Value| {
                 item.get("claim_event_id").and_then(Value::str).ok() == Some(claim)
@@ -77,13 +85,21 @@ fn planned_witnesses(events: &[Value], plan_id: &str) -> Result<Vec<Value>> {
             if witnesses.is_empty() {
                 return refuse("execution plan needs an existing source behavior witness");
             }
-            matching = Some(witnesses.iter().map(|x| x.get("event_id").cloned()).collect::<Result<Vec<_>>>()?);
+            matching = Some(
+                witnesses
+                    .iter()
+                    .map(|x| x.get("event_id").cloned())
+                    .collect::<Result<Vec<_>>>()?,
+            );
             break;
         }
         if kind == "WITNESS" {
             witnesses.push(obj(&[
                 ("event_id", event.get("event_id")?.clone()),
-                ("claim_event_id", event.get("payload")?.get("claim_event_id")?.clone()),
+                (
+                    "claim_event_id",
+                    event.get("payload")?.get("claim_event_id")?.clone(),
+                ),
             ]));
         }
     }
@@ -98,18 +114,29 @@ struct Worktrees<'a> {
 
 impl<'a> Worktrees<'a> {
     fn new(repo: &'a Path) -> Result<Self> {
-        let canonical = repo.canonicalize().map_err(|e| format!("source checkout: {e}"))?;
+        let canonical = repo
+            .canonicalize()
+            .map_err(|e| format!("source checkout: {e}"))?;
         for nonce in 0..32u32 {
-            let tick = SystemTime::now().duration_since(UNIX_EPOCH)
-                .map_err(|e| e.to_string())?.as_nanos();
+            let tick = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| e.to_string())?
+                .as_nanos();
             let dir = std::env::temp_dir().join(format!(
-                "excession-execution-{}-{tick}-{nonce}", std::process::id()
+                "excession-execution-{}-{tick}-{nonce}",
+                std::process::id()
             ));
             if dir.starts_with(&canonical) {
                 return refuse("temporary execution worktrees must be outside the source checkout");
             }
             match fs::create_dir(&dir) {
-                Ok(()) => return Ok(Self { repo, root: dir, registered: Vec::new() }),
+                Ok(()) => {
+                    return Ok(Self {
+                        repo,
+                        root: dir,
+                        registered: Vec::new(),
+                    });
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(e) => return Err(format!("create temporary execution workspace: {e}")),
             }
@@ -163,8 +190,12 @@ fn observation(
 ) -> Result<Value> {
     // Captures are siblings, not children, of the checked-out Git tree.
     // The observing machinery must never change inputs visible to the program.
-    let workspace = worktree.parent().ok_or("execution worktree has no parent")?;
-    let label = worktree.file_name().and_then(|s| s.to_str())
+    let workspace = worktree
+        .parent()
+        .ok_or("execution worktree has no parent")?;
+    let label = worktree
+        .file_name()
+        .and_then(|s| s.to_str())
         .ok_or("invalid execution worktree name")?;
     let stdout = workspace.join(format!(".{label}.stdout"));
     let stderr = workspace.join(format!(".{label}.stderr"));
@@ -186,7 +217,10 @@ fn observation(
             .map_err(|e| format!("trusted-local execution launch: {e}"))?;
         let started = Instant::now();
         let (state, code) = loop {
-            if let Some(status) = child.try_wait().map_err(|e| format!("execution wait: {e}"))? {
+            if let Some(status) = child
+                .try_wait()
+                .map_err(|e| format!("execution wait: {e}"))?
+            {
                 break ("EXITED", status.code());
             }
             let a = fs::metadata(&stdout).map_err(|e| e.to_string())?.len();
@@ -214,10 +248,14 @@ fn observation(
         };
         let stdout_hash = if a <= max_output {
             Value::string(sha256_file(&stdout)?.0)
-        } else { Value::Null };
+        } else {
+            Value::Null
+        };
         let stderr_hash = if b <= max_output {
             Value::string(sha256_file(&stderr)?.0)
-        } else { Value::Null };
+        } else {
+            Value::Null
+        };
         // These are observations of one bounded run, not semantic guarantees.
         Ok(obj(&[
             ("commit", Value::string(revision)),
@@ -239,7 +277,13 @@ fn comparison(base: &Value, candidate: &Value) -> Result<&'static str> {
     if base.get("status")?.str()? != "EXITED" || candidate.get("status")?.str()? != "EXITED" {
         return Ok("INCONCLUSIVE");
     }
-    for field in ["exit_code", "stdout_sha256", "stderr_sha256", "stdout_bytes", "stderr_bytes"] {
+    for field in [
+        "exit_code",
+        "stdout_sha256",
+        "stderr_sha256",
+        "stdout_bytes",
+        "stderr_bytes",
+    ] {
         if base.get(field)? != candidate.get(field)? {
             return Ok("DIFFERENCE_OBSERVED");
         }
@@ -283,7 +327,11 @@ pub(crate) fn validate_event(
     if tool.entries()?.len() != 3
         || !Path::new(tool.get("path")?.str()?).is_absolute()
         || tool.get("sha256")?.str()?.len() != 64
-        || tool.get("argv")?.array_ref()?.iter().any(|v| v.str().is_err())
+        || tool
+            .get("argv")?
+            .array_ref()?
+            .iter()
+            .any(|v| v.str().is_err())
     {
         return refuse("execution host tool identity or argv is malformed");
     }
@@ -305,8 +353,10 @@ pub(crate) fn validate_event(
         if sample.entries()?.len() != 8
             || sample.get("commit")?.str()? != rev
             || sample.get("tree")?.str()? != git_tree
-            || !matches!(sample.get("status")?.str()?,
-                "EXITED" | "TIMEOUT" | "OUTPUT_LIMIT" | "TERMINATED_BY_SIGNAL")
+            || !matches!(
+                sample.get("status")?.str()?,
+                "EXITED" | "TIMEOUT" | "OUTPUT_LIMIT" | "TERMINATED_BY_SIGNAL"
+            )
         {
             return refuse("execution sample identity or status mismatch");
         }
@@ -326,7 +376,9 @@ pub(crate) fn validate_event(
             }
         }
     }
-    if report.get("comparison")?.str()? != comparison(report.get("base")?, report.get("candidate")?)? {
+    if report.get("comparison")?.str()?
+        != comparison(report.get("base")?, report.get("candidate")?)?
+    {
         return refuse("execution comparison contradicts retained observations");
     }
     Ok(())
@@ -336,27 +388,37 @@ pub fn compare(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
     if !request.trusted_local {
         return refuse("execution requires explicit --trusted-local true; no sandbox is provided");
     }
-    if request.timeout_ms == 0 || request.max_output_bytes == 0
+    if request.timeout_ms == 0
+        || request.max_output_bytes == 0
         || request.timeout_ms > i64::MAX as u64
         || request.max_output_bytes > i64::MAX as u64
     {
-        return refuse("execution timeout and output budgets must be positive representable values");
+        return refuse(
+            "execution timeout and output budgets must be positive representable values",
+        );
     }
     let arguments = argv(request.argv_json)?;
     if !request.program.is_absolute() {
         return refuse("execution requires an absolute trusted host executable path");
     }
-    let program = request.program.canonicalize()
+    let program = request
+        .program
+        .canonicalize()
         .map_err(|e| format!("trusted host executable: {e}"))?;
     if !program.is_file() {
         return refuse("execution requires a regular absolute host executable");
     }
-    let source_root = repo.canonicalize().map_err(|e| format!("source checkout: {e}"))?;
+    let source_root = repo
+        .canonicalize()
+        .map_err(|e| format!("source checkout: {e}"))?;
     if program.starts_with(&source_root)
-        || arguments.iter().any(|arg| Path::new(arg).is_absolute()
-            && Path::new(arg).starts_with(&source_root))
+        || arguments
+            .iter()
+            .any(|arg| Path::new(arg).is_absolute() && Path::new(arg).starts_with(&source_root))
     {
-        return refuse("host executable and absolute script paths must not refer to the mutable source checkout");
+        return refuse(
+            "host executable and absolute script paths must not refer to the mutable source checkout",
+        );
     }
     let (program_sha, _) = sha256_file(&program)?;
     let history = investigation::audit(db, repo, request.id)?;
@@ -365,7 +427,8 @@ pub fn compare(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
     }
     let base = history.get("source_commit")?.str()?;
     let tree = history.get("source_tree")?.str()?;
-    let witness_ids = planned_witnesses(history.get("events")?.array_ref()?, request.plan_event_id)?;
+    let witness_ids =
+        planned_witnesses(history.get("events")?.array_ref()?, request.plan_event_id)?;
     let candidate = git::rev(repo, &format!("{}^{{commit}}", request.candidate))?;
     let candidate_tree = verified_revision(repo, &candidate)?;
     if base == candidate {
@@ -376,8 +439,24 @@ pub fn compare(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
     let base_root = temp.add("base", base)?;
     let candidate_root = temp.add("candidate", &candidate)?;
     let timeout = Duration::from_millis(request.timeout_ms);
-    let old = observation(&base_root, base, tree, &program, &arguments, timeout, request.max_output_bytes)?;
-    let new = observation(&candidate_root, &candidate, &candidate_tree, &program, &arguments, timeout, request.max_output_bytes)?;
+    let old = observation(
+        &base_root,
+        base,
+        tree,
+        &program,
+        &arguments,
+        timeout,
+        request.max_output_bytes,
+    )?;
+    let new = observation(
+        &candidate_root,
+        &candidate,
+        &candidate_tree,
+        &program,
+        &arguments,
+        timeout,
+        request.max_output_bytes,
+    )?;
     temp.cleanup()?;
 
     let report = obj(&[
@@ -388,33 +467,59 @@ pub fn compare(db: &Db, repo: &Path, request: Request<'_>) -> Result<Value> {
         ("candidate_tree", Value::string(candidate_tree)),
         ("plan_event_id", Value::string(request.plan_event_id)),
         ("witness_event_ids", Value::array(witness_ids)),
-        ("program", obj(&[
-            ("path", Value::string(program.to_string_lossy())),
-            ("sha256", Value::string(program_sha)),
-            ("argv", Value::array(arguments.into_iter().map(Value::string))),
-        ])),
-        ("limits", obj(&[
-            ("timeout_ms", Value::number(request.timeout_ms)),
-            ("max_output_bytes", Value::number(request.max_output_bytes)),
-        ])),
-        ("environment", Value::string("FIXED_MINIMAL_PROCESS_ENV_HOST_UNATTESTED")),
+        (
+            "program",
+            obj(&[
+                ("path", Value::string(program.to_string_lossy())),
+                ("sha256", Value::string(program_sha)),
+                (
+                    "argv",
+                    Value::array(arguments.into_iter().map(Value::string)),
+                ),
+            ]),
+        ),
+        (
+            "limits",
+            obj(&[
+                ("timeout_ms", Value::number(request.timeout_ms)),
+                ("max_output_bytes", Value::number(request.max_output_bytes)),
+            ]),
+        ),
+        (
+            "environment",
+            Value::string("FIXED_MINIMAL_PROCESS_ENV_HOST_UNATTESTED"),
+        ),
         ("base", old.clone()),
         ("candidate", new.clone()),
         ("comparison", Value::string(comparison(&old, &new)?)),
         ("trust", Value::string("TRUSTED_LOCAL_EXECUTION_UNATTESTED")),
         ("semantic_verification", Value::string("NOT_ESTABLISHED")),
         ("ready_to_merge", Value::Bool(false)),
-    ]).stamp_id("report_id")?;
-    validate_event(repo, base, tree, &obj(&[
-        ("plan_event_id", Value::string(request.plan_event_id)),
-        ("report", report.clone()),
-    ]), history.get("events")?.array_ref()?)?;
-    // Recheck expected revision atomically after the external process exits.
-    let result = investigation::append(db, repo, request.id, request.expected_revision,
-        "EXECUTION", obj(&[
+    ])
+    .stamp_id("report_id")?;
+    validate_event(
+        repo,
+        base,
+        tree,
+        &obj(&[
             ("plan_event_id", Value::string(request.plan_event_id)),
             ("report", report.clone()),
-        ]), None)?;
+        ]),
+        history.get("events")?.array_ref()?,
+    )?;
+    // Recheck expected revision atomically after the external process exits.
+    let result = investigation::append(
+        db,
+        repo,
+        request.id,
+        request.expected_revision,
+        "EXECUTION",
+        obj(&[
+            ("plan_event_id", Value::string(request.plan_event_id)),
+            ("report", report.clone()),
+        ]),
+        None,
+    )?;
     // The original report remains included inside the append-only event.
     Ok(result)
 }

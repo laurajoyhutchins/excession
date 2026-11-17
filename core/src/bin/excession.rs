@@ -15,8 +15,8 @@ use excession::impact_query;
 use excession::improve;
 use excession::improve_edits;
 use excession::investigation;
-use excession::investigation_witness;
 use excession::investigation_execution;
+use excession::investigation_witness;
 use excession::investigation_workflow;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
@@ -944,12 +944,18 @@ fn execute(args: &[String]) -> Result<Response> {
                     )?))
                 }
                 "execute" => {
-                    let timeout_ms = opt.get_or("timeout-ms", "30000")
-                        .parse::<u64>().map_err(|_| "--timeout-ms must be an integer".to_owned())?;
-                    let max_output_bytes = opt.get_or("max-output-bytes", "1048576")
-                        .parse::<u64>().map_err(|_| "--max-output-bytes must be an integer".to_owned())?;
+                    let timeout_ms = opt
+                        .get_or("timeout-ms", "30000")
+                        .parse::<u64>()
+                        .map_err(|_| "--timeout-ms must be an integer".to_owned())?;
+                    let max_output_bytes = opt
+                        .get_or("max-output-bytes", "1048576")
+                        .parse::<u64>()
+                        .map_err(|_| "--max-output-bytes must be an integer".to_owned())?;
                     Ok(json(investigation_execution::compare(
-                        &ledger, repo, investigation_execution::Request {
+                        &ledger,
+                        repo,
+                        investigation_execution::Request {
                             id: opt.get("id"),
                             expected_revision: expected_revision()?,
                             plan_event_id: opt.get("plan-event"),

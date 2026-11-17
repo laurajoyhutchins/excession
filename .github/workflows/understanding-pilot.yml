@@ -6,6 +6,9 @@ on:
     paths:
       - 'benchmarks/understanding/**'
       - 'tests/test_code_understanding_pilot.py'
+      - 'core/src/agent_locate.rs'
+      - 'core/src/source/git.rs'
+      - 'contracts/agent/locate.schema.json'
       - '.github/workflows/understanding-pilot.yml'
 
 permissions:

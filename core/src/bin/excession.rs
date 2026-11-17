@@ -752,7 +752,14 @@ fn execute(args: &[String]) -> Result<Response> {
                         .get_or("index-segments", "8")
                         .parse::<usize>()
                         .map_err(|_| "--index-segments must be an integer from 1 to 256")?;
-                    let defaults = agent_locate::IndexLimits::default();
+                    let defaults = if let Some(path) = opt.0.get("budget-file") {
+                        let content = std::fs::read_to_string(path)
+                            .map_err(|err| format!("--budget-file could not be read: {err}"))?;
+                        serde_json::from_str::<agent_locate::IndexLimits>(&content)
+                            .map_err(|err| format!("--budget-file is invalid: {err}"))?
+                    } else {
+                        agent_locate::IndexLimits::default()
+                    };
                     let parse_budget = |name: &str, default: usize| -> Result<usize> {
                         opt.0.get(name).map_or(Ok(default), |raw| {
                             raw.parse::<usize>()

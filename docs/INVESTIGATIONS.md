@@ -17,7 +17,7 @@ The CLI writes append-only canonical JSON events to an explicitly chosen
 SQLite file **outside the source checkout**. Each event includes a Git
 commit/tree identity, optimistic revision, event ID and predecessor digest.
 
-\`\`\`sh
+```sh
 # Pin source; returns investigation_id and event_id
 excession investigation start \
   --repo /work/project --rev HEAD \
@@ -48,21 +48,21 @@ excession investigation verify \
 excession investigation show \
   --repo /work/project --db /tmp/investigations.sqlite \
   --id INVESTIGATION_ID
-\`\`\`
+```
 
-\`claim\` accepts \`HYPOTHESIS\` or \`SOURCE_REVIEW_REPORTED\`, never a
-free-form \`VERIFIED\` state. \`plan\` must reference an earlier claim and
-\`verify\` must reference an earlier plan. Verification runs
-\`agent verify\` and retains its \`OPEN_OBLIGATIONS\` or
-\`REPORTED_FAILURE\` result, not a proof of behavior or merge approval.
+`claim` accepts `HYPOTHESIS` or `SOURCE_REVIEW_REPORTED`, never a
+free-form `VERIFIED` state. `plan` must reference an earlier claim and
+`verify` must reference an earlier plan. Verification runs
+`agent verify` and retains its `OPEN_OBLIGATIONS` or
+`REPORTED_FAILURE` result, not a proof of behavior or merge approval.
 The same expected revision cannot be written twice; event rows refuse SQL
-update/delete, and \`show\` replays the chain and authenticates Git source.
+update/delete, and `show` replays the chain and authenticates Git source.
 
 The ledger does not yet select relevant source itself, infer call paths,
 automatically expand open questions, invalidate claims across revisions,
 or provide native source edits. Its event and report wire contracts are
-[\`investigation-event.v1\`](../contracts/product/investigation-event.v1.schema.json)
-and [\`investigation.v1\`](../contracts/product/investigation.v1.schema.json).
+[`investigation-event.v1`](../contracts/product/investigation-event.v1.schema.json)
+and [`investigation.v1`](../contracts/product/investigation.v1.schema.json).
 
 ## Required content
 

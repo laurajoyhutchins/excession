@@ -31,7 +31,7 @@ available through `excession investigation`. It records claims, behavior-
 preservation obligations and existing `agent verify` outputs, but **does not
 write behavioral explanations or certify equivalence**. A fully automated
 investigation engine and transformation command remain target architecture. Current reports do
-not themselves certify behavior, semantic equivalence, safe test selection
+not themselves certify behavior, semantic equivalence, safe test selection,
 or permission to merge.
 
 | Engineering task | Start here |

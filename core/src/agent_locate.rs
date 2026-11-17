@@ -410,6 +410,7 @@ fn reading_plan(
                 candidate,
                 "source",
                 "INSPECT_RELATED_TEST",
+                "TEST_PATH_HEURISTIC",
                 "Read the assertions and fixtures to identify which behavior they actually cover.",
                 "context.test_candidates",
                 i,

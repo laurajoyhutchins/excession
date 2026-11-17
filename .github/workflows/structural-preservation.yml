@@ -55,6 +55,38 @@ jobs:
           fi
           git cat-file -e "$SOURCE_BASE^{commit}"
           git cat-file -e "$SOURCE_CANDIDATE^{commit}"
+      - uses: jdx/mise-action@v5
+      - name: Build source-pinned Excession source-impact verifier
+        run: |
+          set -euo pipefail
+          cargo fetch --locked --manifest-path core/Cargo.toml
+          cargo build --offline --locked --manifest-path core/Cargo.toml --bin excession
+      - name: Obtain native source-impact and open-obligation evidence
+        env:
+          SOURCE_BASE: ${{ inputs.base }}
+          SOURCE_CANDIDATE: ${{ inputs.candidate }}
+        run: |
+          set -euo pipefail
+          core/target/debug/excession agent verify --repo . \
+            --base "$SOURCE_BASE" --candidate "$SOURCE_CANDIDATE" \
+            --roots core/src,core/adapters,tests,tools --limit 64 \
+            > "$RUNNER_TEMP/excession-agent-verification.json"
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+          report = json.loads((Path(os.environ["RUNNER_TEMP"]) / "excession-agent-verification.json").read_text())
+          assert report["schema"] == "excession.agent-verification.v1"
+          assert report["base_commit"] == os.environ["SOURCE_BASE"]
+          assert report["candidate_commit"] == os.environ["SOURCE_CANDIDATE"]
+          assert report["candidate_tree"] == subprocess.check_output(
+              ["git", "rev-parse", os.environ["SOURCE_CANDIDATE"] + "^{tree}"], text=True).strip()
+          assert report["ready_to_merge"] is False
+          assert report["safe_to_skip_unlisted_tests"] is False
+          assert report["status"] == "OPEN_OBLIGATIONS"
+          print("Source impact is Git-bound; semantic and test obligations remain OPEN.")
+          PY
       - name: Run reviewed commands in independent source worktrees
         env:
           SOURCE_BASE: ${{ inputs.base }}
@@ -71,6 +103,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: structural-preservation-${{ github.run_id }}
-          path: ${{ runner.temp }}/structural-preservation.json
+          path: |
+            ${{ runner.temp }}/structural-preservation.json
+            ${{ runner.temp }}/excession-agent-verification.json
           retention-days: 30
           if-no-files-found: warn

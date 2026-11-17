@@ -86,6 +86,7 @@ pub(crate) struct PreparedSources {
     map_js: BTreeMap<String, String>,
     python: Value,
     javascript: Value,
+    unreadable_js_modules: BTreeSet<String>,
 }
 
 /// The only incremental-reuse facts needed by source preparation. The
@@ -174,12 +175,23 @@ pub(crate) fn prepare_sources(
     let mut py = Vec::new();
     let mut js = Vec::new();
     let mut map_js = BTreeMap::new();
+    let mut unreadable_js_modules = BTreeSet::new();
     for (path, (name, oid)) in &files {
         if reuse.is_some_and(|selection| selection.paths.contains(path)) {
             continue;
         }
-        let content = String::from_utf8(blob_reader.read(oid)?)
-            .map_err(|_| "source is not UTF-8; unsupported source decoder".to_owned())?;
+        // Some real repositories intentionally track invalid-UTF-8 JavaScript
+        // fixtures. Preserve their Git/module identities and explicitly record
+        // missing semantic coverage instead of aborting unrelated source reads.
+        let content = match String::from_utf8(blob_reader.read(oid)?) {
+            Ok(text) => text,
+            Err(_) if !path.ends_with(".py") => {
+                unreadable_js_modules.insert(name.clone());
+                map_js.insert(path.clone(), name.clone());
+                continue;
+            }
+            Err(_) => return refuse("source is not UTF-8; unsupported source decoder"),
+        };
         if path.ends_with(".py") {
             py.push(adapter::entry(name, path, &content));
         } else {
@@ -206,6 +218,7 @@ pub(crate) fn prepare_sources(
         map_js,
         python,
         javascript,
+        unreadable_js_modules,
     })
 }
 
@@ -222,6 +235,7 @@ pub(crate) fn index_prepared(
         map_js,
         python,
         javascript,
+        unreadable_js_modules,
     } = prepared;
     if !python.array_ref()?.is_empty() {
         for item in python.array_ref()? {
@@ -330,6 +344,12 @@ pub(crate) fn index_prepared(
             }
         }
     }
+    for module in unreadable_js_modules {
+        if !modules.contains_key(module) {
+            return refuse("unreadable source lost its module identity");
+        }
+        put_hazard(db, id, commit, module, 1, "NON_UTF8_SOURCE_UNSUPPORTED")?;
+    }
     // The resulting graph is an over/under-approximation; lack of edges
     // NEVER constitutes permission to skip verification.
     let indexed = db
@@ -361,6 +381,53 @@ mod module_name_tests {
         assert!(verify_reuse_inventory(Some(selection), 0, 2).is_err());
         assert!(verify_reuse_inventory(Some(selection), 1, 3).is_err());
         assert!(verify_reuse_inventory(Some(selection), usize::MAX, 2).is_err());
+    }
+
+    #[test]
+    fn unreadable_javascript_remains_a_source_with_an_explicit_gap() {
+        use std::fs;
+        use std::process::Command;
+        let root = std::env::temp_dir().join(format!(
+            "excession-nonutf8-js-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            fs::remove_dir_all(&root).unwrap();
+        }
+        fs::create_dir_all(root.join("lib")).unwrap();
+        let command = |args: &[&str]| {
+            let status = Command::new("git").arg("-C").arg(&root).args(args).status().unwrap();
+            assert!(status.success(), "git {args:?}");
+        };
+        command(&["init", "-q"]);
+        fs::write(root.join("lib/good.js"), "module.exports = 42;\n").unwrap();
+        fs::write(root.join("lib/bad.js"), [0xff, 0xfe]).unwrap();
+        command(&["add", "."]);
+        command(&[
+            "-c", "user.name=Excession Test",
+            "-c", "user.email=excession@example.invalid",
+            "commit", "-qm", "fixture",
+        ]);
+        let commit = git::rev(&root, "HEAD").unwrap();
+        let entries = git::entries(&root, &commit).unwrap();
+        let prepared = prepare_sources(&root, &entries, &["lib"], None, None).unwrap();
+        assert_eq!(prepared.modules.len(), 2);
+        assert!(prepared.unreadable_js_modules.contains("lib.bad.js"));
+
+        let db = Db::open(&root.join("evidence.sqlite")).unwrap();
+        let repo = crate::index::index_revision_for_evidence(
+            &db, &root, "nonutf8-js-fixture", &commit, "test"
+        ).unwrap();
+        index_prepared(&db, repo, &commit, &prepared).unwrap();
+        let gaps = db.query(
+            "SELECT module_name,reason FROM hazard WHERE repo_id=? AND commit_oid=?",
+            &[Param::Integer(repo), Param::Text(&commit)],
+        ).unwrap();
+        assert!(gaps.iter().any(|row| {
+            row.first().and_then(|v| v.as_deref()) == Some("lib.bad.js")
+                && row.get(1).and_then(|v| v.as_deref()) == Some("NON_UTF8_SOURCE_UNSUPPORTED")
+        }));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

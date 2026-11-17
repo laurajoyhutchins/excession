@@ -104,9 +104,15 @@ jobs:
           set -euo pipefail
           gh auth setup-git
           git push origin "HEAD:refs/heads/$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
+          if ! gh pr create --base main --head "$BRANCH" \
             --title "style: reproducible native Rust formatting" \
-            --body "Automatic-integration candidate generated from main at $BASE. The pinned native Rust formatter was independently replayed from the base Git tree with an exact byte-for-byte match to candidate $HEAD. Only tracked Rust source may change. Native tests and the quality ratchet ran locally. Both exact-head Verify and Excession GitHub evidence must pass before merging; no broad semantic-equivalence claim. Recipe: quality/improvement-recipes.json (native-rustfmt)."
+            --body "Automatic-integration candidate generated from main at $BASE. The pinned native Rust formatter was independently replayed from the base Git tree with an exact byte-for-byte match to candidate $HEAD. Only tracked Rust source may change. Native tests and the quality ratchet ran locally. Both exact-head Verify and Excession GitHub evidence must pass before merging; no broad semantic-equivalence claim. Recipe: quality/improvement-recipes.json (native-rustfmt)."; then
+            echo "::error::GitHub Actions cannot create pull requests in this repository."
+            echo "Open a PR from the already-pushed $BRANCH branch after reviewing the native evidence." >> "$GITHUB_STEP_SUMMARY"
+            echo "Candidate: https://github.com/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1" >> "$GITHUB_STEP_SUMMARY"
+            echo "To allow unattended integration, repository administrator must enable Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           PR="$(gh pr view "$BRANCH" --json number --jq .number)"
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
           # GitHub's GITHUB_TOKEN PR event cannot be relied on to start checks.

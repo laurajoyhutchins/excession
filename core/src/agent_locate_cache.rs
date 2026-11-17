@@ -783,7 +783,11 @@ pub(crate) fn search_with_page(
     request: PageRequest<'_>,
 ) -> Result<Search> {
     let PageRequest {
-        limit, refresh_budget, limits, task_key, after,
+        limit,
+        refresh_budget,
+        limits,
+        task_key,
+        after,
     } = request;
     let limits = limits.validate()?;
     if !(1..=64).contains(&limit) {
@@ -902,7 +906,8 @@ pub(crate) fn search_with_page(
     let mut identity = format!(
         "excession-locate-page-v1\0{}\0{}\0{}\0{}\0",
         CACHE_VERSION, discovered.commit, discovered.tree, task_key,
-    ).into_bytes();
+    )
+    .into_bytes();
     identity.extend_from_slice(expression.as_bytes());
     identity.push(0);
     for value in [
@@ -916,32 +921,41 @@ pub(crate) fn search_with_page(
         if let Some(ref segment) = prior[id]
             && segment.fingerprint == fingerprints[id]
         {
-            identity.extend_from_slice(format!(
-                "{id}:{}:{}:{}:{}:{}\\0",
-                segment.fingerprint,
-                segment.indexed_files,
-                segment.indexed_bytes,
-                segment.skipped_files,
-                segment.truncated
-            ).as_bytes());
+            identity.extend_from_slice(
+                format!(
+                    "{id}:{}:{}:{}:{}:{}\\0",
+                    segment.fingerprint,
+                    segment.indexed_files,
+                    segment.indexed_bytes,
+                    segment.skipped_files,
+                    segment.truncated
+                )
+                .as_bytes(),
+            );
         }
     }
     let snapshot_id = crate::digest::sha256(&identity);
     let page_offset = if let Some(cursor) = after {
         let mut parts = cursor.split('.');
         if parts.next() != Some("v1") || parts.next() != Some(snapshot_id.as_str()) {
-            return refuse("source page cursor belongs to a different query or indexed Git snapshot");
+            return refuse(
+                "source page cursor belongs to a different query or indexed Git snapshot",
+            );
         }
         let offset = parts.next().ok_or("source page cursor has no offset")?;
         if parts.next().is_some() || offset.is_empty() || offset.starts_with('0') {
             return refuse("invalid source page cursor");
         }
-        let offset = offset.parse::<usize>().map_err(|_| "invalid source page cursor offset")?;
+        let offset = offset
+            .parse::<usize>()
+            .map_err(|_| "invalid source page cursor offset")?;
         if offset == 0 {
             return refuse("source page cursor offset must be positive");
         }
         offset
-    } else { 0 };
+    } else {
+        0
+    };
 
     let mut hits = Vec::new();
     let mut unique_rank = 0usize;

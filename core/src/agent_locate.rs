@@ -1029,17 +1029,17 @@ mod tests {
             paths,
             [
                 "src/worker.py",
+                "tests/test_worker.py",
                 "src/handler.py",
-                "src/store.py",
-                "tests/test_worker.py"
+                "src/store.py"
             ]
         );
         assert_eq!(
             steps[1].get("action").unwrap().str().unwrap(),
-            "INSPECT_POSSIBLE_CALLER"
+            "INSPECT_RELATED_TEST"
         );
         assert_eq!(
-            steps[2].get("basis").unwrap().str().unwrap(),
+            steps[3].get("basis").unwrap().str().unwrap(),
             "STATIC_RELATIONSHIP_CANDIDATE"
         );
         assert!(
@@ -1073,11 +1073,11 @@ mod tests {
         let steps = plan.get("steps").unwrap().array_ref().unwrap();
         assert_eq!(steps.len(), 8);
         assert_eq!(
-            steps[7].get("action").unwrap().str().unwrap(),
+            steps[4].get("action").unwrap().str().unwrap(),
             "INSPECT_RELATED_TEST"
         );
         assert_eq!(
-            steps[7].get("basis").unwrap().str().unwrap(),
+            steps[4].get("basis").unwrap().str().unwrap(),
             "TEST_PATH_HEURISTIC"
         );
     }
@@ -1272,6 +1272,7 @@ mod tests {
             NEXT.fetch_add(1, Ordering::Relaxed),
         ));
         fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("test")).unwrap();
         let git = |args: &[&str]| {
             let result = Command::new("git")
                 .arg("-C")
@@ -1292,6 +1293,11 @@ mod tests {
         )
         .unwrap();
         fs::write(root.join("src/other.rs"), "pub fn render_canvas() {}\n").unwrap();
+        fs::write(
+            root.join("test/lease.test"),
+            "do_test lease-recovery { lease checkout and worker assertion }\n",
+        )
+        .unwrap();
         fs::write(root.join("src/oversize.rs"), "x".repeat(MAX_FILE_BYTES + 1)).unwrap();
         git(&["add", "."]);
         git(&[
@@ -1343,6 +1349,20 @@ mod tests {
             0
         );
         assert!(first.get("context").unwrap().get("coverage").is_ok());
+        assert_eq!(
+            first.get("retrieval").unwrap().str().unwrap(),
+            "COMMITTED_GIT_GREP_WITH_FTS5_FALLBACK"
+        );
+        assert!(
+            first.get("git_search").unwrap().get("selected_source_files")
+                .unwrap().integer().unwrap() >= 2
+        );
+        assert!(
+            ranked.iter().any(|candidate| {
+                candidate.get("source").unwrap().get("path").unwrap().str().unwrap()
+                    == "test/lease.test"
+            })
+        );
         let plan = first.get("reading_plan").unwrap();
         let steps = plan.get("steps").unwrap().array_ref().unwrap();
         assert!(!steps.is_empty());
@@ -1360,6 +1380,12 @@ mod tests {
             steps[0].get("basis").unwrap().str().unwrap(),
             "GIT_BLOB_LEXICAL_MATCH"
         );
+        assert!(steps.iter().any(|step| {
+            step.get("source").unwrap().get("path").unwrap().str().unwrap()
+                == "test/lease.test"
+                && step.get("action").unwrap().str().unwrap()
+                    == "INSPECT_RELATED_TEST"
+        }));
         assert_eq!(
             steps[0]
                 .get("source")

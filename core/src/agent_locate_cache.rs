@@ -807,6 +807,7 @@ pub(crate) fn search_with_limits(
             limits,
             task_key: expression,
             after: None,
+            paginate: false,
         },
     )
 }
@@ -820,6 +821,7 @@ pub(crate) struct PageRequest<'a> {
     pub limits: IndexLimits,
     pub task_key: &'a str,
     pub after: Option<&'a str>,
+    pub paginate: bool,
 }
 
 pub(crate) fn search_with_page(
@@ -835,6 +837,7 @@ pub(crate) fn search_with_page(
         limits,
         task_key,
         after,
+        paginate,
     } = request;
     let limits = limits.validate()?;
     if !(1..=64).contains(&limit) {
@@ -950,45 +953,49 @@ pub(crate) fn search_with_page(
     put_meta(&tx, "source_commit", &discovered.commit)?;
     put_meta(&tx, "source_tree", &discovered.tree)?;
 
-    let mut identity = format!(
-        "excession-locate-page-v1\0{}\0{}\0{}\0{}\0",
-        CACHE_VERSION, discovered.commit, discovered.tree, task_key,
-    )
-    .into_bytes();
-    identity.extend_from_slice(expression.as_bytes());
-    identity.push(0);
-    for value in [
-        limits.max_file_bytes,
-        limits.max_bytes_per_segment,
-        limits.max_files_per_segment,
-    ] {
-        identity.extend_from_slice(&(value as u64).to_le_bytes());
-    }
-    for id in 0..SEGMENT_COUNT {
-        // Historical metadata for an empty partition must not change a
-        // query snapshot after switching away from and back to this tree.
-        if groups[id].is_empty() {
-            continue;
+    let snapshot_id = if paginate {
+        let mut identity = format!(
+            "excession-locate-page-v1\0{}\0{}\0{}\0{}\0",
+            CACHE_VERSION, discovered.commit, discovered.tree, task_key,
+        )
+        .into_bytes();
+        identity.extend_from_slice(expression.as_bytes());
+        identity.push(0);
+        for value in [
+            limits.max_file_bytes,
+            limits.max_bytes_per_segment,
+            limits.max_files_per_segment,
+        ] {
+            identity.extend_from_slice(&(value as u64).to_le_bytes());
         }
-        if let Some(ref segment) = prior[id]
-            && segment.fingerprint == fingerprints[id]
-        {
-            identity.extend_from_slice(
-                format!(
-                    "{id}:{}:{}:{}:{}:{}\\0",
-                    segment.fingerprint,
-                    segment.indexed_files,
-                    segment.indexed_bytes,
-                    segment.skipped_files,
-                    segment.truncated
-                )
-                .as_bytes(),
-            );
+        for id in 0..SEGMENT_COUNT {
+            // Historical metadata for an empty partition must not change a
+            // query snapshot after switching away from and back to this tree.
+            if groups[id].is_empty() {
+                continue;
+            }
+            if let Some(ref segment) = prior[id]
+                && segment.fingerprint == fingerprints[id]
+            {
+                identity.extend_from_slice(
+                    format!(
+                        "{id}:{}:{}:{}:{}:{}\\0",
+                        segment.fingerprint,
+                        segment.indexed_files,
+                        segment.indexed_bytes,
+                        segment.skipped_files,
+                        segment.truncated
+                    )
+                    .as_bytes(),
+                );
+            }
         }
-    }
-    append_corpus_identity(&tx, &mut identity)?;
-    let snapshot_id = crate::digest::sha256(&identity);
-    let page_offset = if let Some(cursor) = after {
+        append_corpus_identity(&tx, &mut identity)?;
+        crate::digest::sha256(&identity)
+    } else {
+        String::new()
+    };
+    let page_offset = if paginate && let Some(cursor) = after {
         let mut parts = cursor.split('.');
         if parts.next() != Some("v1") || parts.next() != Some(snapshot_id.as_str()) {
             return refuse(
@@ -1080,7 +1087,8 @@ pub(crate) fn search_with_page(
     if page_offset > unique_rank {
         return refuse("source page cursor is beyond available ranked results");
     }
-    let next_cursor = has_more.then(|| format!("v1.{snapshot_id}.{}", page_offset + hits.len()));
+    let next_cursor = (paginate && has_more)
+        .then(|| format!("v1.{snapshot_id}.{}", page_offset + hits.len()));
     tx.commit().map_err(|e| sql_error("commit", e))?;
     Ok(Search {
         hits,

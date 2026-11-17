@@ -160,7 +160,7 @@ impl BlobReader {
             return refuse("unexpected Git batch header fields");
         }
         let mut hasher = Sha1::new();
-        hasher.update(format!("blob {size}\\0").replace("\\\\0", "\\0").as_bytes());
+        hasher.update(format!("blob {size}\0").as_bytes());
         let mut buffer = vec![0u8; chunk_bytes.min(64 * 1024)];
         let mut offset = 0usize;
         while offset < size {
@@ -177,7 +177,7 @@ impl BlobReader {
         let mut terminator = [0u8; 1];
         self.stdout.read_exact(&mut terminator)
             .map_err(|e| format!("missing Git batch blob separator: {e}"))?;
-        if terminator != *b"\\n" || crate::digest::hex(&hasher.finalize()) != expected_oid {
+        if terminator != *b"\n" || crate::digest::hex(&hasher.finalize()) != expected_oid {
             return refuse("Git batch blob identity or framing mismatch");
         }
         Ok(size as u64)
@@ -414,7 +414,7 @@ mod tests {
         ));
         std::fs::create_dir(&root).unwrap();
         assert!(Command::new("git").args(["init", "-q"]).arg(&root).status().unwrap().success());
-        let source = "α🚀 planner query\\n".replace("\\\\n", "\\n").repeat(100_000);
+        let source = "α🚀 planner query\n".repeat(100_000);
         std::fs::write(root.join("large.rs"), &source).unwrap();
         std::fs::write(root.join("empty.rs"), "").unwrap();
         let blob = text(&root, &["hash-object", "-w", "large.rs"]).unwrap();

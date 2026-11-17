@@ -360,7 +360,6 @@ fn update_segment(
                 // A larger file limit may make a formerly LARGE blob eligible.
                 // Re-read it when this partition's policy fingerprint changes.
                 "LARGE" => {}
-
                 _ => {}
             }
         }

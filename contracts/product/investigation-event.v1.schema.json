@@ -63,7 +63,8 @@
         "SYNTHESIS",
         "REFRESH",
         "WITNESS",
-        "EXECUTION"
+        "EXECUTION",
+        "TRACE"
       ]
     },
     "event_id": {
@@ -867,6 +868,642 @@
                 },
                 "trust": {
                   "const": "TRUSTED_LOCAL_EXECUTION_UNATTESTED"
+                },
+                "semantic_verification": {
+                  "const": "NOT_ESTABLISHED"
+                },
+                "ready_to_merge": {
+                  "const": false
+                },
+                "report_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "payload"
+      ]
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "TRACE"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plan_event_id",
+            "report"
+          ],
+          "properties": {
+            "plan_event_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "report": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "schema",
+                "base_commit",
+                "base_tree",
+                "candidate_commit",
+                "candidate_tree",
+                "plan_event_id",
+                "witness_event_ids",
+                "program",
+                "driver",
+                "script",
+                "argv",
+                "limits",
+                "base_execution",
+                "candidate_execution",
+                "base_trace",
+                "candidate_trace",
+                "process_comparison",
+                "trace_comparison",
+                "base_witness_line_hits",
+                "trust",
+                "semantic_verification",
+                "ready_to_merge",
+                "report_id"
+              ],
+              "properties": {
+                "schema": {
+                  "const": "excession.investigation-runtime-trace.v1"
+                },
+                "base_commit": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "base_tree": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "candidate_commit": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "candidate_tree": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{40}$"
+                },
+                "plan_event_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "witness_event_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "program": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  }
+                },
+                "driver": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  }
+                },
+                "script": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "argv": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "limits": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "timeout_ms",
+                    "max_output_bytes",
+                    "max_trace_events",
+                    "max_trace_bytes"
+                  ],
+                  "properties": {
+                    "timeout_ms": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "max_output_bytes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "max_trace_events": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "max_trace_bytes": {
+                      "type": "integer",
+                      "minimum": 1024
+                    }
+                  }
+                },
+                "base_execution": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "commit",
+                    "tree",
+                    "status",
+                    "exit_code",
+                    "stdout_sha256",
+                    "stderr_sha256",
+                    "stdout_bytes",
+                    "stderr_bytes"
+                  ],
+                  "properties": {
+                    "commit": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "tree": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "status": {
+                      "enum": [
+                        "EXITED",
+                        "TIMEOUT",
+                        "OUTPUT_LIMIT",
+                        "TERMINATED_BY_SIGNAL"
+                      ]
+                    },
+                    "exit_code": {
+                      "oneOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stdout_sha256": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stderr_sha256": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stdout_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "stderr_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "candidate_execution": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "commit",
+                    "tree",
+                    "status",
+                    "exit_code",
+                    "stdout_sha256",
+                    "stderr_sha256",
+                    "stdout_bytes",
+                    "stderr_bytes"
+                  ],
+                  "properties": {
+                    "commit": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "tree": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "status": {
+                      "enum": [
+                        "EXITED",
+                        "TIMEOUT",
+                        "OUTPUT_LIMIT",
+                        "TERMINATED_BY_SIGNAL"
+                      ]
+                    },
+                    "exit_code": {
+                      "oneOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stdout_sha256": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stderr_sha256": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "stdout_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "stderr_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                "base_trace": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "events",
+                    "sources",
+                    "reported_event_count",
+                    "values_partial",
+                    "raw_sha256"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "MISSING",
+                        "MISSING_END",
+                        "TRUNCATED",
+                        "REPORTED_COMPLETE"
+                      ]
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "kind",
+                          "path",
+                          "line",
+                          "function",
+                          "values",
+                          "changes",
+                          "return_value"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "CALL",
+                              "LINE",
+                              "RETURN",
+                              "EXCEPTION"
+                            ]
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "line": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "function": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "values": {
+                            "type": "object",
+                            "maxProperties": 128
+                          },
+                          "changes": {
+                            "type": "array",
+                            "maxItems": 256,
+                            "items": {
+                              "type": "object"
+                            }
+                          },
+                          "return_value": {
+                            "oneOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "object"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "commit",
+                          "tree",
+                          "path",
+                          "blob",
+                          "mode"
+                        ],
+                        "properties": {
+                          "commit": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "tree": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "blob": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "mode": {
+                            "enum": [
+                              "100644",
+                              "100755"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "reported_event_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "values_partial": {
+                      "type": "boolean"
+                    },
+                    "raw_sha256": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "candidate_trace": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "events",
+                    "sources",
+                    "reported_event_count",
+                    "values_partial",
+                    "raw_sha256"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "MISSING",
+                        "MISSING_END",
+                        "TRUNCATED",
+                        "REPORTED_COMPLETE"
+                      ]
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "kind",
+                          "path",
+                          "line",
+                          "function",
+                          "values",
+                          "changes",
+                          "return_value"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "CALL",
+                              "LINE",
+                              "RETURN",
+                              "EXCEPTION"
+                            ]
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "line": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "function": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "values": {
+                            "type": "object",
+                            "maxProperties": 128
+                          },
+                          "changes": {
+                            "type": "array",
+                            "maxItems": 256,
+                            "items": {
+                              "type": "object"
+                            }
+                          },
+                          "return_value": {
+                            "oneOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "object"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "commit",
+                          "tree",
+                          "path",
+                          "blob",
+                          "mode"
+                        ],
+                        "properties": {
+                          "commit": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "tree": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "path": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "blob": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          },
+                          "mode": {
+                            "enum": [
+                              "100644",
+                              "100755"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "reported_event_count": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "values_partial": {
+                      "type": "boolean"
+                    },
+                    "raw_sha256": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "process_comparison": {
+                  "enum": [
+                    "AGREEMENT_OBSERVED",
+                    "DIFFERENCE_OBSERVED",
+                    "INCONCLUSIVE"
+                  ]
+                },
+                "trace_comparison": {
+                  "enum": [
+                    "MATCHING_REPORTED_EVENTS",
+                    "DIFFERING_REPORTED_EVENTS",
+                    "INCONCLUSIVE"
+                  ]
+                },
+                "base_witness_line_hits": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "witness_event_id",
+                      "base_line_event_count",
+                      "interpretation_verified"
+                    ],
+                    "properties": {
+                      "witness_event_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                      },
+                      "base_line_event_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "interpretation_verified": {
+                        "const": false
+                      }
+                    }
+                  }
+                },
+                "trust": {
+                  "const": "BEST_EFFORT_TRUSTED_LOCAL_CPYTHON_UNATTESTED"
                 },
                 "semantic_verification": {
                   "const": "NOT_ESTABLISHED"

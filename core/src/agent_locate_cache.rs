@@ -1157,6 +1157,52 @@ mod tests {
     }
 
     #[test]
+    fn chunk_policy_switch_rebuilds_deterministic_fts_windows() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-chunk-policy-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+        fs::write(
+            root.join("src/planner.rs"),
+            format!("{}needle planner\n", "long identifier \n".repeat(500)),
+        ).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(&root, &[
+            "-c", "user.email=test@example.com",
+            "-c", "user.name=Test", "commit", "-qm", "indexed",
+        ]);
+        let query = |size| {
+            let discovered = discovery::inspect(&root, "HEAD").unwrap();
+            let entries = git::entries(&root, &discovered.commit).unwrap();
+            search_with_limits(
+                &discovered, entries, 8, "\"needle\"", SEGMENT_COUNT,
+                |path| path.ends_with(".rs"),
+                IndexLimits {
+                    max_file_bytes: size,
+                    max_bytes_per_segment: 65536,
+                    max_files_per_segment: 16,
+                },
+            ).unwrap()
+        };
+        let small = query(256);
+        assert_eq!(small.indexed_files, 1);
+        let large = query(4096);
+        assert_eq!(large.indexed_files, 1);
+        assert_eq!(large.read_blobs, 1);
+        let restored = query(256);
+        assert_eq!(restored.read_blobs, 1);
+        assert_eq!(restored.indexed_files, 1);
+        assert_eq!(small.hits[0].body, restored.hits[0].body);
+        assert_eq!(small.hits[0].start_line, restored.hits[0].start_line);
+        assert_eq!(small.hits[0].entry.oid, restored.hits[0].entry.oid);
+        fs::remove_dir_all(restored.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn long_single_line_source_keeps_searchable_tokens_across_chunk_boundaries() {
         let root = std::env::temp_dir().join(format!(
             "excession-long-line-search-{}-{}",

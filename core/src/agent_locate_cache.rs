@@ -856,7 +856,7 @@ pub(crate) fn search_with_limits(
                  JOIN locator_files f ON f.id=c.file_id
                  JOIN locator_active a ON a.segment=f.segment
                  WHERE source_search MATCH ?1 AND f.status='OK'
-                 ORDER BY bm25(source_search,4.0,1.0), source_search.rowid",
+                 ORDER BY bm25(source_search,4.0,1.0), f.path, c.ordinal",
             )
             .map_err(|e| sql_error("ranking prepare", e))?;
         let mut rows = stmt

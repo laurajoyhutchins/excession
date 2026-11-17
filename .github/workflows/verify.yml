@@ -52,6 +52,7 @@ jobs:
         run: |
           python3 tools/ci/improvement_cycle.py catalog
           python3 -m unittest discover -s tests -p 'test_improvement_cycle.py' -v
+          python3 -m unittest discover -s tests -p 'test_cargo_patch_audit.py' -v
       - name: Structural preservation contract and negative-case tests
         run: python3 -m unittest discover -s tests -p 'test_structural_preservation.py' -v
       - uses: Swatinem/rust-cache@v2

@@ -23,6 +23,7 @@ from real_fixtures import checkout
 from scip_fixture_migration import (
     EXTENSIONS, generate_index, tracked_sources,
 )
+from semantic_symbol_oracle import independent_python_sites, score_sites
 
 ROOT = Path(__file__).resolve().parents[2]
 # Fixed before observing any run from this new benchmark. These all belong to
@@ -267,6 +268,29 @@ def evaluate(case: dict, args, work: Path, evidence: Path) -> dict:
     oracle = (python_imports(repo, included, tracked) if language == "python"
               else typescript_imports(repo, included, tracked, args.node_oracle))
     gold = {tuple(pair) for pair in oracle["pairs"]}
+    semantic = None
+    if args.semantic:
+        if language == "python":
+            semantic = independent_python_sites(repo, included, tracked, checked_source)
+        else:
+            with tempfile.TemporaryDirectory(prefix="excession-independent-symbols-") as temp:
+                manifest = Path(temp) / "sources.json"
+                manifest.write_text(json.dumps(sorted(included)))
+                semantic = json.loads(command([
+                    "node", args.ts_symbol_oracle, repo.resolve(), manifest
+                ]))
+            if semantic.get("schema") != "excession.independent-typescript-symbol-sites.v1":
+                raise ValueError("unrecognized TypeScript independent symbol oracle")
+        for site in semantic["sites"]:
+            if (site["source"] not in included or site["target"] not in included
+                    or site["kind"] not in ("call", "type") or
+                    not isinstance(site["line"], int) or site["line"] < 1):
+                raise ValueError("source semantic oracle produced invalid site identity")
+        semantic["source_commit"] = commit
+        semantic["source_tree"] = tree
+        (evidence / f"{name}-{language}.symbol-oracle.json").write_text(
+            json.dumps(semantic, indent=2, sort_keys=True) + "\n"
+        )
     if not gold:
         raise ValueError(f"no independently identified static import pairs: {name}")
 
@@ -314,6 +338,11 @@ def evaluate(case: dict, args, work: Path, evidence: Path) -> dict:
             raise ValueError("unexpected native bounded context format")
         rows = verified_pairs(context, repo, commit, tree, tracked)
         finding = score(full, rows, gold, focus, LIMIT)
+        if semantic is not None:
+            scoped = [r for r in full if focus in relation_pair(r)]
+            finding["semantic_site_recall"] = score_sites(
+                semantic, full, scoped[:LIMIT], rows, focus
+            )
         if (context.get("relationship_count") != finding["total_touching_relationships"]
                 or context.get("returned_observed_reference_count") !=
                 sum(row["kind"] == "SCIP_REFERENCE" for row in rows)
@@ -344,6 +373,18 @@ def evaluate(case: dict, args, work: Path, evidence: Path) -> dict:
             "dynamic_imports_excluded": oracle["dynamic_or_nonliteral_excluded"],
         },
         "index_generation_seconds": generation_s,
+        "semantic_site_oracle": (
+            {"schema": semantic["schema"], "oracle": semantic["oracle"],
+             "labeled_site_count": len(semantic["sites"]),
+             "counts": semantic["counts"],
+             "unsupported": semantic["unsupported"],
+             "cross_language_links_proven": False,
+             "runtime_dispatch_proven": False,
+             "shared_compiler_family_with_indexer": (
+                 language == "typescript"
+             )}
+            if semantic is not None else None
+        ),
         "cases": cases,
     }
     (evidence / f"{name}-oracle-and-product.json").write_text(
@@ -359,7 +400,7 @@ def summarize(fixtures: list[dict]) -> dict:
     new = sum(row["new_import_confirmed"] for row in cases)
     if not total_gold:
         raise ValueError("all independent source-oracle scopes were empty")
-    return {
+    report = {
         "schema": "excession.independent-import-discovery.v1",
         "meaning": "INDEPENDENT_STATIC_IMPORT_PAIR_RECALL_ONLY",
         "sources_are_independently_git_pinned": True,
@@ -374,6 +415,38 @@ def summarize(fixtures: list[dict]) -> dict:
         "runtime_dependency_completeness_proven": False,
         "fixtures": fixtures,
     }
+    if all(item.get("semantic_site_oracle") is not None for item in fixtures):
+        per_kind = {}
+        for kind in ("call", "type"):
+            totals = {"oracle_sites": 0, "full_native_hits": 0,
+                      "old_bounded_hits": 0, "new_bounded_hits": 0}
+            for row in cases:
+                current = row["semantic_site_recall"]["kinds"][kind]
+                for metric in totals:
+                    totals[metric] += current[metric]
+            totals["full_native_recall"] = (
+                totals["full_native_hits"] / totals["oracle_sites"]
+                if totals["oracle_sites"] else None
+            )
+            totals["old_bounded_recall"] = (
+                totals["old_bounded_hits"] / totals["oracle_sites"]
+                if totals["oracle_sites"] else None
+            )
+            totals["new_bounded_recall"] = (
+                totals["new_bounded_hits"] / totals["oracle_sites"]
+                if totals["oracle_sites"] else None
+            )
+            per_kind[kind] = totals
+        report["semantic_sites"] = {
+            "schema": "excession.conservative-symbol-site-recall.v1",
+            "unit": "source_target_1_based_line",
+            "kinds": per_kind,
+            "independent_semantics_complete": False,
+            "dynamic_dispatch_proven": False,
+            "cross_language_links_proven": False,
+            "typescript_compiler_family_shared_with_scip_indexer": True,
+        }
+    return report
 
 
 def main() -> None:
@@ -386,6 +459,9 @@ def main() -> None:
     parser.add_argument("--typescript-indexer", required=True, type=Path)
     parser.add_argument("--node-oracle", type=Path,
                         default=ROOT / "benchmarks/experiments/ts_import_oracle.cjs")
+    parser.add_argument("--ts-symbol-oracle", type=Path,
+                        default=ROOT / "benchmarks/experiments/ts_symbol_oracle.cjs")
+    parser.add_argument("--semantic", action="store_true")
     parser.add_argument("--fixture", action="append", choices=tuple(FOCI))
     args = parser.parse_args()
     args.bin = args.bin.resolve(strict=True)
@@ -393,6 +469,8 @@ def main() -> None:
     args.python_indexer = args.python_indexer.resolve(strict=True)
     args.typescript_indexer = args.typescript_indexer.resolve(strict=True)
     args.node_oracle = args.node_oracle.resolve(strict=True)
+    if args.semantic:
+        args.ts_symbol_oracle = args.ts_symbol_oracle.resolve(strict=True)
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
     args.evidence_dir = args.evidence_dir.resolve()
     selected = args.fixture or list(FOCI)

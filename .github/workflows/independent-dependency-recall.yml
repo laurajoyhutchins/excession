@@ -7,6 +7,8 @@ on:
     paths:
       - 'benchmarks/experiments/dependency_recall.py'
       - 'benchmarks/experiments/ts_import_oracle.cjs'
+      - 'benchmarks/experiments/semantic_symbol_oracle.py'
+      - 'benchmarks/experiments/ts_symbol_oracle.cjs'
       - 'tests/test_dependency_recall.py'
       - '.github/workflows/independent-dependency-recall.yml'
   workflow_dispatch:
@@ -79,7 +81,8 @@ jobs:
               --python-indexer "$RUNNER_TEMP/scip-tools/node_modules/.bin/scip-python" \
               --typescript-indexer "$RUNNER_TEMP/scip-tools/node_modules/.bin/scip-typescript" \
               --out "$RUNNER_TEMP/dependency-recall.json" \
-              --evidence-dir "$RUNNER_TEMP/independent-dependency-oracles"
+              --evidence-dir "$RUNNER_TEMP/independent-dependency-oracles" \
+              --semantic
 
       - name: Verify supported-scope sample and show both outcomes
         shell: bash
@@ -95,7 +98,14 @@ jobs:
           print("old import recall:",r["old_static_import_pair_recall"])
           print("new import recall:",r["new_static_import_pair_recall"])
           print("independent source-oracle import opportunities:",r["per_focus_import_opportunities"])
-          print("Other SCIP cross-file references are outside the import-only gold scope.")
+          assert r["semantic_sites"]["schema"] == "excession.conservative-symbol-site-recall.v1"
+          for kind in ("call", "type"):
+            metrics = r["semantic_sites"]["kinds"][kind]
+            print("Independent",kind,"sites:",metrics["oracle_sites"])
+            print("Full native source+line hits:",metrics["full_native_hits"])
+            print("Previous bounded hits:",metrics["old_bounded_hits"])
+            print("Revised bounded hits:",metrics["new_bounded_hits"])
+          print("Other SCIP cross-file references are outside the oracle's restricted scope.")
           print("Negative results are retained; a gain is NOT a prerequisite for a valid measurement.")
           PY
 
@@ -113,8 +123,14 @@ jobs:
           print("|---|---:|---:|")
           print(f"| Import-pair recall (supported scope) | {x['old_static_import_pair_recall']:.1%} | {x['new_static_import_pair_recall']:.1%} |")
           print(f"| Confirmed import pair opportunities | {x['old_import_confirmed']}/{x['per_focus_import_opportunities']} | {x['new_import_confirmed']}/{x['per_focus_import_opportunities']} |")
+          if x.get("semantic_sites"):
+            print()
+            print("| Symbol-site kind | Independently labeled sites | Full native hits | Old bounded | New bounded |")
+            print("|---|---:|---:|---:|---:|")
+            for kind, values in x["semantic_sites"]["kinds"].items():
+              print(f"| {kind} | {values['oracle_sites']} | {values['full_native_hits']} | {values['old_bounded_hits']} | {values['new_bounded_hits']} |")
           print()
-          print("Ground truth is independently parsed static imports only. Nonimport SCIP references are unclassified, not false positives.")
+          print("The import and conservative direct symbol-site oracles leave dynamic dispatch and nonimport SCIP references unclassified.")
           PY
           fi
 

@@ -117,9 +117,15 @@ jobs:
           if [ "$AUTOMATIC" != true ]; then
             DRAFT=(--draft)
           fi
-          gh pr create "${DRAFT[@]}" --base main --head "$BRANCH" \
+          if ! gh pr create "${DRAFT[@]}" --base main --head "$BRANCH" \
             --title "chore(deps): native Cargo lockfile improvements" \
-            --body "Generated with pinned Cargo on accepted main at $BASE. Only core/Cargo.lock changed at $HEAD. Patch-only, graph-preserving candidates may be integrated automatically only after both independent exact-head workflows pass. Other changes are draft-review only. No dependency security or behavioral-equivalence proof."
+            --body "Generated with pinned Cargo on accepted main at $BASE. Only core/Cargo.lock changed at $HEAD. Patch-only, graph-preserving candidates may be integrated automatically only after both independent exact-head workflows pass. Other changes are draft-review only. No dependency security or behavioral-equivalence proof."; then
+            echo "::error::GitHub Actions cannot create pull requests in this repository."
+            echo "Open a PR from the already-pushed $BRANCH branch after reviewing the native evidence." >> "$GITHUB_STEP_SUMMARY"
+            echo "Candidate: https://github.com/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1" >> "$GITHUB_STEP_SUMMARY"
+            echo "To allow unattended integration, repository administrator must enable Settings > Actions > General > Workflow permissions > Allow GitHub Actions to create and approve pull requests." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           PR="$(gh pr view "$BRANCH" --json number --jq .number)"
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
           gh workflow run verify.yml --ref "$BRANCH"

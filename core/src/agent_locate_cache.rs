@@ -16,7 +16,7 @@ const CACHE_VERSION: &str = "agent-locate-segments-v2";
 pub(crate) const SEGMENT_COUNT: usize = 256;
 pub(crate) const DEFAULT_REFRESH_SEGMENTS: usize = 8;
 pub(crate) const MAX_FILES: usize = 6000;
-pub(crate) const MAX_FILE_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_FILE_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_TOTAL_BYTES: usize = 32 * 1024 * 1024;
 
 pub(crate) struct Hit {
@@ -297,7 +297,12 @@ fn path_priority(entries: &[git::Entry], query: &str) -> usize {
 }
 
 fn fingerprint(entries: &[git::Entry]) -> String {
-    let mut data = Vec::new();
+    // Index eligibility is part of the cache identity. If size limits change,
+    // unchanged Git trees must refresh previously skipped source blobs.
+    let mut data = b"agent-locate-eligibility-v1\0".to_vec();
+    for limit in [MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES] {
+        data.extend_from_slice(&(limit as u64).to_le_bytes());
+    }
     for entry in entries {
         for part in [&entry.path, &entry.mode, &entry.oid] {
             data.extend_from_slice(part.as_bytes());
@@ -348,10 +353,14 @@ fn update_segment(
                     state.reused_blobs += 1;
                     continue;
                 }
-                "LARGE" | "NON_UTF8" => {
+                "NON_UTF8" => {
                     skipped += 1;
                     continue;
                 }
+                // A larger file limit may make a formerly LARGE blob eligible.
+                // Re-read it when this partition's policy fingerprint changes.
+                "LARGE" => {}
+
                 _ => {}
             }
         }
@@ -683,6 +692,53 @@ mod tests {
                 "\"lease\" OR \"recover\"",
             ) > 0
         );
+    }
+
+    #[test]
+    fn indexes_source_larger_than_the_previous_256_kib_limit() {
+        let root = std::env::temp_dir().join(format!(
+            "excession-large-source-locate-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        git_at(&root, &["init", "-q"]);
+
+        let source = format!(
+            "{}pub fn planner() {{ let needle = 42; }}\\n",
+            "// ordinary source line\\n".repeat(18_000)
+        );
+        assert!(source.len() > 256 * 1024);
+        assert!(source.len() < MAX_FILE_BYTES);
+        fs::write(root.join("src/planner.rs"), source).unwrap();
+        git_at(&root, &["add", "."]);
+        git_at(
+            &root,
+            &[
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "user.name=Test",
+                "commit",
+                "-qm",
+                "large source",
+            ],
+        );
+        let found = run(&root, "HEAD", SEGMENT_COUNT);
+        assert_eq!(found.total_source_files, 1);
+        assert_eq!(found.indexed_files, 1);
+        assert_eq!(found.skipped_files, 0);
+        assert_eq!(found.pending_segments, 0);
+        assert_eq!(found.hits.len(), 1);
+        assert_eq!(found.hits[0].entry.path, "src/planner.rs");
+        assert!(found.hits[0].body.contains("let needle = 42;"));
+        assert_eq!(
+            found.hits[0].entry.oid,
+            git::blob(&root, "HEAD", "src/planner.rs").unwrap(),
+        );
+
+        fs::remove_dir_all(found.cache_path.parent().unwrap()).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

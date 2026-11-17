@@ -683,6 +683,15 @@ pub(super) fn command() -> Command {
                 &[],
             )
             .about("Reassess exact claim source identity at a candidate revision"),
+            leaf(
+                "witness",
+                &[
+                    "repo", "db", "id", "expected-revision", "claim-event",
+                    "first-line", "last-line", "kind", "interpretation",
+                ],
+                &[],
+            )
+            .about("Bind a control/data/state interpretation to exact authenticated source lines"),
             leaf("explain", &["repo", "db", "id"], &[])
                 .about("Compose a source-linked explanation and expose unresolved obligations"),
             leaf("show", &["repo", "db", "id"], &[])

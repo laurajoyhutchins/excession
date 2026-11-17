@@ -16,6 +16,7 @@ use excession::improve;
 use excession::improve_edits;
 use excession::investigation;
 use excession::investigation_workflow;
+use excession::investigation_witness;
 use excession::native_test_selectors;
 use excession::native_test_workflow;
 use excession::observed_relations::{self, Selection};
@@ -921,6 +922,25 @@ fn execute(args: &[String]) -> Result<Response> {
                     expected_revision()?,
                     opt.get("candidate"),
                 )?)),
+                "witness" => {
+                    let parse_line = |flag: &str| -> Result<usize> {
+                        opt.get(flag).parse::<usize>()
+                            .map_err(|_| format!("--{flag} requires a positive integer"))
+                    };
+                    Ok(json(investigation_witness::record(
+                        &ledger,
+                        repo,
+                        investigation_witness::Witness {
+                            id: opt.get("id"),
+                            expected_revision: expected_revision()?,
+                            claim_event_id: opt.get("claim-event"),
+                            first_line: parse_line("first-line")?,
+                            last_line: parse_line("last-line")?,
+                            kind: opt.get("kind"),
+                            interpretation: opt.get("interpretation"),
+                        },
+                    )?))
+                }
                 "explain" => Ok(json(investigation_workflow::explain(
                     &ledger,
                     repo,

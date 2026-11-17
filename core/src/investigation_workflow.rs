@@ -383,6 +383,7 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
     let mut retrievals = Vec::new();
     let mut evidence_gaps = Vec::new();
     let mut preservation_plans = Vec::new();
+    let mut behavior_witnesses = Vec::new();
     let mut verification_receipts = Vec::new();
     let mut last_refresh = Value::Null;
     for event in history.get("events")?.array_ref()? {
@@ -434,6 +435,19 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                     Value::string("REPORTED_NOT_INDEPENDENTLY_VALIDATED"),
                 ),
             ])),
+            "WITNESS" => behavior_witnesses.push(obj(&[
+                ("event_id", event.get("event_id")?.clone()),
+                ("claim_event_id", payload.get("claim_event_id")?.clone()),
+                ("source", payload.get("source")?.clone()),
+                ("first_line", payload.get("first_line")?.clone()),
+                ("last_line", payload.get("last_line")?.clone()),
+                ("source_text", payload.get("source_text")?.clone()),
+                ("source_text_sha256", payload.get("source_text_sha256")?.clone()),
+                ("kind", payload.get("kind")?.clone()),
+                ("interpretation", payload.get("interpretation")?.clone()),
+                ("assessment", payload.get("assessment")?.clone()),
+                ("runtime_verified", Value::Bool(false)),
+            ])),
             "REFRESH" => last_refresh = payload.clone(),
             "PLAN" => preservation_plans.push(obj(&[
                 ("event_id", event.get("event_id")?.clone()),
@@ -467,6 +481,7 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
         ("open_questions", Value::array(open_questions)),
         ("retrievals", Value::array(retrievals)),
         ("evidence_gaps", Value::array(evidence_gaps)),
+        ("behavior_witnesses", Value::array(behavior_witnesses)),
         ("preservation_plans", Value::array(preservation_plans)),
         ("verification_receipts", Value::array(verification_receipts)),
         ("latest_refresh", last_refresh),

@@ -884,12 +884,20 @@ fn execute(args: &[String]) -> Result<Response> {
                     )?))
                 }
                 "explore" => {
-                    let limit = opt.get_or("limit", "12").parse::<usize>()
+                    let limit = opt
+                        .get_or("limit", "12")
+                        .parse::<usize>()
                         .map_err(|_| "--limit must be an integer from 1 to 64".to_owned())?;
-                    let segments = opt.get_or("index-segments", "8").parse::<usize>()
-                        .map_err(|_| "--index-segments must be an integer from 1 to 256".to_owned())?;
+                    let segments =
+                        opt.get_or("index-segments", "8")
+                            .parse::<usize>()
+                            .map_err(|_| {
+                                "--index-segments must be an integer from 1 to 256".to_owned()
+                            })?;
                     Ok(json(investigation_workflow::explore(
-                        &ledger, repo, investigation_workflow::Explore {
+                        &ledger,
+                        repo,
+                        investigation_workflow::Explore {
                             id: opt.get("id"),
                             expected_revision: expected_revision()?,
                             limit,
@@ -900,19 +908,32 @@ fn execute(args: &[String]) -> Result<Response> {
                     )?))
                 }
                 "question" => Ok(json(investigation_workflow::question(
-                    &ledger, repo, opt.get("id"), expected_revision()?,
-                    opt.get("question"), opt.get("reason"),
+                    &ledger,
+                    repo,
+                    opt.get("id"),
+                    expected_revision()?,
+                    opt.get("question"),
+                    opt.get("reason"),
                 )?)),
                 "synthesize" => Ok(json(investigation_workflow::synthesize(
-                    &ledger, repo, opt.get("id"), expected_revision()?,
-                    opt.get("narrative"), opt.get("claim-events"),
+                    &ledger,
+                    repo,
+                    opt.get("id"),
+                    expected_revision()?,
+                    opt.get("narrative"),
+                    opt.get("claim-events"),
                 )?)),
                 "refresh" => Ok(json(investigation_workflow::refresh(
-                    &ledger, repo, opt.get("id"), expected_revision()?,
+                    &ledger,
+                    repo,
+                    opt.get("id"),
+                    expected_revision()?,
                     opt.get("candidate"),
                 )?)),
                 "explain" => Ok(json(investigation_workflow::explain(
-                    &ledger, repo, opt.get("id"),
+                    &ledger,
+                    repo,
+                    opt.get("id"),
                 )?)),
                 "show" => Ok(json(investigation::audit(&ledger, repo, opt.get("id"))?)),
                 _ => refuse(format!("unknown investigation command: {sub}")),

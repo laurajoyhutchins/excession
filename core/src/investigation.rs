@@ -233,8 +233,15 @@ fn records(db: &Db, repo: &Path, id: &str) -> Result<Vec<Value>> {
                 verify_agent_report(repo, c, t, payload.get("report")?)?;
             }
             "EXPLORE" | "QUESTION" | "SYNTHESIS" | "REFRESH" if i > 0 => {
-                investigation_workflow::validate_event(repo, c, t, q,
-                    event.get("kind")?.str()?, payload, &result)?;
+                investigation_workflow::validate_event(
+                    repo,
+                    c,
+                    t,
+                    q,
+                    event.get("kind")?.str()?,
+                    payload,
+                    &result,
+                )?;
             }
             _ => return refuse("invalid investigation event kind or initial event"),
         }

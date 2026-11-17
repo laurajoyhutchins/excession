@@ -293,13 +293,33 @@ fn persistent_investigation_connects_source_claim_plan_and_agent_verification() 
     assert_eq!(history["semantic_verification"], "NOT_ESTABLISHED");
     assert_eq!(history["ready_to_merge"], false);
 
-    let explanation = cli(&["investigation", "explain", "--repo", repo,
-        "--db", db, "--id", id]);
-    assert_eq!(explanation["preservation_plans"][0]["claim_event_id"], claim_event);
+    let explanation = cli(&[
+        "investigation",
+        "explain",
+        "--repo",
+        repo,
+        "--db",
+        db,
+        "--id",
+        id,
+    ]);
+    assert_eq!(
+        explanation["preservation_plans"][0]["claim_event_id"],
+        claim_event
+    );
     assert_eq!(explanation["preservation_plans"][0]["state"], "OPEN");
-    assert_eq!(explanation["verification_receipts"][0]["plan_event_id"], plan_event);
-    assert_eq!(explanation["verification_receipts"][0]["status"], "OPEN_OBLIGATIONS");
-    assert_eq!(explanation["verification_receipts"][0]["ready_to_merge"], false);
+    assert_eq!(
+        explanation["verification_receipts"][0]["plan_event_id"],
+        plan_event
+    );
+    assert_eq!(
+        explanation["verification_receipts"][0]["status"],
+        "OPEN_OBLIGATIONS"
+    );
+    assert_eq!(
+        explanation["verification_receipts"][0]["ready_to_merge"],
+        false
+    );
 
     let event_schema: serde_json::Value = serde_json::from_str(include_str!(
         "../../contracts/product/investigation-event.v1.schema.json"

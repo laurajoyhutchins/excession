@@ -20,7 +20,11 @@ fn text(value: &str, name: &str) -> Result<()> {
 }
 
 fn hash(value: &str) -> Result<()> {
-    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()) {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
         return refuse("invalid investigation event reference digest");
     }
     Ok(())
@@ -44,14 +48,23 @@ fn source_candidate(repo: &Path, commit: &str, tree: &str, value: &Value) -> Res
     Ok(())
 }
 
-fn check_discovery(repo: &Path, commit: &str, tree: &str, question: &str, report: &Value) -> Result<()> {
+fn check_discovery(
+    repo: &Path,
+    commit: &str,
+    tree: &str,
+    question: &str,
+    report: &Value,
+) -> Result<()> {
     if report.get("schema")?.str()? != "excession.agent-locate.v1"
         || report.get("source_commit")?.str()? != commit
         || report.get("source_tree")?.str()? != tree
         || report.get("task")?.str()? != question
         || report.get("coverage")?.get("status")?.str()? != "PARTIAL"
         || report.get("safe_to_skip_unlisted_tests")?.bool()?
-        || report.get("reading_plan")?.get("complete_behavior_trace")?.bool()?
+        || report
+            .get("reading_plan")?
+            .get("complete_behavior_trace")?
+            .bool()?
         || !report.content_id_matches("report_id")?
         || report.entries()?.contains_key("cache")
     {
@@ -79,12 +92,20 @@ fn prior_reference(prior: &[Value], event_id: &str, expected: &str) -> Result<()
         event.get("event_id").and_then(Value::str).ok() == Some(event_id)
             && event.get("kind").and_then(Value::str).ok() == Some(expected)
     }) {
-        return refuse(format!("investigation {expected} reference does not precede event"));
+        return refuse(format!(
+            "investigation {expected} reference does not precede event"
+        ));
     }
     Ok(())
 }
 
-fn refresh_report(repo: &Path, base: &str, tree: &str, candidate: &str, prior: &[Value]) -> Result<Value> {
+fn refresh_report(
+    repo: &Path,
+    base: &str,
+    tree: &str,
+    candidate: &str,
+    prior: &[Value],
+) -> Result<Value> {
     let inventory = change_inventory::inventory(repo, base, candidate)?;
     if inventory.get("base_commit")?.str()? != base
         || inventory.get("base_tree")?.str()? != tree
@@ -104,24 +125,33 @@ fn refresh_report(repo: &Path, base: &str, tree: &str, candidate: &str, prior: &
     for change in changes {
         let before = change.get("before")?;
         let after = change.get("after")?;
-        let source = if before != &Value::Null { before } else { after };
+        let source = if before != &Value::Null {
+            before
+        } else {
+            after
+        };
         changed.insert(source.get("path")?.str()?.to_owned(), after);
     }
     let mut assessments = Vec::new();
-    for event in prior.iter().filter(|event| {
-        event.get("kind").and_then(Value::str).ok() == Some("CLAIM")
-    }) {
+    for event in prior
+        .iter()
+        .filter(|event| event.get("kind").and_then(Value::str).ok() == Some("CLAIM"))
+    {
         let old = event.get("payload")?.get("source")?;
         let path = old.get("path")?.str()?;
         let new = changed.get(path).copied();
         let status = match new {
             None => "DIRECT_SOURCE_UNCHANGED",
             Some(&Value::Null) => "DIRECT_SOURCE_UNAVAILABLE",
-            Some(value) if !matches!(value.get("mode")?.str()?, "100644" | "100755") =>
-                "DIRECT_SOURCE_UNAVAILABLE",
-            Some(value) if value.get("blob")?.str()? == old.get("blob")?.str()?
-                && value.get("mode")?.str()? == old.get("mode")?.str()? =>
-                "DIRECT_SOURCE_UNCHANGED",
+            Some(value) if !matches!(value.get("mode")?.str()?, "100644" | "100755") => {
+                "DIRECT_SOURCE_UNAVAILABLE"
+            }
+            Some(value)
+                if value.get("blob")?.str()? == old.get("blob")?.str()?
+                    && value.get("mode")?.str()? == old.get("mode")?.str()? =>
+            {
+                "DIRECT_SOURCE_UNCHANGED"
+            }
             Some(_) => "DIRECT_SOURCE_CHANGED",
         };
         assessments.push(obj(&[
@@ -139,7 +169,8 @@ fn refresh_report(repo: &Path, base: &str, tree: &str, candidate: &str, prior: &
         ("claim_assessments", Value::array(assessments)),
         ("dependency_completeness", Value::string("NOT_ESTABLISHED")),
         ("semantic_verification", Value::string("NOT_ESTABLISHED")),
-    ]).stamp_id("refresh_id")
+    ])
+    .stamp_id("refresh_id")
 }
 
 /// Invoked by the ledger replay for each new immutable event. It rechecks
@@ -187,10 +218,24 @@ pub(crate) fn validate_event(
             Ok(())
         }
         "REFRESH" => {
-            if payload.entries()?.len() != 8 || !payload.get("refresh_id")?.str()?.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if payload.entries()?.len() != 8
+                || !payload
+                    .get("refresh_id")?
+                    .str()?
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit())
+            {
                 return refuse("invalid refresh report shape");
             }
-            if payload != &refresh_report(repo, commit, tree, payload.get("candidate_commit")?.str()?, prior)? {
+            if payload
+                != &refresh_report(
+                    repo,
+                    commit,
+                    tree,
+                    payload.get("candidate_commit")?.str()?,
+                    prior,
+                )?
+            {
                 return refuse("investigation refresh no longer matches Git source");
             }
             Ok(())
@@ -220,51 +265,96 @@ pub fn explore(db: &crate::sqlite::Db, repo: &Path, options: Explore<'_>) -> Res
     let tree = history.get("source_tree")?.str()?;
     let question = history.get("question")?.str()?;
     let mut report = agent_locate::locate_with_budget(
-        repo, commit, question, options.limit, options.roots, options.evidence_db,
+        repo,
+        commit,
+        question,
+        options.limit,
+        options.roots,
+        options.evidence_db,
         options.index_segments,
     )?;
     // The original locate report excludes volatile cache stats from its
     // stable report_id. Persist its exact stable portion, not a cache path.
     report.entries_mut()?.remove("cache");
     check_discovery(repo, commit, tree, question, &report)?;
-    investigation::append(db, repo, options.id, options.expected_revision,
-        "EXPLORE", obj(&[("report", report)]), None)
+    investigation::append(
+        db,
+        repo,
+        options.id,
+        options.expected_revision,
+        "EXPLORE",
+        obj(&[("report", report)]),
+        None,
+    )
 }
 
 pub fn question(
-    db: &crate::sqlite::Db, repo: &Path, id: &str, revision: usize,
-    question: &str, reason: &str,
+    db: &crate::sqlite::Db,
+    repo: &Path,
+    id: &str,
+    revision: usize,
+    question: &str,
+    reason: &str,
 ) -> Result<Value> {
     text(question, "open question")?;
     text(reason, "open question reason")?;
-    investigation::append(db, repo, id, revision, "QUESTION", obj(&[
-        ("question", Value::string(question)),
-        ("reason", Value::string(reason)),
-    ]), None)
+    investigation::append(
+        db,
+        repo,
+        id,
+        revision,
+        "QUESTION",
+        obj(&[
+            ("question", Value::string(question)),
+            ("reason", Value::string(reason)),
+        ]),
+        None,
+    )
 }
 
 pub fn synthesize(
-    db: &crate::sqlite::Db, repo: &Path, id: &str, revision: usize,
-    narrative: &str, claim_ids: &str,
+    db: &crate::sqlite::Db,
+    repo: &Path,
+    id: &str,
+    revision: usize,
+    narrative: &str,
+    claim_ids: &str,
 ) -> Result<Value> {
     text(narrative, "explanation")?;
     let mut seen = BTreeSet::new();
-    let ids = claim_ids.split(',').map(str::trim).map(|id| {
-        hash(id)?;
-        if !seen.insert(id.to_owned()) { return refuse("repeated claim in synthesis"); }
-        Ok(Value::string(id))
-    }).collect::<Result<Vec<_>>>()?;
+    let ids = claim_ids
+        .split(',')
+        .map(str::trim)
+        .map(|id| {
+            hash(id)?;
+            if !seen.insert(id.to_owned()) {
+                return refuse("repeated claim in synthesis");
+            }
+            Ok(Value::string(id))
+        })
+        .collect::<Result<Vec<_>>>()?;
     if ids.is_empty() {
         return refuse("explanation needs supporting claim event IDs");
     }
-    investigation::append(db, repo, id, revision, "SYNTHESIS", obj(&[
-        ("narrative", Value::string(narrative)),
-        ("claim_event_ids", Value::array(ids)),
-    ]), None)
+    investigation::append(
+        db,
+        repo,
+        id,
+        revision,
+        "SYNTHESIS",
+        obj(&[
+            ("narrative", Value::string(narrative)),
+            ("claim_event_ids", Value::array(ids)),
+        ]),
+        None,
+    )
 }
 
 pub fn refresh(
-    db: &crate::sqlite::Db, repo: &Path, id: &str, revision: usize,
+    db: &crate::sqlite::Db,
+    repo: &Path,
+    id: &str,
+    revision: usize,
     candidate: &str,
 ) -> Result<Value> {
     let history = investigation::audit(db, repo, id)?;
@@ -315,7 +405,10 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                     ("event_id", event.get("event_id")?.clone()),
                     ("report_id", report.get("report_id")?.clone()),
                     ("reading_plan", report.get("reading_plan")?.clone()),
-                    ("index_complete", report.get("index")?.get("complete")?.clone()),
+                    (
+                        "index_complete",
+                        report.get("index")?.get("complete")?.clone(),
+                    ),
                     ("coverage", report.get("coverage")?.clone()),
                 ]));
                 for gap in report.get("coverage")?.get("gaps")?.array_ref()? {
@@ -336,7 +429,10 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
                 ("event_id", event.get("event_id")?.clone()),
                 ("narrative", payload.get("narrative")?.clone()),
                 ("claim_event_ids", payload.get("claim_event_ids")?.clone()),
-                ("authorship", Value::string("REPORTED_NOT_INDEPENDENTLY_VALIDATED")),
+                (
+                    "authorship",
+                    Value::string("REPORTED_NOT_INDEPENDENTLY_VALIDATED"),
+                ),
             ])),
             "REFRESH" => last_refresh = payload.clone(),
             "PLAN" => preservation_plans.push(obj(&[
@@ -348,7 +444,10 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
             "VERIFY" => verification_receipts.push(obj(&[
                 ("event_id", event.get("event_id")?.clone()),
                 ("plan_event_id", payload.get("plan_event_id")?.clone()),
-                ("report_id", payload.get("report")?.get("report_id")?.clone()),
+                (
+                    "report_id",
+                    payload.get("report")?.get("report_id")?.clone(),
+                ),
                 ("status", payload.get("report")?.get("status")?.clone()),
                 ("ready_to_merge", Value::Bool(false)),
             ])),
@@ -371,11 +470,16 @@ pub fn explain(db: &crate::sqlite::Db, repo: &Path, id: &str) -> Result<Value> {
         ("preservation_plans", Value::array(preservation_plans)),
         ("verification_receipts", Value::array(verification_receipts)),
         ("latest_refresh", last_refresh),
-        ("completeness", Value::string("INCOMPLETE_BEHAVIORAL_COVERAGE")),
+        (
+            "completeness",
+            Value::string("INCOMPLETE_BEHAVIORAL_COVERAGE"),
+        ),
         ("semantic_verification", Value::string("NOT_ESTABLISHED")),
         ("ready_to_merge", Value::Bool(false)),
     ]);
     let report_id = digest::sha256(output.canonical().as_bytes());
-    output.entries_mut()?.insert("report_id".into(), Value::string(report_id));
+    output
+        .entries_mut()?
+        .insert("report_id".into(), Value::string(report_id));
     Ok(output)
 }

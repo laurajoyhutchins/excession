@@ -640,22 +640,40 @@ pub(super) fn command() -> Command {
                 "explore",
                 &["repo", "db", "id", "expected-revision"],
                 &["limit", "index-segments", "roots", "evidence-db"],
-            ).about("Persist Git-pinned candidate source and an incomplete reading plan"),
+            )
+            .about("Persist Git-pinned candidate source and an incomplete reading plan"),
             leaf(
                 "question",
-                &["repo", "db", "id", "expected-revision", "question", "reason"],
+                &[
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "question",
+                    "reason",
+                ],
                 &[],
-            ).about("Record an unresolved investigation question"),
+            )
+            .about("Record an unresolved investigation question"),
             leaf(
                 "synthesize",
-                &["repo", "db", "id", "expected-revision", "narrative", "claim-events"],
+                &[
+                    "repo",
+                    "db",
+                    "id",
+                    "expected-revision",
+                    "narrative",
+                    "claim-events",
+                ],
                 &[],
-            ).about("Record an attributed explanation linked to existing source claims"),
+            )
+            .about("Record an attributed explanation linked to existing source claims"),
             leaf(
                 "refresh",
                 &["repo", "db", "id", "expected-revision", "candidate"],
                 &[],
-            ).about("Reassess exact claim source identity at a candidate revision"),
+            )
+            .about("Reassess exact claim source identity at a candidate revision"),
             leaf("explain", &["repo", "db", "id"], &[])
                 .about("Compose a source-linked explanation and expose unresolved obligations"),
             leaf("show", &["repo", "db", "id"], &[])

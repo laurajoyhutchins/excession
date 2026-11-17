@@ -282,8 +282,11 @@ fn partial_index_paging_never_claims_missing_sources_are_absent() {
     }
     // Give the first ready partition three hits, and leave a second partition
     // pending. That guarantees a continuation cursor before index completion.
-    let (&first_bucket, first_paths) = buckets.iter()
-        .find(|(bucket, paths)| paths.len() >= 3 && buckets.range((**bucket + 1)..).next().is_some())
+    let (&first_bucket, first_paths) = buckets
+        .iter()
+        .find(|(bucket, paths)| {
+            paths.len() >= 3 && buckets.range((**bucket + 1)..).next().is_some()
+        })
         .expect("three files in first partition and one later partition");
     let later = buckets.range((first_bucket + 1)..).next().unwrap().1[0].clone();
     for path in first_paths.iter().take(3).chain(std::iter::once(&later)) {
@@ -312,11 +315,27 @@ fn partial_index_paging_never_claims_missing_sources_are_absent() {
             .iter()
             .any(|gap| gap["reason"] == "SEGMENT_INDEX_INCOMPLETE")
     );
-    let cursor = first["page"]["next_cursor"].as_str().expect("partial snapshot continuation");
-    let after = output(&root.0, &[
-        "--rev", &rev, "--task", "needle", "--limit", "2",
-        "--after", cursor, "--index-segments", "1",
-    ]);
-    assert_eq!(after.status.code(), Some(2),
-        "a newly completed partition must invalidate the old cursor");
+    let cursor = first["page"]["next_cursor"]
+        .as_str()
+        .expect("partial snapshot continuation");
+    let after = output(
+        &root.0,
+        &[
+            "--rev",
+            &rev,
+            "--task",
+            "needle",
+            "--limit",
+            "2",
+            "--after",
+            cursor,
+            "--index-segments",
+            "1",
+        ],
+    );
+    assert_eq!(
+        after.status.code(),
+        Some(2),
+        "a newly completed partition must invalidate the old cursor"
+    );
 }

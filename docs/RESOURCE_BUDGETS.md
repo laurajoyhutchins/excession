@@ -81,6 +81,27 @@ This does not relax the worker's separate execution/response safety envelope.
 Neither a zero-result query nor a successful GitHub Actions workflow can prove
 an implementation is absent.
 
+## Authenticated streaming substrate
+
+The Git adapter now provides two bounded streaming entry points for consumers:
+\`BlobReader::stream_verified\` yields fixed-sized byte windows and incrementally
+checks the *whole* original Git object's SHA-1 identity, including its
+length-prefixed header. \`stream_text_chunks_verified\` turns the stream into
+UTF-8-safe text windows with original byte and line offsets. Both refuse
+malformed framing and invalid source data.
+
+A callback is **provisional** until the whole blob is verified. Consumers
+must stage index writes in an atomic transaction and commit only when the
+stream returns successfully. The text windows concatenate without gaps or
+duplication; an FTS producer must separately handle token continuation at
+a very long line split, and build paged search results.
+
+This is the reading substrate, **not** a claim that the current FTS locator
+already uses it to index a multi-gigabyte source file. The existing locator
+still has a configurable file-level read ceiling. Follow-up #280 integrates
+those windows into the persistent index with resumable, original-source
+provenance.
+
 ## Existing boundaries outside source indexing
 
 | Concern | Current behavior | Required next improvement |

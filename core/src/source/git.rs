@@ -1,5 +1,6 @@
 //! Git subprocess adapter. No writes to source repositories; only reads.
 use crate::{Result, refuse};
+use sha1::{Digest, Sha1};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -121,6 +122,146 @@ impl BlobReader {
 
     pub fn read(&mut self, expected_oid: &str) -> Result<Vec<u8>> {
         self.read_capped(expected_oid, usize::MAX)
+    }
+
+    /// Stream an entire Git blob through bounded buffers and verify the exact
+    /// original Git object ID, including its length-prefixed object header.
+    ///
+    /// The callback receives monotonically increasing *byte* offsets. Its
+    /// output is provisional until this method returns Ok: callers must stage
+    /// changes in a transaction and commit only after final identity verification.
+    /// A callback failure invalidates this batch reader rather than allowing
+    /// a subsequent request against an undrained Git protocol response.
+    pub fn stream_verified(
+        &mut self,
+        expected_oid: &str,
+        chunk_bytes: usize,
+        mut emit: impl FnMut(u64, &[u8]) -> Result<()>,
+    ) -> Result<u64> {
+        oid(expected_oid)?;
+        if chunk_bytes == 0 {
+            return refuse("Git blob stream chunk size must be positive");
+        }
+        let stdin = self
+            .stdin
+            .as_mut()
+            .ok_or("Git blob reader already closed")?;
+        writeln!(stdin, "{expected_oid}").map_err(|e| format!("Git batch request: {e}"))?;
+        stdin.flush().map_err(|e| format!("Git batch flush: {e}"))?;
+
+        let mut header = String::new();
+        if self
+            .stdout
+            .read_line(&mut header)
+            .map_err(|e| e.to_string())?
+            == 0
+        {
+            return refuse("Git batch ended before blob response");
+        }
+        let mut fields = header.trim_end_matches('\n').split_ascii_whitespace();
+        if fields.next() != Some(expected_oid) || fields.next() != Some("blob") {
+            return refuse("Git batch returned a missing or non-blob object");
+        }
+        let size = fields
+            .next()
+            .ok_or("Git batch missing blob length")?
+            .parse::<usize>()
+            .map_err(|_| "invalid Git batch blob length")?;
+        if fields.next().is_some() {
+            return refuse("unexpected Git batch header fields");
+        }
+        let mut hasher = Sha1::new();
+        hasher.update(format!("blob {size}\0").as_bytes());
+        let mut buffer = vec![0u8; chunk_bytes.min(64 * 1024)];
+        let mut offset = 0usize;
+        while offset < size {
+            let len = (size - offset).min(buffer.len());
+            self.stdout
+                .read_exact(&mut buffer[..len])
+                .map_err(|e| format!("truncated Git batch blob: {e}"))?;
+            hasher.update(&buffer[..len]);
+            if let Err(error) = emit(offset as u64, &buffer[..len]) {
+                self.stdin.take();
+                return Err(error);
+            }
+            offset += len;
+        }
+        let mut terminator = [0u8; 1];
+        self.stdout
+            .read_exact(&mut terminator)
+            .map_err(|e| format!("missing Git batch blob separator: {e}"))?;
+        if terminator != *b"\n" || crate::digest::hex(&hasher.finalize()) != expected_oid {
+            return refuse("Git batch blob identity or framing mismatch");
+        }
+        Ok(size as u64)
+    }
+
+    /// Yield UTF-8 text windows with exact original byte and line offsets.
+    /// Newline boundaries are preferred where possible, and very long lines
+    /// are split only at UTF-8 character boundaries. Chunks concatenate to
+    /// the original blob without gaps or duplication. A source indexer must
+    /// supply overlap or token-aware continuation when token boundaries matter.
+    ///
+    /// Like stream_verified, emitted windows are provisional until the final
+    /// whole-Git-blob identity check succeeds. The caller must use a transaction.
+    pub fn stream_text_chunks_verified(
+        &mut self,
+        expected_oid: &str,
+        max_chunk_bytes: usize,
+        mut emit: impl FnMut(u64, usize, &str) -> Result<()>,
+    ) -> Result<u64> {
+        if max_chunk_bytes < 4 {
+            return refuse(
+                "text source chunk budget must allow one UTF-8 scalar (at least 4 bytes)",
+            );
+        }
+        let mut pending = Vec::new();
+        let mut start_byte = 0u64;
+        let mut start_line = 1usize;
+        let total = self.stream_verified(expected_oid, max_chunk_bytes, |_, bytes| {
+            pending.extend_from_slice(bytes);
+            while pending.len() >= max_chunk_bytes {
+                let available = &pending[..max_chunk_bytes];
+                let valid_end = match std::str::from_utf8(available) {
+                    Ok(_) => max_chunk_bytes,
+                    Err(error) if error.error_len().is_none() => error.valid_up_to(),
+                    Err(_) => return refuse("source contains invalid UTF-8"),
+                };
+                if valid_end == 0 {
+                    return refuse("source chunk has no complete UTF-8 scalar");
+                }
+                let valid = std::str::from_utf8(&pending[..valid_end])
+                    .map_err(|_| "invalid UTF-8 source prefix")?;
+                let end = valid
+                    .rfind('\n')
+                    .map(|index| index + 1)
+                    .filter(|&index| index >= max_chunk_bytes / 2)
+                    .unwrap_or(valid_end);
+                let text = std::str::from_utf8(&pending[..end])
+                    .map_err(|_| "invalid UTF-8 source chunk")?;
+                if text.contains('\0') {
+                    return refuse("source contains a NUL byte");
+                }
+                emit(start_byte, start_line, text)?;
+                start_byte += end as u64;
+                start_line += text.bytes().filter(|byte| *byte == b'\n').count();
+                pending.drain(..end);
+            }
+            Ok(())
+        })?;
+        if !pending.is_empty() {
+            let text = std::str::from_utf8(&pending)
+                .map_err(|_| "source ends with incomplete or invalid UTF-8")?;
+            if text.contains('\0') {
+                return refuse("source contains a NUL byte");
+            }
+            emit(start_byte, start_line, text)?;
+            start_byte += pending.len() as u64;
+        }
+        if start_byte != total {
+            return refuse("source chunk coverage differs from Git blob length");
+        }
+        Ok(total)
     }
 
     /// Reject oversized blobs before allocating their payload.
@@ -343,6 +484,108 @@ mod tests {
         assert!(oid(&"F".repeat(40)).is_err());
         assert!(oid(&"a".repeat(64)).is_err());
     }
+    #[test]
+    fn streamed_read_checks_full_blob_identity_with_bounded_chunks() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-verified-stream-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir(&root).unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .arg(&root)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let source = "α🚀 planner query\n".repeat(100_000);
+        std::fs::write(root.join("large.rs"), &source).unwrap();
+        std::fs::write(root.join("empty.rs"), "").unwrap();
+        let blob = text(&root, &["hash-object", "-w", "large.rs"]).unwrap();
+        let empty = text(&root, &["hash-object", "-w", "empty.rs"]).unwrap();
+        let mut reader = BlobReader::open(&root).unwrap();
+        let mut reconstructed = Vec::new();
+        let mut last = 0;
+        let size = reader
+            .stream_verified(&blob, 137, |offset, bytes| {
+                assert!(bytes.len() <= 137);
+                assert_eq!(offset, last);
+                last += bytes.len() as u64;
+                reconstructed.extend_from_slice(bytes);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(size, source.len() as u64);
+        assert_eq!(reconstructed, source.as_bytes());
+        assert_eq!(
+            reader
+                .stream_verified(&empty, 4, |_, _| {
+                    panic!("empty Git blob must have no payload chunks")
+                })
+                .unwrap(),
+            0
+        );
+        assert_eq!(reader.read(&blob).unwrap(), source.as_bytes());
+        assert!(reader.stream_verified(&blob, 0, |_, _| Ok(())).is_err());
+        reader.finish().unwrap();
+        let mut aborted = BlobReader::open(&root).unwrap();
+        assert_eq!(
+            aborted.stream_verified(&blob, 128, |_, _| Err("cancelled".into())),
+            Err("cancelled".into())
+        );
+        assert!(aborted.read(&blob).is_err());
+        drop(aborted);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn text_chunks_preserve_utf8_and_exact_line_byte_offsets() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "excession-text-chunks-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir(&root).unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .arg(&root)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let source = format!("{}{}", "α🚀 one\n".repeat(1000), "é".repeat(5000));
+        std::fs::write(root.join("unicode.rs"), &source).unwrap();
+        let oid = text(&root, &["hash-object", "-w", "unicode.rs"]).unwrap();
+        let mut reader = BlobReader::open(&root).unwrap();
+        let mut actual = String::new();
+        let mut offsets = Vec::new();
+        let total = reader
+            .stream_text_chunks_verified(&oid, 63, |offset, line, text| {
+                assert!(text.len() <= 63);
+                assert_eq!(offset as usize, actual.len());
+                assert_eq!(
+                    line,
+                    1 + actual.bytes().filter(|byte| *byte == b'\n').count()
+                );
+                offsets.push(offset);
+                actual.push_str(text);
+                Ok(())
+            })
+            .unwrap();
+        assert!(offsets.len() > 20);
+        assert_eq!(total, source.len() as u64);
+        assert_eq!(actual, source);
+        reader.finish().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn streamed_blobs_preserve_identity_and_refuse_wrong_object_types() {
         use std::sync::atomic::{AtomicU64, Ordering};

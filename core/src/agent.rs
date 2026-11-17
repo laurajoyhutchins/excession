@@ -140,19 +140,17 @@ pub fn context(
     }
 
     let mut gaps = Vec::new();
-    let mut relations = Vec::new();
     let mut configured_observations = Vec::new();
     let mut total_configured = 0usize;
-    let mut total_relations = 0usize;
-    let mut observed_reference_count = 0usize;
     let mut truncated = false;
     // Include revision-authenticated SCIP and configured-graph observations
     // already present in the evidence store, alongside static import candidates.
     // The default plan only selects producer evidence compatible with the
     // requested exact Git revision. No inferred edge becomes a verified fact.
-    match analyze::run_default(&discovered.root, &discovered.commit, roots, database) {
+    let (relations, total_relations, observed_reference_count) =
+        match analyze::run_default(&discovered.root, &discovered.commit, roots, database) {
         Ok((analysis, _)) => {
-            (relations, total_relations, observed_reference_count) =
+            let (relations, total_relations, observed_reference_count) =
                 focused_relationships(analysis.get("relationships")?.array_ref()?, &focus, limit)?;
             if total_relations > relations.len() {
                 truncated = true;
@@ -182,9 +180,10 @@ pub fn context(
                     truncated = true;
                 }
             }
+            (relations, total_relations, observed_reference_count)
         }
         Err(error) => return Err(error),
-    }
+    };
 
     let mut test_candidates = Vec::new();
     let mut total_tests = 0usize;

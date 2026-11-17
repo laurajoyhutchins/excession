@@ -180,10 +180,15 @@ def evaluate(repo: Path, base: str, candidate: str, doc: dict, sha: str) -> dict
             for path, rev in ((a, original), (b, amended)):
                 git(repo, "-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", str(path), rev)
                 attached.append(path)
-            (root / "home").mkdir()
+            (root / "base-home").mkdir()
+            (root / "candidate-home").mkdir()
             for check in doc["obligations"]:
-                baseline = run_command(a, check, root / "home") if check["kind"] == "differential" else None
-                proposed = run_command(b, check, root / "home")
+                baseline = run_command(a, check, root / "base-home") if check["kind"] == "differential" else None
+                if git(a, "status", "--porcelain", "--untracked-files=no").strip():
+                    raise Refused("baseline command modified tracked Git source")
+                proposed = run_command(b, check, root / "candidate-home")
+                if git(b, "status", "--porcelain", "--untracked-files=no").strip():
+                    raise Refused("candidate command modified tracked Git source")
                 outcome = "PASS"
                 if proposed["status"] != "OBSERVED" or (baseline and baseline["status"] != "OBSERVED"):
                     outcome = "INCONCLUSIVE"

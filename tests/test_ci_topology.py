@@ -153,6 +153,25 @@ class CiTopology(unittest.TestCase):
         self.assertNotIn("gh pr merge", fixes)
         self.assertNotIn("  pull_request:", fixes)
 
+    def test_structural_receipts_are_explicitly_trusted_and_not_a_pr_gate(self):
+        verify = read("verify.yml")
+        manual = read("structural-preservation.yml")
+        self.assertIn("test_structural_preservation.py", verify)
+        for required in (
+            "  workflow_dispatch:", "permissions:\n  contents: read",
+            "github.actor_id == '219002713'",
+            "github.ref == 'refs/heads/main'",
+            "persist-credentials: false", "--trusted-local true",
+            "structural_preservation.py",
+            "core/target/debug/excession agent verify",
+            "actions/upload-artifact@v4",
+        ):
+            self.assertIn(required, manual)
+        self.assertNotIn("  pull_request:", manual)
+        self.assertNotIn("pull_request_target:", manual)
+        self.assertNotIn("contents: write", manual)
+        self.assertNotIn("gh pr merge", manual)
+
     def test_manual_reproducibility_remains(self):
         for name in ("linux-full-sweep.yml", "linux-kernel-probe.yml", "benchmark-relations.yml"):
             with self.subTest(name=name):

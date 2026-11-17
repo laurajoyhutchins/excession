@@ -484,10 +484,10 @@ fn update_segment(
             && cached.mode == entry.mode
         {
             match cached.status.as_str() {
-                "OK" => {
-                    // This complete cache was verified against the entire
-                    // original Git blob. A smaller invocation budget does
-                    // not revoke evidence already authenticated.
+                "OK" if cached.chunk_bytes == chunk_bytes => {
+                    // A completed Git-verified index may be reused only
+                    // under the same chunking policy. Different boundaries
+                    // can change FTS ranking, even for the same Git blob.
                     files += 1;
                     bytes += cached.size;
                     state.reused_blobs += 1;

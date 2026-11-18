@@ -94,6 +94,28 @@ class StructuralPreservation(unittest.TestCase):
         self.assertEqual(self.evaluate()["status"],
                          "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
 
+    def test_excessive_stdout_is_inconclusive_without_spooling(self):
+        self.doc["obligations"][1]["argv"] = [
+            "python3", "-B", "-c",
+            "import os; os.write(1, b'x' * (1024 * 1024))",
+        ]
+        receipt = self.evaluate()["obligations"][1]["candidate"]
+        self.assertEqual(receipt["status"], "INCONCLUSIVE")
+        self.assertEqual(receipt["reason"], "TIMEOUT_OR_OUTPUT_BUDGET")
+        self.assertIsNone(receipt["stdout_sha256"])
+        self.assertLessEqual(receipt["stdout_bytes"], 65536)
+
+    def test_small_binary_output_matches_independent_hash(self):
+        payload = bytes(range(256))
+        self.doc["obligations"][1]["argv"] = [
+            "python3", "-B", "-c",
+            "import os; os.write(1, bytes(range(256)))",
+        ]
+        receipt = self.evaluate()["obligations"][1]["candidate"]
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["stdout_bytes"], len(payload))
+        self.assertEqual(receipt["stdout_sha256"], hashlib.sha256(payload).hexdigest())
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

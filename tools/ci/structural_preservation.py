@@ -7,19 +7,18 @@ Never claims all-input equivalence or authorizes a merge.
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import selectors
-import time
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 SCHEMA = "excession.structural-preservation-contract.v1"
 REPORT = "excession.structural-preservation-receipt.v1"
@@ -111,19 +110,6 @@ def verify_changed_entry_modes(repo: Path, base: str, candidate: str, paths: lis
                 raise Refused("changed path is not a regular tracked Git source file")
 
 
-def digest_file(file) -> tuple[str, int]:
-    file.seek(0)
-    h = hashlib.sha256()
-    count = 0
-    while True:
-        chunk = file.read(65536)
-        if not chunk:
-            break
-        count += len(chunk)
-        h.update(chunk)
-    return h.hexdigest(), count
-
-
 def run_command(worktree: Path, check: dict, home: Path) -> dict:
     cwd = (worktree / check["cwd"]).resolve()
     if not cwd.is_relative_to(worktree.resolve()) or not cwd.is_dir():
@@ -164,6 +150,7 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
     deadline = time.monotonic() + check["timeout_seconds"]
     timed_out = False
     exceeded = False
+    complete = False
     selector = selectors.DefaultSelector()
     try:
         for name, pipe in (("stdout", process.stdout), ("stderr", process.stderr)):
@@ -176,7 +163,9 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
                 break
             events = selector.select(timeout=min(remaining, 0.1))
             for key, _mask in events:
-                chunk = os.read(key.fd, 65536)
+                # The single sentinel byte establishes overflow without consuming
+                # an arbitrary extra chunk. Counts are observed, not total, bytes.
+                chunk = os.read(key.fd, min(65536, budget - counts[key.data] + 1))
                 if not chunk:
                     selector.unregister(key.fileobj)
                     continue
@@ -199,22 +188,27 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
             except ProcessLookupError:
                 pass
             returncode = process.wait()
+        complete = True
     finally:
-        selector.close()
-        for pipe in (process.stdout, process.stderr):
-            pipe.close()
-        if process.poll() is None:
+        # Cleanup must also cover capture errors after a leader has exited:
+        # descendants may still hold inherited pipe descriptors open.
+        if not complete:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        selector.close()
+        for pipe in (process.stdout, process.stderr):
+            pipe.close()
+        if process.poll() is None:
             process.wait()
     status = "INCONCLUSIVE" if timed_out or exceeded else "OBSERVED"
     return {
         "argv": command, "status": status,
-        "reason": "TIMEOUT_OR_OUTPUT_BUDGET" if status == "INCONCLUSIVE" else None,
+        "reason": "OUTPUT_BUDGET" if exceeded else "TIMEOUT" if timed_out else None,
         "exit_code": returncode, "timed_out": timed_out,
-        # A truncated stream has no full-output digest.
+        # Until both pipes reach EOF, no complete-output digest is defensible.
+        # The byte counts on inconclusive runs are observed prefixes only.
         "stdout_sha256": None if exceeded or timed_out else hashes["stdout"].hexdigest(),
         "stdout_bytes": counts["stdout"],
         "stderr_sha256": None if exceeded or timed_out else hashes["stderr"].hexdigest(),

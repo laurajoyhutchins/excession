@@ -308,6 +308,74 @@ class StructuralPreservation(unittest.TestCase):
                          hashlib.sha256(b"namespace-ok\\n").hexdigest())
         self.assertFalse(host_marker.exists(), "sandbox wrote into host /tmp")
 
+    @unittest.skipUnless(sys.platform == "linux" and Path("/proc").is_dir(),
+                         "Linux /proc independent process oracle required")
+    def test_namespace_does_not_leak_setsid_descendant_when_available(self):
+        import shutil
+        import uuid
+        if not shutil.which("bwrap"):
+            self.skipTest("bubblewrap not installed")
+        home = self.root / "isolated-descendant-home"
+        home.mkdir()
+        token = "excession-ns-probe-" + uuid.uuid4().hex
+        worker = (
+            "import os,sys,time;"
+            "os.setsid();"
+            "os.write(int(sys.argv[1]),b'1');"
+            "os.close(int(sys.argv[1]));"
+            "time.sleep(30)"
+        )
+        launcher = (
+            "import os,subprocess,sys;"
+            "r,w=os.pipe();"
+            f"p=subprocess.Popen([sys.executable,'-B','-c',{worker!r},str(w),{token!r}],"
+            "pass_fds=(w,),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+            "os.close(w);"
+            "assert os.read(r,1)==b'1';"
+            "os.close(r);"
+            "print('detached-started')"
+        )
+        check = dict(self.doc["obligations"][1])
+        check.update(
+            argv=[sys.executable, "-B", "-c", launcher],
+            isolation="linux_namespaces", max_scratch_bytes=16 * 1024 * 1024,
+            timeout_seconds=5,
+        )
+        receipt = runner.run_command(self.repo, check, home)
+        if receipt["reason"] == "SANDBOX_UNAVAILABLE":
+            self.skipTest("bubblewrap namespaces unavailable on host")
+
+        def live_pids():
+            result = []
+            for proc in Path("/proc").iterdir():
+                if not proc.name.isdecimal():
+                    continue
+                try:
+                    cmdline = (proc / "cmdline").read_bytes()
+                    state = (proc / "stat").read_text().rsplit(") ", 1)[1].split()[0]
+                except (OSError, IndexError):
+                    continue
+                if token.encode() in cmdline and state not in ("Z", "X"):
+                    result.append(int(proc.name))
+            return result
+
+        try:
+            self.assertEqual(receipt["status"], "OBSERVED")
+            self.assertEqual(receipt["exit_code"], 0)
+            self.assertEqual(receipt["stdout_sha256"],
+                             hashlib.sha256(b"detached-started\\n").hexdigest())
+            for _ in range(50):
+                if not live_pids():
+                    break
+                time.sleep(.02)
+            self.assertEqual(live_pids(), [], "detached worker survived PID namespace exit")
+        finally:
+            for pid in live_pids():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

@@ -304,7 +304,7 @@ class StructuralPreservation(unittest.TestCase):
         receipt = runner.run_command(self.repo, check, home)
         if receipt["reason"] == "SANDBOX_UNAVAILABLE":
             if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
-                self.fail("bubblewrap namespace setup unavailable on required-isolation runner")
+                self.fail("bubblewrap namespace setup unavailable: " + str(receipt.get("detail")) )
             self.skipTest("bubblewrap namespace setup unavailable on host")
         self.assertEqual(receipt["status"], "OBSERVED")
         self.assertEqual(receipt["exit_code"], 0)
@@ -350,7 +350,7 @@ class StructuralPreservation(unittest.TestCase):
         receipt = runner.run_command(self.repo, check, home)
         if receipt["reason"] == "SANDBOX_UNAVAILABLE":
             if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
-                self.fail("bubblewrap namespaces unavailable on required-isolation runner")
+                self.fail("bubblewrap namespaces unavailable: " + str(receipt.get("detail")) )
             self.skipTest("bubblewrap namespaces unavailable on host")
 
         def live_pids():

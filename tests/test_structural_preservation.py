@@ -282,6 +282,56 @@ class StructuralPreservation(unittest.TestCase):
         self.assertEqual(receipt["status"], "INCONCLUSIVE")
         self.assertEqual(receipt["reason"], "SANDBOX_UNAVAILABLE")
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux Docker runtime only")
+    def test_oci_live_private_tmp_and_independent_digest(self):
+        image = os.environ.get("EXCESSION_OCI_TEST_IMAGE")
+        if not image:
+            self.skipTest("dedicated OCI acceptance image not supplied")
+        check = dict(self.doc["obligations"][1])
+        marker = self.root / "host-should-not-change"
+        check.update(
+            isolation="oci", oci_image=image, max_scratch_bytes=1048576,
+            argv=["python3", "-B", "-c",
+                  "from pathlib import Path;import os;"
+                  "Path('/tmp/host-should-not-change').write_bytes(b'private');"
+                  "os.write(1,bytes(range(256)));os.write(2,b'err')"],
+        )
+        home = self.root / "oci-home"
+        home.mkdir()
+        receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "OBSERVED", receipt)
+        self.assertEqual(receipt["exit_code"], 0, receipt)
+        self.assertEqual(receipt["stdout_sha256"],
+                         hashlib.sha256(bytes(range(256))).hexdigest())
+        self.assertEqual(receipt["stderr_sha256"], hashlib.sha256(b"err").hexdigest())
+        self.assertFalse(marker.exists(), "host tmp was modified")
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux Docker runtime only")
+    def test_oci_live_setsid_child_cannot_survive_container_exit(self):
+        image = os.environ.get("EXCESSION_OCI_TEST_IMAGE")
+        if not image:
+            self.skipTest("dedicated OCI acceptance image not supplied")
+        import uuid
+        token = "excession-oci-" + uuid.uuid4().hex
+        worker = ("import os,time;os.setsid();"
+                  "os.close(1);os.close(2);time.sleep(30)")
+        launcher = ("import subprocess,sys;"
+                    f"p=subprocess.Popen([sys.executable,'-B','-c',{worker!r},{token!r}],"
+                    "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+                    "print('started',flush=True)")
+        check = dict(self.doc["obligations"][1])
+        check.update(isolation="oci", oci_image=image, max_scratch_bytes=1048576,
+                     argv=["python3", "-B", "-c", launcher])
+        home = self.root / "oci-home"
+        home.mkdir()
+        receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "OBSERVED", receipt)
+        self.assertEqual(receipt["exit_code"], 0, receipt)
+        self.assertEqual(receipt["stdout_sha256"],
+                         hashlib.sha256(b"started\\n").hexdigest())
+        # The Docker container is independently confirmed absent by
+        # run_command's inspect-after-rm cleanup receipt.
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

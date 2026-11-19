@@ -289,12 +289,14 @@ class StructuralPreservation(unittest.TestCase):
         if not image:
             self.skipTest("dedicated OCI acceptance image not supplied")
         check = dict(self.doc["obligations"][1])
-        marker = self.root / "host-should-not-change"
+        import uuid
+        marker = Path("/tmp") / ("excession-oci-host-" + uuid.uuid4().hex)
+        self.assertFalse(marker.exists())
         check.update(
             isolation="oci", oci_image=image, max_scratch_bytes=1048576,
             argv=["python3", "-B", "-c",
                   "from pathlib import Path;import os;"
-                  "Path('/tmp/host-should-not-change').write_bytes(b'private');"
+                  f"Path({str(marker)!r}).write_bytes(b'private');"
                   "os.write(1,bytes(range(256)));os.write(2,b'err')"],
         )
         home = self.root / "oci-home"

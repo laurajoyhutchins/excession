@@ -239,6 +239,133 @@ class StructuralPreservation(unittest.TestCase):
                 except ProcessLookupError:
                     pass
 
+    def test_oci_contract_refuses_unpinned_images_and_unknown_modes(self):
+        path = self.root / "contract.json"
+        obligation = self.doc["obligations"][1]
+        obligation.update(isolation="oci", oci_image="python:latest",
+                          max_scratch_bytes=1048576)
+        path.write_text(json.dumps(self.doc))
+        with self.assertRaisesRegex(runner.Refused, "pinned local image"):
+            runner.read_contract(path)
+        obligation["oci_image"] = "sha256:" + "a" * 64
+        path.write_text(json.dumps(self.doc))
+        self.assertEqual(runner.read_contract(path)[0], self.doc)
+        obligation["isolation"] = "trusted_local"
+        path.write_text(json.dumps(self.doc))
+        with self.assertRaisesRegex(runner.Refused, "OCI-only"):
+            runner.read_contract(path)
+
+    def test_oci_builder_is_read_only_networkless_and_resource_bounded(self):
+        check = dict(self.doc["obligations"][1])
+        check.update(isolation="oci", oci_image="sha256:" + "a" * 64,
+                     max_scratch_bytes=1048576)
+        args = runner.oci_command(self.repo, check, "excession-test")
+        self.assertEqual(args[:3], ["docker", "run", "--name"])
+        for pair in (["--network", "none"], ["--read-only", "--cap-drop"],
+                     ["--pids-limit", "128"], ["--memory", "512m"],
+                     ["--security-opt", "no-new-privileges"]):
+            self.assertIn(pair, [args[i:i + 2] for i in range(len(args)-1)])
+        self.assertIn("type=bind,src=" + str(self.repo.resolve()) +
+                      ",dst=/source,readonly", args)
+        self.assertNotIn("--privileged", args)
+        self.assertNotIn("/var/run/docker.sock", " ".join(args))
+        self.assertEqual(args[-len(check["argv"])-1], check["oci_image"])
+
+    def test_oci_missing_runtime_fails_closed(self):
+        from unittest.mock import patch
+        check = dict(self.doc["obligations"][1])
+        check.update(isolation="oci", oci_image="sha256:" + "a" * 64,
+                     max_scratch_bytes=1048576)
+        home = self.root / "home"
+        home.mkdir()
+        with patch.object(runner.shutil, "which", side_effect=lambda name, **kw: None if name == "docker" else sys.executable):
+            receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "INCONCLUSIVE")
+        self.assertEqual(receipt["reason"], "SANDBOX_UNAVAILABLE")
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux Docker runtime only")
+    def test_oci_live_private_tmp_and_independent_digest(self):
+        image = os.environ.get("EXCESSION_OCI_TEST_IMAGE")
+        if not image:
+            self.skipTest("dedicated OCI acceptance image not supplied")
+        check = dict(self.doc["obligations"][1])
+        import uuid
+        marker = Path("/tmp") / ("excession-oci-host-" + uuid.uuid4().hex)
+        self.assertFalse(marker.exists())
+        check.update(
+            isolation="oci", oci_image=image, max_scratch_bytes=1048576,
+            argv=["python3", "-B", "-c",
+                  "from pathlib import Path;import os;"
+                  f"Path({str(marker)!r}).write_bytes(b'private');"
+                  "os.write(1,bytes(range(256)));os.write(2,b'err')"],
+        )
+        home = self.root / "oci-home"
+        home.mkdir()
+        receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "OBSERVED", receipt)
+        self.assertEqual(receipt["exit_code"], 0, receipt)
+        self.assertEqual(receipt["stdout_sha256"],
+                         hashlib.sha256(bytes(range(256))).hexdigest())
+        self.assertEqual(receipt["stderr_sha256"], hashlib.sha256(b"err").hexdigest())
+        self.assertFalse(marker.exists(), "host tmp was modified")
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux Docker runtime only")
+    def test_oci_live_setsid_child_cannot_survive_container_exit(self):
+        image = os.environ.get("EXCESSION_OCI_TEST_IMAGE")
+        if not image:
+            self.skipTest("dedicated OCI acceptance image not supplied")
+        import uuid
+        token = "excession-oci-" + uuid.uuid4().hex
+        worker = ("import os,sys,time;os.setsid();"
+                  "os.write(int(sys.argv[1]),b'1');"
+                  "os.close(int(sys.argv[1]));"
+                  "os.close(1);os.close(2);time.sleep(30)")
+        launcher = ("import subprocess,sys,os;"
+                    "r,w=os.pipe();"
+                    f"p=subprocess.Popen([sys.executable,'-B','-c',{worker!r},str(w),{token!r}],"
+                    "pass_fds=(w,),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+                    "os.close(w);"
+                    "assert os.read(r,1)==b'1';"
+                    "os.close(r);print('started',flush=True)")
+        check = dict(self.doc["obligations"][1])
+        check.update(isolation="oci", oci_image=image, max_scratch_bytes=1048576,
+                     argv=["python3", "-B", "-c", launcher])
+        home = self.root / "oci-home"
+        home.mkdir()
+        receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "OBSERVED", receipt)
+        self.assertEqual(receipt["exit_code"], 0, receipt)
+        self.assertEqual(receipt["stdout_sha256"],
+                         hashlib.sha256(b"started\n").hexdigest())
+        # Independently inspect host /proc: Docker's successful container
+        # removal is not itself an oracle for escaped host processes.
+        def surviving_workers():
+            survivors = []
+            for proc in Path("/proc").iterdir():
+                if not proc.name.isdecimal():
+                    continue
+                try:
+                    cmdline = (proc / "cmdline").read_bytes()
+                    stat = (proc / "stat").read_text().rsplit(") ", 1)[1].split()[0]
+                except (OSError, IndexError):
+                    continue
+                if token.encode() in cmdline and stat not in ("Z", "X"):
+                    survivors.append(int(proc.name))
+            return survivors
+
+        try:
+            for _ in range(40):
+                if not surviving_workers():
+                    break
+                time.sleep(0.025)
+            self.assertEqual(surviving_workers(), [], "detached worker escaped OCI cleanup")
+        finally:
+            for pid in surviving_workers():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

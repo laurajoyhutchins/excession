@@ -257,11 +257,13 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
                     env=environment,
                 )
                 inspect = subprocess.run(
-                    ["docker", "container", "inspect", container_name],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    ["docker", "container", "ls", "-a",
+                     "--filter", f"name=^{container_name}$",
+                     "--format", "{{.Names}}"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                     timeout=10, env=environment,
                 )
-                cleanup_ok = inspect.returncode != 0
+                cleanup_ok = inspect.returncode == 0 and not inspect.stdout.strip()
             except (OSError, subprocess.TimeoutExpired):
                 cleanup_ok = False
         # A successful leader exit and EOF do not prove that background

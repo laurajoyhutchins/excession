@@ -1,0 +1,29 @@
+name: Linux namespace receipt acceptance
+
+on:
+  pull_request:
+    paths:
+      - tools/ci/structural_preservation.py
+      - tests/test_structural_preservation.py
+      - .github/workflows/linux-namespace-receipts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  namespace:
+    name: Actual Linux namespace and descendant oracles
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      EXCESSION_REQUIRE_LINUX_NAMESPACES: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ubuntu bubblewrap
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          bwrap --version
+      - name: Exercise real namespace mounts, detached children and output receipts
+        run: python3 -m unittest discover -s tests -p 'test_structural_preservation.py' -v

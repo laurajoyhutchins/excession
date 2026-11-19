@@ -66,8 +66,19 @@ def read_contract(path: Path) -> tuple[dict, str]:
         raise Refused("requires 1-16 explicit preservation obligations")
     names = set()
     for c in checks:
-        if not isinstance(c, dict) or set(c) != {"id", "kind", "cwd", "argv", "timeout_seconds", "max_output_bytes"}:
+        required = {"id", "kind", "cwd", "argv", "timeout_seconds", "max_output_bytes"}
+        optional = {"isolation", "max_scratch_bytes"}
+        if not isinstance(c, dict) or not required.issubset(c) or set(c) - required - optional:
             raise Refused("invalid obligation fields")
+        isolation = c.get("isolation", "trusted_local")
+        if isolation not in ("trusted_local", "linux_namespaces"):
+            raise Refused("unknown preservation isolation mode")
+        if isolation == "linux_namespaces":
+            size = c.get("max_scratch_bytes")
+            if type(size) is not int or not 1 <= size <= (1 << 63) - 1:
+                raise Refused("linux_namespaces requires a positive scratch-byte limit")
+        elif "max_scratch_bytes" in c:
+            raise Refused("scratch-byte limit requires linux_namespaces")
         if not isinstance(c["id"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", c["id"]) or c["id"] in names:
             raise Refused("duplicate or invalid obligation ID")
         names.add(c["id"])
@@ -110,6 +121,40 @@ def verify_changed_entry_modes(repo: Path, base: str, candidate: str, paths: lis
                 raise Refused("changed path is not a regular tracked Git source file")
 
 
+# In the opt-in isolation mode, the checkout is mounted read-only under a
+# private workspace. /tmp, /run and /dev/shm are sized private tmpfs mounts. The host network remains shared.
+# This limits ordinary filesystem writes; it does not make reviewed commands
+# untrusted-safe (for example, host IPC sockets outside the masked roots).
+SANDBOX_WORKTREE = Path("/tmp/excession-worktree")
+
+
+def linux_namespace_argv(bwrap: str, worktree: Path, cwd: Path,
+                         command: list[str], scratch_bytes: int) -> list[str]:
+    worktree = worktree.resolve()
+    relative_cwd = cwd.resolve().relative_to(worktree)
+    translated = list(command)
+    executable = Path(translated[0])
+    if executable.is_absolute() and executable.is_relative_to(worktree):
+        translated[0] = str(SANDBOX_WORKTREE / executable.relative_to(worktree))
+    return [
+        bwrap, "--unshare-user", "--unshare-pid", "--unshare-ipc",
+        "--unshare-uts", "--die-with-parent",
+        "--ro-bind", "/", "/",
+        "--size", str(scratch_bytes), "--tmpfs", "/tmp",
+        "--size", str(scratch_bytes), "--tmpfs", "/run",
+        "--dev", "/dev",
+        "--size", str(scratch_bytes), "--tmpfs", "/dev/shm",
+        "--proc", "/proc",
+        "--ro-bind", str(worktree), str(SANDBOX_WORKTREE),
+        "--dir", "/tmp/home",
+        "--chdir", str(SANDBOX_WORKTREE / relative_cwd),
+        "--setenv", "HOME", "/tmp/home",
+        "--setenv", "TMPDIR", "/tmp",
+        "--setenv", "XDG_CACHE_HOME", "/tmp/home/.cache",
+        "--", *translated,
+    ]
+
+
 def run_command(worktree: Path, check: dict, home: Path) -> dict:
     cwd = (worktree / check["cwd"]).resolve()
     if not cwd.is_relative_to(worktree.resolve()) or not cwd.is_dir():
@@ -132,13 +177,53 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
         "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC",
         "PYTHONDONTWRITEBYTECODE": "1", "GIT_CONFIG_NOSYSTEM": "1",
     }
+    isolation = check.get("isolation", "trusted_local")
+    spawn_command = command
+    if isolation == "linux_namespaces":
+        if sys.platform != "linux":
+            return {"status": "INCONCLUSIVE", "reason": "SANDBOX_UNAVAILABLE",
+                    "argv": command, "isolation": isolation}
+        bwrap = shutil.which("bwrap", path=environment["PATH"])
+        if not bwrap:
+            return {"status": "INCONCLUSIVE", "reason": "SANDBOX_UNAVAILABLE",
+                    "argv": command, "isolation": isolation}
+        spawn_command = linux_namespace_argv(
+            bwrap, worktree, cwd, command, check["max_scratch_bytes"],
+        )
+        # Probe the actual mount and namespace setup, not just tool presence.
+        # A failed setup must never fall back to unsandboxed execution.
+        probe = linux_namespace_argv(
+            bwrap, worktree, cwd, ["/bin/true"], check["max_scratch_bytes"],
+        )
+        detail = None
+        try:
+            probe_result = subprocess.run(
+                probe, env=environment, stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                timeout=5,
+            )
+            ready = probe_result.returncode == 0
+            if not ready:
+                detail = probe_result.stderr.decode(errors="replace").strip()[-512:]
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            ready = False
+            detail = type(exc).__name__
+        if not ready:
+            return {"status": "INCONCLUSIVE", "reason": "SANDBOX_UNAVAILABLE",
+                    "detail": detail, "argv": command, "isolation": isolation}
+        environment.update({
+            "HOME": "/tmp/home", "TMPDIR": "/tmp",
+            "XDG_CACHE_HOME": "/tmp/home/.cache",
+        })
+    elif isolation != "trusted_local":
+        raise Refused("unknown preservation isolation mode")
     # Pipes are drained incrementally. Never spool unbounded child output to disk.
     # POSIX process groups let us terminate descendants retaining inherited pipes.
     if os.name != "posix":
         return {"status": "INCONCLUSIVE", "reason": "BOUNDED_CAPTURE_UNSUPPORTED", "argv": command}
     try:
         process = subprocess.Popen(
-            command, cwd=cwd, env=environment, stdout=subprocess.PIPE,
+            spawn_command, cwd=cwd, env=environment, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, start_new_session=True,
         )
     except OSError as exc:
@@ -203,7 +288,7 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
             process.wait()
     status = "INCONCLUSIVE" if timed_out or exceeded else "OBSERVED"
     return {
-        "argv": command, "status": status,
+        "argv": command, "status": status, "isolation": isolation,
         "reason": "OUTPUT_BUDGET" if exceeded else "TIMEOUT" if timed_out else None,
         "exit_code": returncode, "timed_out": timed_out,
         # Until both pipes reach EOF, no complete-output digest is defensible.

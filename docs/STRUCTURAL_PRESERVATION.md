@@ -89,13 +89,60 @@ environment state, or miss important branches. Matching output is only
 evidence for the named inputs and configuration, not all inputs or internal
 state equivalence.
 
-The runner records stdout/stderr sizes and refuses to claim complete
-observations after timeout or output-budget exceedance. Its temporary files
-still require adequate disk resources; it is not a protective resource
-sandbox, and it does not attest the host interpreter or tests cryptographically.
-It never deletes, commits or merges the original user's source. Each individual obligation receives fresh detached worktrees and home
-directories, avoiding output and cache reuse between checks. Temporary
-worktrees are removed after evaluation.
+The runner drains stdout/stderr incrementally without spooling unlimited
+temporary files. It stops at the **first byte beyond** each stream's configured
+output budget, returns `INCONCLUSIVE: OUTPUT_BUDGET`, and does not invent a
+complete-output SHA-256 digest. A deadline gives `INCONCLUSIVE: TIMEOUT`.
+These counts are observed prefixes, not the child's total attempted output.
+The default `trusted_local` executor terminates its POSIX process group
+on every exit, but detached sessions can escape it. It remains an explicitly
+trusted local execution mechanism, not a sandbox.
+
+For commands needing narrower writable paths on supported Linux hosts, each
+obligation may explicitly select **`linux_namespaces`**:
+
+```json
+{
+  "id": "sandboxed-entry-point",
+  "kind": "candidate_pass",
+  "cwd": ".",
+  "argv": ["python3", "-B", "main.py"],
+  "timeout_seconds": 30,
+  "max_output_bytes": 1048576,
+  "isolation": "linux_namespaces",
+  "max_scratch_bytes": 67108864
+}
+```
+
+This opt-in mode requires the native `bwrap` executable and available user,
+PID, IPC and UTS namespaces. It mounts the Git worktree read-only
+under `/tmp/excession-worktree` and provides private tmpfs filesystems at
+`/tmp`, `/run` and `/dev/shm`; each tmpfs has the declared size ceiling.
+The process runs with `HOME=/tmp/home` and `TMPDIR=/tmp`. Each invocation
+uses a new namespace and private scratch paths. Commands that need to write
+inside the source tree will fail rather than obtaining unexpected write access.
+
+The runner first probes the actual namespace setup. If the executable or
+kernel permission is absent, or the host is not Linux, it returns
+`INCONCLUSIVE: SANDBOX_UNAVAILABLE` and **never** silently executes the
+command under `trusted_local`. The input contract requires an explicit
+positive `max_scratch_bytes` for this mode. The budget applies to *each*
+tmpfs, not to cumulative disk, memory or CPU use.
+
+This is **not an untrusted-code security boundary**. The host network
+namespace remains shared because Ubuntu's hosted runner refuses Bubblewrap's
+loopback setup in a private network namespace. The host root remains readable,
+not every possible IPC or service side effect is modeled, and no seccomp
+policy is installed. A portable Windows implementation would need
+separate, independently tested Job Object process supervision. Treat the
+namespace mode as a narrow, opt-in defense for reviewed commands, not a proof
+of total containment or semantic equivalence.
+
+The runner does not attest the host interpreter or tests cryptographically.
+It never deletes, commits or merges the original user's source. Each
+individual obligation receives fresh detached worktrees and home directories,
+avoiding output and cache reuse between checks. Temporary worktrees are
+removed after evaluation.
 
 An incomplete, failing, or unsupported obligation is preserved as
 `INCONCLUSIVE` or `FAILED`. In particular, a missing executable cannot

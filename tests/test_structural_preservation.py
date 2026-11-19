@@ -239,6 +239,152 @@ class StructuralPreservation(unittest.TestCase):
                 except ProcessLookupError:
                     pass
 
+    def test_namespace_contract_requires_an_explicit_scratch_budget(self):
+        obligation = self.doc["obligations"][1]
+        obligation["isolation"] = "linux_namespaces"
+        path = self.root / "contract.json"
+        path.write_text(json.dumps(self.doc))
+        with self.assertRaisesRegex(runner.Refused, "scratch-byte limit"):
+            runner.read_contract(path)
+        obligation["max_scratch_bytes"] = 8 * 1024 * 1024
+        path.write_text(json.dumps(self.doc))
+        self.assertEqual(runner.read_contract(path)[0], self.doc)
+        obligation["isolation"] = "trusted_local"
+        path.write_text(json.dumps(self.doc))
+        with self.assertRaisesRegex(runner.Refused, "requires linux_namespaces"):
+            runner.read_contract(path)
+
+    def test_namespace_builder_has_read_only_source_and_private_writable_paths(self):
+        args = runner.linux_namespace_argv(
+            "/usr/bin/bwrap", self.repo, self.repo,
+            ["python3", "-B", "-c", "print(42)"], 64 * 1024 * 1024,
+        )
+        self.assertEqual(args[:2], ["/usr/bin/bwrap", "--unshare-user"])
+        for flag in ("--unshare-pid", "--unshare-ipc", "--die-with-parent"):
+            self.assertIn(flag, args)
+        self.assertIn(["--ro-bind", str(self.repo), "/tmp/excession-worktree"],
+                      [args[i:i + 3] for i in range(len(args) - 2)])
+        self.assertNotIn("--bind", args)
+        self.assertNotIn("--unshare-net", args)  # hosted runner rejects loopback setup
+        self.assertIn(["--size", str(64 * 1024 * 1024), "--tmpfs", "/tmp"],
+                      [args[i:i + 4] for i in range(len(args) - 3)])
+        self.assertEqual(args[-3:], ["-B", "-c", "print(42)"])
+
+    def test_namespace_mode_fails_closed_when_bubblewrap_is_missing(self):
+        from unittest.mock import patch
+        home = self.root / "isolated-home"
+        home.mkdir()
+        check = dict(self.doc["obligations"][1])
+        check.update(argv=[sys.executable, "-B", "-c", "print('not executed')"],
+                     isolation="linux_namespaces", max_scratch_bytes=16 * 1024 * 1024)
+        with patch.object(runner.shutil, "which", return_value=None):
+            receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "INCONCLUSIVE")
+        self.assertEqual(receipt["reason"], "SANDBOX_UNAVAILABLE")
+
+    @unittest.skipUnless(sys.platform == "linux", "requires Linux namespaces")
+    def test_namespace_observation_and_private_tmp_when_available(self):
+        import shutil
+        if not shutil.which("bwrap"):
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap not installed on required-isolation runner")
+            self.skipTest("bubblewrap not installed")
+        home = self.root / "isolated-home"
+        home.mkdir()
+        host_marker = self.root / "sandbox-private-marker"
+        script = (
+            "from pathlib import Path; import sys;"
+            "Path(sys.argv[1]).write_bytes(b'inside-only');"
+            "print('namespace-ok')"
+        )
+        check = dict(self.doc["obligations"][1])
+        check.update(
+            argv=[sys.executable, "-B", "-c", script, str(host_marker)],
+            isolation="linux_namespaces", max_scratch_bytes=16 * 1024 * 1024,
+        )
+        receipt = runner.run_command(self.repo, check, home)
+        if receipt["reason"] == "SANDBOX_UNAVAILABLE":
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap namespace setup unavailable: " + str(receipt.get("detail")) )
+            self.skipTest("bubblewrap namespace setup unavailable on host")
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertEqual(receipt["stdout_sha256"],
+                         hashlib.sha256(b"namespace-ok\\n").hexdigest())
+        self.assertFalse(host_marker.exists(), "sandbox wrote into host /tmp")
+
+    @unittest.skipUnless(sys.platform == "linux" and Path("/proc").is_dir(),
+                         "Linux /proc independent process oracle required")
+    def test_namespace_does_not_leak_setsid_descendant_when_available(self):
+        import shutil
+        import uuid
+        if not shutil.which("bwrap"):
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap not installed on required-isolation runner")
+            self.skipTest("bubblewrap not installed")
+        home = self.root / "isolated-descendant-home"
+        home.mkdir()
+        token = "excession-ns-probe-" + uuid.uuid4().hex
+        worker = (
+            "import os,sys,time;"
+            "os.setsid();"
+            "os.write(int(sys.argv[1]),b'1');"
+            "os.close(int(sys.argv[1]));"
+            "time.sleep(30)"
+        )
+        launcher = (
+            "import os,subprocess,sys;"
+            "r,w=os.pipe();"
+            f"p=subprocess.Popen([sys.executable,'-B','-c',{worker!r},str(w),{token!r}],"
+            "pass_fds=(w,),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+            "os.close(w);"
+            "assert os.read(r,1)==b'1';"
+            "os.close(r);"
+            "print('detached-started')"
+        )
+        check = dict(self.doc["obligations"][1])
+        check.update(
+            argv=[sys.executable, "-B", "-c", launcher],
+            isolation="linux_namespaces", max_scratch_bytes=16 * 1024 * 1024,
+            timeout_seconds=5,
+        )
+        receipt = runner.run_command(self.repo, check, home)
+        if receipt["reason"] == "SANDBOX_UNAVAILABLE":
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap namespaces unavailable: " + str(receipt.get("detail")) )
+            self.skipTest("bubblewrap namespaces unavailable on host")
+
+        def live_pids():
+            result = []
+            for proc in Path("/proc").iterdir():
+                if not proc.name.isdecimal():
+                    continue
+                try:
+                    cmdline = (proc / "cmdline").read_bytes()
+                    state = (proc / "stat").read_text().rsplit(") ", 1)[1].split()[0]
+                except (OSError, IndexError):
+                    continue
+                if token.encode() in cmdline and state not in ("Z", "X"):
+                    result.append(int(proc.name))
+            return result
+
+        try:
+            self.assertEqual(receipt["status"], "OBSERVED")
+            self.assertEqual(receipt["exit_code"], 0)
+            self.assertEqual(receipt["stdout_sha256"],
+                             hashlib.sha256(b"detached-started\\n").hexdigest())
+            for _ in range(50):
+                if not live_pids():
+                    break
+                time.sleep(.02)
+            self.assertEqual(live_pids(), [], "detached worker survived PID namespace exit")
+        finally:
+            for pid in live_pids():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

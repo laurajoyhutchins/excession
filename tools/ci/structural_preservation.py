@@ -150,7 +150,6 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
     deadline = time.monotonic() + check["timeout_seconds"]
     timed_out = False
     exceeded = False
-    complete = False
     selector = selectors.DefaultSelector()
     try:
         for name, pipe in (("stdout", process.stdout), ("stderr", process.stderr)):
@@ -188,15 +187,15 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
             except ProcessLookupError:
                 pass
             returncode = process.wait()
-        complete = True
     finally:
-        # Cleanup must also cover capture errors after a leader has exited:
-        # descendants may still hold inherited pipe descriptors open.
-        if not complete:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        # A successful leader exit and EOF do not prove that background
+        # descendants have exited: they may have closed both pipes. Revoke
+        # the session's process group on every path, including success.
+        # This is not a sandbox against setsid() or detached processes.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         selector.close()
         for pipe in (process.stdout, process.stderr):
             pipe.close()

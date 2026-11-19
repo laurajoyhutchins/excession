@@ -239,6 +239,75 @@ class StructuralPreservation(unittest.TestCase):
                 except ProcessLookupError:
                     pass
 
+    def test_namespace_contract_requires_an_explicit_scratch_budget(self):
+        obligation = self.doc["obligations"][1]
+        obligation["isolation"] = "linux_namespaces"
+        path = self.root / "contract.json"
+        path.write_text(json.dumps(self.doc))
+        with self.assertRaisesRegex(runner.Refused, "scratch-byte limit"):
+            runner.read_contract(path)
+        obligation["max_scratch_bytes"] = 8 * 1024 * 1024
+        path.write_text(json.dumps(self.doc))
+        self.assertEqual(runner.read_contract(path)[0], self.doc)
+        obligation["isolation"] = "trusted_local"
+        path.write_text(json.dumps(self.doc))
+        with self.assertRaisesRegex(runner.Refused, "requires linux_namespaces"):
+            runner.read_contract(path)
+
+    def test_namespace_builder_has_read_only_source_and_private_writable_paths(self):
+        args = runner.linux_namespace_argv(
+            "/usr/bin/bwrap", self.repo, self.repo,
+            ["python3", "-B", "-c", "print(42)"], 64 * 1024 * 1024,
+        )
+        self.assertEqual(args[:2], ["/usr/bin/bwrap", "--unshare-user"])
+        for flag in ("--unshare-pid", "--unshare-net", "--die-with-parent"):
+            self.assertIn(flag, args)
+        self.assertIn(["--ro-bind", str(self.repo), "/tmp/excession-worktree"],
+                      [args[i:i + 3] for i in range(len(args) - 2)])
+        self.assertNotIn("--bind", args)
+        self.assertIn(["--size", str(64 * 1024 * 1024), "--tmpfs", "/tmp"],
+                      [args[i:i + 4] for i in range(len(args) - 3)])
+        self.assertEqual(args[-3:], ["-B", "-c", "print(42)"])
+
+    def test_namespace_mode_fails_closed_when_bubblewrap_is_missing(self):
+        from unittest.mock import patch
+        home = self.root / "isolated-home"
+        home.mkdir()
+        check = dict(self.doc["obligations"][1])
+        check.update(argv=[sys.executable, "-B", "-c", "print('not executed')"],
+                     isolation="linux_namespaces", max_scratch_bytes=16 * 1024 * 1024)
+        with patch.object(runner.shutil, "which", return_value=None):
+            receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "INCONCLUSIVE")
+        self.assertEqual(receipt["reason"], "SANDBOX_UNAVAILABLE")
+
+    @unittest.skipUnless(sys.platform == "linux", "requires Linux namespaces")
+    def test_namespace_observation_and_private_tmp_when_available(self):
+        import shutil
+        if not shutil.which("bwrap"):
+            self.skipTest("bubblewrap not installed")
+        home = self.root / "isolated-home"
+        home.mkdir()
+        host_marker = self.root / "sandbox-private-marker"
+        script = (
+            "from pathlib import Path; import sys;"
+            "Path(sys.argv[1]).write_bytes(b'inside-only');"
+            "print('namespace-ok')"
+        )
+        check = dict(self.doc["obligations"][1])
+        check.update(
+            argv=[sys.executable, "-B", "-c", script, str(host_marker)],
+            isolation="linux_namespaces", max_scratch_bytes=16 * 1024 * 1024,
+        )
+        receipt = runner.run_command(self.repo, check, home)
+        if receipt["reason"] == "SANDBOX_UNAVAILABLE":
+            self.skipTest("bubblewrap namespace setup unavailable on host")
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["exit_code"], 0)
+        self.assertEqual(receipt["stdout_sha256"],
+                         hashlib.sha256(b"namespace-ok\\n").hexdigest())
+        self.assertFalse(host_marker.exists(), "sandbox wrote into host /tmp")
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

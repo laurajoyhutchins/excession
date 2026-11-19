@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 SCHEMA = "excession.structural-preservation-contract.v1"
 REPORT = "excession.structural-preservation-receipt.v1"
@@ -66,8 +67,20 @@ def read_contract(path: Path) -> tuple[dict, str]:
         raise Refused("requires 1-16 explicit preservation obligations")
     names = set()
     for c in checks:
-        if not isinstance(c, dict) or set(c) != {"id", "kind", "cwd", "argv", "timeout_seconds", "max_output_bytes"}:
+        required = {"id", "kind", "cwd", "argv", "timeout_seconds", "max_output_bytes"}
+        optional = {"isolation", "oci_image", "max_scratch_bytes"}
+        if not isinstance(c, dict) or not required.issubset(c) or set(c) - required - optional:
             raise Refused("invalid obligation fields")
+        mode = c.get("isolation", "trusted_local")
+        if mode not in ("trusted_local", "oci"):
+            raise Refused("unknown preservation isolation mode")
+        if mode == "oci":
+            if not isinstance(c.get("oci_image"), str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", c["oci_image"]):
+                raise Refused("OCI mode requires a pinned local image ID")
+            if type(c.get("max_scratch_bytes")) is not int or not 1048576 <= c["max_scratch_bytes"] <= 1073741824:
+                raise Refused("OCI mode requires 1 MiB-1 GiB scratch budget")
+        elif set(c) & {"oci_image", "max_scratch_bytes"}:
+            raise Refused("OCI-only fields require OCI isolation")
         if not isinstance(c["id"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", c["id"]) or c["id"] in names:
             raise Refused("duplicate or invalid obligation ID")
         names.add(c["id"])
@@ -110,6 +123,37 @@ def verify_changed_entry_modes(repo: Path, base: str, candidate: str, paths: lis
                 raise Refused("changed path is not a regular tracked Git source file")
 
 
+def oci_command(worktree: Path, check: dict, name: str) -> list[str]:
+    """Produce an explicit, nonprivileged, host-network-free Docker invocation.
+
+    The image ID is immutable; callers must provision it outside this runner.
+    The daemon must be a trusted local Docker engine, not a remote endpoint.
+    """
+    if os.environ.get("DOCKER_HOST") or os.environ.get("DOCKER_CONTEXT"):
+        raise Refused("OCI mode refuses remote or alternate Docker contexts")
+    cwd = (worktree / check["cwd"]).resolve()
+    relative = cwd.relative_to(worktree.resolve())
+    argv = list(check["argv"])
+    executable = Path(argv[0])
+    if executable.is_absolute() and executable.is_relative_to(worktree.resolve()):
+        argv[0] = "/source/" + str(executable.relative_to(worktree.resolve()))
+    elif "/" in argv[0] and not executable.is_absolute():
+        argv[0] = str(Path("/source") / relative / executable)
+    return [
+        "docker", "run", "--name", name, "--rm",
+        "--network", "none", "--read-only", "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges", "--pids-limit", "128",
+        "--memory", "512m", "--cpus", "1",
+        "--user", "65534:65534",
+        "--mount", f"type=bind,src={worktree.resolve()},dst=/source,readonly",
+        "--tmpfs", f"/tmp:rw,noexec,nosuid,nodev,size={check['max_scratch_bytes']},mode=1777",
+        "--workdir", str(Path("/source") / relative),
+        "--env", "HOME=/tmp", "--env", "TMPDIR=/tmp",
+        "--env", "PYTHONDONTWRITEBYTECODE=1",
+        "--", check["oci_image"], *argv,
+    ]
+
+
 def run_command(worktree: Path, check: dict, home: Path) -> dict:
     cwd = (worktree / check["cwd"]).resolve()
     if not cwd.is_relative_to(worktree.resolve()) or not cwd.is_dir():
@@ -127,6 +171,19 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
         executable = shutil.which(command[0], path=os.environ.get("PATH", ""))
         if not executable:
             return {"status": "INCONCLUSIVE", "reason": "EXECUTABLE_UNAVAILABLE", "argv": command}
+    isolation = check.get("isolation", "trusted_local")
+    container_name = None
+    if isolation == "oci":
+        if sys.platform != "linux" or not shutil.which("docker"):
+            return {"status": "INCONCLUSIVE", "reason": "SANDBOX_UNAVAILABLE", "argv": command}
+        # Docker's daemon outlives the CLI: its container must be revoked
+        # separately, including when the CLI exits or times out.
+        container_name = "excession-receipt-" + uuid.uuid4().hex
+        spawn_command = oci_command(worktree, check, container_name)
+    elif isolation == "trusted_local":
+        spawn_command = command
+    else:
+        raise Refused("unknown preservation isolation mode")
     environment = {
         "PATH": os.environ.get("PATH", ""), "HOME": str(home),
         "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC",
@@ -138,7 +195,7 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
         return {"status": "INCONCLUSIVE", "reason": "BOUNDED_CAPTURE_UNSUPPORTED", "argv": command}
     try:
         process = subprocess.Popen(
-            command, cwd=cwd, env=environment, stdout=subprocess.PIPE,
+            spawn_command, cwd=cwd, env=environment, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, start_new_session=True,
         )
     except OSError as exc:
@@ -188,6 +245,25 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
                 pass
             returncode = process.wait()
     finally:
+        cleanup_ok = True
+        if container_name:
+            # Docker rm -f is idempotent for an already removed --rm container.
+            # Verify absence after revocation; never report a successful receipt
+            # if the daemon cannot establish that the container is gone.
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", container_name],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+                    env=environment,
+                )
+                inspect = subprocess.run(
+                    ["docker", "container", "inspect", container_name],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=10, env=environment,
+                )
+                cleanup_ok = inspect.returncode != 0
+            except (OSError, subprocess.TimeoutExpired):
+                cleanup_ok = False
         # A successful leader exit and EOF do not prove that background
         # descendants have exited: they may have closed both pipes. Revoke
         # the session's process group on every path, including success.
@@ -201,10 +277,12 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
             pipe.close()
         if process.poll() is None:
             process.wait()
-    status = "INCONCLUSIVE" if timed_out or exceeded else "OBSERVED"
+    status = "INCONCLUSIVE" if timed_out or exceeded or not cleanup_ok else "OBSERVED"
     return {
         "argv": command, "status": status,
-        "reason": "OUTPUT_BUDGET" if exceeded else "TIMEOUT" if timed_out else None,
+        "reason": "OUTPUT_BUDGET" if exceeded else "TIMEOUT" if timed_out else
+                  "CONTAINER_CLEANUP_UNVERIFIED" if not cleanup_ok else None,
+        "isolation": isolation,
         "exit_code": returncode, "timed_out": timed_out,
         # Until both pipes reach EOF, no complete-output digest is defensible.
         # The byte counts on inconclusive runs are observed prefixes only.

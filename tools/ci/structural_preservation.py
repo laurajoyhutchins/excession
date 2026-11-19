@@ -144,7 +144,7 @@ def oci_command(worktree: Path, check: dict, name: str) -> list[str]:
         "--network", "none", "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges", "--pids-limit", "128",
         "--memory", "512m", "--cpus", "1",
-        "--user", "65534:65534",
+        "--user", f"{os.getuid()}:{os.getgid()}",
         "--mount", f"type=bind,src={worktree.resolve()},dst=/source,readonly",
         "--tmpfs", f"/tmp:rw,noexec,nosuid,nodev,size={check['max_scratch_bytes']},mode=1777",
         "--workdir", str(Path("/source") / relative),

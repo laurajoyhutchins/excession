@@ -115,7 +115,7 @@ obligation may explicitly select **`linux_namespaces`**:
 ```
 
 This opt-in mode requires the native `bwrap` executable and available user,
-PID, IPC, network and UTS namespaces. It mounts the Git worktree read-only
+PID, IPC and UTS namespaces. It mounts the Git worktree read-only
 under `/tmp/excession-worktree` and provides private tmpfs filesystems at
 `/tmp`, `/run` and `/dev/shm`; each tmpfs has the declared size ceiling.
 The process runs with `HOME=/tmp/home` and `TMPDIR=/tmp`. Each invocation
@@ -129,9 +129,11 @@ command under `trusted_local`. The input contract requires an explicit
 positive `max_scratch_bytes` for this mode. The budget applies to *each*
 tmpfs, not to cumulative disk, memory or CPU use.
 
-This is **not an untrusted-code security boundary**. The host root remains
-readable, not every possible IPC or service side effect is modeled, and no
-seccomp policy is installed. A portable Windows implementation would need
+This is **not an untrusted-code security boundary**. The host network
+namespace remains shared because Ubuntu's hosted runner refuses Bubblewrap's
+loopback setup in a private network namespace. The host root remains readable,
+not every possible IPC or service side effect is modeled, and no seccomp
+policy is installed. A portable Windows implementation would need
 separate, independently tested Job Object process supervision. Treat the
 namespace mode as a narrow, opt-in defense for reviewed commands, not a proof
 of total containment or semantic equivalence.

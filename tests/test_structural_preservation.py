@@ -260,11 +260,12 @@ class StructuralPreservation(unittest.TestCase):
             ["python3", "-B", "-c", "print(42)"], 64 * 1024 * 1024,
         )
         self.assertEqual(args[:2], ["/usr/bin/bwrap", "--unshare-user"])
-        for flag in ("--unshare-pid", "--unshare-net", "--die-with-parent"):
+        for flag in ("--unshare-pid", "--unshare-ipc", "--die-with-parent"):
             self.assertIn(flag, args)
         self.assertIn(["--ro-bind", str(self.repo), "/tmp/excession-worktree"],
                       [args[i:i + 3] for i in range(len(args) - 2)])
         self.assertNotIn("--bind", args)
+        self.assertNotIn("--unshare-net", args)  # hosted runner rejects loopback setup
         self.assertIn(["--size", str(64 * 1024 * 1024), "--tmpfs", "/tmp"],
                       [args[i:i + 4] for i in range(len(args) - 3)])
         self.assertEqual(args[-3:], ["-B", "-c", "print(42)"])

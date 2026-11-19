@@ -1,0 +1,34 @@
+name: OCI structural receipt acceptance
+
+on:
+  pull_request:
+    paths:
+      - tools/ci/structural_preservation.py
+      - tests/test_structural_preservation.py
+      - .github/workflows/oci-structural-receipts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check local Docker daemon
+        run: |
+          docker info --format '{{.ServerVersion}}'
+          test -z "${DOCKER_HOST:-}"
+          test -z "${DOCKER_CONTEXT:-}"
+      - name: Provision and pin acceptance image
+        run: |
+          docker pull python:3.13-slim
+          image_id="$(docker image inspect python:3.13-slim --format '{{.Id}}')"
+          case "$image_id" in sha256:*) ;; *) exit 1;; esac
+          echo "EXCESSION_OCI_TEST_IMAGE=$image_id" >> "$GITHUB_ENV"
+          echo "Image ID: $image_id"
+      - name: Run independent OCI integration and regression oracles
+        run: |
+          python3 -m unittest discover -s tests -p 'test_structural_preservation.py' -v

@@ -337,8 +337,34 @@ class StructuralPreservation(unittest.TestCase):
         self.assertEqual(receipt["exit_code"], 0, receipt)
         self.assertEqual(receipt["stdout_sha256"],
                          hashlib.sha256(b"started\n").hexdigest())
-        # The Docker container is independently confirmed absent by
-        # run_command's inspect-after-rm cleanup receipt.
+        # Independently inspect host /proc: Docker's successful container
+        # removal is not itself an oracle for escaped host processes.
+        def surviving_workers():
+            survivors = []
+            for proc in Path("/proc").iterdir():
+                if not proc.name.isdecimal():
+                    continue
+                try:
+                    cmdline = (proc / "cmdline").read_bytes()
+                    stat = (proc / "stat").read_text().rsplit(") ", 1)[1].split()[0]
+                except (OSError, IndexError):
+                    continue
+                if token.encode() in cmdline and stat not in ("Z", "X"):
+                    survivors.append(int(proc.name))
+            return survivors
+
+        try:
+            for _ in range(40):
+                if not surviving_workers():
+                    break
+                time.sleep(0.025)
+            self.assertEqual(surviving_workers(), [], "detached worker escaped OCI cleanup")
+        finally:
+            for pid in surviving_workers():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]

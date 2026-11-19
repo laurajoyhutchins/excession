@@ -5,6 +5,7 @@ on:
     paths:
       - tools/ci/structural_preservation.py
       - tests/test_structural_preservation.py
+      - docs/STRUCTURAL_PRESERVATION.md
       - .github/workflows/oci-structural-receipts.yml
   workflow_dispatch:
 

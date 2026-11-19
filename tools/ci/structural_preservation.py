@@ -150,7 +150,7 @@ def oci_command(worktree: Path, check: dict, name: str) -> list[str]:
         "--workdir", str(Path("/source") / relative),
         "--env", "HOME=/tmp", "--env", "TMPDIR=/tmp",
         "--env", "PYTHONDONTWRITEBYTECODE=1",
-        "--", check["oci_image"], *argv,
+        check["oci_image"], *argv,
     ]
 
 
@@ -277,11 +277,15 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
             pipe.close()
         if process.poll() is None:
             process.wait()
-    status = "INCONCLUSIVE" if timed_out or exceeded or not cleanup_ok else "OBSERVED"
+    # Docker reserves 125 for CLI/daemon failures, 126/127 for command setup.
+    # None is evidence of a successfully executed application.
+    oci_unavailable = container_name is not None and returncode in (125, 126, 127)
+    status = "INCONCLUSIVE" if timed_out or exceeded or not cleanup_ok or oci_unavailable else "OBSERVED"
     return {
         "argv": command, "status": status,
         "reason": "OUTPUT_BUDGET" if exceeded else "TIMEOUT" if timed_out else
-                  "CONTAINER_CLEANUP_UNVERIFIED" if not cleanup_ok else None,
+                  "CONTAINER_CLEANUP_UNVERIFIED" if not cleanup_ok else
+                  "SANDBOX_UNAVAILABLE" if oci_unavailable else None,
         "isolation": isolation,
         "exit_code": returncode, "timed_out": timed_out,
         # Until both pipes reach EOF, no complete-output digest is defensible.

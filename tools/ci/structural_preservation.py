@@ -122,7 +122,7 @@ def verify_changed_entry_modes(repo: Path, base: str, candidate: str, paths: lis
 
 
 # In the opt-in isolation mode, the checkout is mounted read-only under a
-# private workspace. /tmp, /run and /dev/shm are sized private tmpfs mounts.
+# private workspace. /tmp, /run and /dev/shm are sized private tmpfs mounts. The host network remains shared.
 # This limits ordinary filesystem writes; it does not make reviewed commands
 # untrusted-safe (for example, host IPC sockets outside the masked roots).
 SANDBOX_WORKTREE = Path("/tmp/excession-worktree")
@@ -138,7 +138,7 @@ def linux_namespace_argv(bwrap: str, worktree: Path, cwd: Path,
         translated[0] = str(SANDBOX_WORKTREE / executable.relative_to(worktree))
     return [
         bwrap, "--unshare-user", "--unshare-pid", "--unshare-ipc",
-        "--unshare-net", "--unshare-uts", "--die-with-parent",
+        "--unshare-uts", "--die-with-parent",
         "--ro-bind", "/", "/",
         "--size", str(scratch_bytes), "--tmpfs", "/tmp",
         "--size", str(scratch_bytes), "--tmpfs", "/run",

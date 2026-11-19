@@ -194,6 +194,51 @@ class StructuralPreservation(unittest.TestCase):
                 except ProcessLookupError:
                     pass
 
+    @unittest.skipUnless(os.name == "posix" and Path("/proc").is_dir(),
+                         "independent process-state oracle requires Linux /proc")
+    def test_successful_parent_cannot_leave_background_worker_running(self):
+        home = self.root / "background-home"
+        home.mkdir()
+        worker = (
+            "import os,time;from pathlib import Path;"
+            "Path(os.environ['HOME'],'background.pid').write_text(str(os.getpid()));"
+            "os.close(1);os.close(2);time.sleep(30)"
+        )
+        launcher = (
+            "import subprocess,sys,os,time;"
+            f"subprocess.Popen([sys.executable,'-B','-c',{worker!r}]);"
+            "p=os.path.join(os.environ['HOME'],'background.pid');"
+            "[(time.sleep(.01)) for _ in range(100) if not os.path.exists(p)]"
+        )
+        check = dict(self.doc["obligations"][1])
+        check.update(argv=[sys.executable, "-B", "-c", launcher], timeout_seconds=3)
+        receipt = runner.run_command(self.repo, check, home)
+        marker = home / "background.pid"
+        self.assertTrue(marker.exists(), "worker never started")
+        pid = int(marker.read_text())
+
+        def running():
+            try:
+                stat = (Path("/proc") / str(pid) / "stat").read_text()
+            except FileNotFoundError:
+                return False
+            return stat.rsplit(") ", 1)[1].split()[0] not in ("Z", "X")
+
+        try:
+            self.assertEqual(receipt["status"], "OBSERVED")
+            self.assertEqual(receipt["exit_code"], 0)
+            for _ in range(40):
+                if not running():
+                    break
+                time.sleep(.025)
+            self.assertFalse(running(), "successful launcher leaked background worker")
+        finally:
+            if running():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]
         report = self.evaluate()

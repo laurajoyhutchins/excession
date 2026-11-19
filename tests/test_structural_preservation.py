@@ -285,6 +285,8 @@ class StructuralPreservation(unittest.TestCase):
     def test_namespace_observation_and_private_tmp_when_available(self):
         import shutil
         if not shutil.which("bwrap"):
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap not installed on required-isolation runner")
             self.skipTest("bubblewrap not installed")
         home = self.root / "isolated-home"
         home.mkdir()
@@ -301,6 +303,8 @@ class StructuralPreservation(unittest.TestCase):
         )
         receipt = runner.run_command(self.repo, check, home)
         if receipt["reason"] == "SANDBOX_UNAVAILABLE":
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap namespace setup unavailable on required-isolation runner")
             self.skipTest("bubblewrap namespace setup unavailable on host")
         self.assertEqual(receipt["status"], "OBSERVED")
         self.assertEqual(receipt["exit_code"], 0)
@@ -314,6 +318,8 @@ class StructuralPreservation(unittest.TestCase):
         import shutil
         import uuid
         if not shutil.which("bwrap"):
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap not installed on required-isolation runner")
             self.skipTest("bubblewrap not installed")
         home = self.root / "isolated-descendant-home"
         home.mkdir()
@@ -343,6 +349,8 @@ class StructuralPreservation(unittest.TestCase):
         )
         receipt = runner.run_command(self.repo, check, home)
         if receipt["reason"] == "SANDBOX_UNAVAILABLE":
+            if os.environ.get("EXCESSION_REQUIRE_LINUX_NAMESPACES") == "1":
+                self.fail("bubblewrap namespaces unavailable on required-isolation runner")
             self.skipTest("bubblewrap namespaces unavailable on host")
 
         def live_pids():

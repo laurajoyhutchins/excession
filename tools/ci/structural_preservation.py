@@ -195,17 +195,22 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
         probe = linux_namespace_argv(
             bwrap, worktree, cwd, ["/bin/true"], check["max_scratch_bytes"],
         )
+        detail = None
         try:
-            ready = subprocess.run(
+            probe_result = subprocess.run(
                 probe, env=environment, stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                 timeout=5,
-            ).returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
+            )
+            ready = probe_result.returncode == 0
+            if not ready:
+                detail = probe_result.stderr.decode(errors="replace").strip()[-512:]
+        except (OSError, subprocess.TimeoutExpired) as exc:
             ready = False
+            detail = type(exc).__name__
         if not ready:
             return {"status": "INCONCLUSIVE", "reason": "SANDBOX_UNAVAILABLE",
-                    "argv": command, "isolation": isolation}
+                    "detail": detail, "argv": command, "isolation": isolation}
         environment.update({
             "HOME": "/tmp/home", "TMPDIR": "/tmp",
             "XDG_CACHE_HOME": "/tmp/home/.cache",

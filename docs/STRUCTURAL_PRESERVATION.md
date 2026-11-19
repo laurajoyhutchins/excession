@@ -132,8 +132,8 @@ infrastructure: this is **not** a defense against daemon compromise or
 host-kernel vulnerabilities. Docker socket mounts and privileged containers
 are not requested.
 
-A named container is forcibly removed after execution; an independent
-Docker inspect must report its absence or the receipt becomes
+A named container is forcibly removed after execution; a successful independent
+Docker container listing must report its absence or the receipt becomes
 `INCONCLUSIVE: CONTAINER_CLEANUP_UNVERIFIED`. The output observer still
 enforces byte and time budgets. The dedicated
 `OCI structural receipt acceptance` workflow provisions a Python

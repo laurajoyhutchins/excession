@@ -248,6 +248,7 @@ class StructuralPreservation(unittest.TestCase):
         with self.assertRaisesRegex(runner.Refused, "pinned local image"):
             runner.read_contract(path)
         obligation["oci_image"] = "sha256:" + "a" * 64
+        path.write_text(json.dumps(self.doc))
         self.assertEqual(runner.read_contract(path)[0], self.doc)
         obligation["isolation"] = "trusted_local"
         path.write_text(json.dumps(self.doc))
@@ -277,7 +278,7 @@ class StructuralPreservation(unittest.TestCase):
                      max_scratch_bytes=1048576)
         home = self.root / "home"
         home.mkdir()
-        with patch.object(runner.shutil, "which", return_value=None):
+        with patch.object(runner.shutil, "which", side_effect=lambda name, **kw: None if name == "docker" else sys.executable):
             receipt = runner.run_command(self.repo, check, home)
         self.assertEqual(receipt["status"], "INCONCLUSIVE")
         self.assertEqual(receipt["reason"], "SANDBOX_UNAVAILABLE")
@@ -333,7 +334,7 @@ class StructuralPreservation(unittest.TestCase):
         self.assertEqual(receipt["status"], "OBSERVED", receipt)
         self.assertEqual(receipt["exit_code"], 0, receipt)
         self.assertEqual(receipt["stdout_sha256"],
-                         hashlib.sha256(b"started\\n").hexdigest())
+                         hashlib.sha256(b"started\n").hexdigest())
         # The Docker container is independently confirmed absent by
         # run_command's inspect-after-rm cleanup receipt.
 

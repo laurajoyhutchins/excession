@@ -7,17 +7,18 @@ Never claims all-input equivalence or authorizes a merge.
 from __future__ import annotations
 
 import argparse
-from contextlib import ExitStack
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import selectors
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 SCHEMA = "excession.structural-preservation-contract.v1"
 REPORT = "excession.structural-preservation-receipt.v1"
@@ -109,19 +110,6 @@ def verify_changed_entry_modes(repo: Path, base: str, candidate: str, paths: lis
                 raise Refused("changed path is not a regular tracked Git source file")
 
 
-def digest_file(file) -> tuple[str, int]:
-    file.seek(0)
-    h = hashlib.sha256()
-    count = 0
-    while True:
-        chunk = file.read(65536)
-        if not chunk:
-            break
-        count += len(chunk)
-        h.update(chunk)
-    return h.hexdigest(), count
-
-
 def run_command(worktree: Path, check: dict, home: Path) -> dict:
     cwd = (worktree / check["cwd"]).resolve()
     if not cwd.is_relative_to(worktree.resolve()) or not cwd.is_dir():
@@ -144,38 +132,88 @@ def run_command(worktree: Path, check: dict, home: Path) -> dict:
         "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC",
         "PYTHONDONTWRITEBYTECODE": "1", "GIT_CONFIG_NOSYSTEM": "1",
     }
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        try:
-            process = subprocess.Popen(
-                command, cwd=cwd, env=environment, stdout=stdout, stderr=stderr,
-                start_new_session=(os.name == "posix"),
-            )
-        except OSError as exc:
-            return {"status": "INCONCLUSIVE", "reason": "EXECUTION_UNAVAILABLE",
-                    "detail": type(exc).__name__, "argv": command}
-        timed_out = False
-        try:
-            returncode = process.wait(timeout=check["timeout_seconds"])
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            if os.name == "posix":
+    # Pipes are drained incrementally. Never spool unbounded child output to disk.
+    # POSIX process groups let us terminate descendants retaining inherited pipes.
+    if os.name != "posix":
+        return {"status": "INCONCLUSIVE", "reason": "BOUNDED_CAPTURE_UNSUPPORTED", "argv": command}
+    try:
+        process = subprocess.Popen(
+            command, cwd=cwd, env=environment, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, start_new_session=True,
+        )
+    except OSError as exc:
+        return {"status": "INCONCLUSIVE", "reason": "EXECUTION_UNAVAILABLE",
+                "detail": type(exc).__name__, "argv": command}
+    hashes = {"stdout": hashlib.sha256(), "stderr": hashlib.sha256()}
+    counts = {"stdout": 0, "stderr": 0}
+    budget = check["max_output_bytes"]
+    deadline = time.monotonic() + check["timeout_seconds"]
+    timed_out = False
+    exceeded = False
+    selector = selectors.DefaultSelector()
+    try:
+        for name, pipe in (("stdout", process.stdout), ("stderr", process.stderr)):
+            os.set_blocking(pipe.fileno(), False)
+            selector.register(pipe, selectors.EVENT_READ, name)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                break
+            events = selector.select(timeout=min(remaining, 0.1))
+            for key, _mask in events:
+                # The single sentinel byte establishes overflow without consuming
+                # an arbitrary extra chunk. Counts are observed, not total, bytes.
+                chunk = os.read(key.fd, min(65536, budget - counts[key.data] + 1))
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                name = key.data
+                counts[name] += len(chunk)
+                if counts[name] > budget:
+                    exceeded = True
+                    break
+                hashes[name].update(chunk)
+            if exceeded:
+                break
+        if not timed_out and not exceeded:
+            try:
+                returncode = process.wait(timeout=max(0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                timed_out = True
+        if timed_out or exceeded:
+            try:
                 os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
+            except ProcessLookupError:
+                pass
             returncode = process.wait()
-        out_sha, out_bytes = digest_file(stdout)
-        err_sha, err_bytes = digest_file(stderr)
-        status = "OBSERVED"
-        if timed_out or out_bytes > check["max_output_bytes"] or err_bytes > check["max_output_bytes"]:
-            status = "INCONCLUSIVE"
-        return {
-            "argv": command, "status": status,
-            "reason": "TIMEOUT_OR_OUTPUT_BUDGET" if status == "INCONCLUSIVE" else None,
-            "exit_code": returncode, "timed_out": timed_out,
-            "stdout_sha256": out_sha, "stdout_bytes": out_bytes,
-            "stderr_sha256": err_sha, "stderr_bytes": err_bytes,
-            "executable_path": str(Path(executable).resolve()),
-        }
+    finally:
+        # A successful leader exit and EOF do not prove that background
+        # descendants have exited: they may have closed both pipes. Revoke
+        # the session's process group on every path, including success.
+        # This is not a sandbox against setsid() or detached processes.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        selector.close()
+        for pipe in (process.stdout, process.stderr):
+            pipe.close()
+        if process.poll() is None:
+            process.wait()
+    status = "INCONCLUSIVE" if timed_out or exceeded else "OBSERVED"
+    return {
+        "argv": command, "status": status,
+        "reason": "OUTPUT_BUDGET" if exceeded else "TIMEOUT" if timed_out else None,
+        "exit_code": returncode, "timed_out": timed_out,
+        # Until both pipes reach EOF, no complete-output digest is defensible.
+        # The byte counts on inconclusive runs are observed prefixes only.
+        "stdout_sha256": None if exceeded or timed_out else hashes["stdout"].hexdigest(),
+        "stdout_bytes": counts["stdout"],
+        "stderr_sha256": None if exceeded or timed_out else hashes["stderr"].hexdigest(),
+        "stderr_bytes": counts["stderr"],
+        "executable_path": str(Path(executable).resolve()),
+    }
 
 
 def evaluate(repo: Path, base: str, candidate: str, doc: dict, sha: str) -> dict:

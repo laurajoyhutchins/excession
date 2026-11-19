@@ -4,9 +4,13 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 SRC = Path(__file__).resolve().parents[1] / "tools" / "ci" / "structural_preservation.py"
@@ -93,6 +97,147 @@ class StructuralPreservation(unittest.TestCase):
         self.doc["obligations"][0]["argv"] = ["./runner.sh"]
         self.assertEqual(self.evaluate()["status"],
                          "OBSERVATIONS_AGREE_WITHIN_EXERCISED_SCOPE")
+
+    def test_excessive_stdout_is_inconclusive_without_spooling(self):
+        self.doc["obligations"][1]["argv"] = [
+            "python3", "-B", "-c",
+            "import os; os.write(1, b'x' * (1024 * 1024))",
+        ]
+        receipt = self.evaluate()["obligations"][1]["candidate"]
+        self.assertEqual(receipt["status"], "INCONCLUSIVE")
+        self.assertEqual(receipt["reason"], "OUTPUT_BUDGET")
+        self.assertIsNone(receipt["stdout_sha256"])
+        self.assertEqual(receipt["stdout_bytes"], 1025)  # budget plus one sentinel byte
+
+    def test_small_binary_output_matches_independent_hash(self):
+        payload = bytes(range(256))
+        self.doc["obligations"][1]["argv"] = [
+            "python3", "-B", "-c",
+            "import os; os.write(1, bytes(range(256))); os.write(2, bytes(reversed(range(256))))",
+        ]
+        receipt = self.evaluate()["obligations"][1]["candidate"]
+        self.assertEqual(receipt["status"], "OBSERVED")
+        self.assertEqual(receipt["stdout_bytes"], len(payload))
+        self.assertEqual(receipt["stdout_sha256"], hashlib.sha256(payload).hexdigest())
+        self.assertEqual(receipt["stderr_bytes"], len(payload))
+        self.assertEqual(receipt["stderr_sha256"], hashlib.sha256(payload[::-1]).hexdigest())
+
+    def test_excessive_stderr_is_inconclusive_at_first_overflow_byte(self):
+        self.doc["obligations"][1]["argv"] = [
+            "python3", "-B", "-c",
+            "import os; os.write(2, b'e' * (1024 * 1024))",
+        ]
+        receipt = self.evaluate()["obligations"][1]["candidate"]
+        self.assertEqual(receipt["status"], "INCONCLUSIVE")
+        self.assertEqual(receipt["reason"], "OUTPUT_BUDGET")
+        self.assertEqual(receipt["stderr_bytes"], 1025)
+        self.assertIsNone(receipt["stderr_sha256"])
+
+    def test_explicit_timeout_has_distinct_reason(self):
+        home = self.root / "timeout-home"
+        home.mkdir()
+        check = dict(self.doc["obligations"][1])
+        check.update(
+            argv=[sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+            timeout_seconds=1,
+        )
+        receipt = runner.run_command(self.repo, check, home)
+        self.assertEqual(receipt["status"], "INCONCLUSIVE")
+        self.assertEqual(receipt["reason"], "TIMEOUT")
+        self.assertTrue(receipt["timed_out"])
+        self.assertIsNone(receipt["stdout_sha256"])
+
+    @unittest.skipUnless(os.name == "posix" and Path("/proc").is_dir(),
+                         "independent process-state oracle requires Linux /proc")
+    def test_descendant_retaining_pipe_is_terminated_after_parent_exit(self):
+        home = self.root / "descendant-home"
+        home.mkdir()
+        worker = (
+            "import os,time;from pathlib import Path;"
+            "Path(os.environ['HOME'],'descendant.pid').write_text(str(os.getpid()));"
+            "time.sleep(30)"
+        )
+        launcher = (
+            "import subprocess,sys,os,time;"
+            f"subprocess.Popen([sys.executable,'-B','-c',{worker!r}]);"
+            "p=os.path.join(os.environ['HOME'],'descendant.pid');"
+            "[(time.sleep(.01)) for _ in range(100) if not os.path.exists(p)]"
+        )
+        check = dict(self.doc["obligations"][1])
+        check.update(argv=[sys.executable, "-B", "-c", launcher],
+                     timeout_seconds=3)
+        receipt = runner.run_command(self.repo, check, home)
+        marker = home / "descendant.pid"
+        self.assertTrue(marker.exists(), "worker did not start; invalid cleanup fixture")
+        pid = int(marker.read_text())
+
+        def still_running():
+            # A reparented, unreaped zombie is no longer executing.
+            try:
+                state = (Path("/proc") / str(pid) / "stat").read_text()
+            except FileNotFoundError:
+                return False
+            return state.rsplit(") ", 1)[1].split()[0] not in ("Z", "X")
+
+        try:
+            self.assertEqual(receipt["reason"], "TIMEOUT")
+            self.assertEqual(receipt["exit_code"], 0)  # launcher exited; pipe owner did not
+            for _ in range(40):
+                if not still_running():
+                    break
+                time.sleep(0.025)
+            self.assertFalse(still_running(), "inherited-pipe descendant survived timeout")
+        finally:
+            if still_running():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    @unittest.skipUnless(os.name == "posix" and Path("/proc").is_dir(),
+                         "independent process-state oracle requires Linux /proc")
+    def test_successful_parent_cannot_leave_background_worker_running(self):
+        home = self.root / "background-home"
+        home.mkdir()
+        worker = (
+            "import os,time;from pathlib import Path;"
+            "Path(os.environ['HOME'],'background.pid').write_text(str(os.getpid()));"
+            "os.close(1);os.close(2);time.sleep(30)"
+        )
+        launcher = (
+            "import subprocess,sys,os,time;"
+            f"subprocess.Popen([sys.executable,'-B','-c',{worker!r}]);"
+            "p=os.path.join(os.environ['HOME'],'background.pid');"
+            "[(time.sleep(.01)) for _ in range(100) if not os.path.exists(p)]"
+        )
+        check = dict(self.doc["obligations"][1])
+        check.update(argv=[sys.executable, "-B", "-c", launcher], timeout_seconds=3)
+        receipt = runner.run_command(self.repo, check, home)
+        marker = home / "background.pid"
+        self.assertTrue(marker.exists(), "worker never started")
+        pid = int(marker.read_text())
+
+        def running():
+            try:
+                stat = (Path("/proc") / str(pid) / "stat").read_text()
+            except FileNotFoundError:
+                return False
+            return stat.rsplit(") ", 1)[1].split()[0] not in ("Z", "X")
+
+        try:
+            self.assertEqual(receipt["status"], "OBSERVED")
+            self.assertEqual(receipt["exit_code"], 0)
+            for _ in range(40):
+                if not running():
+                    break
+                time.sleep(.025)
+            self.assertFalse(running(), "successful launcher leaked background worker")
+        finally:
+            if running():
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     def test_missing_test_tool_is_inconclusive_not_green(self):
         self.doc["obligations"][1]["argv"] = ["excession-tool-never-installed-xyz"]

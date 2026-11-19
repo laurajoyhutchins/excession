@@ -111,3 +111,39 @@ checks, but cannot treat the receipts as sufficient merge authority. The
 remaining product work is to link source-grounded investigation claims,
 precommitted preservation plans, independently attested producer versions,
 runtime state effects and full native build/API checks.
+
+
+## Experimental OCI isolation provider (issue #325)
+
+A reviewed obligation may opt into `"isolation": "oci"`, provide an
+**immutable local image ID** (`"oci_image": "sha256:<64 lowercase hex>"`),
+and declare `"max_scratch_bytes"` (1 MiB to 1 GiB). The runner never
+pulls an image or substitutes a mutable tag. A trusted local Docker daemon
+must already have the exact image. It refuses explicit remote Docker
+contexts and missing runtimes; Docker setup exit codes 125/126/127 are
+`INCONCLUSIVE`.
+
+The container uses a read-only bind mount of the detached source tree at
+`/source`, read-only container root, private bounded `/tmp`, no network,
+no added Linux capabilities, `no-new-privileges`, 128-PID limit, 512 MiB
+memory ceiling and one CPU quota. It runs as the caller's UID/GID so it can
+read the private detached checkout. The host Docker daemon is trusted
+infrastructure: this is **not** a defense against daemon compromise or
+host-kernel vulnerabilities. Docker socket mounts and privileged containers
+are not requested.
+
+A named container is forcibly removed after execution; an independent
+Docker inspect must report its absence or the receipt becomes
+`INCONCLUSIVE: CONTAINER_CLEANUP_UNVERIFIED`. The output observer still
+enforces byte and time budgets. The dedicated
+`OCI structural receipt acceptance` workflow provisions a Python
+image, resolves its immutable local image ID, and exercises the real
+container with an independently hashed binary-output control, private
+scratch observation, and a `setsid()` worker-start handshake. A passing
+ordinary unit test is **not** a substitute for that workflow.
+
+Limitations: stdout/stderr equality does not prove semantic equivalence;
+the container's side effects beyond declared mounts are not exhaustively
+observed; host daemon and image provisioning are separate trust
+boundaries; Windows Job Objects remain unimplemented. No merge authority
+is conferred by an observation receipt.

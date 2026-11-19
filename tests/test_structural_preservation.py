@@ -313,12 +313,17 @@ class StructuralPreservation(unittest.TestCase):
             self.skipTest("dedicated OCI acceptance image not supplied")
         import uuid
         token = "excession-oci-" + uuid.uuid4().hex
-        worker = ("import os,time;os.setsid();"
+        worker = ("import os,sys,time;os.setsid();"
+                  "os.write(int(sys.argv[1]),b'1');"
+                  "os.close(int(sys.argv[1]));"
                   "os.close(1);os.close(2);time.sleep(30)")
-        launcher = ("import subprocess,sys;"
-                    f"p=subprocess.Popen([sys.executable,'-B','-c',{worker!r},{token!r}],"
-                    "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
-                    "print('started',flush=True)")
+        launcher = ("import subprocess,sys,os;"
+                    "r,w=os.pipe();"
+                    f"p=subprocess.Popen([sys.executable,'-B','-c',{worker!r},str(w),{token!r}],"
+                    "pass_fds=(w,),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+                    "os.close(w);"
+                    "assert os.read(r,1)==b'1';"
+                    "os.close(r);print('started',flush=True)")
         check = dict(self.doc["obligations"][1])
         check.update(isolation="oci", oci_image=image, max_scratch_bytes=1048576,
                      argv=["python3", "-B", "-c", launcher])
